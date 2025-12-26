@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Finance" />
+
+<meta name="theme-color" content="#ffffff" />
+<link rel="manifest" href="/static/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body class="page-home">
+
+  <!-- =============================================================================
+       Page Container
+       ============================================================================= -->
+  <div class="page-container">
+
+    <!-- =============================================================================
+         Net Worth Section
+         ============================================================================= -->
+    <section id="netWorthSection" style="max-width: 900px; margin: 0 auto;">
+
+      <!-- Chart header (title, dots, toggle) -->
+      <header class="chart-header">
+        <h2 id="chartTitle">Net Worth</h2>
+        <div id="chartDots" class="chart-dots" aria-label="Chart indicator"></div>
+        <button id="chartToggleBtn" type="button">Next: Savings ▾</button>
+      </header>
+
+      <!-- Date range controls -->
+      <div style="display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap;">
+        <label>
+          Start:
+          <input type="date" id="nw-start" />
+        </label>
+
+        <label>
+          End:
+          <input type="date" id="nw-end" />
+        </label>
+
+        <button id="nw-chart-btn" type="button">Update Chart</button>
+      </div>
+
+      <!-- Chart canvas -->
+      <div style="margin-top: 12px;">
+        <canvas id="netWorthChart"></canvas>
+      </div>
+
+      <!-- Month quick-select buttons injected by JS -->
+      <div
+        id="monthButtons"
+        style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px;"
+      ></div>
+
+      <div id="monthSelectWrap" class="month-select-wrap">
+  <select id="monthSelect" aria-label="Select time range"></select>
+</div>
+
+
+    </section>
+
+    <hr class="section-divider" />
+
+
+    <!-- =============================================================================
+         Bank Totals + Monthly Spending Sidebar
+         ============================================================================= -->
+    <section class="bank-area">
+
+      <!-- Monthly Spending (sidebar) -->
+      <aside id="categoryTotals" class="category-box category-box--sidebar">
+        <div class="category-box__header">Monthly Spending</div>
+        <ul id="categoryTotalsList" class="category-box__list"></ul>
+      </aside>
+
+      <!-- Bank totals (main) -->
+      <div class="bank-main">
+        <div class="category-box bank-box-fill">
+          <div class="category-box__header" id="bankTotalsHeader">Bank Totals</div>
+          <div id="bankTotals"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <hr id="txDivider" class="section-divider" />
+
+
+    <!-- =============================================================================
+         Transactions Table
+         ============================================================================= -->
+  <section aria-label="Transactions">
+  <div class="category-box">
+    <div class="category-box__header">Recent Transactions</div>
+    <div id="txList" class="tx-list"></div>
+  </div>
+</section>
+
+
+
+  </div><!-- /.page-container -->
+
+
+  <!-- =============================================================================
+       Rule Modal
+       ============================================================================= -->
+  <div
+    id="ruleModalBackdrop"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35);"
+  >
+    <div
+      id="ruleModal"
+      style="max-width:520px; margin:8vh auto; background:#fff; border-radius:16px; padding:16px; box-shadow:0 10px 40px rgba(0,0,0,0.2);"
+    >
+
+      <!-- Modal header -->
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+        <h3 style="margin:0;">Create category rule</h3>
+        <button id="ruleModalClose" type="button">✕</button>
+      </div>
+
+      <!-- Modal navigation -->
+      <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <button id="rulePrevBtn" type="button">◀ Prev</button>
+        <div id="ruleCounter" style="opacity:0.75;"></div>
+        <button id="ruleNextBtn" type="button">Next ▶</button>
+      </div>
+
+      <!-- Transaction preview -->
+      <div style="margin-top:12px; border:1px solid #eee; border-radius:12px; padding:12px;">
+        <div><strong>Description:</strong> <span id="ruleTxMerchant">—</span></div>
+        <div><strong>Amount:</strong> <span id="ruleTxAmount">—</span></div>
+        <div><strong>Date:</strong> <span id="ruleTxDate">—</span></div>
+        <input type="hidden" id="ruleTxId" />
+      </div>
+
+      <!-- Rule form -->
+      <div class="rule-form">
+
+        <div class="rule-field">
+          <label for="ruleCategory">Category</label>
+          <input id="ruleCategory" list="categoryOptions" placeholder="e.g. Food" />
+          <datalist id="categoryOptions"></datalist>
+        </div>
+
+        <div class="rule-field">
+          <label for="ruleKeywords">Keywords (comma-separated)</label>
+          <input id="ruleKeywords" placeholder="e.g. chick-fil-a, chick fil a" />
+        </div>
+
+        <div class="rule-field checkbox">
+          <label>
+            <input id="ruleApplyNow" type="checkbox" checked />
+            Apply to existing unassigned now
+          </label>
+        </div>
+
+        <div class="rule-actions">
+          <button id="ruleSaveBtn" type="button">Save rule</button>
+        </div>
+
+        <div id="ruleSaveMsg" class="rule-msg"></div>
+
+      </div><!-- /.rule-form -->
+
+    </div><!-- /#ruleModal -->
+  </div><!-- /#ruleModalBackdrop -->
+
+
+
+  <nav class="mobile-tabs" aria-label="Bottom Tabs">
+  <a class="mobile-tab" href="/" id="tabHome">
+    <span class="tab-ico">🏠</span>
+    <span>Home</span>
+  </a>
+
+  <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
+    <span class="tab-ico">🔎</span>
+    <span>All</span>
+  </a>
+</nav>
+<script>
+  (function(){
+    const path = window.location.pathname;
+    const isAll = path.includes("all-transactions.html");
+    const home = document.getElementById("tabHome");
+    const all  = document.getElementById("tabAllTx");
+    if (home && all){
+      if (isAll) all.classList.add("active");
+      else home.classList.add("active");
+    }
+  })();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/static/sw.js").catch(console.error);
+  }
+</script>
+
+  <!-- =============================================================================
+       Scripts
+       ============================================================================= -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/script.js"></script>
+</body>
+</html>

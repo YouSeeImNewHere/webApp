@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Finance" />
+
+<meta name="theme-color" content="#ffffff" />
+<link rel="manifest" href="/static/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>All Transactions</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body class="page-alltx">
+  <div class="page-container">
+
+    <div class="page-header">
+      <h2 style="margin:0;">All Transactions</h2>
+      <a href="/" class="back-btn">Back</a>
+    </div>
+
+    <div style="max-width:900px;margin:0 auto;">
+      <input
+        id="txSearch"
+        type="search"
+        placeholder="Search merchant, bank, card…"
+        style="
+          width:100%;
+          padding:12px 14px;
+          border-radius:14px;
+          border:1px solid rgba(0,0,0,0.14);
+          font-weight:700;
+          margin-bottom:12px;
+        "
+      />
+
+      <div id="allTxList" class="tx-list"></div>
+    </div>
+
+  </div>
+
+  <!-- Bottom tabs -->
+  <nav class="mobile-tabs" aria-label="Bottom Tabs">
+    <a class="mobile-tab" href="/" id="tabHome">
+      <span class="tab-ico">🏠</span><span>Home</span>
+    </a>
+    <a class="mobile-tab active" href="/static/all-transactions.html" id="tabAllTx">
+      <span class="tab-ico">🔎</span><span>All</span>
+    </a>
+  </nav>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/static/sw.js").catch(console.error);
+  }
+</script>
+
+  <script src="/static/all-transactions.js"></script>
+</body>
+</html>

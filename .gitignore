@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / auth / state
+.env
+*.env
+token.json
+credentials.json
+*state*.json
+navyfcu_state.json
+
+# Data exports / downloads
+downloads/
+*.csv
+
+# Databases / tooling
+*.db
+*.sqlite
+*.sqlite3
+*.sqbpro
+
+# OS / IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Random local stuff
+website/

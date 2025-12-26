@@ -1,0 +1,1003 @@
+/* =============================================================================
+   Reset / Defaults
+   ============================================================================= */
+
+*, *::before, *::after{
+  box-sizing: border-box;
+}
+
+/* =============================================================================
+   Global Layout
+   ============================================================================= */
+
+body{
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 20px;               /* desktop padding */
+  background: #fff;
+}
+
+/* Page width limiter (desktop only) */
+.page-container{
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* =============================================================================
+   HOME PAGE — MOBILE FULL WIDTH
+   ============================================================================= */
+@media (max-width: 900px){
+
+  body.page-home{
+    padding: 0;                /* remove desktop padding */
+  }
+
+  body.page-home .page-container{
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0 6px;            /* set to 0 for edge-to-edge */
+  }
+
+  body.page-home #netWorthSection{
+    max-width: none;
+    margin: 0;
+  }
+
+  body.page-home .bank-area{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  body.page-home .bank-main{ order: 1; }
+  body.page-home #categoryTotals{ order: 2; }
+
+  body.page-home #categoryTotals,
+  body.page-home .category-box--sidebar{
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    align-self: stretch;
+  }
+}
+
+/* =============================================================================
+   Chart Header + Dots
+   ============================================================================= */
+
+.chart-header{
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.chart-header h2{
+  grid-column: 2;
+  margin: 0;
+  text-align: center;
+}
+
+.chart-header button{
+  grid-column: 3;
+  justify-self: end;
+}
+
+.chart-dots{
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chart-dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid #777;
+  opacity: 0.6;
+}
+
+.chart-dot.active{
+  opacity: 1;
+  background: #111;
+  border-color: #111;
+}
+
+/* =============================================================================
+   Month Controls
+   ============================================================================= */
+
+#monthButtons{ display: flex; }
+.month-select-wrap{ display: none; }
+
+@media (max-width: 900px){
+  #monthButtons{ display: none !important; }
+  .month-select-wrap{ display: flex !important; }
+
+  .month-select-wrap{
+    justify-content: center;
+    margin-top: 12px;
+  }
+
+  #monthSelect{
+    width: 100%;
+    max-width: 320px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.2);
+    font-size: 14px;
+    font-weight: 600;
+    background: #fff;
+  }
+}
+
+/* =============================================================================
+   Bank + Category Layout
+   ============================================================================= */
+
+.bank-area{
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.bank-main{
+  flex: 1;
+  min-width: 0;
+}
+
+.bank-box-fill{ width: 100%; }
+
+.category-box{
+  border: 1px solid #e7e7e7;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+}
+
+.category-box--sidebar{
+  width: 280px;
+}
+
+.category-box__header{
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.category-box__list{
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+/* =============================================================================
+   Category Pills (Monthly Spending)
+   ============================================================================= */
+
+.category-pill{
+  width:100%;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(0,0,0,0.12);
+  background:#fff;
+  cursor:pointer;
+  position: relative;
+  text-align:left;
+}
+
+.category-pill:hover{ opacity:0.92; }
+
+.cat-left{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+
+.cat-name{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width: 180px;
+}
+
+.cat-badge{
+  position:absolute;
+  top:-6px;
+  left:-8px;
+  background:#111;
+  color:#fff;
+  border-radius:999px;
+  padding:0 7px;
+  font-size:11px;
+  font-weight:800;
+  height:20px;
+  display:inline-flex;
+  align-items:center;
+}
+
+.cat-amt{
+  font-weight:800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* =============================================================================
+   Bank Totals (Desktop Cards)
+   ============================================================================= */
+
+#bankTotals{
+  display:grid;
+  gap:12px;
+}
+
+.bank-card{
+  border:1px solid #e7e7e7;
+  border-radius:16px;
+  padding:14px;
+  background:#fff;
+}
+
+.bank-card__head{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:12px;
+}
+
+.bank-card__title{
+  font-size:18px;
+  font-weight:700;
+}
+
+.bank-card__meta{
+  font-size:13px;
+  opacity:0.65;
+  margin-top:4px;
+}
+
+.bank-card__total{
+  font-size:32px;
+  font-weight:800;
+  letter-spacing:-0.4px;
+  text-align:right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bank-sublist{
+  list-style:none;
+  padding:0;
+  margin:14px 0 0;
+  display:grid;
+  gap:8px;
+}
+
+/* =============================================================================
+   Account Pills
+   ============================================================================= */
+
+.account-pill{
+  width:100%;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid #eee;
+  border-radius:12px;
+  background:#fafafa;
+  cursor:pointer;
+}
+
+.account-pill:hover{ background:#f3f3f3; }
+.account-pill span:last-child{ font-variant-numeric: tabular-nums; }
+
+/* =============================================================================
+   Bank Totals Accordion (Mobile)
+   ============================================================================= */
+
+.bank-accordion__header{
+  width:100%;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid rgba(0,0,0,0.12);
+  background:#fff;
+  cursor:pointer;
+  font-weight:800;
+}
+
+.bank-accordion__meta{
+  font-weight:700;
+  opacity:0.75;
+  margin-left:8px;
+  font-size:12px;
+}
+
+.bank-accordion__panel{
+  margin-top:8px;
+  padding-left:6px;
+}
+
+.bank-accordion__panel[hidden]{ display:none; }
+
+/* =============================================================================
+   Transactions List (ALL DEVICES)
+   ============================================================================= */
+
+.tx-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:8px;
+}
+
+.tx-row{
+  display:grid;
+  grid-template-columns: 72px 1fr auto;
+  gap:12px;
+  align-items:center;
+  padding:12px 14px;
+  border:1px solid rgba(0,0,0,0.10);
+  border-radius:14px;
+  background:#fff;
+}
+
+.tx-date{
+  font-size:12px;
+  font-weight:800;
+  opacity:0.85;
+  white-space:nowrap;
+}
+
+.tx-main{ min-width:0; }
+
+.tx-merchant{
+  font-size:14px;
+  font-weight:900;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  text-transform:uppercase;
+}
+
+.tx-sub{
+  font-size:11px;
+  font-weight:650;
+  opacity:0.65;
+  margin-top:2px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.tx-amt{
+  font-size:14px;
+  font-weight:900;
+  text-align:right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mobile tightening */
+@media (max-width: 900px){
+  .tx-row{
+    grid-template-columns: 48px 1fr auto;
+    gap:8px;
+    padding:8px 10px;
+  }
+  .tx-date{ font-size:11px; }
+  .tx-merchant{ font-size:13px; }
+  .tx-sub{ font-size:10px; }
+  .tx-amt{ font-size:13px; }
+}
+
+/* Transactions box alignment */
+.category-box > .tx-list{
+  margin-top: 4px; /* tighter than default */
+}
+
+.category-box__header{
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+/* =============================================================================
+   Transactions divider positioning
+   ============================================================================= */
+
+/* Desktop: divider sits naturally above Transactions */
+#txDivider{
+  border: none;
+  border-top: 1px solid rgba(0,0,0,0.12);
+  margin: 24px 0;
+}
+
+/* Mobile: visually associate divider with categories instead */
+@media (max-width: 900px){
+
+  /* Pull divider upward so it sits under categories */
+  #txDivider{
+    margin-top: 8px;
+    margin-bottom: 16px;
+  }
+}
+
+@media (max-width: 900px){
+  #categoryTotals{
+    margin-bottom: 4px;
+  }
+}
+
+/* =============================================================================
+   Section Divider (used everywhere)
+   ============================================================================= */
+
+.section-divider{
+  border: none;
+  border-top: 1px solid #e7e7e7; /* matches category-box border */
+  margin: 24px 0;
+}
+
+@media (max-width: 900px){
+  #txDivider{
+    margin-top: 8px;
+    margin-bottom: 16px;
+  }
+}
+
+/* =============================================================================
+   Month Buttons (Desktop)
+   ============================================================================= */
+
+#monthButtons{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  justify-content:center;
+  margin-top:12px;
+}
+
+/* the actual button style */
+.month-btn{
+  appearance:none;
+  border:1px solid rgba(0,0,0,0.14);
+  background:#fff;
+  color:#111;
+  padding:8px 12px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+  line-height:1;
+  white-space:nowrap;
+  transition: transform .08s ease, border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+
+.month-btn:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  border-color: rgba(0,0,0,0.22);
+}
+
+.month-btn.active{
+  background:#111;
+  color:#fff;
+  border-color:#111;
+  box-shadow:none;
+  transform:none;
+}
+
+/* optional: make Annual stand out slightly */
+.month-btn.is-annual{
+  font-weight:800;
+}
+
+/* =============================================================================
+   Transactions Table -> make it look like tx-row cards
+   ============================================================================= */
+
+.transactions-table-wrap{
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* remove classic table look */
+.transactions-table{
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 8px; /* space between "card rows" */
+  min-width: 520px;
+}
+
+.transactions-table thead th{
+  text-align: left;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .8;
+  padding: 0 10px 6px;
+  border: none;
+  background: transparent;
+}
+
+.transactions-table tbody td{
+  padding: 12px 14px;
+  border-top: 1px solid rgba(0,0,0,0.10);
+  border-bottom: 1px solid rgba(0,0,0,0.10);
+  background: #fff;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+/* rounded “card” edges per row */
+.transactions-table tbody tr td:first-child{
+  border-left: 1px solid rgba(0,0,0,0.10);
+  border-top-left-radius: 14px;
+  border-bottom-left-radius: 14px;
+}
+.transactions-table tbody tr td:last-child{
+  border-right: 1px solid rgba(0,0,0,0.10);
+  border-top-right-radius: 14px;
+  border-bottom-right-radius: 14px;
+}
+
+.transactions-table .col-amount{
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.transactions-table .col-posted{
+  white-space: nowrap;
+  font-weight: 800;
+  opacity: .85;
+}
+.transactions-table .col-desc{
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
+/* mobile tightening similar to tx-row */
+@media (max-width: 900px){
+  .transactions-table{
+    min-width: 640px;
+  }
+  .transactions-table tbody td{
+    padding: 8px 10px;
+  }
+  .transactions-table .col-desc{
+    max-width: 260px;
+  }
+}
+
+/* =============================================================================
+   ACCOUNT PAGE — MOBILE FULL WIDTH (match home page)
+   ============================================================================= */
+@media (max-width: 900px){
+
+  body.page-account{
+    padding: 0;
+  }
+
+  body.page-account .page-container{
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0 6px; /* edge-to-edge like home */
+  }
+}
+
+/* Account page: buttons on desktop, dropdown on mobile */
+#aButtons { display: flex; }
+#aSelectWrap { display: none; }
+
+@media (max-width: 900px){
+  #aButtons { display: none !important; }
+  #aSelectWrap { display: flex !important; justify-content: center; }
+
+  #aMonthSelect{
+    width: 100%;
+    max-width: 320px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.2);
+    font-size: 14px;
+    font-weight: 600;
+    background: #fff;
+  }
+}
+
+/* =============================================================================
+   CATEGORY PAGE LAYOUT (sidebar + main)
+   ============================================================================= */
+
+.cat-layout{
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 14px;
+}
+
+.cat-sidebar{
+  width: 320px;
+  flex: 0 0 320px;
+  border: 1px solid #e7e7e7;
+  border-radius: 16px;
+  background: #fff;
+  padding: 14px;
+}
+
+.cat-sidebar__title{
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.cat-main{
+  flex: 1;
+  min-width: 0;
+}
+
+/* Stack on mobile */
+@media (max-width: 900px){
+  .cat-layout{
+    flex-direction: column;
+  }
+  .cat-sidebar{
+    width: 100%;
+    flex: 0 0 auto;
+  }
+}
+
+/* =============================================================================
+   PERIOD BUTTONS (category page)
+   ============================================================================= */
+
+.period-bar{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.period-btn{
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.14);
+  background: #fff;
+  color: #111;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.period-btn.active{
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+/* =============================================================================
+   CATEGORY SIDEBAR TABLE (lifetime list)
+   ============================================================================= */
+
+.cat-side-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cat-side-table thead th{
+  text-align: left;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .7;
+  padding: 8px 6px;
+  border-bottom: 1px solid #e7e7e7;
+}
+
+.cat-side-table tbody td{
+  padding: 10px 6px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.cat-side-row{
+  cursor: pointer;
+}
+
+.cat-side-row:hover td{
+  background: #fafafa;
+}
+
+.cat-side-row.active td{
+  background: #111;
+  color: #fff;
+}
+
+/* =============================================================================
+   CATEGORY TRANSACTIONS TABLE (right side)
+   ============================================================================= */
+
+#catTable{
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+#catTable thead th{
+  text-align: left;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .7;
+  padding: 10px 8px;
+  border-bottom: 1px solid #e7e7e7;
+  background: #fafafa;
+}
+
+#catTable tbody td{
+  padding: 10px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+/* mobile: allow horizontal scroll instead of wrecking layout */
+@media (max-width: 900px){
+  #catTable{
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* =============================================================================
+   CATEGORIES PAGE — MOBILE FULL WIDTH
+   ============================================================================= */
+@media (max-width: 900px){
+
+  body.page-categories{
+    padding: 0;
+  }
+
+  body.page-categories .page-container{
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0 6px; /* same as home + account */
+  }
+}
+
+/* =============================================================================
+   GLOBAL — MOBILE FULL WIDTH (ALL PAGES)
+   ============================================================================= */
+@media (max-width: 900px){
+  body{
+    padding: 0 !important;
+  }
+  .page-container{
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 6px !important;
+  }
+}
+
+/* =============================================================================
+   Global Back Button (top-right, consistent)
+   ============================================================================= */
+
+.page-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.back-btn{
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.14);
+  background: #fff;
+  color: #111;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  text-decoration: none;      /* removes link underline */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition:
+    background .12s ease,
+    border-color .12s ease,
+    box-shadow .12s ease,
+    transform .08s ease;
+}
+
+.back-btn:hover{
+  background: #f7f7f7;
+  border-color: rgba(0,0,0,0.22);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+
+.back-btn:active{
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.back-btn::before{
+  content: "←";
+  font-size: 14px;
+}
+
+@media (max-width: 900px){
+  .back-btn{
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+}
+
+/* =============================================================================
+   Mobile Bottom Tabs (always visible)
+   ============================================================================= */
+
+.mobile-tabs{
+  display: none; /* default hidden on desktop */
+}
+
+@media (max-width: 900px){
+  /* Always keep space so tabs don't cover content */
+  body{
+    padding-bottom: 74px; /* room for tab bar */
+  }
+
+ .mobile-tabs{
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: env(safe-area-inset-bottom); /* sit ABOVE home indicator */
+    height: 64px;
+    background: #fff;
+    border-top: 1px solid rgba(0,0,0,0.12);
+    z-index: 9999;
+    padding: 8px 10px; /* REMOVE safe-area from padding */
+    gap: 10px;
+  }
+
+  .mobile-tab{
+    flex: 1;
+    border: 1px solid rgba(0,0,0,0.14);
+    background: #fff;
+    color: #111;
+    border-radius: 14px;
+    font-weight: 800;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+  }
+
+  .mobile-tab:active{
+    transform: translateY(1px);
+  }
+
+  .mobile-tab.active{
+    background: #111;
+    color: #fff;
+    border-color: #111;
+  }
+
+  .mobile-tab .tab-ico{
+    font-size: 16px;
+    line-height: 1;
+  }
+}
+
+/* =========================
+   Bottom Tabs (Mobile + Desktop)
+   ========================= */
+
+.mobile-tabs{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid #ddd;
+  z-index: 1000;
+}
+
+.mobile-tab{
+  flex: 1;
+  padding: 10px 0;
+  text-align: center;
+  text-decoration: none;
+  color: #444;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.mobile-tab .tab-ico{
+  font-size: 18px;
+  line-height: 1;
+}
+
+.mobile-tab.active{
+  font-weight: 700;
+}
+
+/* Give the page room so content doesn't hide behind tabs */
+.page-container{
+  padding-bottom: 80px;
+}
+
+/* =========================
+   Desktop "Dock" treatment
+   ========================= */
+@media (min-width: 900px){
+  .mobile-tabs{
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    bottom: 18px;
+
+    width: min(560px, calc(100% - 40px));
+    border: 1px solid #e6e6e6;
+    border-radius: 18px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+    overflow: hidden; /* keeps rounded corners clean */
+  }
+
+  .mobile-tab{
+    padding: 12px 0;
+    font-size: 13px;
+  }
+
+  .mobile-tab:hover{
+    background: rgba(0,0,0,0.04);
+  }
+
+  .mobile-tab.active{
+    background: rgba(0,0,0,0.06);
+  }
+
+  /* more breathing room on desktop */
+  .page-container{
+    padding-bottom: 120px;
+  }
+}
+
+@media (min-width: 900px){
+  .mobile-tab .tab-ico{ font-size: 16px; }
+}
+
