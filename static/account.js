@@ -1,5 +1,8 @@
 let chart = null;
 
+const TX_MODE = window.TX_MODE || "prod";
+
+
 function qs(name){
   return new URLSearchParams(window.location.search).get(name);
 }
@@ -16,18 +19,26 @@ function firstDayOfMonth(y,m){ return new Date(y,m,1); }
 function lastDayOfMonth(y,m){ return new Date(y,m+1,0); }
 
 async function loadAccountHeader(accountId){
+  // ✅ In test mode, keep the hardcoded header in transactions_test_account.html
+  if (TX_MODE === "test") return;
+
   const res = await fetch(`/account/${accountId}`);
   const a = await res.json();
   document.getElementById("accountTitle").textContent = `${a.institution} — ${a.name}`;
   document.getElementById("accountMeta").textContent = `Type: ${a.accountType}`;
 }
 
+
 async function loadAccountChart(accountId){
   const start = document.getElementById("a-start").value;
   const end   = document.getElementById("a-end").value;
   if (!start || !end) return;
 
-  const res = await fetch(`/account-series?account_id=${accountId}&start=${start}&end=${end}`);
+
+    const seriesUrl = TX_MODE === "test" ? "/transactions-test-series" : "/account-series";
+    const res = await fetch(`${seriesUrl}?account_id=${accountId}&start=${start}&end=${end}`);
+
+
   const data = await res.json();
 
   const labels = data.map(d => formatMMMdd(d.date));
@@ -60,18 +71,30 @@ function shortDate(mmddyyOrIso) {
 }
 
 async function loadAccountTransactions(accountId){
-  const res = await fetch(`/account-transactions?account_id=${accountId}&limit=200`, {
-    cache: "no-store"
-  });
+  const start = document.getElementById("a-start").value;
+  const end   = document.getElementById("a-end").value;
+  if (!start || !end) return;
+
+  const baseUrl =
+  TX_MODE === "test"
+    ? "/transactions-test-range"
+    : "/account-transactions-range";
+
+    const res = await fetch(
+      `${baseUrl}?account_id=${accountId}&start=${start}&end=${end}&limit=500`,
+      { cache: "no-store" }
+    );
+
 
   if (!res.ok) {
-    console.error("account-transactions failed:", res.status);
+    console.error("account-transactions-range failed:", res.status);
     const list = document.getElementById("txList");
     if (list) list.innerHTML = `<div style="padding:10px;">Failed to load (${res.status}).</div>`;
     return;
   }
 
-  const data = await res.json();
+  const payload = await res.json();
+  const data = payload.transactions || [];
 
   const list = document.getElementById("txList");
   if (!list) return;
@@ -79,7 +102,7 @@ async function loadAccountTransactions(accountId){
   list.innerHTML = "";
 
   if (!Array.isArray(data) || data.length === 0) {
-    list.innerHTML = `<div style="padding:10px;">No transactions found.</div>`;
+    list.innerHTML = `<div style="padding:10px;">No transactions found in this range.</div>`;
     return;
   }
 
@@ -88,20 +111,20 @@ async function loadAccountTransactions(accountId){
     wrap.className = "tx-row";
 
     wrap.innerHTML = `
-      <div class="tx-date">${shortDate(row.postedDate)}</div>
+      <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
       <div class="tx-main">
         <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
         <div class="tx-sub"></div>
       </div>
-      <div class="tx-amt">${money(row.amount)}</div>
+      <div class="tx-right">
+        <div class="tx-amt">${money(row.amount)}</div>
+        <div class="tx-bal">${money(row.balance_after)}</div>
+      </div>
     `;
 
     list.appendChild(wrap);
   });
 }
-
-
-
 
 function setActiveQuickButton(container, btn){
   container.querySelectorAll(".month-btn").forEach(b => b.classList.remove("active"));

@@ -7,6 +7,13 @@ from datetime import datetime
 # Shared helper (ONE place to change print/labels/insert behavior)
 # =============================================================================
 
+NAVY_DEBIT_ID = 3
+NAVY_CASHREWARDS_ID = 6
+AMEX_PLATINUM_ID = 2
+CAPONE_DEBIT_ID = 4
+CAPONE_SAVOR_ID = 5
+DISCOVER_IT_ID = 7
+
 
 def finalize_transaction(
     mail,
@@ -22,7 +29,7 @@ def finalize_transaction(
     accountType: str,
     source: str = "email",
     labels_add=(),
-    labels_remove=(r"(\Inbox)",),
+    labels_remove=(r"\Inbox \Important",),
 ):
     # ---- print ----
     print("Cost:", cost)
@@ -36,7 +43,8 @@ def finalize_transaction(
         mail.store(msg_id_str, "+X-GM-LABELS", f"({lab})")
 
     for lab in labels_remove:
-        mail.store(msg_id_str, "-X-GM-LABELS", lab)
+        typ, resp = mail.store(msg_id_str, "-X-GM-LABELS", f"({lab})")
+        print("REMOVE LABEL:", lab, "->", typ, resp)
 
     # Always mark processed here (single place to change)
     mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
@@ -54,16 +62,27 @@ def navyFedCard(mail, msg_id_str, match, timeEmail):
     time = match.group(4)
     date = match.group(5)
 
-    key = makeKey(cost, date)
-    checkKey(key)
-
     card_kind = match.group(2)
     if card_kind == "credit":
         card = "cashRewards"
         accountType = "credit"
+        account_id = NAVY_CASHREWARDS_ID
     else:
         card = "Debit"
         accountType = "checking"
+        account_id = NAVY_DEBIT_ID
+
+    # default key from this email's date
+    key = makeKey(cost, date, account_id=account_id)
+
+    # try fuzzy match against stored withdrawal keys (same amount, same time, date +/- 1 day)
+    matched_key = find_matching_key(cost, date, time, account_id=account_id)
+
+    if matched_key:
+        checkKey(mail, matched_key)
+        key = matched_key
+    else:
+        checkKey(mail, key)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -78,8 +97,8 @@ def navyFedWithdrawal(mail, msg_id_str, match, timeEmail):
     date = match.group(2)
     time = match.group(3)
 
-    key = makeKey(cost, date)
-    add_key(key, cost, date, time)
+    key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
+    add_key(key, cost, date, time, msg_id_str)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -94,7 +113,12 @@ def navyFedDeposit(mail, msg_id_str, match, timeEmail):
     date = match.group(2)
     time = match.group(3)
 
-    key = makeKey(cost, date)
+    # ✅ Force deposits to be negative
+    # cost is like "$1,234.56"
+    amt = float(cost.replace("$", "").replace(",", ""))
+    cost = f"-{amt:.2f}"   # "-1234.56"
+
+    key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -110,7 +134,7 @@ def navyFedCreditHold(mail, msg_id_str, match, timeEmail):
     date = match.group(3)
     cost = "unknown"
 
-    key = makeKey(cost, date)
+    key = makeKey(cost, date, account_id=NAVY_CASHREWARDS_ID)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -127,7 +151,7 @@ def americanExpress(mail, msg_id_str, match, timeEmail):
     date = match.group(3)
     date = datetime.strptime(date, "%a, %b %d, %Y").strftime("%m/%d/%y")
 
-    key = makeKey(cost, date)
+    key = makeKey(cost, date, account_id=AMEX_PLATINUM_ID)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -144,7 +168,7 @@ def capitalOneDebit(mail, msg_id_str, match, timeEmail):
     date = match.group(3)
     date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
 
-    key = makeKey(cost, date)
+    key = makeKey(cost, date, account_id=CAPONE_DEBIT_ID)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -161,7 +185,7 @@ def capitalOneCredit(mail, msg_id_str, match, timeEmail):
     date = match.group(1)
     date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
 
-    key = makeKey(cost, date)
+    key = makeKey(cost, date, account_id=CAPONE_SAVOR_ID)
 
     finalize_transaction(
         mail, msg_id_str,
@@ -178,7 +202,7 @@ def discovery(mail, msg_id_str, match, timeEmail):
     date = match.group(1)
     date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
 
-    key = makeKey(cost, date)
+    key = makeKey(cost, date, account_id=DISCOVER_IT_ID)
 
     finalize_transaction(
         mail, msg_id_str,

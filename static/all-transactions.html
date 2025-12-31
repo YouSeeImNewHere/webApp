@@ -44,14 +44,23 @@
   </div>
 
   <!-- Bottom tabs -->
-  <nav class="mobile-tabs" aria-label="Bottom Tabs">
-    <a class="mobile-tab" href="/" id="tabHome">
-      <span class="tab-ico">🏠</span><span>Home</span>
-    </a>
-    <a class="mobile-tab active" href="/static/all-transactions.html" id="tabAllTx">
-      <span class="tab-ico">🔎</span><span>All</span>
-    </a>
-  </nav>
+<nav class="mobile-tabs" aria-label="Bottom Tabs">
+  <a class="mobile-tab" href="/" id="tabHome">
+    <span class="tab-ico">🏠</span>
+    <span>Home</span>
+  </a>
+
+  <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
+    <span class="tab-ico">🔎</span>
+    <span>All</span>
+  </a>
+
+  <a class="mobile-tab" href="/static/recurring.html" id="tabRecurring">
+    <span class="tab-ico">🔁</span>
+    <span>Recurring</span>
+  </a>
+</nav>
+
 <script>
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/static/sw.js").catch(console.error);

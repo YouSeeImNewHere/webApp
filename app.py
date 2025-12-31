@@ -91,7 +91,7 @@ def apply_transaction(current_totals, account_id, amount, account_type):
     t = (account_type or "other").lower()
     amt = float(amount or 0)
 
-    if t in ("savings", "investment"):
+    if t in ("investment"):
         # contributions increase net worth
         delta = amt
     else:
@@ -140,10 +140,17 @@ def load_transactions(cur):
         if tx_date is None:
             continue
 
+        amt_raw = r["amount"]
+        try:
+            amt = float(amt_raw)
+        except (TypeError, ValueError):
+            # skip junk like "unknown", "", None
+            continue
+
         tx.append({
             "date": tx_date,
             "account_id": int(r["account_id"]),
-            "amount": float(r["amount"] or 0),
+            "amount": amt,
             "accountType": r["accountType"] or "other",
         })
 
@@ -180,6 +187,14 @@ def build_series(start_date, end_date, starting, transactions, value_fn):
     return results
 
 
+from recurring import get_recurring  # new file you created
+
+@app.get("/recurring")
+def recurring(min_occ: int = 3):
+    return get_recurring(min_occ=min_occ)
+
+
+
 # =============================================================================
 # Series Endpoints (Net Worth / Savings / Investments)
 # =============================================================================
@@ -193,16 +208,56 @@ def net_worth(start: str, end: str):
 
     starting = load_starting_balances(cur)
     transactions = load_transactions(cur)
+    acct_types = load_account_type_map(cur)
 
     conn.close()
 
-    return build_series(
-        start_date,
-        end_date,
-        starting,
-        transactions,
-        value_fn=lambda totals: sum(totals.values())
-    )
+    current_totals = starting.copy()
+    results = []
+    tx_index = 0
+
+    # A) roll forward before start_date
+    while tx_index < len(transactions) and transactions[tx_index]["date"] < start_date:
+        t = transactions[tx_index]
+        apply_transaction(current_totals, t["account_id"], t["amount"], t["accountType"])
+        tx_index += 1
+
+    # B) day-by-day
+    day = start_date
+    while day <= end_date:
+        while tx_index < len(transactions) and transactions[tx_index]["date"] == day:
+            t = transactions[tx_index]
+            apply_transaction(current_totals, t["account_id"], t["amount"], t["accountType"])
+            tx_index += 1
+
+        banks = 0.0
+        savings = 0.0
+        cards_abs = 0.0
+
+        for aid, bal in current_totals.items():
+            t = (acct_types.get(aid) or "other").lower()
+            if t == "savings":
+                savings += bal
+            elif t == "credit":
+                # balances are negative for debt, but we want a positive card-balance number here
+                cards_abs += abs(bal)
+            else:
+                # checking + investment + other => "banks"
+                banks += bal
+
+        net = banks + savings - cards_abs
+
+        results.append({
+            "date": day.isoformat(),
+            "value": float(net),
+            "banks": float(banks),
+            "savings": float(savings),
+            "cards": float(cards_abs),
+        })
+
+        day += timedelta(days=1)
+
+    return results
 
 
 @app.get("/savings")
@@ -365,10 +420,7 @@ def bank_totals():
 
       # savings/investment: start + trans
       # everything else (checking/credit): start - trans
-      if acc_type in ("savings", "investment"):
-        balance = start + trans
-      else:
-        balance = start - trans
+      balance = start - trans
 
       bucket = acc_type if acc_type in by_type else "other"
       display_name = f'{a["institution"]} — {a["name"]}'
@@ -538,37 +590,96 @@ date(
 
 
 @app.get("/unassigned")
-def get_unassigned(limit: int = 25):
+def get_unassigned(limit: int = 25, mode: str = "freq"):
+    """
+    mode:
+      - "freq"   => most frequent unassigned merchants
+      - "recent" => most recent unassigned transactions
+    """
+    mode = (mode or "freq").strip().lower()
     conn, cur = with_db_cursor()
 
+    if mode == "recent":
+        rows = cur.execute("""
+          WITH tx AS (
+  SELECT
+    t.id,
+    COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+    t.merchant,
+    t.amount,
+    a.institution AS bank,
+    a.name        AS card,
+
+    CASE
+      WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
+        date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 2) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+      WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
+        date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 4) || '-' ||
+             substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+             substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+      ELSE NULL
+    END AS d
+  FROM transactions t
+  JOIN accounts a ON a.id = t.account_id
+  WHERE (t.category IS NULL OR TRIM(t.category) = '')
+    AND t.merchant IS NOT NULL
+    AND TRIM(t.merchant) <> ''
+    AND LOWER(TRIM(t.merchant)) <> 'unknown'
+)
+SELECT id, raw_date AS postedDate, merchant, amount, bank, card
+FROM tx
+ORDER BY d DESC, id DESC
+LIMIT ?
+
+        """, (limit,)).fetchall()
+
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # default: freq
     rows = cur.execute("""
-      WITH tx AS (
-        SELECT
-          id,
-          COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date,
-          merchant,
-          amount,
-          CASE
-            WHEN length(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown'))) = 8 THEN
-              date('20' || substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 7, 2) || '-' ||
-                         substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 1, 2) || '-' ||
-                         substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 4, 2))
-            WHEN length(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown'))) = 10 THEN
-              date(substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 7, 4) || '-' ||
-                   substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 1, 2) || '-' ||
-                   substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 4, 2))
-            ELSE NULL
-          END AS d
-        FROM transactions
-        WHERE (category IS NULL OR TRIM(category) = '')
-          AND merchant IS NOT NULL
-          AND TRIM(merchant) <> ''
-          AND LOWER(TRIM(merchant)) <> 'unknown'
-      )
-      SELECT id, raw_date AS postedDate, merchant, amount
-      FROM tx
-      ORDER BY d DESC, id DESC
-      LIMIT ?
+      WITH ranked AS (
+  SELECT
+    t.id,
+    t.merchant,
+    t.amount,
+    a.institution AS bank,
+    a.name        AS card,
+    COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+    COUNT(*) OVER (PARTITION BY t.merchant) AS usage_count,
+
+    CASE
+      WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
+        date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 2) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+      WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
+        date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 4) || '-' ||
+             substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+             substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+      ELSE NULL
+    END AS d
+  FROM transactions t
+  JOIN accounts a ON a.id = t.account_id
+  WHERE (t.category IS NULL OR TRIM(t.category) = '')
+    AND t.merchant IS NOT NULL
+    AND TRIM(t.merchant) <> ''
+    AND LOWER(TRIM(t.merchant)) <> 'unknown'
+)
+SELECT
+  id,
+  raw_date AS postedDate,
+  merchant,
+  amount,
+  bank,
+  card,
+  usage_count
+FROM ranked
+ORDER BY usage_count DESC, d DESC, id DESC
+LIMIT ?
+
     """, (limit,)).fetchall()
 
     conn.close()
@@ -644,6 +755,7 @@ def category_trend(category: str, period: str = "1m"):
 
     return {"category": category, "period": period, "series": filtered}
 
+
 @app.get("/category-transactions")
 def category_transactions(category: str, limit: int = 500):
     sql = """
@@ -674,6 +786,7 @@ def category_transactions(category: str, limit: int = 500):
       LIMIT ?
     """
     return query_db(sql, (category, limit))
+
 
 @app.get("/category-totals-lifetime")
 def category_totals_lifetime():
@@ -755,9 +868,15 @@ def account_series(account_id: int, start: str, end: str):
         if tx_date is None:
             continue
 
+        amt_raw = r["amount"]
+        try:
+            amt = float(amt_raw)
+        except (TypeError, ValueError):
+            continue
+
         tx.append({
             "date": tx_date,
-            "amount": float(r["amount"] or 0.0),
+            "amount": amt,
         })
 
     tx.sort(key=lambda x: x["date"])
@@ -765,12 +884,14 @@ def account_series(account_id: int, start: str, end: str):
     i = 0
 
     # A) roll forward transactions BEFORE the start date
+    # A) roll forward transactions BEFORE the start date
     while i < len(tx) and tx[i]["date"] < start_date:
         amt = tx[i]["amount"]
-        if acc_type in ("savings", "investment"):
+        if acc_type == "investment":
             bal += amt
         else:
             bal -= amt
+
         i += 1
 
     # B) day-by-day series
@@ -779,16 +900,159 @@ def account_series(account_id: int, start: str, end: str):
     while day <= end_date:
         while i < len(tx) and tx[i]["date"] == day:
             amt = tx[i]["amount"]
-            if acc_type in ("savings", "investment"):
+            if acc_type == "investment":
                 bal += amt
             else:
                 bal -= amt
+
             i += 1
 
-        results.append({"date": day.isoformat(), "value": float(bal)})
+        display_val = abs(bal) if acc_type == "credit" else bal
+        results.append({"date": day.isoformat(), "value": float(display_val)})
+
         day += timedelta(days=1)
 
     return results
+
+
+@app.get("/account-transactions-range")
+def account_transactions_range(account_id: int, start: str, end: str, limit: int = 500):
+    conn, cur = with_db_cursor()
+
+    start_date = parse_iso(start).isoformat()
+    end_date   = parse_iso(end).isoformat()
+
+    # account type
+    row = cur.execute(
+        "SELECT LOWER(accountType) AS t FROM accounts WHERE id = ?",
+        (account_id,)
+    ).fetchone()
+    acc_type = (row["t"] if row else "other") or "other"
+
+    # sign rule consistent with your series logic:
+    # savings/investment: balance += amount
+    # checking/credit/etc: balance -= amount
+    sign = 1 if acc_type == "investment" else -1
+
+    # starting balance from table
+    row = cur.execute("""
+        SELECT COALESCE(SUM(Start), 0) AS s
+        FROM StartingBalance
+        WHERE account_id = ?
+    """, (account_id,)).fetchone()
+    start_bal = float(row["s"] or 0.0)
+
+    # roll forward all transactions BEFORE start_date
+    row = cur.execute("""
+      WITH base AS (
+        SELECT
+          COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date,
+          amount
+        FROM transactions
+        WHERE account_id = ?
+      ),
+      norm AS (
+        SELECT
+          amount,
+          CASE
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
+              date('20' || substr(raw_date, 7, 2) || '-' ||
+                         substr(raw_date, 1, 2) || '-' ||
+                         substr(raw_date, 4, 2))
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
+              date(substr(raw_date, 7, 4) || '-' ||
+                   substr(raw_date, 1, 2) || '-' ||
+                   substr(raw_date, 4, 2))
+            ELSE NULL
+          END AS d
+        FROM base
+      )
+      SELECT COALESCE(SUM(amount), 0) AS s
+      FROM norm
+      WHERE d IS NOT NULL AND d < ?
+    """, (account_id, start_date)).fetchone()
+
+    before_sum = float(row["s"] or 0.0)
+    starting_balance_at_range = start_bal + (sign * before_sum)
+
+    # now fetch range tx and compute running balance inside range
+    rows = cur.execute("""
+      WITH base AS (
+        SELECT
+          id,
+          merchant,
+          amount,
+          COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date
+        FROM transactions
+        WHERE account_id = ?
+      ),
+      norm AS (
+        SELECT
+          id,
+          merchant,
+          amount,
+          raw_date,
+          CASE
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
+              date('20' || substr(raw_date, 7, 2) || '-' ||
+                         substr(raw_date, 1, 2) || '-' ||
+                         substr(raw_date, 4, 2))
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
+              date(substr(raw_date, 7, 4) || '-' ||
+                   substr(raw_date, 1, 2) || '-' ||
+                   substr(raw_date, 4, 2))
+            ELSE NULL
+          END AS d
+        FROM base
+      ),
+      in_range AS (
+        SELECT *
+        FROM norm
+        WHERE d IS NOT NULL AND d BETWEEN ? AND ?
+        ORDER BY d ASC, id ASC
+        LIMIT ?
+      ),
+      with_running AS (
+      SELECT
+        id,
+        merchant,
+        amount,
+        raw_date AS effectiveDate,   -- posted if known else purchase
+        d AS dateISO,
+          SUM(amount) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
+        FROM in_range
+      )
+      SELECT
+        id,
+        effectiveDate,
+        dateISO,
+        merchant,
+        amount,
+        (? + (? * running_sum)) AS balance_after
+      FROM with_running
+      ORDER BY dateISO DESC, id DESC
+    """, (account_id, start_date, end_date, limit, starting_balance_at_range, sign)).fetchall()
+
+    conn.close()
+
+    tx = [dict(r) for r in rows]
+    ending_balance = float(tx[0]["balance_after"]) if tx else float(starting_balance_at_range)
+
+    # ---- DISPLAY NORMALIZATION (credit shows positive debt) ----
+    if acc_type == "credit":
+        starting_balance_at_range = abs(float(starting_balance_at_range))
+        ending_balance = abs(float(ending_balance))
+        for r in tx:
+            r["balance_after"] = abs(float(r["balance_after"]))
+
+    return {
+        "account_id": account_id,
+        "start": start_date,
+        "end": end_date,
+        "starting_balance": float(starting_balance_at_range),
+        "ending_balance": float(ending_balance),
+        "transactions": tx
+    }
 
 
 @app.get("/transactions-all")
@@ -797,11 +1061,15 @@ def transactions_all(limit: int = 10000, offset: int = 0):
       WITH base AS (
         SELECT
           t.*,
+          a.institution AS bank,
+          a.name        AS card,
+          LOWER(a.accountType) AS accountType,
           COALESCE(
             NULLIF(t.postedDate,'unknown'),
             NULLIF(t.purchaseDate,'unknown')
           ) AS raw_date
         FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
       ),
       tx AS (
         SELECT
@@ -829,3 +1097,298 @@ def transactions_all(limit: int = 10000, offset: int = 0):
       LIMIT ? OFFSET ?
     """
     return query_db(sql, (limit, offset))
+
+# TEST METHODS ------------------------------------------------------------------------------------------
+
+from fastapi import Query
+
+
+@app.get("/transactions-test")
+def transactions_test(limit: int = Query(200, ge=1, le=10000), offset: int = Query(0, ge=0)):
+    sql = f"""
+      WITH tx AS (
+        SELECT
+          *,
+          COALESCE(NULLIF(TRIM(postedDate),'unknown'), NULLIF(TRIM(purchaseDate),'unknown')) AS raw_date
+        FROM transactions_test
+      )
+      SELECT *
+      FROM tx
+      ORDER BY
+        CASE
+          WHEN raw_date IS NULL THEN 1
+          WHEN length(raw_date) = 8 THEN
+            date('20' || substr(raw_date,7,2) || '-' || substr(raw_date,1,2) || '-' || substr(raw_date,4,2))
+          WHEN length(raw_date) = 10 THEN
+            date(substr(raw_date,7,4) || '-' || substr(raw_date,1,2) || '-' || substr(raw_date,4,2))
+          ELSE NULL
+        END DESC,
+        id DESC
+      LIMIT ? OFFSET ?;
+    """
+    return query_db(sql, (limit, offset))
+
+
+from fastapi.responses import FileResponse
+
+
+@app.get("/transactions-test-page")
+def transactions_test_page():
+    return FileResponse("static/transactions_test_account.html")
+
+
+@app.get("/transactions-test-account")
+def transactions_test_account_page():
+    return FileResponse("static/transactions_test_account.html")
+
+
+@app.get("/transactions-test-range")
+def transactions_test_range(account_id: int, start: str, end: str, limit: int = 500):
+    conn, cur = with_db_cursor()
+
+    start_date = parse_iso(start).isoformat()
+    end_date   = parse_iso(end).isoformat()
+
+    # account type (same as prod)
+    row = cur.execute(
+        "SELECT LOWER(accountType) AS t FROM accounts WHERE id = ?",
+        (account_id,)
+    ).fetchone()
+    acc_type = (row["t"] if row else "other") or "other"
+
+    # sign rule (same as prod)
+    # savings/investment: balance += amount
+    # checking/credit/etc: balance -= amount
+    sign = 1 if acc_type == "investment" else -1
+
+
+    # starting balance from table (same as prod)
+    row = cur.execute("""
+        SELECT COALESCE(SUM(Start), 0) AS s
+        FROM StartingBalance
+        WHERE account_id = ?
+    """, (account_id,)).fetchone()
+    start_bal = float(row["s"] or 0.0)
+
+    # roll forward all transactions BEFORE start_date (but from transactions_test)
+    row = cur.execute("""
+      WITH base AS (
+        SELECT
+          COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date,
+          amount
+        FROM transactions_test
+        WHERE account_id = ?
+      ),
+      norm AS (
+        SELECT
+          amount,
+          CASE
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
+              date('20' || substr(raw_date, 7, 2) || '-' ||
+                         substr(raw_date, 1, 2) || '-' ||
+                         substr(raw_date, 4, 2))
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
+              date(substr(raw_date, 7, 4) || '-' ||
+                   substr(raw_date, 1, 2) || '-' ||
+                   substr(raw_date, 4, 2))
+            ELSE NULL
+          END AS d
+        FROM base
+      )
+      SELECT COALESCE(SUM(amount), 0) AS s
+      FROM norm
+      WHERE d IS NOT NULL AND d < ?
+    """, (account_id, start_date)).fetchone()
+
+    before_sum = float(row["s"] or 0.0)
+    starting_balance_at_range = start_bal + (sign * before_sum)
+
+    # now fetch range tx and compute running balance inside range (from transactions_test)
+    rows = cur.execute("""
+      WITH base AS (
+        SELECT
+          id,
+          merchant,
+          amount,
+          COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date
+        FROM transactions_test
+        WHERE account_id = ?
+      ),
+      norm AS (
+        SELECT
+          id,
+          merchant,
+          amount,
+          raw_date,
+          CASE
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
+              date('20' || substr(raw_date, 7, 2) || '-' ||
+                         substr(raw_date, 1, 2) || '-' ||
+                         substr(raw_date, 4, 2))
+            WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
+              date(substr(raw_date, 7, 4) || '-' ||
+                   substr(raw_date, 1, 2) || '-' ||
+                   substr(raw_date, 4, 2))
+            ELSE NULL
+          END AS d
+        FROM base
+      ),
+      in_range AS (
+        SELECT *
+        FROM norm
+        WHERE d IS NOT NULL AND d BETWEEN ? AND ?
+        ORDER BY d ASC, id ASC
+        LIMIT ?
+      ),
+      with_running AS (
+        SELECT
+          id,
+          merchant,
+          amount,
+          raw_date AS effectiveDate,
+            d AS dateISO,
+          SUM(amount) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
+        FROM in_range
+      )
+      SELECT
+        id,
+        effectiveDate,
+        dateISO,
+        merchant,
+        amount,
+        (? + (? * running_sum)) AS balance_after
+      FROM with_running
+      ORDER BY dateISO DESC, id DESC
+    """, (account_id, start_date, end_date, limit, starting_balance_at_range, sign)).fetchall()
+
+    conn.close()
+
+    tx = [dict(r) for r in rows]
+    ending_balance = float(tx[0]["balance_after"]) if tx else float(starting_balance_at_range)
+
+    # ---- DISPLAY NORMALIZATION (credit shows positive debt) ----
+    if acc_type == "credit":
+        starting_balance_at_range = abs(float(starting_balance_at_range))
+        ending_balance = abs(float(ending_balance))
+        for r in tx:
+            r["balance_after"] = abs(float(r["balance_after"]))
+
+    return {
+        "account_id": account_id,
+        "start": start_date,
+        "end": end_date,
+        "starting_balance": float(starting_balance_at_range),
+        "ending_balance": float(ending_balance),
+        "transactions": tx
+    }
+
+
+@app.get("/transactions-test-series")
+def transactions_test_series(account_id: int, start: str, end: str):
+    conn, cur = with_db_cursor()
+
+    start_date = parse_iso(start)
+    end_date = parse_iso(end)
+
+    # starting balance for this account (same as /account-series)
+    cur.execute("""
+      SELECT SUM(Start) AS s
+      FROM StartingBalance
+      WHERE account_id = ?
+    """, (account_id,))
+    bal = float(cur.fetchone()["s"] or 0.0)
+
+    # account type (same as /account-series)
+    cur.execute("SELECT LOWER(accountType) AS t FROM accounts WHERE id = ?", (account_id,))
+    row = cur.fetchone()
+    acc_type = (row["t"] if row else "other") or "other"
+
+    # pull both postedDate and purchaseDate (BUT from transactions_test)
+    rows = cur.execute("""
+      SELECT postedDate, purchaseDate, amount
+      FROM transactions_test
+      WHERE account_id = ?
+    """, (account_id,)).fetchall()
+
+    conn.close()
+
+    tx = []
+    for r in rows:
+        posted = parse_posted_date(r["postedDate"])
+        purchase = parse_posted_date(r["purchaseDate"])
+        tx_date = posted if posted is not None else purchase
+        if tx_date is None:
+            continue
+        amt_raw = r["amount"]
+        try:
+            amt = float(amt_raw)
+        except (TypeError, ValueError):
+            continue
+        tx.append({"date": tx_date, "amount": amt})
+
+    tx.sort(key=lambda x: x["date"])
+
+    i = 0
+
+    # A) roll forward transactions BEFORE the start date
+    while i < len(tx) and tx[i]["date"] < start_date:
+        amt = tx[i]["amount"]
+        if acc_type == "investment":
+            bal += amt
+        else:
+            bal -= amt
+
+        i += 1
+
+    # B) day-by-day series
+    results = []
+    day = start_date
+    while day <= end_date:
+        while i < len(tx) and tx[i]["date"] == day:
+            amt = tx[i]["amount"]
+            if acc_type == "investment":
+                bal += amt
+            else:
+                bal -= amt
+
+            i += 1
+
+        display_val = abs(bal) if acc_type == "credit" else bal
+        results.append({"date": day.isoformat(), "value": float(display_val)})
+
+        day += timedelta(days=1)
+
+    return results
+
+
+@app.get("/recurring/ignore")
+def get_recurring_ignores():
+    conn, cur = with_db_cursor()
+    merchants = [r[0] for r in cur.execute("SELECT merchant FROM recurring_ignore_merchants")]
+    categories = [r[0] for r in cur.execute("SELECT category FROM recurring_ignore_categories")]
+    conn.close()
+    return {"merchants": merchants, "categories": categories}
+
+
+@app.post("/recurring/ignore/merchant")
+def ignore_merchant(name: str):
+    conn, cur = with_db_cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO recurring_ignore_merchants (merchant) VALUES (?)",
+        (name.upper(),)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/recurring/ignore/category")
+def ignore_category(name: str):
+    conn, cur = with_db_cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO recurring_ignore_categories (category) VALUES (?)",
+        (name.upper(),)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}

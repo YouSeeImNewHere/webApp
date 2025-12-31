@@ -137,7 +137,37 @@ netWorthChartInstance = new Chart(ctx, {
   },
   options: {
     responsive: true,
-    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+    plugins: {
+  legend: { display: false },
+  tooltip: {
+    enabled: true,
+    callbacks: {
+      label: (ctx) => {
+        const i = ctx.dataIndex;
+        const y = ctx.parsed.y;
+
+        // Default label for Savings/Investments charts
+        if (currentChart().key !== "net") {
+          return `${currentChart().title}: ${money(y)}`;
+        }
+
+        // Net worth breakdown (from backend)
+        const p = data[i] || {};
+        const banks = Number(p.banks || 0);
+        const savings = Number(p.savings || 0);
+        const cards = Number(p.cards || 0);
+
+        return [
+          `Net Worth: ${money(y)}`,
+          `Banks: ${money(banks)}`,
+          `Savings: ${money(savings)}`,
+          `Cards: -${money(cards)}`,
+        ];
+      }
+    }
+  }
+},
+
     interaction: { mode: "index", intersect: false },
     scales: {
       x: isMobile ? {
@@ -151,6 +181,8 @@ netWorthChartInstance = new Chart(ctx, {
     }
   }
 });
+await loadNetWorthBreakdownForEndDate();
+
 }
 
 function setActiveMonthButton(btn) {
@@ -419,7 +451,11 @@ function fillModalFromTx(tx) {
   document.getElementById("ruleTxAmount").textContent = money(tx.amount);
   document.getElementById("ruleTxDate").textContent = tx.postedDate;
 
-  // 🔹 reset form inputs for new transaction
+  // ✅ ADD THIS
+  document.getElementById("ruleTxAccount").textContent =
+    `${tx.bank || ""}${tx.card ? " • " + tx.card : ""}`;
+
+  // reset form
   document.getElementById("ruleCategory").value = "";
   document.getElementById("ruleKeywords").value = "";
   document.getElementById("ruleApplyNow").checked = true;
@@ -427,8 +463,10 @@ function fillModalFromTx(tx) {
 }
 
 
+
 async function openRuleModal() {
-  const res = await fetch("/unassigned?limit=25");
+  const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+
   if (!res.ok) return alert("Failed to load unassigned.");
 
   unassignedQueue = await res.json();
@@ -477,6 +515,9 @@ async function saveRule() {
 
   // Refresh sidebar counts + bank totals if you want
   loadCategoryTotalsThisMonth();
+    // ✅ Refresh the modal queue so newly-categorized tx disappear
+  await refreshUnassignedQueueAfterSave();
+
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -676,4 +717,96 @@ function buildMonthDropdown() {
     document.getElementById("nw-end").value   = end;
     loadChart();
   });
+}
+
+let unassignedMode = localStorage.getItem("unassignedMode") || "freq";
+
+const toggleBtn = document.getElementById("unassignedToggle"); // add this button in HTML
+
+function setToggleLabel() {
+  // show what you'll switch TO
+  toggleBtn.textContent = (unassignedMode === "freq")
+    ? "Most recent ▾"
+    : "Most frequent ▾";
+}
+
+async function loadUnassigned() {
+  const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+  const rows = await res.json();
+
+  // render rows...
+  // if mode === "freq", rows include usage_count — show it if you want
+}
+
+toggleBtn.addEventListener("click", () => {
+  unassignedMode = (unassignedMode === "freq") ? "recent" : "freq";
+  localStorage.setItem("unassignedMode", unassignedMode);
+  setToggleLabel();
+  loadUnassigned();
+});
+
+// on page load
+setToggleLabel();
+loadUnassigned();
+
+
+async function fetchUnassignedQueue() {
+  const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+  if (!res.ok) throw new Error("Failed to refresh unassigned");
+  return await res.json();
+}
+
+async function refreshUnassignedQueueAfterSave() {
+  // remember what we were looking at, so we can stay near it after refresh
+  const prev = unassignedQueue[unassignedIndex];
+  const prevKey = (prev?.merchant || "").toLowerCase();
+
+  // pull fresh list
+  unassignedQueue = await fetchUnassignedQueue();
+
+  if (!unassignedQueue.length) {
+    // nothing left — keep modal open but show friendly state
+    document.getElementById("ruleTxMerchant").textContent = "No unassigned transactions 🎉";
+    const acct = document.getElementById("ruleTxAccount"); if (acct) acct.textContent = "";
+    document.getElementById("ruleTxAmount").textContent = "";
+    document.getElementById("ruleTxDate").textContent = "";
+    document.getElementById("ruleCounter").textContent = "0 / 0";
+    return;
+  }
+
+  // try to keep user near the same merchant after refresh
+  let newIndex = 0;
+  if (prevKey) {
+    const found = unassignedQueue.findIndex(x => (x.merchant || "").toLowerCase() === prevKey);
+    if (found >= 0) newIndex = found;
+  }
+
+  showUnassignedAt(newIndex);
+}
+
+function setBreakdownUI(p) {
+  const d  = document.getElementById("nwBDate");
+  const b  = document.getElementById("nwBBanks");
+  const s  = document.getElementById("nwBSavings");
+  const c  = document.getElementById("nwBCards");
+  const nw = document.getElementById("nwBNet");
+
+  if (!d || !b || !s || !c || !nw) return;
+
+  d.textContent  = p?.date ? formatMMMdd(p.date) : "—";
+  b.textContent  = money(p?.banks ?? 0);
+  s.textContent  = money(p?.savings ?? 0);
+  c.textContent  = "-" + money(p?.cards ?? 0);
+  nw.textContent = money(p?.value ?? 0);
+}
+
+async function loadNetWorthBreakdownForEndDate() {
+  const end = document.getElementById("nw-end")?.value;
+  if (!end) return;
+
+  const res = await fetch(`/net-worth?start=${end}&end=${end}`);
+  if (!res.ok) return;
+
+  const arr = await res.json();
+  setBreakdownUI(arr && arr.length ? arr[0] : null);
 }

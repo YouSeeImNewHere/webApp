@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <title>Recurring</title>
+</head>
+<body class="page-recurring">
+  <div class="page-container">
+
+    <div class="category-box">
+      <div class="category-box__header">Recurring</div>
+      <label style="display:flex; gap:6px; align-items:center;">
+        <input id="includeStale" type="checkbox">
+        Include stale
+      </label>
+      <div style="padding:12px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <label>
+            Min occurrences:
+            <input id="minOcc" type="number" value="3" min="2" max="20" style="width:70px;">
+          </label>
+          <button id="reloadRecurring" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div id="recurringList" class="tx-list"></div>
+    </div>
+
+  </div>
+
+  <!-- bottom tabs -->
+  <nav class="mobile-tabs" aria-label="Bottom Tabs">
+    <a class="mobile-tab" href="/" id="tabHome">
+      <span class="tab-ico">🏠</span><span>Home</span>
+    </a>
+
+    <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
+      <span class="tab-ico">🔎</span><span>All</span>
+    </a>
+
+    <a class="mobile-tab" href="/static/recurring.html" id="tabRecurring">
+      <span class="tab-ico">🔁</span><span>Recurring</span>
+    </a>
+  </nav>
+<script src="/static/recurring_page.js"></script>
+  <!-- modal -->
+<div id="occModal" class="occ-modal hidden">
+  <div class="occ-backdrop" onclick="closeOccModal()"></div>
+  <div class="occ-card" role="dialog" aria-modal="true">
+    <div class="occ-head">
+      <div>
+        <div id="occTitle" class="occ-title"></div>
+        <div id="occSub" class="occ-sub"></div>
+      </div>
+      <button class="occ-close" onclick="closeOccModal()">✕</button>
+    </div>
+    <div id="occBody" class="occ-body"></div>
+  </div>
+</div>
+
+  <script>
+    (function(){
+      const path = window.location.pathname;
+      const home = document.getElementById("tabHome");
+      const all  = document.getElementById("tabAllTx");
+      const rec  = document.getElementById("tabRecurring");
+
+      if (home && all && rec){
+        if (path.includes("all-transactions.html")) all.classList.add("active");
+        else if (path.includes("recurring.html")) rec.classList.add("active");
+        else home.classList.add("active");
+      }
+    })();
+  </script>
+
+  <script src="/static/recurring_page.js"></script>
+</body>
+</html>

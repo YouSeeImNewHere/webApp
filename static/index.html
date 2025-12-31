@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" href="data:,">
   <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Finance" />
@@ -33,20 +34,64 @@
         <button id="chartToggleBtn" type="button">Next: Savings ▾</button>
       </header>
 
-      <!-- Date range controls -->
-      <div style="display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap;">
-        <label>
-          Start:
-          <input type="date" id="nw-start" />
-        </label>
+      <!-- Date range controls + breakdown card -->
+<div style="display:flex; gap:12px; justify-content:center; align-items:stretch; flex-wrap:wrap; margin-top:10px;">
 
-        <label>
-          End:
-          <input type="date" id="nw-end" />
-        </label>
+  <!-- Mini breakdown card (compact) -->
+<div class="category-box"
+     style="
+       min-width:180px;
+       max-width:210px;
+       font-size:13px;
+     ">
 
-        <button id="nw-chart-btn" type="button">Update Chart</button>
-      </div>
+  <div class="category-box__header"
+       style="
+         padding:6px 10px;
+         display:flex;
+         justify-content:space-between;
+         align-items:center;
+       ">
+    <span>Breakdown</span>
+    <span id="nwBDate" style="opacity:.65; font-weight:600;">—</span>
+  </div>
+
+  <div style="padding:8px 10px; display:grid; gap:4px;">
+    <div style="display:flex; justify-content:space-between;">
+      <span>Banks</span><strong id="nwBBanks">—</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between;">
+      <span>Savings</span><strong id="nwBSavings">—</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between;">
+      <span>Cards</span><strong id="nwBCards">—</strong>
+    </div>
+
+    <div style="border-top:1px solid #eee; margin:3px 0;"></div>
+
+    <div style="display:flex; justify-content:space-between;">
+      <span>Net</span><strong id="nwBNet">—</strong>
+    </div>
+  </div>
+</div>
+
+
+  <!-- Existing controls (right) -->
+  <div style="display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap;">
+    <label>
+      Start:
+      <input type="date" id="nw-start" />
+    </label>
+
+    <label>
+      End:
+      <input type="date" id="nw-end" />
+    </label>
+
+    <button id="nw-chart-btn" type="button">Update Chart</button>
+  </div>
+
+</div>
 
       <!-- Chart canvas -->
       <div style="margin-top: 12px;">
@@ -76,6 +121,8 @@
 
       <!-- Monthly Spending (sidebar) -->
       <aside id="categoryTotals" class="category-box category-box--sidebar">
+
+
         <div class="category-box__header">Monthly Spending</div>
         <ul id="categoryTotalsList" class="category-box__list"></ul>
       </aside>
@@ -136,6 +183,7 @@
       <!-- Transaction preview -->
       <div style="margin-top:12px; border:1px solid #eee; border-radius:12px; padding:12px;">
         <div><strong>Description:</strong> <span id="ruleTxMerchant">—</span></div>
+        <div><strong>Account:</strong> <span id="ruleTxAccount">—</span></div>
         <div><strong>Amount:</strong> <span id="ruleTxAmount">—</span></div>
         <div><strong>Date:</strong> <span id="ruleTxDate">—</span></div>
         <input type="hidden" id="ruleTxId" />
@@ -143,6 +191,7 @@
 
       <!-- Rule form -->
       <div class="rule-form">
+          <button id="unassignedToggle" class="btn">Most recent ▾</button>
 
         <div class="rule-field">
           <label for="ruleCategory">Category</label>
@@ -185,19 +234,29 @@
     <span class="tab-ico">🔎</span>
     <span>All</span>
   </a>
+
+  <a class="mobile-tab" href="/static/recurring.html" id="tabRecurring">
+    <span class="tab-ico">🔁</span>
+    <span>Recurring</span>
+  </a>
 </nav>
+
 <script>
   (function(){
     const path = window.location.pathname;
     const isAll = path.includes("all-transactions.html");
+    const isRec = path.includes("recurring.html");
     const home = document.getElementById("tabHome");
     const all  = document.getElementById("tabAllTx");
-    if (home && all){
+    const rec  = document.getElementById("tabRecurring");
+    if (home && all && rec){
       if (isAll) all.classList.add("active");
+      else if (isRec) rec.classList.add("active");
       else home.classList.add("active");
     }
   })();
 </script>
+
 <script>
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/static/sw.js").catch(console.error);
