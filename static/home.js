@@ -37,6 +37,50 @@ async function loadBankTotals() {
 }
 
 let netWorthChartInstance = null;
+const DEBUG_SPENDING = true;
+
+function setYearLabel() {
+  const el = document.getElementById("homeYearLabel");
+  if (el) el.textContent = String(selectedYear);
+}
+
+
+function currentYear() {
+  return new Date().getFullYear();
+}
+
+function clampDay(y, m, d) {
+  // clamp day to last day of month
+  const last = new Date(y, m + 1, 0).getDate();
+  return Math.min(d, last);
+}
+
+function shiftRangeByYears(yearDelta) {
+  const s = document.getElementById("nw-start")?.value;
+  const e = document.getElementById("nw-end")?.value;
+  if (!s || !e) return null;
+
+  const sd = new Date(s);
+  const ed = new Date(e);
+
+  const nsY = sd.getFullYear() + yearDelta;
+  const neY = ed.getFullYear() + yearDelta;
+
+  const nsM = sd.getMonth(), nsD = sd.getDate();
+  const neM = ed.getMonth(), neD = ed.getDate();
+
+  const newStart = new Date(nsY, nsM, clampDay(nsY, nsM, nsD));
+  const newEnd   = new Date(neY, neM, clampDay(neY, neM, neD));
+
+  return { newStart, newEnd };
+}
+
+function rebuildYearDependentUI() {
+  setYearLabel();
+  buildMonthButtons();
+  buildMonthDropdown();
+}
+
 
 function toISODate(d) {
   return d.toISOString().split("T")[0];
@@ -54,7 +98,8 @@ function lastDayOfMonth(year, monthIndex) {
 const CHARTS = [
   { key: "net", title: "Net Worth", endpoint: "/net-worth", nextLabel: "Next: Savings" },
   { key: "savings", title: "Savings", endpoint: "/savings", nextLabel: "Next: Investments" },
-  { key: "investment", title: "Investments", endpoint: "/investments", nextLabel: "Next: Net Worth" },
+  { key: "investment", title: "Investments", endpoint: "/investments", nextLabel: "Next: Spending" },
+  { key: "spending", title: "Spending", endpoint: "/spending", nextLabel: "Next: Net Worth" },
 ];
 
 let chartIndex = 0;
@@ -113,8 +158,49 @@ async function loadChart() {
   }
 
   const data = await res.json();
+    const lastPoint = data[data.length - 1];
+    if (lastPoint) {
+      setInlineBreakdown(currentChart().title, lastPoint.value);
+    }
+  if (DEBUG_SPENDING && currentChart().key === "spending") {
+  console.group("🧾 Spending chart – raw backend data");
+  console.table(data.map(d => ({
+    date: d.date,
+    value: Number(d.value)
+  })));
+  console.groupEnd();
+}
+
+
   const labels = data.map(d => formatMMMdd(d.date));
   const values = data.map(d => Number(d.value)); // <— use unified key "value"
+    // Running total (cumulative) for spending
+let running = 0;
+const cumulative = values.map(v => (running += (Number(v) || 0)));
+
+if (DEBUG_SPENDING && currentChart().key === "spending") {
+  console.group("📈 Spending chart – cumulative calculation");
+  data.forEach((d, i) => {
+    console.log(
+      `${d.date}: daily=${money(values[i])}, cumulative=${money(cumulative[i])}`
+    );
+  });
+  console.groupEnd();
+}
+
+
+    // ---- Spending total (for currently selected range) ----
+    const totalRow = document.getElementById("spendingTotalRow");
+    const totalEl  = document.getElementById("spendingTotalValue");
+
+    if (currentChart().key === "spending") {
+      const total = values.reduce((sum, v) => sum + (Number(v) || 0), 0);
+      if (totalRow) totalRow.style.display = "block";
+      if (totalEl) totalEl.textContent = money(total);
+    } else {
+      if (totalRow) totalRow.style.display = "none";
+    }
+
 
   const ctx = document.getElementById("netWorthChart").getContext("2d");
 
@@ -122,18 +208,49 @@ async function loadChart() {
 
   const isMobile = window.matchMedia("(max-width: 900px)").matches;
 
+
+const isSpending = currentChart().key === "spending";
+
+const datasets = isSpending ? [
+  {
+    label: "Daily",
+    data: values,
+    tension: 0.2,
+    pointRadius: 0,
+    pointHitRadius: 12,
+    pointHoverRadius: 4,
+    borderWidth: 2.5,
+    borderDash: [4, 4],
+    fill: false
+  },
+  {
+    label: "Total (cumulative)",
+    data: cumulative,
+    tension: 0.2,
+    pointRadius: 0,
+    pointHitRadius: 12,
+    pointHoverRadius: 4,
+    borderWidth: 2,
+    fill: false
+  }
+] : [
+  {
+    label: title,
+    data: values,
+    tension: 0.2,
+    pointRadius: 0,
+    pointHitRadius: 12,
+    pointHoverRadius: 4
+  }
+];
+
+
+
 netWorthChartInstance = new Chart(ctx, {
   type: "line",
   data: {
     labels,
-    datasets: [{
-      label: title,
-      data: values,
-      tension: 0.2,
-      pointRadius: 0,
-      pointHitRadius: 12,
-      pointHoverRadius: 4
-    }]
+    datasets
   },
   options: {
     responsive: true,
@@ -147,21 +264,35 @@ netWorthChartInstance = new Chart(ctx, {
         const y = ctx.parsed.y;
 
         // Default label for Savings/Investments charts
-        if (currentChart().key !== "net") {
-          return `${currentChart().title}: ${money(y)}`;
-        }
+        if (currentChart().key === "spending") {
+  const i = ctx.dataIndex;
+  const daily = Number(values[i] || 0);
+  const total = Number(cumulative[i] || 0);
+
+  return [
+    `Daily: ${money(daily)}`,
+    `Total: ${money(total)}`
+  ];
+}
+
+
+            if (currentChart().key !== "net") {
+              return `${currentChart().title}: ${money(y)}`;
+            }
+
 
         // Net worth breakdown (from backend)
         const p = data[i] || {};
         const banks = Number(p.banks || 0);
         const savings = Number(p.savings || 0);
-        const cards = Number(p.cards || 0);
+        // backend sends signed cards_balance: negative=debt, positive=surplus
+        const cardsBal = Number((p.cards_balance ?? p.cards) || 0);
 
         return [
           `Net Worth: ${money(y)}`,
           `Banks: ${money(banks)}`,
           `Savings: ${money(savings)}`,
-          `Cards: -${money(cards)}`,
+          formatCardBalance(cardsBal, { showLabel: true }),
         ];
       }
     }
@@ -181,7 +312,7 @@ netWorthChartInstance = new Chart(ctx, {
     }
   }
 });
-await loadNetWorthBreakdownForEndDate();
+
 
 }
 
@@ -190,67 +321,33 @@ function setActiveMonthButton(btn) {
   if (btn) btn.classList.add("active");
 }
 
-function buildMonthButtons() {
-  const container = document.getElementById("monthButtons");
-  if (!container) return;
 
-  const monthNames = [
-    "Jan","Feb","Mar","Apr","May","Jun",
-    "Jul","Aug","Sep","Oct","Nov","Dec"
-  ];
-
-  const year = new Date().getFullYear();
-  container.innerHTML = "";
-
-  // Month buttons
-  monthNames.forEach((name, i) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "month-btn";
-    btn.textContent = name;
-
-    btn.addEventListener("click", () => {
-      const start = firstDayOfMonth(year, i);
-      const end = lastDayOfMonth(year, i);
-
-      document.getElementById("nw-start").value = toISODate(start);
-      document.getElementById("nw-end").value = toISODate(end);
-
-      setActiveMonthButton(btn);
-      loadChart();
-    });
-
-    container.appendChild(btn);
-  });
-
-  // Annual button
-  const annualBtn = document.createElement("button");
-  annualBtn.type = "button";
-  annualBtn.className = "month-btn is-annual";
-  annualBtn.textContent = "Annual";
-
-  annualBtn.addEventListener("click", () => {
-    const start = new Date(year, 0, 1);
-    const end = new Date();
-
-    document.getElementById("nw-start").value = toISODate(start);
-    document.getElementById("nw-end").value = toISODate(end);
-
-    setActiveMonthButton(annualBtn);
-    loadChart();
-  });
-
-  container.appendChild(annualBtn);
-
-  // Default active = current month
-  const now = new Date();
-  const currentMonthBtn = container.querySelectorAll(".month-btn")[now.getMonth()];
-  setActiveMonthButton(currentMonthBtn);
-}
 
 function money(n) {
   const num = Number(n || 0);
   return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+// Credit-card balance formatting:
+//   negative = you owe (debt)
+//   positive = you have a surplus/credit
+// Also avoid displaying "-$0.00" from tiny float noise.
+function formatCardBalance(n, { showLabel = false } = {}) {
+  let x = Number(n || 0);
+  // clamp tiny values to 0 to avoid "-0"
+  if (Math.abs(x) < 0.005) x = 0;
+
+  const absStr = money(Math.abs(x));
+
+  if (showLabel) {
+    if (x < 0) return `Cards: -${absStr}`;
+    if (x > 0) return `Cards: +${absStr}`;
+    return `Cards: ${money(0)}`;
+  }
+
+  if (x < 0) return `-${absStr}`;
+  if (x > 0) return `+${absStr}`;
+  return money(0);
 }
 
 function renderCategory(container, title, payload) {
@@ -259,7 +356,7 @@ function renderCategory(container, title, payload) {
   const isCardBalances = title === "Card Balances";
   const isMobile = window.matchMedia("(max-width: 900px)").matches;
 
-  const displayTotal = isCardBalances ? Math.abs(total) : total;
+  const displayTotal = total;
 
   // ---- MOBILE: accordion ----
   if (isMobile) {
@@ -272,7 +369,7 @@ function renderCategory(container, title, payload) {
 
     btn.innerHTML = `
       <span>${title}<span class="bank-accordion__meta">${accounts.length} acct</span></span>
-      <span>${money(displayTotal)} ▾</span>
+      <span>${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ▾</span>
     `;
 
     const panel = document.createElement("div");
@@ -289,8 +386,8 @@ function renderCategory(container, title, payload) {
         pill.type = "button";
         pill.className = "account-pill";
 
-        const amt = isCardBalances ? Math.abs(a.total) : a.total;
-        pill.innerHTML = `<span>${a.name}</span><span>${money(amt)}</span>`;
+        const amt = a.total;
+        pill.innerHTML = `<span>${a.name}</span><span>${isCardBalances ? formatCardBalance(amt) : money(amt)}</span>`;
 
         pill.addEventListener("click", () => {
           window.location.href = `/account?account_id=${a.id}`;
@@ -306,7 +403,7 @@ function renderCategory(container, title, payload) {
     btn.addEventListener("click", () => {
       panel.hidden = !panel.hidden;
       btn.querySelector("span:last-child").textContent =
-        `${money(displayTotal)} ${panel.hidden ? "▾" : "▴"}`;
+        `${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ${panel.hidden ? "▾" : "▴"}`;
     });
 
     wrap.appendChild(btn);
@@ -330,7 +427,7 @@ function renderCategory(container, title, payload) {
 
   const right = document.createElement("div");
   right.className = "bank-card__total" + (total < 0 ? " negative" : "");
-  right.textContent = money(displayTotal);
+  right.textContent = isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal);
 
   head.appendChild(left);
   head.appendChild(right);
@@ -346,8 +443,8 @@ function renderCategory(container, title, payload) {
       btn.type = "button";
       btn.className = "account-pill";
 
-      const amt = isCardBalances ? Math.abs(a.total) : a.total;
-      btn.innerHTML = `<span>${a.name}</span><span>${money(amt)}</span>`;
+      const amt = a.total;
+      btn.innerHTML = `<span>${a.name}</span><span>${isCardBalances ? formatCardBalance(amt) : money(amt)}</span>`;
 
       btn.addEventListener("click", () => {
         window.location.href = `/account?account_id=${a.id}`;
@@ -462,8 +559,6 @@ function fillModalFromTx(tx) {
   document.getElementById("ruleSaveMsg").textContent = "";
 }
 
-
-
 async function openRuleModal() {
   const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
 
@@ -556,18 +651,27 @@ document.addEventListener("DOMContentLoaded", () => {
   startInput.value = toISODate(firstOfMonth);
   endInput.value = toISODate(today);
 
-  buildMonthButtons(); // make sure month buttons call loadChart() not ()
   setChartHeaderUI();
   loadChart();
   loadBankTotals();
   loadCategoryTotalsThisMonth();
-    loadData();
-    buildMonthDropdown();
-
+  loadData();
 
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
 });
+
+initChartControls({
+  start: "nw-start",
+  end: "nw-end",
+  yearLabel: "homeYearLabel",
+  yearBack: "homeYearBack",
+  yearFwd: "homeYearFwd",
+  quarters: "quarterButtons",
+  monthButtons: "monthButtons",
+  update: "nw-chart-btn"
+}, loadChart);
+
 
 function updateRuleCounter() {
   const el = document.getElementById("ruleCounter");
@@ -670,55 +774,6 @@ async function loadData() {
 }
 
 
-function buildMonthDropdown() {
-  const select = document.getElementById("monthSelect");
-  if (!select) return;
-
-  const today = new Date();
-  const year = today.getFullYear();
-
-  select.innerHTML = "";
-
-  const addOpt = (label, start, end, selected=false) => {
-    const opt = document.createElement("option");
-    opt.value = JSON.stringify({
-      start: toISODate(start),
-      end: toISODate(end)
-    });
-    opt.textContent = label;
-    if (selected) opt.selected = true;
-    select.appendChild(opt);
-  };
-
-  // Default: This Month
-  addOpt(
-    "This Month",
-    new Date(year, today.getMonth(), 1),
-    today,
-    true
-  );
-
-  // Months
-  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  names.forEach((name, i) => {
-    addOpt(
-      name,
-      firstDayOfMonth(year, i),
-      lastDayOfMonth(year, i)
-    );
-  });
-
-  // Annual
-  addOpt("Annual", new Date(year, 0, 1), today);
-
-  select.addEventListener("change", () => {
-    const { start, end } = JSON.parse(select.value);
-    document.getElementById("nw-start").value = start;
-    document.getElementById("nw-end").value   = end;
-    loadChart();
-  });
-}
-
 let unassignedMode = localStorage.getItem("unassignedMode") || "freq";
 
 const toggleBtn = document.getElementById("unassignedToggle"); // add this button in HTML
@@ -796,7 +851,8 @@ function setBreakdownUI(p) {
   d.textContent  = p?.date ? formatMMMdd(p.date) : "—";
   b.textContent  = money(p?.banks ?? 0);
   s.textContent  = money(p?.savings ?? 0);
-  c.textContent  = "-" + money(p?.cards ?? 0);
+  const cardsBal = Number((p?.cards_balance ?? p?.cards) || 0);
+  c.textContent  = formatCardBalance(cardsBal);
   nw.textContent = money(p?.value ?? 0);
 }
 
@@ -809,4 +865,13 @@ async function loadNetWorthBreakdownForEndDate() {
 
   const arr = await res.json();
   setBreakdownUI(arr && arr.length ? arr[0] : null);
+}
+
+function setInlineBreakdown(label, value) {
+  const l = document.getElementById("chartBreakdownLabel");
+  const v = document.getElementById("chartBreakdownValue");
+  if (!l || !v) return;
+
+  l.textContent = label;
+  v.textContent = money(value);
 }

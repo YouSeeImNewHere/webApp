@@ -27,23 +27,32 @@ function render(list){
     return;
   }
 
-  list.forEach(row => {
-    const wrap = document.createElement("div");
-    wrap.className = "tx-row";
+list.forEach(row => {
+  const wrap = document.createElement("div");
+  wrap.className = "tx-row";
 
-    const sub = [row.bank, row.card].filter(Boolean).join(" • ");
+  const sub = [row.bank, row.card].filter(Boolean).join(" • ");
 
-    wrap.innerHTML = `
-      <div class="tx-date">${shortDate(row.postedDate)}</div>
-      <div class="tx-main">
-        <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
-        <div class="tx-sub">${sub}</div>
-      </div>
-      <div class="tx-amt">${money(row.amount)}</div>
-    `;
+  // ✅ compute effective date OUTSIDE the template
+  const effectiveDate =
+    row.postedDate && row.postedDate !== "unknown"
+      ? row.postedDate
+      : row.purchaseDate && row.purchaseDate !== "unknown"
+        ? row.purchaseDate
+        : row.dateISO;
 
-    el.appendChild(wrap);
-  });
+  wrap.innerHTML = `
+    <div class="tx-date">${shortDate(effectiveDate)}</div>
+    <div class="tx-main">
+      <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
+      <div class="tx-sub">${sub}</div>
+    </div>
+    <div class="tx-amt">${money(row.amount)}</div>
+  `;
+
+  el.appendChild(wrap);
+});
+
 }
 
 function applySearch(){

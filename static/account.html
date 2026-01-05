@@ -11,7 +11,6 @@
 
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Account</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body class="page-account">
@@ -22,29 +21,8 @@
   <div></div>
   <a href="/" class="back-btn">Back</a>
 </div>
+      <div id="chartMount" style="margin-top:14px;"></div>
 
-
-    <h1 id="accountTitle" style="text-align:center; margin:10px 0 0;">Account</h1>
-    <div id="accountMeta" style="text-align:center; opacity:.7; margin-top:6px;"></div>
-
-    <div style="max-width:900px;margin:14px auto 0;">
-      <div style="display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap;">
-        <label>Start: <input type="date" id="a-start" /></label>
-        <label>End: <input type="date" id="a-end" /></label>
-        <button id="a-update" type="button">Update</button>
-      </div>
-
-      <div style="margin-top:12px;">
-        <canvas id="accountChart"></canvas>
-      </div>
-
-      <div class="month-select-wrap" id="aSelectWrap" style="margin-top:12px;">
-  <select id="aMonthSelect"></select>
-</div>
-
-<div id="aButtons" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:12px;"></div>
-
-    </div>
 
     <hr class="section-divider" />
 
@@ -55,36 +33,18 @@
     <div id="txList" class="tx-list"></div>
   </div>
 </section>
-<nav class="mobile-tabs" aria-label="Bottom Tabs">
-  <a class="mobile-tab" href="/" id="tabHome">
-    <span class="tab-ico">🏠</span>
-    <span>Home</span>
-  </a>
 
-  <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
-    <span class="tab-ico">🔎</span>
-    <span>All</span>
-  </a>
-</nav>
-<script>
-  (function(){
-    const path = window.location.pathname;
-    const isAll = path.includes("all-transactions.html");
-    const home = document.getElementById("tabHome");
-    const all  = document.getElementById("tabAllTx");
-    if (home && all){
-      if (isAll) all.classList.add("active");
-      else home.classList.add("active");
-    }
-  })();
-</script>
+<div id="bottomTabs"></div>
+
 <script>
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/static/sw.js").catch(console.error);
   }
 </script>
 
-
+<script src="/static/bottomTabs.js"></script>
+    <script src="/static/chartControls.js"></script>
+<script src="/static/chartCard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="/static/account.js"></script>
 

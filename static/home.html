@@ -25,7 +25,7 @@
     <!-- =============================================================================
          Net Worth Section
          ============================================================================= -->
-    <section id="netWorthSection" style="max-width: 900px; margin: 0 auto;">
+    <section id="netWorthSection" class="chart-card">
 
       <!-- Chart header (title, dots, toggle) -->
       <header class="chart-header">
@@ -34,69 +34,52 @@
         <button id="chartToggleBtn" type="button">Next: Savings ▾</button>
       </header>
 
-      <!-- Date range controls + breakdown card -->
-<div style="display:flex; gap:12px; justify-content:center; align-items:stretch; flex-wrap:wrap; margin-top:10px;">
+      <div class="chart-controls">
 
-  <!-- Mini breakdown card (compact) -->
-<div class="category-box"
-     style="
-       min-width:180px;
-       max-width:210px;
-       font-size:13px;
-     ">
-
-  <div class="category-box__header"
-       style="
-         padding:6px 10px;
-         display:flex;
-         justify-content:space-between;
-         align-items:center;
-       ">
-    <span>Breakdown</span>
-    <span id="nwBDate" style="opacity:.65; font-weight:600;">—</span>
+  <!-- Breakdown -->
+  <div class="chart-breakdown">
+    <span id="chartBreakdownLabel">Net</span>
+    <strong id="chartBreakdownValue">$0</strong>
   </div>
 
-  <div style="padding:8px 10px; display:grid; gap:4px;">
-    <div style="display:flex; justify-content:space-between;">
-      <span>Banks</span><strong id="nwBBanks">—</strong>
-    </div>
-    <div style="display:flex; justify-content:space-between;">
-      <span>Savings</span><strong id="nwBSavings">—</strong>
-    </div>
-    <div style="display:flex; justify-content:space-between;">
-      <span>Cards</span><strong id="nwBCards">—</strong>
-    </div>
+  <!-- Quarters -->
+  <div id="quarterButtons" class="chart-btn-group"></div>
 
-    <div style="border-top:1px solid #eee; margin:3px 0;"></div>
-
-    <div style="display:flex; justify-content:space-between;">
-      <span>Net</span><strong id="nwBNet">—</strong>
-    </div>
+  <!-- Year controls -->
+  <div class="chart-btn-group">
+    <button id="homeYearBack" class="chart-btn">◀</button>
+    <span id="homeYearLabel" class="chart-year"></span>
+    <button id="homeYearFwd" class="chart-btn">▶</button>
   </div>
+
+  <!-- Start / End (NEW LOCATION) -->
+<div class="chart-dates-inline">
+  <label>
+    Start
+    <input type="date" id="nw-start" />
+  </label>
+  <label>
+    End
+    <input type="date" id="nw-end" />
+  </label>
 </div>
 
 
-  <!-- Existing controls (right) -->
-  <div style="display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap;">
-    <label>
-      Start:
-      <input type="date" id="nw-start" />
-    </label>
-
-    <label>
-      End:
-      <input type="date" id="nw-end" />
-    </label>
-
-    <button id="nw-chart-btn" type="button">Update Chart</button>
-  </div>
+  <!-- Update -->
+  <button id="nw-chart-btn" class="chart-btn primary">
+    Update
+  </button>
 
 </div>
+
 
       <!-- Chart canvas -->
       <div style="margin-top: 12px;">
         <canvas id="netWorthChart"></canvas>
       </div>
+<div id="spendingTotalRow" style="margin-top:10px; display:none; opacity:.85;">
+  <strong>Total spent:</strong> <span id="spendingTotalValue">$0</span>
+</div>
 
       <!-- Month quick-select buttons injected by JS -->
       <div
@@ -224,38 +207,9 @@
 
 
 
-  <nav class="mobile-tabs" aria-label="Bottom Tabs">
-  <a class="mobile-tab" href="/" id="tabHome">
-    <span class="tab-ico">🏠</span>
-    <span>Home</span>
-  </a>
+  <div id="bottomTabs"></div>
+<script src="/static/bottomTabs.js"></script>
 
-  <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
-    <span class="tab-ico">🔎</span>
-    <span>All</span>
-  </a>
-
-  <a class="mobile-tab" href="/static/recurring.html" id="tabRecurring">
-    <span class="tab-ico">🔁</span>
-    <span>Recurring</span>
-  </a>
-</nav>
-
-<script>
-  (function(){
-    const path = window.location.pathname;
-    const isAll = path.includes("all-transactions.html");
-    const isRec = path.includes("recurring.html");
-    const home = document.getElementById("tabHome");
-    const all  = document.getElementById("tabAllTx");
-    const rec  = document.getElementById("tabRecurring");
-    if (home && all && rec){
-      if (isAll) all.classList.add("active");
-      else if (isRec) rec.classList.add("active");
-      else home.classList.add("active");
-    }
-  })();
-</script>
 
 <script>
   if ("serviceWorker" in navigator) {
@@ -266,7 +220,8 @@
   <!-- =============================================================================
        Scripts
        ============================================================================= -->
+  <script src="/static/chartControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="/static/script.js"></script>
+  <script src="/static/home.js"></script>
 </body>
 </html>

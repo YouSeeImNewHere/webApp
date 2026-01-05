@@ -10,10 +10,24 @@ from datetime import datetime
 NAVY_DEBIT_ID = 3
 NAVY_CASHREWARDS_ID = 6
 AMEX_PLATINUM_ID = 2
+AMEX_BCP_ID = 8
 CAPONE_DEBIT_ID = 4
 CAPONE_SAVOR_ID = 5
 DISCOVER_IT_ID = 7
 
+BCP_ACCOUNT_NUMBER = "51007"
+PLAT_ACCOUNT_NUMBER = "72008"
+
+def transaction_exists(key: str, *, use_test_table: bool = False) -> bool:
+    table = "transactions_test" if use_test_table else "transactions"
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT 1 FROM {table} WHERE id = ? LIMIT 1",
+            (key,)
+        )
+        return cur.fetchone() is not None
 
 def finalize_transaction(
     mail,
@@ -28,6 +42,7 @@ def finalize_transaction(
     bank: str,
     accountType: str,
     source: str = "email",
+    use_test_table: bool = False,
     labels_add=(),
     labels_remove=(r"\Inbox \Important",),
 ):
@@ -50,13 +65,13 @@ def finalize_transaction(
     mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
 
     # ---- insert ----
-    insert_transaction(key, bank, card, accountType, cost, where, date, time, source)
+    insert_transaction(key, bank, card, accountType, cost, where, date, time, source, use_test_table=use_test_table)
 
 
 # =============================================================================
 # Handlers
 # =============================================================================
-def navyFedCard(mail, msg_id_str, match, timeEmail):
+def navyFedCard(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     cost = match.group(1)
     where = match.group(3)
     time = match.group(4)
@@ -86,29 +101,35 @@ def navyFedCard(mail, msg_id_str, match, timeEmail):
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card=card, where=where, time=time, date=date,
         key=key, bank="Navy Federal", accountType=accountType,
         labels_add=("NavyFedPurchase",),
     )
 
 
-def navyFedWithdrawal(mail, msg_id_str, match, timeEmail):
+def navyFedWithdrawal(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     cost = match.group(1)
     date = match.group(2)
     time = match.group(3)
 
     key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
-    add_key(key, cost, date, time, msg_id_str)
+
+    if transaction_exists(key, use_test_table=use_test_table):  # implement helper in transactionHandler
+        return
+
+    add_key(cost, date, time, msg_id_str, account_id=NAVY_DEBIT_ID)
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card="Debit", where="unknown", time=time, date=date,
         key=key, bank="Navy Federal", accountType="checking",
         labels_add=("NavyFedPurchase",),
     )
 
 
-def navyFedDeposit(mail, msg_id_str, match, timeEmail):
+def navyFedDeposit(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     cost = match.group(1)
     date = match.group(2)
     time = match.group(3)
@@ -122,13 +143,14 @@ def navyFedDeposit(mail, msg_id_str, match, timeEmail):
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card="Debit", where="unknown", time=time, date=date,
         key=key, bank="Navy Federal", accountType="checking",
         labels_add=("NavyFedDeposit",),
     )
 
 
-def navyFedCreditHold(mail, msg_id_str, match, timeEmail):
+def navyFedCreditHold(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     where = match.group(1)
     time = match.group(2)
     date = match.group(3)
@@ -138,30 +160,42 @@ def navyFedCreditHold(mail, msg_id_str, match, timeEmail):
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card="cashRewards", where=where, time=time, date=date,
         key=key, bank="Navy Federal", accountType="credit",
         labels_add=("NavyFedPurchase",),
     )
 
 
-def americanExpress(mail, msg_id_str, match, timeEmail):
-    where = match.group(1)
-    cost = match.group(2)
+def americanExpress(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
+    account = match.group(1)
+    where = match.group(2)
+    cost = match.group(3)
 
-    date = match.group(3)
-    date = datetime.strptime(date, "%a, %b %d, %Y").strftime("%m/%d/%y")
+    date = match.group(4)
+    date = datetime.strptime(date, "%b %d, %Y").strftime("%m/%d/%y")
 
-    key = makeKey(cost, date, account_id=AMEX_PLATINUM_ID)
+    if account == PLAT_ACCOUNT_NUMBER:
+        card = "Platinum"
+        account_id = AMEX_PLATINUM_ID
+    elif account == BCP_ACCOUNT_NUMBER:
+        card = "Blue Cash Preferred"
+        account_id = AMEX_BCP_ID
+    else:
+        raise ValueError(f"Unknown AMEX account ending: {account}")
+
+    key = makeKey(cost, date, account_id=account_id)
 
     finalize_transaction(
         mail, msg_id_str,
-        cost=cost, card="Platinum", where=where, time=timeEmail, date=date,
+        use_test_table=use_test_table,
+        cost=cost, card=card, where=where, time=timeEmail, date=date,
         key=key, bank="American Express", accountType="credit",
         labels_add=("AmexPurchase",),
     )
 
 
-def capitalOneDebit(mail, msg_id_str, match, timeEmail):
+def capitalOneDebit(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     cost = match.group(1)
     where = match.group(2)
 
@@ -172,13 +206,14 @@ def capitalOneDebit(mail, msg_id_str, match, timeEmail):
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card="Debit", where=where, time=timeEmail, date=date,
         key=key, bank="Capital One", accountType="checking",
         labels_add=("CapitalOne",),
     )
 
 
-def capitalOneCredit(mail, msg_id_str, match, timeEmail):
+def capitalOneCredit(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     where = match.group(2)
     cost = match.group(3)
 
@@ -189,13 +224,14 @@ def capitalOneCredit(mail, msg_id_str, match, timeEmail):
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card="Savor", where=where, time=timeEmail, date=date,
         key=key, bank="Capital One", accountType="credit",
         labels_add=("CapitalOne",),
     )
 
 
-def discovery(mail, msg_id_str, match, timeEmail):
+def discovery(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     where = match.group(2)
     cost = match.group(3)
 
@@ -206,7 +242,101 @@ def discovery(mail, msg_id_str, match, timeEmail):
 
     finalize_transaction(
         mail, msg_id_str,
+        use_test_table=use_test_table,
         cost=cost, card="Discover It", where=where, time=timeEmail, date=date,
         key=key, bank="Discovery", accountType="credit",
         labels_add=("Discovery",),
     )
+
+def amexPayment(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
+    where = "Thanks for your payment"
+
+    account = match.group(1)
+    cost = match.group(2)
+    cost = f"-{cost.lstrip('-')}"
+
+    date = match.group(3)
+    date = datetime.strptime(date, "%b %d, %Y").strftime("%m/%d/%y")
+
+    # ---- Account → card mapping ----
+    if PLAT_ACCOUNT_NUMBER in account:
+        card = "Platinum"
+        account_id = AMEX_PLATINUM_ID
+    elif BCP_ACCOUNT_NUMBER in account:
+        card = "Blue Cash Preferred"
+        account_id = AMEX_BCP_ID
+    else:
+        raise ValueError(f"Unknown AMEX account ending: {account}")
+
+    key = makeKey(cost, date, account_id=account_id)
+
+    finalize_transaction(
+        mail, msg_id_str,
+        use_test_table=use_test_table,
+        cost=cost,
+        card=card,
+        where=where,
+        time=timeEmail,
+        date=date,
+        key=key,
+        bank="American Express",
+        accountType="credit",
+        labels_add=("AmexPurchase",),
+    )
+
+def discoverPayment(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
+    cost = match.group(1)
+    cost = f"-{cost.lstrip('-')}"
+
+    where = "Thanks for your payment"
+
+    date = match.group(2)
+    date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
+
+    key = makeKey(cost, date, account_id=DISCOVER_IT_ID)
+
+    finalize_transaction(
+        mail, msg_id_str,
+        use_test_table=use_test_table,
+        cost=cost, card="Discover It", where=where, time=timeEmail, date=date,
+        key=key, bank="Discovery", accountType="credit",
+        labels_add=("Discovery",),
+    )
+
+def capitalOnePayment(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
+    cost = match.group(1)
+    cost = f"-{cost.lstrip('-')}"
+
+    where = "Thanks for your payment"
+
+    date = match.group(2)
+    date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
+
+    key = makeKey(cost, date, account_id=CAPONE_SAVOR_ID)
+
+    finalize_transaction(
+        mail, msg_id_str,
+        use_test_table=use_test_table,
+        cost=cost, card="Savor", where=where, time=timeEmail, date=date,
+        key=key, bank="Capital One", accountType="credit",
+        labels_add=("CapitalOne",),
+    )
+
+def navyFedZelle(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
+    cost = match.group(1)
+
+    where = f"Zelle - {match.group(2)}"
+
+    date = match.group(3)
+    date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
+
+    key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
+
+    finalize_transaction(
+        mail, msg_id_str,
+        use_test_table=use_test_table,
+        cost=cost, card="Debit", where=where, time=timeEmail, date=date,
+        key=key, bank="Navy Federal", accountType="checking",
+        labels_add=("NavyFedPurchase",),
+    )
+

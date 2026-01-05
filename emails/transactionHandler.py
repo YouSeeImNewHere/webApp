@@ -8,7 +8,7 @@ from pathlib import Path
 
 KEYS_FILE = Path(__file__).resolve().parent / "withdrawalKey_test.json"
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parents[1]  # .../webApp
 DB_PATH = str(BASE_DIR / "finance.db")
 
 
@@ -216,7 +216,7 @@ def insert_transaction(
     time,
     source,
     postedDate="unknown",
-    use_test_table: bool = True,  # flip to False when ready
+    use_test_table: bool = False,  # flip to False when ready
 ):
     # Normalize amount before DB insert (prevents "$3.00" issues)
     cost_str = str(cost).replace("$", "").replace(",", "").strip()

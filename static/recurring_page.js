@@ -1,3 +1,6 @@
+let __mainData = [];
+let __reopenIgnoredAfterOcc = false;
+
 function money(n){
   const x = Number(n || 0);
   return x.toLocaleString(undefined, { style:"currency", currency:"USD" });
@@ -30,7 +33,11 @@ function merchantHTML(g){
         <div class="rec-merchant-name" title="${esc(m)}">${esc(m)}</div>
         <div class="rec-merchant-sub">${esc(date)}</div>
       </div>
-      <button class="ignore-btn" onclick="ignoreMerchant('${esc(g.merchant)}')">Ignore</button>
+
+      <div class="rec-merchant-actions">
+        <button class="ignore-btn" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
+        <button class="ignore-btn" onclick="ignoreMerchant('${esc(g.merchant)}')">Ignore</button>
+      </div>
     </div>
   `;
 }
@@ -39,6 +46,10 @@ function patternHTML(gIdx, pIdx, p){
   const freq = p.cadence || "irregular";
   const date = shortDateISO(p.last_seen);
   const occ  = `x${p.occurrences || 0}`;
+
+  const merchant = p.merchant ?? __lastData[gIdx]?.merchant ?? "";
+  const amount = p.amount;
+  const accountId = p.account_id ?? -1; // optional if you include it from backend
 
   return `
     <div class="tx-row">
@@ -50,6 +61,74 @@ function patternHTML(gIdx, pIdx, p){
 
       <div class="tx-main">
         <div class="rec-sub">${esc(date)} • ${esc(occ)}</div>
+        <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+          <button class="ignore-btn" onclick="ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
+
+          <select onchange="overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
+            <option value="">Set cadence…</option>
+            <option value="weekly">weekly</option>
+            <option value="monthly">monthly</option>
+            <option value="quarterly">quarterly</option>
+            <option value="yearly">yearly</option>
+            <option value="irregular">irregular</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tx-amt">${money(p.amount)}</div>
+    </div>
+  `;
+}
+
+function merchantHTMLIgnored(g){
+  const m = (g.merchant || "").toUpperCase();
+  const date = shortDateISO(g.last_seen);
+
+  return `
+    <div class="rec-merchant">
+      <div>
+        <div class="rec-merchant-name" title="${esc(m)}">${esc(m)}</div>
+        <div class="rec-merchant-sub">${esc(date)}</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="ignore-btn" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
+        <button class="ignore-btn" onclick="unignoreMerchant('${esc(g.merchant)}')">Unignore</button>
+      </div>
+    </div>
+  `;
+}
+
+function patternHTMLIgnored(gIdx, pIdx, p){
+  const freq = p.cadence || "irregular";
+  const date = shortDateISO(p.last_seen);
+  const occ  = `x${p.occurrences || 0}`;
+
+  const merchant = p.merchant ?? window.__ignoredData?.[gIdx]?.merchant ?? "";
+  const amount = p.amount;
+  const accountId = p.account_id ?? -1;
+
+  return `
+    <div class="tx-row">
+      <div class="occ-ico-wrap">
+        <div class="occ-ico" title="Show transactions" onclick="openOccFromIgnored(${gIdx}, ${pIdx})">i</div>
+      </div>
+
+      <div class="tx-date">${esc(freq)}</div>
+
+      <div class="tx-main">
+        <div class="rec-sub">${esc(date)} • ${esc(occ)}</div>
+        <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+          <button class="ignore-btn" onclick="ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
+
+          <select onchange="overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
+            <option value="">Set cadence…</option>
+            <option value="weekly">weekly</option>
+            <option value="monthly">monthly</option>
+            <option value="quarterly">quarterly</option>
+            <option value="yearly">yearly</option>
+            <option value="irregular">irregular</option>
+          </select>
+        </div>
       </div>
 
       <div class="tx-amt">${money(p.amount)}</div>
@@ -76,6 +155,8 @@ async function loadRecurring(){
 
   const data = await res.json();
   __lastData = Array.isArray(data) ? data : [];
+  __mainData = __lastData;
+
 
   if (!__lastData.length){
     list.innerHTML = `<div style="padding:12px; opacity:.7;">No recurring items found.</div>`;
@@ -126,14 +207,110 @@ function openOccModal(groupIndex, patternIndex){
   modal.classList.remove("hidden");
 }
 
-function closeOccModal(){
-  document.getElementById("occModal")?.classList.add("hidden");
+function openOccFromIgnored(groupIndex, patternIndex){
+  if (Array.isArray(window.__ignoredData)) {
+    __reopenIgnoredAfterOcc = true;
+    closeIgnoredModal();
+    __lastData = window.__ignoredData;
+    openOccModal(groupIndex, patternIndex);
+  }
 }
 
+
+function closeOccModal(){
+  document.getElementById("occModal")?.classList.add("hidden");
+
+  if (__reopenIgnoredAfterOcc){
+    __reopenIgnoredAfterOcc = false;
+    openIgnoredModal(); // re-open the ignored modal after closing details
+  }
+}
+
+
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeOccModal();
+  if (e.key === "Escape") {
+    closeOccModal();
+    closeIgnoredModal();
+  }
 });
+
+async function ignorePattern(merchant, amount, accountId){
+  await fetch(`/recurring/ignore/pattern?merchant=${encodeURIComponent(merchant)}&amount=${encodeURIComponent(amount)}&account_id=${encodeURIComponent(accountId ?? -1)}`, {
+    method: "POST"
+  });
+  loadRecurring();
+}
+
+async function overrideCadence(merchant, amount, cadence, accountId){
+  await fetch(`/recurring/override-cadence?merchant=${encodeURIComponent(merchant)}&amount=${encodeURIComponent(amount)}&cadence=${encodeURIComponent(cadence)}&account_id=${encodeURIComponent(accountId ?? -1)}`, {
+    method: "POST"
+  });
+  loadRecurring();
+}
 
 document.getElementById("reloadRecurring")?.addEventListener("click", loadRecurring);
 document.getElementById("includeStale")?.addEventListener("change", loadRecurring);
 loadRecurring();
+
+async function mergeMerchantPrompt(alias){
+  const canonical = prompt(
+    `Merge merchant:\n\n${alias}\n\nInto canonical merchant (type name exactly as shown):`
+  );
+  if (!canonical) return;
+
+  await fetch(
+    `/recurring/merchant-alias?alias=${encodeURIComponent(alias)}&canonical=${encodeURIComponent(canonical)}`,
+    { method: "POST" }
+  );
+
+  loadRecurring();
+}
+
+function closeIgnoredModal(){
+  document.getElementById("ignoredModal")?.classList.add("hidden");
+}
+
+async function openIgnoredModal(){
+  const modal = document.getElementById("ignoredModal");
+  const body  = document.getElementById("ignoredBody");
+  if (!modal || !body) return;
+
+  body.innerHTML = `<div style="opacity:.7; padding:8px 0;">Loading…</div>`;
+  modal.classList.remove("hidden");
+
+  const n = Number(document.getElementById("minOcc")?.value || 3);
+  const includeStale = document.getElementById("includeStale")?.checked ? "true" : "false";
+
+  const res = await fetch(`/recurring/ignored-preview?min_occ=${encodeURIComponent(n)}&include_stale=${includeStale}`);
+  if (!res.ok){
+    body.innerHTML = `<div style="color:#b00;">Failed to load ignored preview.</div>`;
+    return;
+  }
+
+  const data = await res.json();
+  const groups = Array.isArray(data) ? data : [];
+
+  if (!groups.length){
+    body.innerHTML = `<div style="opacity:.7; padding:8px 0;">No ignored merchants (or none match min occurrences).</div>`;
+    return;
+  }
+
+    // store for modal drilldown
+  window.__ignoredData = groups;
+
+  body.innerHTML = groups.map((g, gi) => (
+    merchantHTMLIgnored(g) + (g.patterns || []).map((p, pi) => patternHTMLIgnored(gi, pi, p)).join("")
+  )).join("");
+
+
+  // store for modal drilldown
+  window.__ignoredData = groups;
+}
+
+async function unignoreMerchant(name){
+  await fetch(`/recurring/unignore/merchant?name=${encodeURIComponent(name)}`, { method: "POST" });
+  await openIgnoredModal(); // refresh ignored list
+  loadRecurring();          // refresh main list
+}
+
+document.getElementById("reviewIgnored")?.addEventListener("click", openIgnoredModal);

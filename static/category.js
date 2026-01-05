@@ -1,5 +1,24 @@
 let categoryChartInstance = null;
 
+const CATEGORY_CHART_IDS = {
+  title: "catChartTitle",
+  dots: "catChartDots",
+  toggle: "catChartToggle", // hidden
+  breakLabel: "catBreakLabel",
+  breakValue: "catBreakValue",
+  quarters: "catQuarterButtons",
+  yearBack: "catYearBack",
+  yearLabel: "catYearLabel",
+  yearFwd: "catYearFwd",
+  update: "catUpdateBtn",
+  start: "cat-start",
+  end: "cat-end",
+  canvas: "catChart",
+  monthButtons: "catMonthButtons"
+  // (no dropdown on category page unless you want it)
+};
+
+
 function money(n) {
   const num = Number(n || 0);
   return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -16,12 +35,6 @@ function setCategoryInURL(category) {
   window.history.pushState({}, "", url);
 }
 
-function setActivePeriod(period) {
-  document.querySelectorAll(".period-btn").forEach(b => {
-    b.classList.toggle("active", b.dataset.p === period);
-  });
-}
-
 function shortDate(mmddyyOrIso) {
   if (!mmddyyOrIso) return "";
   if (String(mmddyyOrIso).includes("/")) {
@@ -30,6 +43,68 @@ function shortDate(mmddyyOrIso) {
   }
   const d = new Date(mmddyyOrIso);
   return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
+}
+
+async function loadCategoryChart() {
+  const category = getCategoryFromURL() || "Uncategorized";
+
+  const start = document.getElementById("cat-start")?.value;
+  const end   = document.getElementById("cat-end")?.value;
+  if (!start || !end) return;
+
+  const res = await fetch(
+    `/category-trend?category=${encodeURIComponent(category)}&period=all`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("category chart failed");
+
+  const payload = await res.json();
+  const series = payload.series || [];
+
+  // filter to selected range
+  const filtered = series.filter(p => p.date >= start && p.date <= end);
+
+  const labels = filtered.map(p =>
+    new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "2-digit" })
+  );
+
+  const values = filtered.map(p => Number(p.amount || 0));
+const last = values.length ? values[values.length - 1] : 0;
+
+const l = document.getElementById(CATEGORY_CHART_IDS.breakLabel);
+const v = document.getElementById(CATEGORY_CHART_IDS.breakValue);
+if (l) l.textContent = category;
+if (v) v.textContent = money(last);
+
+
+  const canvas = document.getElementById("catChart");
+  if (!canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  if (categoryChartInstance) categoryChartInstance.destroy();
+
+  categoryChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: `${category} (daily)`,
+        data: values,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { ticks: { callback: v => Number(v).toLocaleString() } }
+      }
+    }
+  });
 }
 
 async function loadTrend(category, period) {
@@ -148,7 +223,8 @@ async function loadLifetimeSidebar(activeCategory) {
       setCategoryInURL(newCat);
 
       await loadLifetimeSidebar(newCat);
-      await loadTrend(newCat, window.__period || "1m");
+      await loadCategoryChart();
+
       await loadCategoryTransactions(newCat);
     });
 
@@ -162,30 +238,26 @@ async function init() {
 
   const title = document.getElementById("catTitle");
   if (title) title.textContent = category;
+mountChartCard("#chartMount", {
+  ids: CATEGORY_CHART_IDS,
+  title: "Category",
+  showToggle: false
+});
+initChartControls(CATEGORY_CHART_IDS, loadCategoryChart);
 
-  let period = "1m";
-  window.__period = period;
-  setActivePeriod(period);
+const chartTitle = document.getElementById(CATEGORY_CHART_IDS.title);
+if (chartTitle) chartTitle.textContent = category;
+
+
+
 
   // LEFT sidebar first
   await loadLifetimeSidebar(category);
 
   // RIGHT side
-  await loadTrend(category, period);
+  await loadCategoryChart();
+
   await loadCategoryTransactions(category);
-
-  // period buttons
-  document.querySelectorAll(".period-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      period = btn.dataset.p;
-      window.__period = period;
-      setActivePeriod(period);
-
-      const currentCat = getCategoryFromURL() || category;
-      await loadTrend(currentCat, period);
-      // transactions do not depend on period, so no need to reload them here
-    });
-  });
 
   // If user uses browser back/forward and category changes in URL
   window.addEventListener("popstate", async () => {
@@ -193,7 +265,8 @@ async function init() {
     if (title) title.textContent = currentCat;
 
     await loadLifetimeSidebar(currentCat);
-    await loadTrend(currentCat, window.__period || "1m");
+    await loadCategoryChart();
+
     await loadCategoryTransactions(currentCat);
   });
 }

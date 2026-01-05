@@ -37,15 +37,9 @@
 
     <!-- RIGHT: chart + tx -->
     <main class="cat-main">
-      <div id="periodButtons" class="period-bar">
-        <button class="period-btn" data-p="1m" type="button">1M</button>
-        <button class="period-btn" data-p="3m" type="button">3M</button>
-        <button class="period-btn" data-p="6m" type="button">6M</button>
-        <button class="period-btn" data-p="1y" type="button">Annual</button>
-        <button class="period-btn" data-p="all" type="button">All time</button>
-      </div>
 
-      <canvas id="catChart"></canvas>
+<div id="chartMount"></div>
+
 
       <section aria-label="Transactions" style="margin-top:18px;">
   <div class="category-box">
@@ -57,36 +51,17 @@
 
     </main>
   </div>
-<nav class="mobile-tabs" aria-label="Bottom Tabs">
-  <a class="mobile-tab" href="/" id="tabHome">
-    <span class="tab-ico">🏠</span>
-    <span>Home</span>
-  </a>
+<div id="bottomTabs"></div>
+<script src="/static/bottomTabs.js"></script>
 
-  <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
-    <span class="tab-ico">🔎</span>
-    <span>All</span>
-  </a>
-</nav>
-<script>
-  (function(){
-    const path = window.location.pathname;
-    const isAll = path.includes("all-transactions.html");
-    const home = document.getElementById("tabHome");
-    const all  = document.getElementById("tabAllTx");
-    if (home && all){
-      if (isAll) all.classList.add("active");
-      else home.classList.add("active");
-    }
-  })();
-</script>
 <script>
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/static/sw.js").catch(console.error);
   }
 </script>
 
-
+    <script src="/static/chartControls.js"></script>
+<script src="/static/chartCard.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/static/category.js"></script>
 </div>

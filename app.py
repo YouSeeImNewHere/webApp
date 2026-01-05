@@ -1,13 +1,13 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 import sqlite3
 from datetime import datetime, timedelta
 import re
 from pydantic import BaseModel
 from typing import List, Optional
 
-from transactionHandler import DB_PATH
+from emails.transactionHandler import DB_PATH
+from recurring import get_recurring, get_ignored_merchants_preview
 
 app = FastAPI()
 
@@ -26,7 +26,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def home():
-    return FileResponse("static/index.html")
+    return FileResponse("static/home.html")
 
 
 @app.get("/account")
@@ -190,10 +190,8 @@ def build_series(start_date, end_date, starting, transactions, value_fn):
 from recurring import get_recurring  # new file you created
 
 @app.get("/recurring")
-def recurring(min_occ: int = 3):
-    return get_recurring(min_occ=min_occ)
-
-
+def recurring(min_occ: int = 3, include_stale: bool = False):
+    return get_recurring(min_occ=min_occ, include_stale=include_stale)
 
 # =============================================================================
 # Series Endpoints (Net Worth / Savings / Investments)
@@ -232,27 +230,28 @@ def net_worth(start: str, end: str):
 
         banks = 0.0
         savings = 0.0
-        cards_abs = 0.0
+        cards_balance = 0.0  # signed: negative = owe, positive = surplus
 
         for aid, bal in current_totals.items():
             t = (acct_types.get(aid) or "other").lower()
             if t == "savings":
                 savings += bal
             elif t == "credit":
-                # balances are negative for debt, but we want a positive card-balance number here
-                cards_abs += abs(bal)
+                cards_balance += bal
             else:
                 # checking + investment + other => "banks"
                 banks += bal
 
-        net = banks + savings - cards_abs
+        cards_owed = max(0.0, -cards_balance)  # positive debt magnitude for UI
+        net = banks + savings + cards_balance  # signed contribution (liability reduces)
 
         results.append({
             "date": day.isoformat(),
             "value": float(net),
             "banks": float(banks),
             "savings": float(savings),
-            "cards": float(cards_abs),
+            "cards": float(cards_owed),  # what your UI expects
+            "cards_balance": float(cards_balance)  # optional, handy for later
         })
 
         day += timedelta(days=1)
@@ -762,7 +761,7 @@ def category_transactions(category: str, limit: int = 500):
       WITH tx AS (
         SELECT
           t.id,
-          t.postedDate,
+          COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
           t.merchant,
           t.amount,
           TRIM(t.category) AS category,
@@ -771,16 +770,34 @@ def category_transactions(category: str, limit: int = 500):
           a.name        AS card,
           LOWER(a.accountType) AS accountType,
 
-          date(
-            '20' || substr(t.postedDate, 7, 2) || '-' ||
-            substr(t.postedDate, 1, 2) || '-' ||
-            substr(t.postedDate, 4, 2)
-          ) AS d
+          CASE
+            -- MM/DD/YY
+            WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
+              date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 2) || '-' ||
+                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+
+            -- MM/DD/YYYY
+            WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
+              date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 4) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+            ELSE NULL
+          END AS d
+
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
         WHERE TRIM(t.category) = TRIM(?)
       )
-      SELECT id, postedDate, merchant, amount, category, bank, card, accountType
+      SELECT
+        id,
+        raw_date AS postedDate,
+        merchant,
+        amount,
+        category,
+        bank,
+        card,
+        accountType
       FROM tx
       ORDER BY d DESC, id DESC
       LIMIT ?
@@ -907,7 +924,8 @@ def account_series(account_id: int, start: str, end: str):
 
             i += 1
 
-        display_val = abs(bal) if acc_type == "credit" else bal
+        display_val = (-bal) if acc_type == "credit" else bal
+
         results.append({"date": day.isoformat(), "value": float(display_val)})
 
         day += timedelta(days=1)
@@ -1040,10 +1058,10 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
 
     # ---- DISPLAY NORMALIZATION (credit shows positive debt) ----
     if acc_type == "credit":
-        starting_balance_at_range = abs(float(starting_balance_at_range))
-        ending_balance = abs(float(ending_balance))
+        starting_balance_at_range = -float(starting_balance_at_range)
+        ending_balance = -float(ending_balance)
         for r in tx:
-            r["balance_after"] = abs(float(r["balance_after"]))
+            r["balance_after"] = -float(r["balance_after"])
 
     return {
         "account_id": account_id,
@@ -1392,3 +1410,240 @@ def ignore_category(name: str):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+@app.get("/spending")
+def spending(start: str, end: str):
+    conn, cur = with_db_cursor()
+
+    start_date = parse_iso(start)
+    end_date = parse_iso(end)
+
+    # Pull transactions with effective date
+    rows = cur.execute("""
+      SELECT
+        COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+        t.amount,
+        TRIM(t.category) AS category,
+        LOWER(a.accountType) AS accountType
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+    """).fetchall()
+
+    conn.close()
+
+    # Build date → spending map
+    daily = {}
+
+    for r in rows:
+        d = parse_posted_date(r["raw_date"])
+        if not d or d < start_date or d > end_date:
+            continue
+
+        try:
+            amt = float(r["amount"])
+        except (TypeError, ValueError):
+            continue
+
+        category = (r["category"] or "").strip().lower()
+
+        # 🚫 EXCLUSIONS
+        if category in ("card payment", "transfer"):
+            continue
+
+        # ✅ SPENDING
+        if r["accountType"] in ("checking", "credit") and amt > 0:
+            daily[d] = daily.get(d, 0.0) + amt
+
+    # Emit full day-by-day series
+    results = []
+    day = start_date
+    while day <= end_date:
+        results.append({
+            "date": day.isoformat(),
+            "value": float(daily.get(day, 0))
+        })
+        day += timedelta(days=1)
+
+    return results
+
+@app.get("/spending-debug")
+def spending_debug(start: str, end: str):
+    conn, cur = with_db_cursor()
+
+    start_date = parse_iso(start)
+    end_date = parse_iso(end)
+
+    rows = cur.execute("""
+      SELECT
+        t.id,
+        COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+        t.amount,
+        t.merchant,
+        TRIM(t.category) AS category,
+        LOWER(a.accountType) AS accountType,
+        a.institution AS bank,
+        a.name AS account
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+    """).fetchall()
+
+    conn.close()
+
+    out = []
+
+    for r in rows:
+        d = parse_posted_date(r["raw_date"])
+        if not d or d < start_date or d > end_date:
+            continue
+
+        try:
+            amt = float(r["amount"])
+        except (TypeError, ValueError):
+            continue
+
+        category = (r["category"] or "").strip().lower()
+
+        # 🚫 EXCLUSIONS (same as /spending)
+        if category in ("card payment", "transfer"):
+            continue
+
+        # ✅ ONLY include real spending
+        if r["accountType"] in ("checking", "credit") and amt > 0:
+            out.append({
+                "date": d.isoformat(),
+                "amount": amt,
+                "merchant": r["merchant"],
+                "category": r["category"],
+                "bank": r["bank"],
+                "account": r["account"]
+            })
+
+    return out
+
+@app.get("/category-totals-range")
+def category_totals_range(start: str, end: str):
+    conn, cur = with_db_cursor()
+
+    rows = cur.execute("""
+      WITH tx AS (
+        SELECT
+          TRIM(t.category) AS category,
+          t.amount,
+          CASE
+            -- MM/DD/YY
+            WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
+              date(
+                '20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 2) || '-' ||
+                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2)
+              )
+
+            -- MM/DD/YYYY
+            WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
+              date(
+                substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 4) || '-' ||
+                substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
+                substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2)
+              )
+            ELSE NULL
+          END AS d
+        FROM transactions t
+        WHERE t.amount > 0
+          AND t.category IS NOT NULL
+          AND TRIM(t.category) <> ''
+      )
+      SELECT category, SUM(amount) AS total
+      FROM tx
+      WHERE d BETWEEN ? AND ?
+      GROUP BY category
+      ORDER BY total DESC
+    """, (start, end)).fetchall()
+
+    conn.close()
+
+    return [
+        {"category": r["category"], "total": float(r["total"] or 0)}
+        for r in rows
+    ]
+
+from recurring import _norm_merchant, _amount_bucket  # matches your recurring.py helpers
+
+@app.post("/recurring/ignore/pattern")
+def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
+    m_norm = _norm_merchant(merchant).upper()
+    amt = float(amount)
+    bucket = float(_amount_bucket(amt))
+    sign = 1 if amt >= 0 else -1
+
+    conn, cur = with_db_cursor()
+    cur.execute("""
+      INSERT OR IGNORE INTO recurring_ignore_patterns
+        (merchant_norm, amount_bucket, sign, account_id)
+      VALUES (?, ?, ?, ?)
+    """, (m_norm, bucket, sign, int(account_id)))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.post("/recurring/override-cadence")
+def override_cadence(merchant: str, amount: float, cadence: str, account_id: int = -1):
+    cadence = (cadence or "").strip().lower()
+    allowed = {"weekly","biweekly","monthly","quarterly","yearly","irregular"}
+    if cadence not in allowed:
+        return {"ok": False, "error": f"cadence must be one of {sorted(allowed)}"}
+
+    m_norm = _norm_merchant(merchant).upper()
+    amt = float(amount)
+    bucket = float(_amount_bucket(amt))
+    sign = 1 if amt >= 0 else -1
+
+    conn, cur = with_db_cursor()
+    cur.execute("""
+      INSERT INTO recurring_cadence_overrides
+        (merchant_norm, amount_bucket, sign, account_id, cadence)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(merchant_norm, amount_bucket, sign, account_id)
+      DO UPDATE SET cadence = excluded.cadence
+    """, (m_norm, bucket, sign, int(account_id), cadence))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.post("/recurring/merchant-alias")
+def set_merchant_alias(alias: str, canonical: str):
+    a = _norm_merchant(alias).upper()
+    c = _norm_merchant(canonical).upper()
+    if not a or not c:
+        return {"ok": False, "error": "alias and canonical required"}
+
+    conn, cur = with_db_cursor()
+    cur.execute("""
+      INSERT INTO merchant_aliases (alias, canonical)
+      VALUES (?, ?)
+      ON CONFLICT(alias) DO UPDATE SET canonical = excluded.canonical
+    """, (a, c))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/recurring/merchant-alias/delete")
+def delete_merchant_alias(alias: str):
+    a = _norm_merchant(alias).upper()
+    conn, cur = with_db_cursor()
+    cur.execute("DELETE FROM merchant_aliases WHERE alias = ?", (a,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.post("/recurring/unignore/merchant")
+def unignore_merchant(name: str):
+    conn, cur = with_db_cursor()
+    cur.execute("DELETE FROM recurring_ignore_merchants WHERE merchant = ?", (name.upper(),))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.get("/recurring/ignored-preview")
+def recurring_ignored_preview(min_occ: int = 3, include_stale: bool = False):
+    return get_ignored_merchants_preview(min_occ=min_occ, include_stale=include_stale)

@@ -23,6 +23,8 @@
             <input id="minOcc" type="number" value="3" min="2" max="20" style="width:70px;">
           </label>
           <button id="reloadRecurring" type="button">Refresh</button>
+          <button id="reviewIgnored" type="button">Review ignored</button>
+
         </div>
       </div>
 
@@ -31,20 +33,7 @@
 
   </div>
 
-  <!-- bottom tabs -->
-  <nav class="mobile-tabs" aria-label="Bottom Tabs">
-    <a class="mobile-tab" href="/" id="tabHome">
-      <span class="tab-ico">🏠</span><span>Home</span>
-    </a>
 
-    <a class="mobile-tab" href="/static/all-transactions.html" id="tabAllTx">
-      <span class="tab-ico">🔎</span><span>All</span>
-    </a>
-
-    <a class="mobile-tab" href="/static/recurring.html" id="tabRecurring">
-      <span class="tab-ico">🔁</span><span>Recurring</span>
-    </a>
-  </nav>
 <script src="/static/recurring_page.js"></script>
   <!-- modal -->
 <div id="occModal" class="occ-modal hidden">
@@ -60,21 +49,25 @@
     <div id="occBody" class="occ-body"></div>
   </div>
 </div>
+  <div id="ignoredModal" class="occ-modal hidden">
+  <div class="occ-backdrop" onclick="closeIgnoredModal()"></div>
+  <div class="occ-card" role="dialog" aria-modal="true">
+    <div class="occ-head">
+      <div>
+        <div class="occ-title">Ignored merchants</div>
+        <div class="occ-sub">Click a merchant to unignore, or review what it would have matched.</div>
+      </div>
+      <button class="occ-close" onclick="closeIgnoredModal()">✕</button>
+    </div>
+    <div id="ignoredBody" class="occ-body"></div>
+  </div>
+</div>
 
-  <script>
-    (function(){
-      const path = window.location.pathname;
-      const home = document.getElementById("tabHome");
-      const all  = document.getElementById("tabAllTx");
-      const rec  = document.getElementById("tabRecurring");
 
-      if (home && all && rec){
-        if (path.includes("all-transactions.html")) all.classList.add("active");
-        else if (path.includes("recurring.html")) rec.classList.add("active");
-        else home.classList.add("active");
-      }
-    })();
-  </script>
+
+<div id="bottomTabs"></div>
+<script src="/static/bottomTabs.js"></script>
+
 
   <script src="/static/recurring_page.js"></script>
 </body>

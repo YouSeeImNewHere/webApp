@@ -22,18 +22,18 @@ TABLE_NAME = "transactions"
 ACTIVE_JOB = "capitalone_1047_deposit"
 
 IMPORT_JOBS = [
-    {"name": "amex_72008", "csv": Path("downloads/amexCredit_72008.csv"), "account_id": 2},
-    {"name": "amex_hysa_3912", "csv": Path("downloads/amexHYSA_3912.csv"), "account_id": 1},
-    {"name": "amex_51007", "csv": Path("downloads/amexCredit_51007.csv"), "account_id": 8},
+    {"name": "amex_72008", "csv": Path("../downloads/amexCredit_72008.csv"), "account_id": 2},
+    {"name": "amex_hysa_3912", "csv": Path("../downloads/amexHYSA_3912.csv"), "account_id": 1},
+    {"name": "amex_51007", "csv": Path("../downloads/amexCredit_51007.csv"), "account_id": 8},
 
-    {"name": "capitalone_9691", "csv": Path("downloads/capitalOne_9691.csv"), "account_id": 4},
-    {"name": "capitalone_1047_deposit", "csv": Path("downloads/capitalOne_1047.csv"), "account_id": 9},
-    {"name": "capitalone_8424_cc", "csv": Path("downloads/capitalOne_8424.csv"), "account_id": 5},
+    {"name": "capitalone_9691", "csv": Path("../downloads/capitalOne_9691.csv"), "account_id": 4},
+    {"name": "capitalone_1047_deposit", "csv": Path("../downloads/capitalOne_1047.csv"), "account_id": 9},
+    {"name": "capitalone_8424_cc", "csv": Path("../downloads/capitalOne_8424.csv"), "account_id": 5},
 
-    {"name": "main",  "csv": Path("downloads/navyfcu_main_9338.csv"),  "account_id": 3},
-    {"name": "bills", "csv": Path("downloads/navyfcu_bills_7613.csv"), "account_id": 6},
+    {"name": "main",  "csv": Path("../downloads/navyfcu_main_9338.csv"), "account_id": 3},
+    {"name": "bills", "csv": Path("../downloads/navyfcu_bills_7613.csv"), "account_id": 6},
 
-    {"name": "discover_cc", "csv": Path("downloads/discovery.csv"), "account_id": 7},
+    {"name": "discover_cc", "csv": Path("../downloads/discovery.csv"), "account_id": 7},
 ]
 
 DEFAULTS = {

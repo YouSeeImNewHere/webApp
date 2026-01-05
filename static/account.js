@@ -1,6 +1,26 @@
 let chart = null;
-
+let accountId = null;
 const TX_MODE = window.TX_MODE || "prod";
+
+
+const ACCOUNT_CHART_IDS = {
+  title: "aChartTitle",
+  dots: "aChartDots",
+  toggle: "aChartToggle", // will be hidden on this page
+  breakLabel: "aBreakLabel",
+  breakValue: "aBreakValue",
+  quarters: "aQuarterButtons",
+  yearBack: "a-yearBack",
+  yearLabel: "aYearLabel",
+  yearFwd: "a-yearFwd",
+  update: "a-update",
+  start: "a-start",
+  end: "a-end",
+  canvas: "accountChart",
+  monthSelect: "aMonthSelect",
+  monthSelectWrap: "aSelectWrap",
+  monthButtons: "aButtons"
+};
 
 
 function qs(name){
@@ -19,13 +39,18 @@ function firstDayOfMonth(y,m){ return new Date(y,m,1); }
 function lastDayOfMonth(y,m){ return new Date(y,m+1,0); }
 
 async function loadAccountHeader(accountId){
-  // ✅ In test mode, keep the hardcoded header in transactions_test_account.html
   if (TX_MODE === "test") return;
 
   const res = await fetch(`/account/${accountId}`);
   const a = await res.json();
-  document.getElementById("accountTitle").textContent = `${a.institution} — ${a.name}`;
-  document.getElementById("accountMeta").textContent = `Type: ${a.accountType}`;
+
+  // ✅ Put title inside the chart card header (like home)
+  const titleEl = document.getElementById(ACCOUNT_CHART_IDS.title);
+  if (titleEl) titleEl.textContent = `${a.institution} — ${a.name}`;
+
+  // ✅ Use the inline breakdown label for account type (optional, looks nice)
+  const breakLabel = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
+  if (breakLabel) breakLabel.textContent = a.accountType || "Balance";
 }
 
 
@@ -43,6 +68,14 @@ async function loadAccountChart(accountId){
 
   const labels = data.map(d => formatMMMdd(d.date));
   const values = data.map(d => Number(d.value));
+const last = values.length ? values[values.length - 1] : 0;
+
+// ✅ write directly to the card’s breakdown elements
+const l = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
+const v = document.getElementById(ACCOUNT_CHART_IDS.breakValue);
+if (l) l.textContent = l.textContent || "Balance"; // keep accountType from loadAccountHeader()
+if (v) v.textContent = money(last);
+
 
   const ctx = document.getElementById("accountChart").getContext("2d");
   if (chart) chart.destroy();
@@ -131,129 +164,30 @@ function setActiveQuickButton(container, btn){
   if (btn) btn.classList.add("active");
 }
 
-function buildQuickButtons(accountId){
-  const el = document.getElementById("aButtons");
-  const today = new Date();
-  const year = today.getFullYear();
-
-  const add = (label, start, end, makeActive=false) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "month-btn";
-    b.textContent = label;
-
-    b.addEventListener("click", async () => {
-      document.getElementById("a-start").value = toISODate(start);
-      document.getElementById("a-end").value   = toISODate(end);
-      setActiveQuickButton(el, b);
-      await loadAccountChart(accountId);
-      await loadAccountTransactions(accountId);
-    });
-
-    el.appendChild(b);
-
-    if (makeActive) setActiveQuickButton(el, b);
-    return b;
-  };
-
-  el.innerHTML = "";
-
-  // Default active: This Month
-  add("This Month", new Date(year, today.getMonth(), 1), today, true);
-
-  add("YTD", new Date(year, 0, 1), today);
-
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  months.forEach((m, i) => add(m, firstDayOfMonth(year, i), lastDayOfMonth(year, i)));
-}
-
-
 window.addEventListener("load", async () => {
-  const accountId = Number(qs("account_id"));
+  accountId = Number(qs("account_id"));
   if (!accountId) return alert("Missing account_id");
 
-  const today = new Date();
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-  document.getElementById("a-start").value = toISODate(firstOfMonth);
-  document.getElementById("a-end").value   = toISODate(today);
-
-  await loadAccountHeader(accountId);
-  buildQuickButtons(accountId);
-
-  document.getElementById("a-update").addEventListener("click", async () => {
-    await loadAccountChart(accountId);
-    await loadAccountTransactions(accountId);
+  // 1) mount the shared card FIRST
+  mountChartCard("#chartMount", {
+    ids: ACCOUNT_CHART_IDS,
+    title: "Balance",
+    showToggle: false
   });
-
+initChartControls(ACCOUNT_CHART_IDS, async () => {
   await loadAccountChart(accountId);
   await loadAccountTransactions(accountId);
 });
 
-function buildQuickButtons(accountId){
-  const btnWrap = document.getElementById("aButtons");
-  const sel = document.getElementById("aMonthSelect");
 
-  const today = new Date();
-  const year = today.getFullYear();
-
-  btnWrap.innerHTML = "";
-  if (sel) sel.innerHTML = "";
-
-  // helper: apply range + refresh
-  const applyRange = async (start, end, activeBtn=null) => {
-    document.getElementById("a-start").value = toISODate(start);
-    document.getElementById("a-end").value   = toISODate(end);
-
-    // buttons active state
-    btnWrap.querySelectorAll(".month-btn").forEach(b => b.classList.remove("active"));
-    if (activeBtn) activeBtn.classList.add("active");
-
+  // 6) wire update button
+  document.getElementById(ACCOUNT_CHART_IDS.update).addEventListener("click", async () => {
     await loadAccountChart(accountId);
     await loadAccountTransactions(accountId);
-  };
-
-  // define options once, used by BOTH UI types
-  const options = [];
-  options.push({ label: "This Month", start: new Date(year, today.getMonth(), 1), end: today, makeActive: true });
-  options.push({ label: "YTD",        start: new Date(year, 0, 1),               end: today });
-
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  months.forEach((m, i) => {
-    options.push({ label: m, start: firstDayOfMonth(year, i), end: lastDayOfMonth(year, i) });
   });
 
-  // build DESKTOP buttons
-  options.forEach(opt => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "month-btn";
-    b.textContent = opt.label;
-
-    b.addEventListener("click", () => applyRange(opt.start, opt.end, b));
-    btnWrap.appendChild(b);
-
-    if (opt.makeActive) b.classList.add("active");
-  });
-
-  // build MOBILE dropdown
-  if (sel){
-    options.forEach((opt, idx) => {
-      const o = document.createElement("option");
-      o.value = String(idx);
-      o.textContent = opt.label;
-      sel.appendChild(o);
-    });
-
-    // default selection: "This Month"
-    sel.value = "0";
-
-    sel.addEventListener("change", async () => {
-      const opt = options[Number(sel.value)];
-      await applyRange(opt.start, opt.end, null);
-    });
-  }
-
-  // ensure default loads match "This Month"
-  // (your window.load already sets dates + loads, so this is optional)
-}
+  // 7) load content
+  await loadAccountHeader(accountId);
+  await loadAccountChart(accountId);
+  await loadAccountTransactions(accountId);
+});
