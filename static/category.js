@@ -4,6 +4,8 @@ const CATEGORY_CHART_IDS = {
   title: "catChartTitle",
   dots: "catChartDots",
   toggle: "catChartToggle", // hidden
+  growthLabel: "catGrowthLabel",
+  growthValue: "catGrowthValue",
   breakLabel: "catBreakLabel",
   breakValue: "catBreakValue",
   quarters: "catQuarterButtons",
@@ -14,7 +16,7 @@ const CATEGORY_CHART_IDS = {
   start: "cat-start",
   end: "cat-end",
   canvas: "catChart",
-  monthButtons: "catMonthButtons"
+  monthButtons: "catMonthButtons",
   // (no dropdown on category page unless you want it)
 };
 
@@ -68,6 +70,15 @@ async function loadCategoryChart() {
     new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "2-digit" })
   );
 
+  // % Growth
+  let growthStr = "—";
+  if (values.length >= 2 && Math.abs(values[0]) > 1e-9) {
+    const pct = ((values[values.length - 1] - values[0]) / Math.abs(values[0])) * 100;
+    growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+  }
+  setInlineGrowthByIds(CATEGORY_CHART_IDS, "% Growth", growthStr);
+
+
   const values = filtered.map(p => Number(p.amount || 0));
 const last = values.length ? values[values.length - 1] : 0;
 
@@ -98,6 +109,8 @@ if (v) v.textContent = money(last);
     },
     options: {
       responsive: true,
+  maintainAspectRatio: false,
+  devicePixelRatio: window.devicePixelRatio || 1,
       plugins: { legend: { display: false } },
       interaction: { mode: "index", intersect: false },
       scales: {
@@ -241,7 +254,7 @@ async function init() {
 mountChartCard("#chartMount", {
   ids: CATEGORY_CHART_IDS,
   title: "Category",
-  showToggle: false
+  showToggle: false,
 });
 initChartControls(CATEGORY_CHART_IDS, loadCategoryChart);
 

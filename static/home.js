@@ -36,9 +36,38 @@ async function loadBankTotals() {
   renderCategory(container, "Investments", data.investment);
 }
 
-let netWorthChartInstance = null;
-const DEBUG_SPENDING = true;
 
+// IDs used by the shared chart card (chartCard.js)
+const HOME_IDS = {
+  title: "chartTitle",
+  dots: "chartDots",
+  toggle: "chartToggleBtn",
+
+  breakLabel: "chartBreakdownLabel",
+  breakValue: "chartBreakdownValue",
+  growthLabel: "chartGrowthLabel",
+  growthValue: "chartGrowthValue",
+
+  quarters: "quarterButtons",
+  yearBack: "homeYearBack",
+  yearLabel: "homeYearLabel",
+  yearFwd: "homeYearFwd",
+
+  start: "nw-start",
+  end: "nw-end",
+  update: "nw-chart-btn",
+
+  canvas: "netWorthChart",
+
+  monthButtons: "monthButtons",
+  monthSelect: "monthSelect",
+  monthSelectWrap: "monthSelectWrap"
+};
+
+let netWorthChartInstance = null;
+const DEBUG_SPENDING = false;
+let showPotentialGrowth = (localStorage.getItem("showPotentialGrowth") === "true");
+let endBeforePotential = null;
 function setYearLabel() {
   const el = document.getElementById("homeYearLabel");
   if (el) el.textContent = String(selectedYear);
@@ -130,14 +159,17 @@ function setChartHeaderUI() {
   if (t) t.textContent = current.title;
   if (btn) btn.textContent = `Next: ${next.title} ▾`;
 
-  renderChartDots(); // ✅ add this line
+    renderChartDots();
+    updatePotentialToggleVisibility();
 }
 
 function toggleChart() {
   chartIndex = (chartIndex + 1) % CHARTS.length;
   setChartHeaderUI();
+  updatePotentialToggleVisibility();
   loadChart();
 }
+
 
 function formatMMMdd(isoDateStr) {
   const d = new Date(isoDateStr);
@@ -158,10 +190,76 @@ async function loadChart() {
   }
 
   const data = await res.json();
-    const lastPoint = data[data.length - 1];
-    if (lastPoint) {
-      setInlineBreakdown(currentChart().title, lastPoint.value);
+
+  // --- Potential growth projection (Net Worth only, current month only) ---
+let potentialSeries = null;
+let potentialEOM = null;
+
+const isNet = (currentChart().key === "net");
+
+if (isNet && showPotentialGrowth) {
+  const today = new Date();
+  const todayIso = isoLocal(today);
+
+  // Only project for current month
+  const startIso = document.getElementById("nw-start")?.value;
+  const endIso   = document.getElementById("nw-end")?.value;
+
+  if (startIso && endIso && sameMonthISO(todayIso, endIso)) {
+    // 1) Pull month events from recurring calendar
+    const y = today.getFullYear();
+    const m = today.getMonth() + 1;
+
+    // match your recurring page defaults
+    const minOcc = 3;
+    const includeStale = "false";
+
+    const calRes = await fetch(
+      `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`
+    );
+
+    const calJson = calRes.ok ? await calRes.json() : { events: [] };
+    const events = Array.isArray(calJson?.events) ? calJson.events : [];
+
+    // 2) Build daily delta map for remaining days in month (after today)
+    const deltaByDate = {}; // { "YYYY-MM-DD": number }
+    for (const e of events) {
+      const d = String(e.date || "");
+      if (!d) continue;
+
+      // Only dates after today (projection forward)
+      if (d <= todayIso) continue;
+
+      const amt = Number(e.amount) || 0;
+
+      // Income rules:
+      // - paychecks show as cadence="paycheck" and type="income"
+      // - interest etc may have type="income"
+      const isIncome = (String(e.type || "").toLowerCase() === "income") || (String(e.cadence || "") === "paycheck");
+
+      const delta = isIncome ? amt : -Math.abs(amt);
+      deltaByDate[d] = (deltaByDate[d] || 0) + delta;
     }
+
+    // 3) Build a projection series aligned to your /net-worth day-by-day data
+    const idxToday = data.findIndex(p => String(p.date) === todayIso);
+    if (idxToday >= 0) {
+      potentialSeries = new Array(data.length).fill(null);
+
+      let running = Number(data[idxToday]?.value || 0);
+      potentialSeries[idxToday] = running;
+
+      for (let i = idxToday + 1; i < data.length; i++) {
+        const d = String(data[i]?.date || "");
+        running += Number(deltaByDate[d] || 0);
+        potentialSeries[i] = running;
+          }
+
+      potentialEOM = running;
+    }
+  }
+}
+
   if (DEBUG_SPENDING && currentChart().key === "spending") {
   console.group("🧾 Spending chart – raw backend data");
   console.table(data.map(d => ({
@@ -174,6 +272,41 @@ async function loadChart() {
 
   const labels = data.map(d => formatMMMdd(d.date));
   const values = data.map(d => Number(d.value)); // <— use unified key "value"
+
+  // ---- Breakdown block (top-left) ----
+if (currentChart().key === "spending") {
+  // Spending endpoint is daily amounts; Home should show the *range total*
+  const total = values.reduce((sum, v) => sum + (Number(v) || 0), 0);
+  setInlineBreakdown("Total spent", total);
+} else {
+  const lastPoint = data[data.length - 1];
+  if (lastPoint) setInlineBreakdown(currentChart().title, lastPoint.value);
+
+  // Net Worth: optionally show projected EOM value when enabled
+  if (currentChart().key === "net" && showPotentialGrowth && typeof potentialEOM === "number") {
+    setInlineBreakdown("Potential (EOM)", potentialEOM);
+  }
+}
+
+
+    // ---- % Growth (uses potential EOM when toggle is on for Net Worth) ----
+  const startVal = (values.length ? Number(values[0] || 0) : 0);
+  const endValActual = (values.length ? Number(values[values.length - 1] || 0) : 0);
+
+  let endValForGrowth = endValActual;
+  if (currentChart().key === "net" && showPotentialGrowth && typeof potentialEOM === "number") {
+    endValForGrowth = Number(potentialEOM);
+  }
+
+  let growthStr = "—";
+  if (values.length >= 2 && Math.abs(startVal) > 1e-9) {
+    const pct = ((endValForGrowth - startVal) / Math.abs(startVal)) * 100;
+    growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+  }
+
+  setInlineGrowth("% Growth", growthStr);
+
+
     // Running total (cumulative) for spending
 let running = 0;
 const cumulative = values.map(v => (running += (Number(v) || 0)));
@@ -212,6 +345,17 @@ if (DEBUG_SPENDING && currentChart().key === "spending") {
 const isSpending = currentChart().key === "spending";
 
 const datasets = isSpending ? [
+
+  {
+    label: "Total (cumulative)",
+    data: cumulative,
+    tension: 0.2,
+    pointRadius: 0,
+    pointHitRadius: 12,
+    pointHoverRadius: 4,
+    borderWidth: 2,
+    fill: false
+  },
   {
     label: "Daily",
     data: values,
@@ -222,27 +366,37 @@ const datasets = isSpending ? [
     borderWidth: 2.5,
     borderDash: [4, 4],
     fill: false
-  },
-  {
-    label: "Total (cumulative)",
-    data: cumulative,
-    tension: 0.2,
-    pointRadius: 0,
-    pointHitRadius: 12,
-    pointHoverRadius: 4,
-    borderWidth: 2,
-    fill: false
   }
-] : [
-  {
+] : (() => {
+  const base = {
     label: title,
     data: values,
     tension: 0.2,
     pointRadius: 0,
     pointHitRadius: 12,
     pointHoverRadius: 4
+  };
+
+  // add overlay for potential growth
+  if (currentChart().key === "net" && showPotentialGrowth && Array.isArray(potentialSeries)) {
+    return [
+      base,
+      {
+        label: "Potential growth",
+        data: potentialSeries,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 10,
+        pointHoverRadius: 3,
+        borderWidth: 2,
+        borderDash: [6, 5],
+        fill: false
+      }
+    ];
   }
-];
+
+  return [base];
+})();
 
 
 
@@ -254,6 +408,8 @@ netWorthChartInstance = new Chart(ctx, {
   },
   options: {
     responsive: true,
+  maintainAspectRatio: false,
+  devicePixelRatio: window.devicePixelRatio || 1,
     plugins: {
   legend: { display: false },
   tooltip: {
@@ -262,18 +418,24 @@ netWorthChartInstance = new Chart(ctx, {
       label: (ctx) => {
         const i = ctx.dataIndex;
         const y = ctx.parsed.y;
-
+if (currentChart().key === "net" && ctx.datasetIndex === 1) {
+    return `Potential: ${money(y)}`;
+  }
         // Default label for Savings/Investments charts
-        if (currentChart().key === "spending") {
+if (currentChart().key === "spending") {
   const i = ctx.dataIndex;
-  const daily = Number(values[i] || 0);
-  const total = Number(cumulative[i] || 0);
 
-  return [
-    `Daily: ${money(daily)}`,
-    `Total: ${money(total)}`
-  ];
+  // datasetIndex 0 = Total (cumulative), datasetIndex 1 = Daily
+  if (ctx.datasetIndex === 0) {
+    const total = Number(cumulative[i] || 0);
+    return `Total: ${money(total)}`;
+  }
+
+  const daily = Number(values[i] || 0);
+  return `Daily: ${money(daily)}`;
 }
+
+
 
 
             if (currentChart().key !== "net") {
@@ -535,6 +697,24 @@ function renderUnassignedRow(ul, unassignedAllTime) {
   btn.addEventListener("click", openRuleModal);
 }
 
+function updatePotentialToggleVisibility() {
+  const wrap = document.getElementById("nwPotentialWrap");
+  if (!wrap) return;
+
+  const isNet = currentChart().key === "net";
+  if (isNet) wrap.classList.remove("is-hidden-reserve");
+    else wrap.classList.add("is-hidden-reserve");
+
+  // optional: turn it off when leaving Net Worth
+  if (!isNet && showPotentialGrowth) {
+    showPotentialGrowth = false;
+    localStorage.setItem("showPotentialGrowth", "false");
+    const cb = document.getElementById("nwPotentialToggle");
+    if (cb) cb.checked = false;
+  }
+}
+
+
 let unassignedQueue = [];
 let unassignedIndex = 0;
 
@@ -616,7 +796,27 @@ async function saveRule() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const closeBtn = document.getElementById("ruleModalClose");
+  
+// Build the shared chart UI (so Home matches every other page)
+mountChartCard("#homeChartMount", {
+  ids: HOME_IDS,
+  title: "Net Worth",
+  toggleText: "Next: Savings ▾",
+  breakdownLabel: "Net",
+  breakdownValue: "$0",
+
+  // 👇 THIS is the key change
+  growthToggleHtml: `
+  <div id="nwPotentialWrap">
+    <label style="display:flex; align-items:center; gap:8px; user-select:none;">
+      <input id="nwPotentialToggle" type="checkbox" />
+      Projected growth
+    </label>
+  </div>
+`
+});
+
+const closeBtn = document.getElementById("ruleModalClose");
   const saveBtn = document.getElementById("ruleSaveBtn");
   const backdrop = document.getElementById("ruleModalBackdrop");
 
@@ -636,7 +836,16 @@ document.addEventListener("DOMContentLoaded", () => {
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) closeRuleModal();
     });
-  }
+  }initChartControls({
+  start: HOME_IDS.start,
+  end: HOME_IDS.end,
+  yearLabel: HOME_IDS.yearLabel,
+  yearBack: HOME_IDS.yearBack,
+  yearFwd: HOME_IDS.yearFwd,
+  quarters: HOME_IDS.quarters,
+  monthButtons: HOME_IDS.monthButtons,
+  update: HOME_IDS.update
+}, loadChart);
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -650,6 +859,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
   startInput.value = toISODate(firstOfMonth);
   endInput.value = toISODate(today);
+        
+
+const potentialToggle = document.getElementById("nwPotentialToggle");
+if (potentialToggle) {
+  potentialToggle.checked = showPotentialGrowth;
+
+  potentialToggle.addEventListener("change", async () => {
+    showPotentialGrowth = potentialToggle.checked;
+    localStorage.setItem("showPotentialGrowth", String(showPotentialGrowth));
+
+    // Only applies to Net Worth + current month
+    const startInput = document.getElementById("nw-start");
+    const endInput = document.getElementById("nw-end");
+    const todayIso = isoLocal(new Date());
+
+    if (!startInput || !endInput) return;
+
+    if (showPotentialGrowth) {
+      // force: current month only
+      if (!sameMonthISO(todayIso, endInput.value) || currentChart().key !== "net") {
+        showPotentialGrowth = false;
+        potentialToggle.checked = false;
+        localStorage.setItem("showPotentialGrowth", "false");
+        return;
+      }
+
+      endBeforePotential = endInput.value;
+      endInput.value = endOfCurrentMonthISO();
+    } else {
+      if (endBeforePotential) endInput.value = endBeforePotential;
+      endBeforePotential = null;
+    }
+
+    await loadChart();
+  });
+}
+
+
+
 
   setChartHeaderUI();
   loadChart();
@@ -660,18 +908,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
 });
-
-initChartControls({
-  start: "nw-start",
-  end: "nw-end",
-  yearLabel: "homeYearLabel",
-  yearBack: "homeYearBack",
-  yearFwd: "homeYearFwd",
-  quarters: "quarterButtons",
-  monthButtons: "monthButtons",
-  update: "nw-chart-btn"
-}, loadChart);
-
 
 function updateRuleCounter() {
   const el = document.getElementById("ruleCounter");
@@ -867,6 +1103,14 @@ async function loadNetWorthBreakdownForEndDate() {
   setBreakdownUI(arr && arr.length ? arr[0] : null);
 }
 
+function setInlineGrowth(label, valueStr) {
+  const l = document.getElementById("chartGrowthLabel");
+  const v = document.getElementById("chartGrowthValue");
+  if (!l || !v) return;
+  l.textContent = label || "% Growth";
+  v.textContent = (valueStr == null ? "—" : String(valueStr));
+}
+
 function setInlineBreakdown(label, value) {
   const l = document.getElementById("chartBreakdownLabel");
   const v = document.getElementById("chartBreakdownValue");
@@ -874,4 +1118,21 @@ function setInlineBreakdown(label, value) {
 
   l.textContent = label;
   v.textContent = money(value);
+}
+
+function isoLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function endOfCurrentMonthISO() {
+  const t = new Date();
+  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0);
+  return isoLocal(last);
+}
+
+function sameMonthISO(aIso, bIso) {
+  return String(aIso).slice(0, 7) === String(bIso).slice(0, 7);
 }

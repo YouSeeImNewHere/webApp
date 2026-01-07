@@ -5,6 +5,8 @@ const SPENDING_IDS = {
   dots: "spChartDots",
   toggle: null,
   breakLabel: "spBreakLabel",
+   growthLabel: "spGrowthLabel",
+  growthValue: "spGrowthValue",
   breakValue: "spBreakValue",
   quarters: "spQuarterButtons",
   yearBack: "spYearBack",
@@ -14,15 +16,16 @@ const SPENDING_IDS = {
   start: "sp-start",
   end: "sp-end",
   canvas: "spChart",
-  monthButtons: "spMonthButtons"
+  monthButtons: "spMonthButtons",
 };
 
 function money(n){
-  return Number(n || 0).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD"
-  });
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—"; // don't silently turn NaN into $0.00
+  return v.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
+
+
 
 async function renderSpending(start, end) {
   const res = await fetch(`/spending?start=${start}&end=${end}`);
@@ -35,8 +38,24 @@ async function renderSpending(start, end) {
     })
   );
 
-  const values = data.map(d => Number(d.value || 0));
-  const total = values.reduce((a, b) => a + b, 0);
+  const values = data.map(d => {
+  const raw = String(d.value ?? 0);
+  const cleaned = raw.replace(/[^0-9.-]/g, ""); // strips $ and commas
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : 0;
+});
+
+const total = values.reduce((sum, v) => sum + (Number(v) || 0), 0);
+
+
+      // % Growth
+  let growthStr = "—";
+  if (values.length >= 2 && Math.abs(values[0]) > 1e-9) {
+    const pct = ((values[values.length - 1] - values[0]) / Math.abs(values[0])) * 100;
+    growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+  }
+  setInlineGrowthByIds(SPENDING_IDS, "% Growth", growthStr);
+
 
   document.getElementById("spBreakLabel").textContent = "Total";
   document.getElementById("spBreakValue").textContent = money(total);
@@ -57,6 +76,8 @@ async function renderSpending(start, end) {
     },
     options: {
       responsive: true,
+  maintainAspectRatio: false,
+  devicePixelRatio: window.devicePixelRatio || 1,
       plugins: { legend: { display: false } },
       interaction: { mode: "index", intersect: false },
       scales: {
@@ -86,11 +107,12 @@ async function loadSpendingCategories(start, end) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  mountChartCard("#chartMount", {
-    ids: SPENDING_IDS,
-    title: "Spending",
-    showToggle: false
-  });
+mountChartCard("#chartMount", {
+  ids: SPENDING_IDS,
+  title: "Spending",
+  showToggle: false
+});
+
 
   const back = document.getElementById("spBackBtn");
   if (back) {

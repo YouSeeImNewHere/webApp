@@ -1,5 +1,206 @@
-let __mainData = [];
-let __reopenIgnoredAfterOcc = false;
+// --- guard against double-load ---
+if (window.__recurringPageLoaded) {
+  console.warn("recurring_page.js loaded twice; skipping re-init");
+} else {
+  window.__recurringPageLoaded = true;
+
+  window.__mainData = window.__mainData || [];
+  window.__reopenIgnoredAfterOcc = window.__reopenIgnoredAfterOcc ?? false;
+  window.__lastData = window.__lastData || [];
+
+  window.__calYear = window.__calYear ?? new Date().getFullYear();
+    window.__calMonth = window.__calMonth ?? (new Date().getMonth() + 1);
+    window.__calEventsByDate = window.__calEventsByDate || {};
+}
+
+
+function monthName(m){
+  return ["January","February","March","April","May","June","July","August","September","October","November","December"][m-1] || "";
+}
+
+function parseISODateLocal(iso){
+  // iso = "YYYY-MM-DD"
+  const [y, m, d] = String(iso).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1); // local time
+}
+
+function isoYMD(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function truncMerchant(s, n=16){
+  const t = String(s || "").toUpperCase().trim();
+  return t.length > n ? (t.slice(0,n-1) + "…") : t;
+}
+
+async function loadCalendar(){
+  const grid = document.getElementById("calGrid");
+  const title = document.getElementById("calTitle");
+  if (!grid || !title) return;
+
+  title.textContent = `${monthName(__calMonth)} ${__calYear}`;
+  grid.innerHTML = `<div style="grid-column:1/-1; padding:10px; opacity:.7;">Loading…</div>`;
+
+  const n = Number(document.getElementById("minOcc")?.value || 3);
+  const includeStale = document.getElementById("includeStale")?.checked ? "true" : "false";
+
+  const res = await fetch(`/recurring/calendar?year=${encodeURIComponent(__calYear)}&month=${encodeURIComponent(__calMonth)}&min_occ=${encodeURIComponent(n)}&include_stale=${includeStale}`);
+  if (!res.ok){
+    grid.innerHTML = `<div style="grid-column:1/-1; padding:10px; color:#b00;">Failed to load calendar.</div>`;
+    return;
+  }
+
+  const data = await res.json();
+  const events = Array.isArray(data?.events) ? data.events : [];
+
+  // ---- Month totals (In/Out) ----
+  let totalOut = 0;
+  let totalIn = 0;
+
+const monthKey = `${__calYear}-${String(__calMonth).padStart(2,"0")}`;
+
+for (const e of events){
+  const amt = Number(e.amount) || 0;
+
+  // ✅ paychecks: only count if the TARGET payday is in this month
+  if (e.cadence === "paycheck"){
+    if (String(e.pay_target || "").startsWith(monthKey + "-")) {
+      totalIn += amt;
+    }
+    continue;
+  }
+
+  // ✅ other income (interest, etc.)
+  if (e.type === "income"){
+    totalIn += amt;
+    continue;
+  }
+
+  // ✅ expenses
+  if (amt > 0) totalOut += amt;
+}
+const topOut = document.getElementById("calTopOut");
+const topIn  = document.getElementById("calTopIn");
+
+if (topOut) topOut.textContent = `Out: ${money(totalOut)}`;
+if (topIn)  topIn.textContent  = `In: ${money(totalIn)}`;
+
+  __calEventsByDate = {};
+  for (const e of events){
+    const key = e.date;
+    (__calEventsByDate[key] ||= []).push(e);
+  }
+
+  renderCalendarGrid(__calYear, __calMonth);
+}
+
+function renderCalendarGrid(year, month){
+  const grid = document.getElementById("calGrid");
+  if (!grid) return;
+
+  const first = new Date(year, month-1, 1);
+  const last  = new Date(year, month, 0); // last day of month
+  const startDow = first.getDay(); // 0=Sun
+  const daysInMonth = last.getDate();
+
+  // We’ll render 6 weeks (42 cells) for consistent height
+  const totalCells = 42;
+  const cells = [];
+
+  // Previous month info for leading blanks
+  const prevLast = new Date(year, month-1, 0);
+  const prevDays = prevLast.getDate();
+
+  for (let i=0; i<totalCells; i++){
+    const dayIndex = i - startDow + 1; // day-of-month for current month
+    let cellDate;
+    let inMonth = true;
+    let dayNum;
+
+    if (dayIndex < 1){
+      // prev month
+      inMonth = false;
+      dayNum = prevDays + dayIndex;
+      cellDate = new Date(year, month-2, dayNum);
+    } else if (dayIndex > daysInMonth){
+      // next month
+      inMonth = false;
+      dayNum = dayIndex - daysInMonth;
+      cellDate = new Date(year, month, dayNum);
+    } else {
+      // this month
+      inMonth = true;
+      dayNum = dayIndex;
+      cellDate = new Date(year, month-1, dayNum);
+    }
+
+    const key = isoYMD(cellDate);
+    const evts = __calEventsByDate[key] || [];
+
+    const chips = evts
+      .slice(0, 3)
+      .map(e => `<div class="cal-chip" title="${esc((e.merchant||"").toUpperCase())}">${esc(truncMerchant(e.merchant))} • ${money(e.amount)}</div>`)
+      .join("");
+
+    const more = evts.length > 3
+      ? `<div class="cal-chip" style="opacity:.7;">+${evts.length - 3} more</div>`
+      : "";
+
+    const cls = `cal-day${inMonth ? "" : " is-out"}`;
+
+    // Click only if in current month AND has events
+    const click = (inMonth && evts.length)
+      ? `onclick="openCalDayModal('${key}')"`
+      : "";
+
+    cells.push(`
+      <div class="${cls}" ${click}>
+        <div class="cal-daynum">${dayNum}</div>
+        ${chips}
+        ${more}
+      </div>
+    `);
+  }
+
+  grid.innerHTML = cells.join("");
+}
+
+function openCalDayModal(isoDate){
+  const modal = document.getElementById("calDayModal");
+  const title = document.getElementById("calDayTitle");
+  const sub   = document.getElementById("calDaySub");
+  const body  = document.getElementById("calDayBody");
+  if (!modal || !title || !sub || !body) return;
+
+  const evts = __calEventsByDate[isoDate] || [];
+  if (!evts.length) return;
+
+const d = parseISODateLocal(isoDate);
+  title.textContent = d.toLocaleDateString(undefined, { weekday:"long", year:"numeric", month:"long", day:"numeric" });
+
+  const total = evts.reduce((a,e)=>a+Number(e.amount||0),0);
+  sub.textContent = `${evts.length} expected • Total ${money(total)}`;
+
+  body.innerHTML = evts.map(e => `
+    <div class="occ-tx">
+      <div class="occ-left">
+        <div class="occ-merchant">${esc((e.merchant || "").toUpperCase())}</div>
+        <div class="occ-meta">${esc(e.cadence || "")}</div>
+      </div>
+      <div class="occ-amt">${money(e.amount)}</div>
+    </div>
+  `).join("");
+
+  modal.classList.remove("hidden");
+}
+
+function closeCalDayModal(){
+  document.getElementById("calDayModal")?.classList.add("hidden");
+}
+
 
 function money(n){
   const x = Number(n || 0);
@@ -20,8 +221,6 @@ function esc(s){
     .replaceAll('"',"&quot;")
     .replaceAll("'","&#39;");
 }
-
-let __lastData = []; // keep the fetched data for modal lookups
 
 function merchantHTML(g){
   const m = (g.merchant || "").toUpperCase();
@@ -248,9 +447,19 @@ async function overrideCadence(merchant, amount, cadence, accountId){
   loadRecurring();
 }
 
-document.getElementById("reloadRecurring")?.addEventListener("click", loadRecurring);
-document.getElementById("includeStale")?.addEventListener("change", loadRecurring);
+document.getElementById("reloadRecurring")?.addEventListener("click", () => {
+  loadRecurring();
+  loadCalendar();
+});
+
+document.getElementById("includeStale")?.addEventListener("change", () => {
+  loadRecurring();
+  loadCalendar();
+});
+
 loadRecurring();
+loadCalendar();
+
 
 async function mergeMerchantPrompt(alias){
   const canonical = prompt(
@@ -314,3 +523,15 @@ async function unignoreMerchant(name){
 }
 
 document.getElementById("reviewIgnored")?.addEventListener("click", openIgnoredModal);
+
+document.getElementById("calPrev")?.addEventListener("click", () => {
+  __calMonth -= 1;
+  if (__calMonth < 1){ __calMonth = 12; __calYear -= 1; }
+  loadCalendar();
+});
+
+document.getElementById("calNext")?.addEventListener("click", () => {
+  __calMonth += 1;
+  if (__calMonth > 12){ __calMonth = 1; __calYear += 1; }
+  loadCalendar();
+});

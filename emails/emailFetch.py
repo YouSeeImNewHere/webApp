@@ -22,7 +22,7 @@ SEEN_IDS_FILE = Path(__file__).resolve().parent / "seen_ids.json"
 SEEN_IDS_TEST_FILE = Path(__file__).resolve().parent / "seen_ids_test.json"
 
 # Toggle: when True, reads seen_ids.json but writes ONLY to seen_ids_test.json and inserts into transactions_test
-TEST_MODE = True
+TEST_MODE = False
 
 
 def load_seen_ids(path: Path) -> dict:

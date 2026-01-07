@@ -1377,3 +1377,565 @@ body.page-recurring .tx-date{ padding-left: 24px; } /* makes room so it doesn't 
   display: flex;
   gap: 8px;
 }
+
+.cal-box{
+    background: var(--card, #fff);
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+  .cal-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding: 6px 4px 10px 4px;
+  }
+  .cal-title{ font-weight: 700; letter-spacing:.2px; }
+  .cal-nav{
+    border: 1px solid rgba(0,0,0,.12);
+    background: transparent;
+    border-radius: 10px;
+    padding: 6px 10px;
+    cursor:pointer;
+  }
+  .cal-weekdays{
+    display:grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap:6px;
+    font-size: 12px;
+    opacity:.75;
+    padding: 0 2px 8px 2px;
+  }
+  .cal-grid{
+    display:grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+  .cal-day{
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 12px;
+    min-height: 84px;
+    padding: 8px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    cursor:pointer;
+    background: rgba(0,0,0,.01);
+  }
+  .cal-day.is-out{ opacity:.35; cursor:default; }
+  .cal-daynum{ font-weight: 700; font-size: 12px; opacity:.9; }
+  .cal-chip{
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,.12);
+    white-space: nowrap;
+    overflow:hidden;
+    text-overflow: ellipsis;
+  }
+  .cal-legend{
+    margin-top: 10px;
+    font-size: 12px;
+    opacity:.7;
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+  .cal-dot{
+    width:10px;height:10px;border-radius:50%;
+    background: rgba(0,0,0,.45);
+    display:inline-block;
+  }
+
+  /* Calendar monthly summary (Out / In) */
+#calSummary{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  font-weight: 800;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+#calSummary span{
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-summary-sep{
+  opacity: 0.45;
+}
+
+@media (max-width: 900px){
+  .section-divider{
+    margin: 16px 0;
+  }
+}
+
+
+/* =============================================================================
+   Chart Controls — Locked Layout (3 columns)
+   ============================================================================= */
+
+.chart-controls.chart-controls-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  align-items: start;
+  justify-items: center;
+  gap: 12px;
+  margin: 10px 0 6px;
+}
+
+.chart-col{
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.chart-col--left{ align-items: flex-start; }
+.chart-col--mid{ align-items: center; }
+.chart-col--right{ align-items: flex-end; }
+
+/* Keep the left stack compact */
+.chart-col--left .chart-breakdown{ width: fit-content; }
+
+/* Dates + Update on one line */
+.chart-dates-update{
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chart-toggle{
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chart-toggle:hover{ background:#f3f3f3; }
+
+/* Mobile: stack columns */
+@media (max-width: 900px){
+  .chart-controls.chart-controls-grid{
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+  .chart-col--left,
+  .chart-col--mid,
+  .chart-col--right{
+    align-items: center;
+  }
+  .chart-dates-update{
+    justify-content: center;
+  }
+}
+
+/* Make chart header button look like a pill */
+.chart-toggle.chart-toggle--header{
+  justify-self: end;
+  white-space: nowrap;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.14);
+  background: #fff;
+  font-weight: 800;
+}
+
+/* Calm down the controls spacing */
+.chart-controls.chart-controls-grid{
+  gap: 10px;
+  margin: 12px 0 8px;
+}
+
+/* Give each column a consistent “stack” rhythm */
+.chart-col{
+  gap: 8px;
+}
+
+/* Make breakdown chips feel less shouty */
+.chart-breakdown{
+  background: #f7f7f7;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* Tighten the date labels so they don't feel bulky */
+.chart-dates-inline label{
+  opacity: 0.65;
+}
+.chart-dates-inline input[type="date"]{
+  height: 34px;
+}
+
+/* Keep Update aligned with date inputs */
+.chart-btn.primary{
+  height: 34px;
+}
+
+/* =============================================================================
+   Locked chart layout polish
+   ============================================================================= */
+
+.chart-controls.chart-controls-grid{
+  max-width: 900px;      /* controls live in a centered “lane” */
+  margin: 12px auto 8px; /* auto = centered */
+  grid-template-columns: 220px 1fr 220px;
+  justify-items: center;
+}
+
+/* Don’t push left/right columns outward */
+.chart-col--left,
+.chart-col--right{
+  align-items: center;
+}
+
+/* Bigger quarter buttons */
+.month-btn{
+  padding: 10px 14px;
+  font-size: 15px;
+  border-radius: 12px;
+  min-width: 54px;
+}
+/* Make BOTH blocks (Growth + Total) the exact same size */
+.chart-breakdown{
+  min-width: 200px;     /* same width everywhere */
+  height: 44px;         /* same height everywhere */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* undo the old "fit-content" rule that causes mismatch */
+.chart-col--left .chart-breakdown{
+  width: 200px;         /* hard lock in the size */
+}
+
+/* keep the numbers from shifting width */
+.chart-breakdown strong{
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Tighten the middle controls slightly */
+.chart-btn-group{
+  gap: 6px; /* keep tight */
+}
+
+/* On smaller screens, don’t force side columns */
+@media (max-width: 900px){
+  .chart-controls.chart-controls-grid{
+    grid-template-columns: 1fr;
+  }
+  .chart-breakdown,
+  .chart-col--left .chart-breakdown{
+    width: 100%;
+    max-width: 320px; /* looks good on mobile */
+  }
+}
+
+/* =============================================================================
+   Chart Header — Metrics + Title + Actions
+   ============================================================================= */
+
+.chart-header.chart-header--metrics{
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+/* LEFT: Growth + Total */
+.chart-header-metrics{
+  display: flex;
+  gap: 10px;
+}
+
+/* SAME SIZE for all metric blocks */
+.chart-header-metrics .chart-breakdown{
+  width: 200px;
+  height: 44px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #f6f7f8;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* CENTER: Title + dots */
+.chart-header-center{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-header-center h2{
+  margin: 0;
+  text-align: center;
+}
+
+/* RIGHT: Next button */
+.chart-header-actions{
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Polished Next button */
+.chart-toggle--header{
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.14);
+  background: #fff;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Numbers don't jump */
+.chart-breakdown strong{
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mobile: stack header cleanly */
+@media (max-width: 900px){
+  .chart-header.chart-header--metrics{
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .chart-header-metrics{
+    justify-content: center;
+  }
+
+  .chart-header-actions{
+    justify-content: center;
+  }
+}
+
+
+/* =============================================================================
+   Chart layout v2: Header dates between title and Next
+   ============================================================================= */
+
+.chart-header.chart-header--metrics2{
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+/* LEFT metrics: growth stack + total */
+.chart-header--metrics2 .chart-header-metrics{
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.chart-metric-stack{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chart-growth-toggle{
+  display: flex;
+  justify-content: center;
+}
+
+.chart-breakdown--metric{
+  width: 200px;
+  height: 44px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #f6f7f8;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* CENTER: title/dots on left, dates on right inside center column */
+.chart-header--metrics2 .chart-header-center{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.chart-title-wrap{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.chart-title-wrap h2{
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+.chart-header-dates{
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.chart-dates-inline--header label{
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.7;
+}
+
+.chart-update--header{
+  height: 34px;
+}
+
+/* RIGHT: Next button */
+.chart-header--metrics2 .chart-header-actions{
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Controls row v2: quarters centered, year just to the right */
+.chart-controls.chart-controls-grid2{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 0 6px;
+}
+
+.chart-controls-center{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chart-controls-extra{
+  display: flex;
+  justify-content: center;
+}
+
+/* Make quarter buttons larger (NOT month buttons) */
+.chart-quarters .chart-btn{
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 12px;
+  min-width: 52px;
+}
+
+/* Mobile */
+@media (max-width: 900px){
+  .chart-header.chart-header--metrics2{
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .chart-header--metrics2 .chart-header-metrics{
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .chart-header--metrics2 .chart-header-center{
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .chart-title-wrap h2{
+    max-width: 100%;
+  }
+
+  .chart-header--metrics2 .chart-header-actions{
+    justify-content: center;
+  }
+}
+
+/* ================================
+   Chart header – final alignment
+   ================================ */
+
+.chart-header--metrics2{
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+}
+
+/* TRUE visual centering */
+.chart-header-center{
+  grid-column: 2;
+  display: flex;
+  justify-content: center;
+}
+
+/* Dates live between title and Next */
+.chart-header-dates{
+  grid-column: 3;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* Next button stays right */
+.chart-header-actions{
+  grid-column: 4;
+  justify-self: end;
+}
+
+/* =========================
+   Lock chart area height (taller, less compressed)
+   ========================= */
+
+.chart-canvas-box{
+  position: relative;
+  width: 100%;
+}
+
+.chart-canvas-box canvas{
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+
+/* Mobile */
+@media (max-width: 900px){
+  .chart-canvas-box{
+    height: 300px;        /* still roomy on phones */
+  }
+}
+
+
+/* Reserve space so header height doesn't change between charts */
+#nwPotentialWrap{
+  min-height: 22px;       /* keeps the slot even when hidden */
+}
+
+/* "Hidden but space kept" mode */
+.is-hidden-reserve{
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}

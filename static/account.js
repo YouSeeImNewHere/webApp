@@ -9,6 +9,8 @@ const ACCOUNT_CHART_IDS = {
   toggle: "aChartToggle", // will be hidden on this page
   breakLabel: "aBreakLabel",
   breakValue: "aBreakValue",
+  growthLabel: "aGrowthLabel",
+  growthValue: "aGrowthValue",
   quarters: "aQuarterButtons",
   yearBack: "a-yearBack",
   yearLabel: "aYearLabel",
@@ -19,7 +21,7 @@ const ACCOUNT_CHART_IDS = {
   canvas: "accountChart",
   monthSelect: "aMonthSelect",
   monthSelectWrap: "aSelectWrap",
-  monthButtons: "aButtons"
+  monthButtons: "aButtons",
 };
 
 
@@ -53,7 +55,6 @@ async function loadAccountHeader(accountId){
   if (breakLabel) breakLabel.textContent = a.accountType || "Balance";
 }
 
-
 async function loadAccountChart(accountId){
   const start = document.getElementById("a-start").value;
   const end   = document.getElementById("a-end").value;
@@ -70,6 +71,15 @@ async function loadAccountChart(accountId){
   const values = data.map(d => Number(d.value));
 const last = values.length ? values[values.length - 1] : 0;
 
+  // % Growth
+  let growthStr = "—";
+  if (values.length >= 2 && Math.abs(values[0]) > 1e-9) {
+    const pct = ((values[values.length - 1] - values[0]) / Math.abs(values[0])) * 100;
+    growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+  }
+  setInlineGrowthByIds(ACCOUNT_CHART_IDS, "% Growth", growthStr);
+
+
 // ✅ write directly to the card’s breakdown elements
 const l = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
 const v = document.getElementById(ACCOUNT_CHART_IDS.breakValue);
@@ -85,6 +95,8 @@ if (v) v.textContent = money(last);
   data: { labels, datasets: [{ label: "Balance", data: values, tension: 0.2, pointRadius: 0 }] },
   options: {
     responsive: true,
+  maintainAspectRatio: false,
+  devicePixelRatio: window.devicePixelRatio || 1,
     plugins: { legend: { display: false } }, // ✅ hide legend
     interaction: { mode:"index", intersect:false },
     scales: { y: { ticks: { callback: v => v.toLocaleString() } } }
@@ -172,7 +184,7 @@ window.addEventListener("load", async () => {
   mountChartCard("#chartMount", {
     ids: ACCOUNT_CHART_IDS,
     title: "Balance",
-    showToggle: false
+    showToggle: false,
   });
 initChartControls(ACCOUNT_CHART_IDS, async () => {
   await loadAccountChart(accountId);

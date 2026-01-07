@@ -25,74 +25,7 @@
     <!-- =============================================================================
          Net Worth Section
          ============================================================================= -->
-    <section id="netWorthSection" class="chart-card">
-
-      <!-- Chart header (title, dots, toggle) -->
-      <header class="chart-header">
-        <h2 id="chartTitle">Net Worth</h2>
-        <div id="chartDots" class="chart-dots" aria-label="Chart indicator"></div>
-        <button id="chartToggleBtn" type="button">Next: Savings ▾</button>
-      </header>
-
-      <div class="chart-controls">
-
-  <!-- Breakdown -->
-  <div class="chart-breakdown">
-    <span id="chartBreakdownLabel">Net</span>
-    <strong id="chartBreakdownValue">$0</strong>
-  </div>
-
-  <!-- Quarters -->
-  <div id="quarterButtons" class="chart-btn-group"></div>
-
-  <!-- Year controls -->
-  <div class="chart-btn-group">
-    <button id="homeYearBack" class="chart-btn">◀</button>
-    <span id="homeYearLabel" class="chart-year"></span>
-    <button id="homeYearFwd" class="chart-btn">▶</button>
-  </div>
-
-  <!-- Start / End (NEW LOCATION) -->
-<div class="chart-dates-inline">
-  <label>
-    Start
-    <input type="date" id="nw-start" />
-  </label>
-  <label>
-    End
-    <input type="date" id="nw-end" />
-  </label>
-</div>
-
-
-  <!-- Update -->
-  <button id="nw-chart-btn" class="chart-btn primary">
-    Update
-  </button>
-
-</div>
-
-
-      <!-- Chart canvas -->
-      <div style="margin-top: 12px;">
-        <canvas id="netWorthChart"></canvas>
-      </div>
-<div id="spendingTotalRow" style="margin-top:10px; display:none; opacity:.85;">
-  <strong>Total spent:</strong> <span id="spendingTotalValue">$0</span>
-</div>
-
-      <!-- Month quick-select buttons injected by JS -->
-      <div
-        id="monthButtons"
-        style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px;"
-      ></div>
-
-      <div id="monthSelectWrap" class="month-select-wrap">
-  <select id="monthSelect" aria-label="Select time range"></select>
-</div>
-
-
-    </section>
+    <div id="homeChartMount"></div>
 
     <hr class="section-divider" />
 
@@ -221,6 +154,7 @@
        Scripts
        ============================================================================= -->
   <script src="/static/chartControls.js"></script>
+  <script src="/static/chartCard.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/static/home.js"></script>
 </body>
