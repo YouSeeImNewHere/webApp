@@ -265,7 +265,7 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
             "date": dt,
             "amount": float(amt),
             "merchant": merchant_raw,
-            "account_id": r["account_id"],
+            "account_id": int(aid),
             "category": r["category"] or "",
         })
 
@@ -346,6 +346,7 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
             "first_seen": dates[0].isoformat(),
             "last_seen": dates[-1].isoformat(),
             "common_gap_days": common_gap,
+            "account_id": int(override_aid),
             "kind": kind,
             "active": active,
             "days_since_last": int(days_since),
@@ -579,6 +580,7 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False)
             "days_since_last": int(days_since),
             "cycle_days": int(cycle_days) if cycle_days else None,
             "tx": tx_list,
+            "account_id": int(override_aid),
         })
 
     by_merchant = defaultdict(list)

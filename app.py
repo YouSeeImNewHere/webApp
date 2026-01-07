@@ -1907,13 +1907,14 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
 
             # amount is already signed in recurring.py output (withdrawals are usually +)
             amt = float(p.get("amount") or 0.0)
-
+            aid = int(p.get("account_id") or -1)
             for d in occs:
                 events.append({
                     "date": d.isoformat(),
                     "merchant": merchant,
                     "amount": amt,
                     "cadence": cadence,
+                    "account_id": aid,  # ✅ NEW
                 })
 
     # ---- PAYCHECK EVENTS (derived from recurring data) ----
@@ -1954,6 +1955,7 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
             "amount": pay_amt,
             "cadence": "paycheck",
             "type": "income",
+            "account_id": 3,
             "pay_target": target.isoformat(),  # used for totals
             "spillover": not (dep.year == year and dep.month == month),  # optional flag
         })
@@ -1994,6 +1996,7 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
             "amount": round(est, 2),
             "cadence": "interest",
             "type": "income",
+            "account_id": aid,  # ✅ NEW
         })
 
     conn.close()
