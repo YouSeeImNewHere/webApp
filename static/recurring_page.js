@@ -393,14 +393,15 @@ function openOccModal(groupIndex, patternIndex){
 
   const tx = Array.isArray(p.tx) ? p.tx : [];
   body.innerHTML = tx.map(t => `
-    <div class="occ-tx">
-      <div class="occ-left">
+<div class="occ-tx">
+  ${categoryIconHTML(t.category)}
+  <div class="occ-left">
         <div class="occ-date">${esc(shortDateISO(t.date))}</div>
         <div class="occ-merchant">${esc((t.merchant || "").toUpperCase())}</div>
         <div class="occ-meta">${esc(t.category || "")}${t.account_id ? " • acct " + esc(t.account_id) : ""}</div>
       </div>
-      <div class="occ-amt">${money(t.amount)}</div>
-    </div>
+  <div class="occ-amt">${money(t.amount)}</div>
+</div>
   `).join("") || `<div style="opacity:.7; padding:8px 0;">No transactions found.</div>`;
 
   modal.classList.remove("hidden");

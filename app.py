@@ -402,7 +402,7 @@ def transactions(limit: int = 15):
           t.purchaseDate,
           t.merchant,
           t.amount,
-
+          t.status,
           a.institution AS bank,
           a.name        AS card,
           LOWER(a.accountType) AS accountType,
@@ -424,7 +424,7 @@ def transactions(limit: int = 15):
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
       )
-      SELECT id, raw_date AS postedDate, merchant, amount, bank, card, accountType
+      SELECT id, raw_date AS postedDate, merchant, amount, status, bank, card, accountType
       FROM tx
       ORDER BY d DESC, id DESC
       LIMIT ?
@@ -779,75 +779,74 @@ LIMIT ?
 @app.get("/category-trend")
 def category_trend(category: str, period: str = "1m"):
     conn, cur = with_db_cursor()
+    cat = (category or "").strip().lower()
 
-    # Fetch all tx for category with a real date column (d)
-    rows = cur.execute("""
-      WITH tx AS (
-        SELECT
-          amount,
-          date(
-            '20' || substr(postedDate, 7, 2) || '-' ||
-            substr(postedDate, 1, 2) || '-' ||
-            substr(postedDate, 4, 2)
-          ) AS d
-        FROM transactions
-        WHERE TRIM(category) = TRIM(?)
-      )
-      SELECT d, SUM(amount) AS total
-      FROM tx
-      WHERE d IS NOT NULL
-      GROUP BY d
-      ORDER BY d ASC
-    """, (category,)).fetchall()
+    if cat == "unknown merchant":
+        rows = cur.execute("""
+          WITH tx AS (
+            SELECT
+              t.amount,
+              CASE
+                WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
+                  date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),7,2) || '-' ||
+                             substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),1,2) || '-' ||
+                             substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),4,2))
+                WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
+                  date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),7,4) || '-' ||
+                       substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),1,2) || '-' ||
+                       substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),4,2))
+                ELSE NULL
+              END AS d
+            FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE
+              t.amount > 0
+              AND LOWER(a.accountType) IN ('checking','credit')
+              AND LOWER(TRIM(COALESCE(t.merchant,''))) = 'unknown'
+              AND LOWER(TRIM(COALESCE(t.category,''))) NOT IN ('card payment','transfer')
+          )
+          SELECT d, SUM(amount) AS total
+          FROM tx
+          WHERE d IS NOT NULL
+          GROUP BY d
+          ORDER BY d ASC
+        """).fetchall()
+    else:
+        rows = cur.execute("""
+          WITH tx AS (
+            SELECT
+              amount,
+              date(
+                '20' || substr(postedDate, 7, 2) || '-' ||
+                substr(postedDate, 1, 2) || '-' ||
+                substr(postedDate, 4, 2)
+              ) AS d
+            FROM transactions
+            WHERE TRIM(category) = TRIM(?)
+          )
+          SELECT d, SUM(amount) AS total
+          FROM tx
+          WHERE d IS NOT NULL
+          GROUP BY d
+          ORDER BY d ASC
+        """, (category,)).fetchall()
 
     conn.close()
 
-    # Convert to python dates
-    daily = []
-    for r in rows:
-        if not r["d"]:
-            continue
-        daily.append({
-            "date": r["d"],                 # already YYYY-MM-DD from sqlite date()
-            "amount": float(r["total"] or 0)
-        })
-
-    if not daily:
-        return {"category": category, "period": period, "series": []}
-
-    # Period filtering (done in python)
-    end = datetime.today().date()
-
-    def months_ago(months: int):
-        y, m = end.year, end.month - months
-        while m <= 0:
-            m += 12
-            y -= 1
-        # clamp day so dates always valid
-        d = min(end.day, 28)
-        return datetime(y, m, d).date()
-
-    if period == "all":
-        start = datetime.strptime(daily[0]["date"], "%Y-%m-%d").date()
-    elif period == "1y":
-        start = months_ago(12)
-    elif period == "6m":
-        start = months_ago(6)
-    elif period == "3m":
-        start = months_ago(3)
-    else:  # default 1m
-        start = months_ago(1)
-
-    filtered = [
-        p for p in daily
-        if datetime.strptime(p["date"], "%Y-%m-%d").date() >= start
+    daily = [
+        {"date": r["d"], "amount": float(r["total"] or 0)}
+        for r in rows if r["d"]
     ]
 
-    return {"category": category, "period": period, "series": filtered}
-
+    return {"category": category, "period": period, "series": daily}
 
 @app.get("/category-transactions")
-def category_transactions(category: str, limit: int = 500):
+def category_transactions(
+    category: str,
+    start: str,
+    end: str,
+    limit: int = 500
+):
     sql = """
       WITH tx AS (
         SELECT
@@ -856,45 +855,30 @@ def category_transactions(category: str, limit: int = 500):
           t.merchant,
           t.amount,
           TRIM(t.category) AS category,
-
           a.institution AS bank,
-          a.name        AS card,
-          LOWER(a.accountType) AS accountType,
-
+          a.name AS card,
           CASE
-            -- MM/DD/YY
             WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
-              date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 2) || '-' ||
-                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
-                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
-
-            -- MM/DD/YYYY
+              date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),7,2) || '-' ||
+                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),1,2) || '-' ||
+                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),4,2))
             WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
-              date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 7, 4) || '-' ||
-                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 1, 2) || '-' ||
-                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')), 4, 2))
+              date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),7,4) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),1,2) || '-' ||
+                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),4,2))
             ELSE NULL
           END AS d
-
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
         WHERE TRIM(t.category) = TRIM(?)
       )
-      SELECT
-        id,
-        raw_date AS postedDate,
-        merchant,
-        amount,
-        category,
-        bank,
-        card,
-        accountType
+      SELECT *
       FROM tx
+      WHERE d BETWEEN ? AND ?
       ORDER BY d DESC, id DESC
       LIMIT ?
     """
-    return query_db(sql, (category, limit))
-
+    return query_db(sql, (category, start, end, limit))
 
 @app.get("/category-totals-lifetime")
 def category_totals_lifetime():
@@ -918,7 +902,6 @@ def category_totals_lifetime():
       {"category": r["category"], "total": float(r["total"] or 0)}
       for r in rows
     ]
-
 
 # =============================================================================
 # Account Details + Account Series
@@ -1085,12 +1068,16 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
     starting_balance_at_range = start_bal + (sign * before_sum)
 
     # now fetch range tx and compute running balance inside range
+    # inside /account-transactions-range, replace the "now fetch range tx..." query with this
+
     rows = cur.execute("""
       WITH base AS (
         SELECT
           id,
           merchant,
           amount,
+          TRIM(category) AS category,
+          COALESCE(NULLIF(status,''), 'posted') AS status,
           COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date
         FROM transactions
         WHERE account_id = ?
@@ -1100,6 +1087,8 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
           id,
           merchant,
           amount,
+          category,
+          status,
           raw_date,
           CASE
             WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
@@ -1122,12 +1111,14 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
         LIMIT ?
       ),
       with_running AS (
-      SELECT
-        id,
-        merchant,
-        amount,
-        raw_date AS effectiveDate,   -- posted if known else purchase
-        d AS dateISO,
+        SELECT
+          id,
+          merchant,
+          amount,
+          category,
+          status,
+          raw_date AS effectiveDate,
+          d AS dateISO,
           SUM(amount) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
         FROM in_range
       )
@@ -1137,6 +1128,8 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
         dateISO,
         merchant,
         amount,
+        category,
+        status,
         (? + (? * running_sum)) AS balance_after
       FROM with_running
       ORDER BY dateISO DESC, id DESC
@@ -1642,6 +1635,8 @@ def category_totals_range(start: str, end: str):
         WHERE t.amount > 0
           AND t.category IS NOT NULL
           AND TRIM(t.category) <> ''
+          AND LOWER(TRIM(t.category)) NOT IN ('card payment', 'transfer')
+
       )
       SELECT category, SUM(amount) AS total
       FROM tx
@@ -2155,3 +2150,115 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
         d += timedelta(days=1)
 
     return float(total_interest)
+
+# =============================================================================
+# Unknown merchant (for reconciliation cards)
+# =============================================================================
+
+@app.get("/unknown-merchant-total-month")
+def unknown_merchant_total_month():
+    conn, cur = with_db_cursor()
+
+    today = datetime.today().date()
+    first = today.replace(day=1)
+
+    if first.month == 12:
+        next_month = datetime(first.year + 1, 1, 1).date()
+    else:
+        next_month = datetime(first.year, first.month + 1, 1).date()
+
+    row = cur.execute("""
+      WITH base AS (
+        SELECT
+          t.amount,
+          t.merchant,
+          TRIM(t.category) AS category,
+          LOWER(a.accountType) AS accountType,
+          COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+      ),
+      norm AS (
+        SELECT
+          amount,
+          merchant,
+          category,
+          accountType,
+          CASE
+            WHEN length(raw_date) = 8 THEN
+              date('20' || substr(raw_date, 7, 2) || '-' ||
+                         substr(raw_date, 1, 2) || '-' ||
+                         substr(raw_date, 4, 2))
+            WHEN length(raw_date) = 10 THEN
+              date(substr(raw_date, 7, 4) || '-' ||
+                   substr(raw_date, 1, 2) || '-' ||
+                   substr(raw_date, 4, 2))
+            ELSE NULL
+          END AS d
+        FROM base
+      )
+      SELECT
+        COALESCE(SUM(amount), 0) AS total,
+        COALESCE(COUNT(*), 0)    AS tx_count
+      FROM norm
+      WHERE d IS NOT NULL
+        AND d >= ? AND d < ?
+        AND amount > 0
+        AND accountType IN ('checking','credit')
+        AND LOWER(TRIM(COALESCE(merchant,''))) = 'unknown'
+        AND LOWER(TRIM(COALESCE(category,''))) NOT IN ('card payment','transfer')
+    """, (first.isoformat(), next_month.isoformat())).fetchone()
+
+    conn.close()
+    return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
+
+
+@app.get("/unknown-merchant-total-range")
+def unknown_merchant_total_range(start: str, end: str):
+    conn, cur = with_db_cursor()
+
+    row = cur.execute("""
+      WITH base AS (
+        SELECT
+          t.amount,
+          t.merchant,
+          TRIM(t.category) AS category,
+          LOWER(a.accountType) AS accountType,
+          COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+      ),
+      norm AS (
+        SELECT
+          amount,
+          merchant,
+          category,
+          accountType,
+          CASE
+            WHEN length(raw_date) = 8 THEN
+              date('20' || substr(raw_date, 7, 2) || '-' ||
+                         substr(raw_date, 1, 2) || '-' ||
+                         substr(raw_date, 4, 2))
+            WHEN length(raw_date) = 10 THEN
+              date(substr(raw_date, 7, 4) || '-' ||
+                   substr(raw_date, 1, 2) || '-' ||
+                   substr(raw_date, 4, 2))
+            ELSE NULL
+          END AS d
+        FROM base
+      )
+      SELECT
+        COALESCE(SUM(amount), 0) AS total,
+        COALESCE(COUNT(*), 0)    AS tx_count
+      FROM norm
+      WHERE d IS NOT NULL
+        AND d BETWEEN ? AND ?
+        AND amount > 0
+        AND accountType IN ('checking','credit')
+        AND LOWER(TRIM(COALESCE(merchant,''))) = 'unknown'
+        AND LOWER(TRIM(COALESCE(category,''))) NOT IN ('card payment','transfer')
+    """, (start, end)).fetchone()
+
+    conn.close()
+    return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
+

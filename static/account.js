@@ -262,12 +262,18 @@ async function loadAccountTransactions(accountId){
   }
 
   data.forEach(row => {
-    const wrap = document.createElement("div");
-    wrap.className = "tx-row";
+const wrap = document.createElement("div");
+wrap.className = "tx-row";
 
-    wrap.innerHTML = `
-      <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
-      <div class="tx-main">
+if (String(row.status || "").toLowerCase() === "pending") {
+  wrap.classList.add("is-pending");
+}
+
+
+wrap.innerHTML = `
+  ${categoryIconHTML(row.category)}
+  <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
+  <div class="tx-main">
         <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
         <div class="tx-sub"></div>
       </div>
@@ -289,7 +295,7 @@ function setActiveQuickButton(container, btn){
 window.addEventListener("load", async () => {
   accountId = Number(qs("account_id"));
   if (!accountId) return alert("Missing account_id");
-
+mountUpcomingCard("#upcomingMount", { daysAhead: 30, accountId });
   // 1) mount the shared card FIRST
 mountChartCard("#chartMount", {
   ids: ACCOUNT_CHART_IDS,

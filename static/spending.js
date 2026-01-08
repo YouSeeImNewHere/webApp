@@ -96,6 +96,7 @@ async function loadSpendingCategories(start, end) {
   const wrap = document.getElementById("spendingCategoryList");
   wrap.innerHTML = "";
 
+  // Normal categories
   data.forEach(r => {
     const btn = document.createElement("button");
     btn.className = "category-pill";
@@ -104,14 +105,44 @@ async function loadSpendingCategories(start, end) {
       location.href = `/static/category.html?c=${encodeURIComponent(r.category)}`;
     wrap.appendChild(btn);
   });
+
+  // -----------------------------
+  // Unknown merchant (synthetic category)
+  // -----------------------------
+  const unkRes = await fetch(
+    `/unknown-merchant-total-range?start=${start}&end=${end}`
+  );
+
+  if (!unkRes.ok) return;
+
+  const { total, tx_count } = await unkRes.json();
+  const t = Number(total || 0);
+  const c = Number(tx_count || 0);
+
+  if (t <= 0 || c <= 0) return;
+
+  const btn = document.createElement("button");
+  btn.className = "category-pill";
+  btn.innerHTML = `
+    <span>Unknown merchant (${c})</span>
+    <span>${money(t)}</span>
+  `;
+
+  btn.onclick = () => {
+  location.href = `/static/category.html?c=${encodeURIComponent("Unknown merchant")}`;
+};
+
+
+  wrap.appendChild(btn);
 }
 
+
 document.addEventListener("DOMContentLoaded", () => {
-mountChartCard("#chartMount", {
-  ids: SPENDING_IDS,
-  title: "Spending",
-  showToggle: false
-});
+    mountChartCard("#chartMount", {
+      ids: SPENDING_IDS,
+      title: "Spending",
+      showToggle: false
+    });
 
 
   const back = document.getElementById("spBackBtn");
@@ -124,5 +155,7 @@ mountChartCard("#chartMount", {
   }
 
   initChartControls(SPENDING_IDS, renderSpending);
+
+
 });
 

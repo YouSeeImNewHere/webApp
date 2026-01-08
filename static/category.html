@@ -17,23 +17,21 @@
 
   <div class="page-container">
 
-  <div class="page-header">
-  <h2 id="catTitle" style="margin:0;">Category</h2>
+<div class="page-header">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <button id="catDrawerBtn" class="back-btn" type="button" style="padding:6px 10px;">
+      ☰
+    </button>
+  </div>
+
   <a href="/" class="back-btn">Back</a>
 </div>
 
 
+
   <div class="cat-layout">
     <!-- LEFT: lifetime categories -->
-    <aside class="cat-sidebar">
-      <div class="cat-sidebar__title">All Categories (Lifetime)</div>
-      <table class="cat-side-table" id="catSideTable">
-        <thead>
-          <tr><th>Category</th><th style="text-align:right;">Total</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </aside>
+
 
     <!-- RIGHT: chart + tx -->
     <main class="cat-main">
@@ -51,6 +49,21 @@
 
     </main>
   </div>
+    <!-- Drawer backdrop -->
+<div id="catDrawerBackdrop" class="cat-drawer-backdrop" aria-hidden="true"></div>
+
+<!-- Slide-over drawer -->
+<aside id="catDrawer" class="cat-drawer" aria-label="All Categories">
+  <div class="cat-drawer__title">All Categories (Lifetime)</div>
+  <table class="cat-side-table" id="catSideTable">
+    <thead>
+      <tr><th>Category</th><th style="text-align:right;">Total</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</aside>
+
+
 <div id="bottomTabs"></div>
 <script src="/static/bottomTabs.js"></script>
 
@@ -59,6 +72,7 @@
     navigator.serviceWorker.register("/static/sw.js").catch(console.error);
   }
 </script>
+<script src="/static/category_icons.js"></script>
 
     <script src="/static/chartControls.js"></script>
 <script src="/static/chartCard.js"></script>

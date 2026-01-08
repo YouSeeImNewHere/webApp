@@ -678,7 +678,7 @@ async function loadCategoryTotalsThisMonth() {
   spacer.style.paddingTop = "10px";
   spacer.style.opacity = "0.7";
   spacer.innerHTML = `<span>Unassigned</span><span>${unassignedAllTime} tx (all-time)</span>`;
-
+await renderUnknownMerchantRow(ul);
   renderUnassignedRow(ul, unassignedAllTime);
 }
 
@@ -904,6 +904,8 @@ if (potentialToggle) {
   loadBankTotals();
   loadCategoryTotalsThisMonth();
   loadData();
+mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
+
 
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
@@ -982,12 +984,19 @@ function renderTxList(data){
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
 
+    // Mark pending transactions
+    if (String(row.status || "").toLowerCase() === "pending") {
+      wrap.classList.add("is-pending");
+    }
+
+
     const merchant = (row.merchant || "").toUpperCase();
     const sub = `${row.bank || ""}${row.card ? " • " + row.card : ""}`;
 
-    wrap.innerHTML = `
-      <div class="tx-date">${shortDate(row.postedDate)}</div>
-      <div class="tx-main">
+wrap.innerHTML = `
+  ${categoryIconHTML(row.category)}
+  <div class="tx-date">${shortDate(row.postedDate)}</div>
+  <div class="tx-main">
         <div class="tx-merchant">${merchant}</div>
         <div class="tx-sub">${sub}</div>
       </div>
@@ -1135,4 +1144,74 @@ function endOfCurrentMonthISO() {
 
 function sameMonthISO(aIso, bIso) {
   return String(aIso).slice(0, 7) === String(bIso).slice(0, 7);
+}
+
+// =========================
+// Mini calendar (Next 7 days)
+// =========================
+
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function dayLabel(d) {
+  return d.toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function shortMD(d) {
+  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
+}
+
+function signedMoney(n, isIncome) {
+  const amt = Math.abs(Number(n || 0));
+  const sign = isIncome ? "+" : "-";
+  return sign + money(amt);
+}
+
+function isIncomeEvent(e) {
+  const t = String(e?.type || "").toLowerCase();
+  const c = String(e?.cadence || "").toLowerCase();
+  return t === "income" || c === "paycheck" || c === "interest";
+}
+
+function ellipsize(s, max = 14) {
+  s = String(s || "").trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
+}
+
+async function renderUnknownMerchantRow(ul) {
+  const res = await fetch("/unknown-merchant-total-month");
+  if (!res.ok) return;
+
+  const { total, tx_count } = await res.json();
+  const t = Number(total || 0);
+  const c = Number(tx_count || 0);
+
+  // If nothing, skip showing it
+  if (t <= 0 || c <= 0) return;
+
+  const li = document.createElement("li");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "category-pill";
+
+  btn.innerHTML = `
+    <span class="cat-left">
+      <span class="cat-name">Unknown merchant</span>
+      <span class="cat-badge" title="${c} transactions">${c}</span>
+    </span>
+    <span class="cat-amt">${money(t)}</span>
+  `;
+
+  // optional click behavior (for now just show a hint)
+  btn.addEventListener("click", () => {
+  window.location.href = `/static/category.html?c=${encodeURIComponent("Unknown merchant")}`;
+});
+
+
+  li.appendChild(btn);
+  ul.appendChild(li);
 }

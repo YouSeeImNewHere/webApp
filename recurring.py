@@ -19,13 +19,15 @@ def _cadence_days(cadence: str):
 def _max_date_in_db(cur):
     # Uses the same date field you use for recurring detection
     r = cur.execute("""
-      SELECT MAX(
-        CASE
-          WHEN COALESCE(NULLIF(TRIM(postedDate),'unknown'), NULLIF(TRIM(purchaseDate),'unknown')) IS NULL THEN NULL
-          ELSE COALESCE(NULLIF(TRIM(postedDate),'unknown'), NULLIF(TRIM(purchaseDate),'unknown'))
-        END
-      ) AS max_d
-      FROM transactions
+        SELECT MAX(
+          CASE
+            WHEN COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
+                          NULLIF(TRIM(postedDate),'unknown')) IS NULL THEN NULL
+            ELSE COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
+                          NULLIF(TRIM(postedDate),'unknown'))
+          END
+        ) AS max_d
+        FROM transactions
     """).fetchone()
 
     max_d = (r[0] if r else None)
@@ -35,6 +37,7 @@ def _max_date_in_db(cur):
         return _parse_mmddyy(max_d)
     except Exception:
         return None
+
 
 
 def _norm_merchant(s: str) -> str:
@@ -204,8 +207,8 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
         merchant,
         amount,
         category,
-        COALESCE(NULLIF(TRIM(postedDate),'unknown'),
-                 NULLIF(TRIM(purchaseDate),'unknown')) AS d
+COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
+         NULLIF(TRIM(postedDate),'unknown')) AS d
       FROM transactions
       WHERE d IS NOT NULL
         AND d != 'unknown'
@@ -459,8 +462,9 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False)
         merchant,
         amount,
         category,
-        COALESCE(NULLIF(TRIM(postedDate),'unknown'),
-                 NULLIF(TRIM(purchaseDate),'unknown')) AS d
+        COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
+                 NULLIF(TRIM(postedDate),'unknown')) AS d
+
       FROM transactions
       WHERE d IS NOT NULL
         AND d != 'unknown'

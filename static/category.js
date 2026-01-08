@@ -20,6 +20,30 @@ const CATEGORY_CHART_IDS = {
   // (no dropdown on category page unless you want it)
 };
 
+function openCatDrawer() {
+  document.getElementById("catDrawer")?.classList.add("is-open");
+  document.getElementById("catDrawerBackdrop")?.classList.add("is-open");
+}
+
+function closeCatDrawer() {
+  document.getElementById("catDrawer")?.classList.remove("is-open");
+  document.getElementById("catDrawerBackdrop")?.classList.remove("is-open");
+}
+
+function bindCatDrawerUI() {
+  const btn = document.getElementById("catDrawerBtn");
+  const backdrop = document.getElementById("catDrawerBackdrop");
+
+  if (btn) btn.addEventListener("click", () => {
+    const drawer = document.getElementById("catDrawer");
+    const isOpen = drawer?.classList.contains("is-open");
+    if (isOpen) closeCatDrawer();
+    else openCatDrawer();
+  });
+
+  if (backdrop) backdrop.addEventListener("click", closeCatDrawer);
+}
+
 
 function money(n) {
   const num = Number(n || 0);
@@ -49,7 +73,8 @@ function shortDate(mmddyyOrIso) {
 
 async function loadCategoryChart() {
   const category = getCategoryFromURL() || "Uncategorized";
-
+const t = document.getElementById(CATEGORY_CHART_IDS.title);
+if (t) t.textContent = category;
   const start = document.getElementById("cat-start")?.value;
   const end   = document.getElementById("cat-end")?.value;
   if (!start || !end) return;
@@ -70,6 +95,8 @@ async function loadCategoryChart() {
     new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "2-digit" })
   );
 
+  const values = filtered.map(p => Number(p.amount || 0));
+
   // % Growth
   let growthStr = "—";
   if (values.length >= 2 && Math.abs(values[0]) > 1e-9) {
@@ -78,15 +105,15 @@ async function loadCategoryChart() {
   }
   setInlineGrowthByIds(CATEGORY_CHART_IDS, "% Growth", growthStr);
 
+  const last = values.length ? values[values.length - 1] : 0;
 
-  const values = filtered.map(p => Number(p.amount || 0));
-const last = values.length ? values[values.length - 1] : 0;
+  const l = document.getElementById(CATEGORY_CHART_IDS.breakLabel);
+  const v = document.getElementById(CATEGORY_CHART_IDS.breakValue);
+  if (l) l.textContent = category;
+  if (v) v.textContent = money(last);
 
-const l = document.getElementById(CATEGORY_CHART_IDS.breakLabel);
-const v = document.getElementById(CATEGORY_CHART_IDS.breakValue);
-if (l) l.textContent = category;
-if (v) v.textContent = money(last);
 
+  setInlineGrowthByIds(CATEGORY_CHART_IDS, "% Growth", growthStr);
 
   const canvas = document.getElementById("catChart");
   if (!canvas) return;
@@ -171,15 +198,16 @@ async function loadTrend(category, period) {
 
 async function loadCategoryTransactions(category) {
   const list = document.getElementById("catTxList");
-  if (!list) {
-    console.warn("catTxList not found (did you update category.html?)");
-    return;
-  }
+  if (!list) return;
+
+  const start = document.getElementById("cat-start")?.value;
+  const end   = document.getElementById("cat-end")?.value;
+  if (!start || !end) return;
 
   list.innerHTML = "";
 
   const res = await fetch(
-    `/category-transactions?category=${encodeURIComponent(category)}&limit=500`,
+    `/category-transactions?category=${encodeURIComponent(category)}&start=${start}&end=${end}&limit=500`,
     { cache: "no-store" }
   );
   if (!res.ok) throw new Error("tx failed");
@@ -187,7 +215,7 @@ async function loadCategoryTransactions(category) {
   const data = await res.json();
 
   if (!Array.isArray(data) || data.length === 0) {
-    list.innerHTML = `<div style="padding:10px;">No transactions found.</div>`;
+    list.innerHTML = `<div style="padding:10px;">No transactions in this range.</div>`;
     return;
   }
 
@@ -196,6 +224,7 @@ async function loadCategoryTransactions(category) {
     wrap.className = "tx-row";
 
     wrap.innerHTML = `
+      ${categoryIconHTML(row.category)}
       <div class="tx-date">${shortDate(row.postedDate)}</div>
       <div class="tx-main">
         <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
@@ -239,6 +268,8 @@ async function loadLifetimeSidebar(activeCategory) {
       await loadCategoryChart();
 
       await loadCategoryTransactions(newCat);
+
+  closeCatDrawer(); // ✅ collapse after selection
     });
 
     tbody.appendChild(tr);
@@ -251,12 +282,17 @@ async function init() {
 
   const title = document.getElementById("catTitle");
   if (title) title.textContent = category;
+  bindCatDrawerUI();
+
 mountChartCard("#chartMount", {
   ids: CATEGORY_CHART_IDS,
   title: "Category",
   showToggle: false,
 });
-initChartControls(CATEGORY_CHART_IDS, loadCategoryChart);
+initChartControls(CATEGORY_CHART_IDS, async () => {
+  await loadCategoryChart();
+  await loadCategoryTransactions(getCategoryFromURL() || "Uncategorized");
+});
 
 const chartTitle = document.getElementById(CATEGORY_CHART_IDS.title);
 if (chartTitle) chartTitle.textContent = category;

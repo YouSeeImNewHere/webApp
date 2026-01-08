@@ -28,8 +28,13 @@ function render(list){
   }
 
 list.forEach(row => {
-  const wrap = document.createElement("div");
-  wrap.className = "tx-row";
+const wrap = document.createElement("div");
+wrap.className = "tx-row";
+
+if (String(row.status || "").toLowerCase() === "pending") {
+  wrap.classList.add("is-pending");
+}
+
 
   const sub = [row.bank, row.card].filter(Boolean).join(" • ");
 
@@ -41,9 +46,10 @@ list.forEach(row => {
         ? row.purchaseDate
         : row.dateISO;
 
-  wrap.innerHTML = `
-    <div class="tx-date">${shortDate(effectiveDate)}</div>
-    <div class="tx-main">
+wrap.innerHTML = `
+  ${categoryIconHTML(row.category)}
+  <div class="tx-date">${shortDate(effectiveDate)}</div>
+  <div class="tx-main">
       <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
       <div class="tx-sub">${sub}</div>
     </div>
