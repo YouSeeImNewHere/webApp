@@ -22,16 +22,16 @@ function categoryIconUrl(category) {
     : DEFAULT_CATEGORY_ICON;
 }
 
+/**
+ * Returns ONLY the <img>. The surrounding .tx-icon-wrap is provided by the page renderer.
+ */
 function categoryIconHTML(category, extraTitle = "") {
   const title = extraTitle || (category ? String(category) : "Uncategorized");
   const src = categoryIconUrl(category);
 
-  // onerror fallback prevents broken-image icons if the SVG doesn't exist yet
   return `
-    <div class="tx-icon-wrap" title="${title}">
-      <img class="tx-icon" src="${src}" alt=""
-           onerror="this.onerror=null;this.src='${DEFAULT_CATEGORY_ICON}'">
-    </div>
+    <img class="tx-icon" src="${src}" alt="" title="${title}"
+         onerror="this.onerror=null;this.src='${DEFAULT_CATEGORY_ICON}'">
   `;
 }
 

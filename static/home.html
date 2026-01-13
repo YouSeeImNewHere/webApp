@@ -12,7 +12,8 @@
 
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/mobile.css">
 </head>
 
 <body class="page-home">
@@ -34,22 +35,73 @@
     <!-- =============================================================================
          Bank Totals + Monthly Spending Sidebar
          ============================================================================= -->
-    <section class="bank-area">
+<section class="bank-area">
 
-      <!-- Monthly Spending (sidebar) -->
-      <aside id="categoryTotals" class="category-box category-box--sidebar">
+  <!-- LEFT SIDEBAR (stacked vertically) -->
+<!-- Sidebar stack (Month budget + Monthly Spending) -->
+<aside class="sidebar-stack">
+
+  <!-- Month Budget (new) -->
+  <div id="monthBudget" class="category-box category-box--sidebar" aria-label="Month budget">
+    <div class="category-box__header">This month</div>
+
+    <div class="month-budget__top">
+      <div class="mb-kpi">
+        <div class="mb-label">Safe to spend</div>
+        <div class="mb-value" id="mbSafe">—</div>
+      </div>
+      <div class="mb-meta" id="mbMeta">—</div>
+    </div>
+
+    <div class="mb-bar" aria-hidden="true">
+      <div class="mb-bar__fill" id="mbBarFill" style="width:0%"></div>
+    </div>
+
+    <ul class="category-box__list" style="margin-top:10px;">
+      <li class="category-pill is-static">
+        <div class="cat-left"><span class="cat-name">Expected income</span></div>
+        <span class="cat-amt" id="mbIncome">—</span>
+      </li>
+      <li class="category-pill is-static">
+        <div class="cat-left"><span class="cat-name">Spent so far</span></div>
+        <span class="cat-amt" id="mbSpent">—</span>
+      </li>
+      <li class="category-pill is-static">
+        <div class="cat-left"><span class="cat-name">Remaining bills</span></div>
+        <span class="cat-amt" id="mbBills">—</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Monthly Spending (existing) -->
+  <div id="categoryTotals" class="category-box category-box--sidebar">
+    <div class="category-box__header">Monthly Spending</div>
+    <ul id="categoryTotalsList" class="category-box__list"></ul>
+  </div>
+
+</aside>
 
 
-        <div class="category-box__header">Monthly Spending</div>
-        <ul id="categoryTotalsList" class="category-box__list"></ul>
-      </aside>
+  <!-- RIGHT MAIN -->
+  <div class="bank-main">
 
-      <!-- Bank totals (main) -->
-      <div class="bank-main">
         <div class="category-box bank-box-fill">
-          <div class="category-box__header" id="bankTotalsHeader">Bank Totals</div>
-          <div id="bankTotals"></div>
-        </div>
+  <div class="category-box__header" id="bankTotalsHeader"
+       style="display:flex; align-items:center; gap:8px;">
+    <span>Bank Totals</span>
+
+    <!-- Bank info button -->
+    <button id="bankInfoBtn"
+            class="icon-btn"
+            title="Bank info"
+            aria-label="Bank info">
+      i
+    </button>
+  </div>
+
+  <div id="bankTotals"></div>
+</div>
+
       </div>
 
     </section>
@@ -143,7 +195,33 @@
 
 
   <div id="bottomTabs"></div>
-<script src="/static/bottomTabs.js"></script>
+
+  <!-- ================================
+     Bank Info Panel
+================================ -->
+<div id="bankInfoOverlay" class="overlay hidden"></div>
+
+<div id="bankInfoPanel" class="side-panel hidden" role="dialog" aria-modal="true">
+  <div class="panel-header">
+    <div>
+      <div class="panel-title">Bank info</div>
+      <div class="panel-subtitle" id="bankInfoSubtitle">—</div>
+    </div>
+
+    <button id="bankInfoClose" class="icon-btn" aria-label="Close">✕</button>
+  </div>
+
+  <div class="panel-actions">
+    <button id="bankRatesRefreshBtn" class="btn">
+      Update interest rates
+    </button>
+  </div>
+
+  <div id="bankInfoBody" class="panel-body">
+    <!-- populated by JS -->
+  </div>
+</div>
+
 
 
 <script>
@@ -155,6 +233,9 @@
   <!-- =============================================================================
        Scripts
        ============================================================================= -->
+
+<script src="/static/bankInfo.js"></script>
+<script src="/static/bottomTabs.js"></script>
   <script src="/static/category_icons.js"></script>
 <script src="/static/upcomingCard.js"></script>
   <script src="/static/chartControls.js"></script>

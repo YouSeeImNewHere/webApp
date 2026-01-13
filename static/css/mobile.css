@@ -1,0 +1,360 @@
+@media (max-width: 900px){
+
+  /* -----------------------------
+     Global: prevent page-wide sideways scroll
+     ----------------------------- */
+  html, body{
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden !important;
+  }
+
+  body{
+    padding: 0 !important;
+    padding-bottom: 74px; /* room for bottom tab bar */
+  }
+
+  .page-container{
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 6px !important;
+    padding-bottom: 80px;
+    box-sizing: border-box;
+  }
+
+  /* In flex layouts, allow children to shrink (prevents subtle overflow) */
+  .bank-main, .cat-main, .chart-card, .chart-header, .chart-header-center, .chart-header-dates{
+    min-width: 0 !important;
+  }
+
+  /* -----------------------------
+     Home layout stacking
+     ----------------------------- */
+  body.page-home .bank-area{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  body.page-home .bank-main{ order: 1; }
+  body.page-home .sidebar-stack{ order: 2; }
+  body.page-home #categoryTotals{ order: 3; }
+
+  body.page-home .sidebar-stack,
+  body.page-home #categoryTotals,
+  body.page-home #monthBudget,
+  body.page-home .category-box--sidebar{
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    align-self: stretch;
+  }
+
+  /* -----------------------------
+     Month buttons (ALL pages) — Home behavior
+     IMPORTANT:
+     - The ROW scrolls (overflow-x:auto)
+     - The PAGE does NOT scroll (html/body overflow-x hidden)
+     - Keep row width constrained to its parent (width:100%, max-width:100%)
+     ----------------------------- */
+  #monthButtons,
+  #aButtons,
+  #catMonthButtons,
+  #spMonthButtons{
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+
+    justify-content: flex-start !important;
+    padding: 6px 12px 2px 2px !important; /* right padding so last pill isn't clipped */
+  }
+
+  /* Hide scrollbar (optional) */
+  #monthButtons::-webkit-scrollbar,
+  #aButtons::-webkit-scrollbar,
+  #catMonthButtons::-webkit-scrollbar,
+  #spMonthButtons::-webkit-scrollbar{
+    height: 0;
+  }
+
+  #monthButtons .month-btn,
+  #aButtons .month-btn,
+  #catMonthButtons .month-btn,
+  #spMonthButtons .month-btn{
+    flex: 0 0 auto !important;
+    padding: 8px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  /* Annual pill same as others */
+  .month-btn.is-annual{
+    font-weight: 800;
+  }
+
+  /* If dropdown selects exist anywhere, keep them sane */
+  #monthSelect,
+  #aMonthSelect{
+    width: 100%;
+    max-width: 320px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.2);
+    font-size: 14px;
+    font-weight: 600;
+    background: #fff;
+  }
+
+  /* -----------------------------
+     Quarters + Year row — same row
+     ----------------------------- */
+  .chart-controls.chart-controls-grid2{
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 10px !important;
+    max-width: 100% !important;
+  }
+
+  .chart-controls-center{
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+
+    justify-content: center !important;
+    padding: 6px 12px 2px 2px !important;
+  }
+
+  .chart-quarters,
+  .chart-year-group{
+    flex: 0 0 auto;
+    display: flex !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  .chart-year-group button{
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+  .chart-year-group span{
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  /* -----------------------------
+     Category layout stacks (mobile)
+     ----------------------------- */
+  .cat-layout{
+    flex-direction: column;
+  }
+  .cat-sidebar{
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  /* -----------------------------
+     Chart sizing on phones
+     ----------------------------- */
+  .chart-canvas-box{
+    max-width: 100% !important;
+    overflow-x: hidden; /* prevents canvas from ever widening card */
+  }
+
+  .chart-canvas-box{
+    height: 300px;
+  }
+
+  /* Let the month row scroll inside the card (don’t clip it) */
+  .chart-card{
+    overflow: visible;
+    max-width: 100% !important;
+    overflow-x: hidden;
+    width: 100%
+  }
+  .chart-canvas-box{ overflow: hidden !important; } /* keep canvas safe */
+
+  .chart-header.chart-header--metrics2{
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    grid-template-areas:
+      "title next"
+      "total growth"
+      "gtoggle gtoggle"
+      "dates dates";
+    gap: 10px !important;
+    align-items: start !important;
+  }
+
+  .chart-header--metrics2 .chart-header-center{
+    grid-area: title !important;
+    justify-content: flex-start !important;
+  }
+
+  .chart-title-wrap{ align-items: flex-start !important; }
+  .chart-title-wrap h2{
+    max-width: 100% !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart-header--metrics2 .chart-header-actions{
+    grid-area: next !important;
+    justify-self: end !important;
+  }
+
+  .chart-header--metrics2 .chart-header-metrics{
+    display: contents !important;
+  }
+
+  .chart-header--metrics2 .chart-breakdown--metric{
+    grid-area: total !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .chart-header--metrics2 .chart-metric-stack{
+    grid-area: growth !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    align-self: start !important;
+  }
+
+  .chart-header--metrics2 .chart-breakdown--metric,
+  .chart-header--metrics2 .chart-metric-stack .chart-breakdown{
+    height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .chart-growth-toggle{
+    grid-area: gtoggle !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+
+  .chart-header-dates{
+    grid-area: dates !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr auto !important;
+    gap: 10px !important;
+    max-width: 100%;
+  }
+
+  .chart-dates-inline--header{ display: contents !important; }
+  .chart-dates-inline--header input[type="date"]{
+    height: 40px;
+    width: 100%;
+  }
+
+  /* Account page: center chart title only */
+  body.page-account .chart-header.chart-header--metrics2{
+    grid-template-areas:
+      "title title"
+      "total growth"
+      "gtoggle gtoggle"
+      "dates dates";
+  }
+  body.page-account .chart-header--metrics2 .chart-header-center{
+    justify-content: center !important;
+    grid-column: 1 / -1 !important;
+  }
+  body.page-account .chart-title-wrap{
+    align-items: center !important;
+  }
+  body.page-account .chart-title-wrap h2{
+    text-align: center !important;
+  }
+
+  /* -----------------------------
+     Transactions tighten
+     ----------------------------- */
+  .tx-row{
+    grid-template-columns: max-content 1fr auto;
+    gap: 8px;
+    padding: 8px 10px;
+    padding-left: 72px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .tx-date{ font-size: 11px; }
+  .tx-merchant{ font-size: 13px; }
+  .tx-sub{ font-size: 10px; }
+  .tx-amt{ font-size: 13px; }
+
+  .section-divider{ margin: 16px 0; }
+
+  /* Bottom tabs: mobile bar */
+  .mobile-tabs{
+    left: 0;
+    right: 0;
+    bottom: env(safe-area-inset-bottom);
+    transform: none;
+
+    height: 64px;
+    width: auto;
+
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid rgba(0,0,0,0.12);
+    box-shadow: none;
+
+    padding: 8px 10px;
+    gap: 10px;
+  }
+
+  .mobile-tab{
+    border: 1px solid rgba(0,0,0,0.14);
+    border-radius: 14px;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .mobile-tab.active{
+    background: #111;
+    color: #fff;
+    border-color: #111;
+  }
+
+  /*@media (max-width: 900px){
+  #monthButtons, #aButtons, #catMonthButtons, #spMonthButtons{
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 18px !important;
+    box-sizing: border-box !important;
+  }
+} */
+
+}

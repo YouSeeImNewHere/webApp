@@ -137,7 +137,6 @@ if (t) t.textContent = category;
     options: {
       responsive: true,
   maintainAspectRatio: false,
-  devicePixelRatio: window.devicePixelRatio || 1,
       plugins: { legend: { display: false } },
       interaction: { mode: "index", intersect: false },
       scales: {
@@ -223,8 +222,12 @@ async function loadCategoryTransactions(category) {
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
 
-    wrap.innerHTML = `
-      ${categoryIconHTML(row.category)}
+
+    wrap.dataset.txId = String(row.id ?? "");
+wrap.innerHTML = `
+      <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
+        ${categoryIconHTML(row.category)}
+      </div>
       <div class="tx-date">${shortDate(row.postedDate)}</div>
       <div class="tx-main">
         <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
@@ -235,6 +238,8 @@ async function loadCategoryTransactions(category) {
 
     list.appendChild(wrap);
   });
+
+  if (typeof attachTxInspect === 'function') attachTxInspect(list);
 }
 
 async function loadLifetimeSidebar(activeCategory) {
@@ -258,19 +263,21 @@ async function loadLifetimeSidebar(activeCategory) {
       <td style="text-align:right;">${money(r.total)}</td>
     `;
 
-    tr.addEventListener("click", async () => {
-      const newCat = r.category;
+tr.addEventListener("click", async () => {
+  const newCat = r.category;
 
-      document.getElementById("catTitle").textContent = newCat;
-      setCategoryInURL(newCat);
+  const titleEl = document.getElementById("catTitle");
+  if (titleEl) titleEl.textContent = newCat;
 
-      await loadLifetimeSidebar(newCat);
-      await loadCategoryChart();
+  setCategoryInURL(newCat); // ✅ this is the missing piece
 
-      await loadCategoryTransactions(newCat);
+  await loadLifetimeSidebar(newCat);
+  await loadCategoryChart();              // now reads the new ?c=
+  await loadCategoryTransactions(newCat);
 
-  closeCatDrawer(); // ✅ collapse after selection
-    });
+  closeCatDrawer();
+});
+
 
     tbody.appendChild(tr);
   });
@@ -289,9 +296,9 @@ mountChartCard("#chartMount", {
   title: "Category",
   showToggle: false,
 });
-initChartControls(CATEGORY_CHART_IDS, async () => {
-  await loadCategoryChart();
-  await loadCategoryTransactions(getCategoryFromURL() || "Uncategorized");
+    initChartControls(CATEGORY_CHART_IDS, async () => {
+    await loadCategoryChart();
+     await loadCategoryTransactions(getCategoryFromURL() || "Uncategorized");
 });
 
 const chartTitle = document.getElementById(CATEGORY_CHART_IDS.title);
@@ -323,3 +330,132 @@ if (chartTitle) chartTitle.textContent = category;
 document.addEventListener("DOMContentLoaded", () => {
   init().catch(err => console.error(err));
 });
+
+
+
+/* =============================================================================
+   Transaction Inspect (shared)
+   ============================================================================= */
+
+function ensureTxInspectModal(){
+  let root = document.getElementById("txInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "txInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-tx-close></div>
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
+          <div id="txInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">✕</button>
+      </div>
+      <div id="txInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target && e.target.matches && e.target.matches("[data-tx-close]")) {
+      closeTxInspect();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeTxInspect();
+  });
+
+  return root;
+}
+
+function closeTxInspect(){
+  const root = document.getElementById("txInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+function _txEsc(s){
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function openTxInspect(txId){
+  const root = ensureTxInspectModal();
+  root.classList.remove("hidden");
+
+  const titleEl = document.getElementById("txInspectTitle");
+  const subEl = document.getElementById("txInspectSub");
+  const bodyEl = document.getElementById("txInspectBody");
+  if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.65;font-weight:700;">Loading…</div>`;
+
+  const res = await fetch(`/transaction/${encodeURIComponent(txId)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+
+  const data = await res.json();
+  const tx = data.transaction || data || {};
+
+  const merchant = tx.merchant || "(no merchant)";
+  if (titleEl) titleEl.textContent = String(merchant).toUpperCase();
+  if (subEl) subEl.textContent = `id ${tx.id ?? txId}`;
+
+  const entries = Object.entries(tx);
+
+  // useful fields first, rest alphabetical
+  const priority = ["id","status","postedDate","purchaseDate","dateISO","time","amount","merchant","bank","card","accountType","account_id","category","source","transfer_peer","transfer_dir","where","notes","balance_after"];
+  entries.sort((a,b) => {
+    const ai = priority.indexOf(a[0]); const bi = priority.indexOf(b[0]);
+    if (ai === -1 && bi === -1) return String(a[0]).localeCompare(String(b[0]));
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  const kv = entries.map(([k,v]) => {
+    const vv =
+      v === null ? "null" :
+      v === undefined ? "undefined" :
+      (typeof v === "object" ? JSON.stringify(v) : String(v));
+    return `<div class="tx-kv__k">${_txEsc(k)}</div><div class="tx-kv__v">${_txEsc(vv)}</div>`;
+  }).join("");
+
+  if (bodyEl) bodyEl.innerHTML = `<div class="tx-kv">${kv}</div>`;
+}
+
+function attachTxInspect(container){
+  if (!container || container.__txInspectBound) return;
+  container.__txInspectBound = true;
+
+  container.addEventListener("click", async (e) => {
+    const hit = e.target.closest && e.target.closest(".tx-icon-hit");
+    if (!hit) return;
+    const row = hit.closest && hit.closest(".tx-row");
+    const txId = row && row.dataset ? row.dataset.txId : "";
+    if (!txId) return;
+
+    try { await openTxInspect(txId); }
+    catch (err) { console.error(err); }
+  });
+
+  container.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const hit = e.target.closest && e.target.closest(".tx-icon-hit");
+    if (!hit) return;
+    e.preventDefault();
+    const row = hit.closest && hit.closest(".tx-row");
+    const txId = row && row.dataset ? row.dataset.txId : "";
+    if (!txId) return;
+
+    try { await openTxInspect(txId); }
+    catch (err) { console.error(err); }
+  });
+}
+

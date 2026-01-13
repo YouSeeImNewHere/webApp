@@ -142,7 +142,7 @@ function renderCalendarGrid(year, month){
 
     const chips = evts
       .slice(0, 3)
-      .map(e => `<div class="cal-chip" title="${esc((e.merchant||"").toUpperCase())}">${esc(truncMerchant(e.merchant))} • ${money(e.amount)}</div>`)
+      .map(e => `<div class="cal-chip" title="${esc(((e.merchant_display||e.merchant||"")).toUpperCase())}">${esc(truncMerchant(e.merchant_display||e.merchant))} • ${money(e.amount)}</div>`)
       .join("");
 
     const more = evts.length > 3
@@ -187,7 +187,7 @@ const d = parseISODateLocal(isoDate);
   body.innerHTML = evts.map(e => `
     <div class="occ-tx">
       <div class="occ-left">
-        <div class="occ-merchant">${esc((e.merchant || "").toUpperCase())}</div>
+        <div class="occ-merchant">${esc(((e.merchant_display || e.merchant || "")).toUpperCase())}</div>
         <div class="occ-meta">${esc(e.cadence || "")}</div>
       </div>
       <div class="occ-amt">${money(e.amount)}</div>
@@ -223,7 +223,8 @@ function esc(s){
 }
 
 function merchantHTML(g){
-  const m = (g.merchant || "").toUpperCase();
+    const m = (g.merchant_display || g.merchant || "").toUpperCase();
+
   const date = shortDateISO(g.last_seen);
 
   return `
@@ -280,7 +281,7 @@ function patternHTML(gIdx, pIdx, p){
 }
 
 function merchantHTMLIgnored(g){
-  const m = (g.merchant || "").toUpperCase();
+  const m = (g.merchant_display || g.merchant || "").toUpperCase();
   const date = shortDateISO(g.last_seen);
 
   return `
@@ -384,7 +385,7 @@ function openOccModal(groupIndex, patternIndex){
   const sub   = document.getElementById("occSub");
   const body  = document.getElementById("occBody");
 
-  const merch = (g.merchant || "").toUpperCase();
+  const merch = p?.transfer_display ? String(p.transfer_display) : (g.merchant || "").toUpperCase();
   const freq  = p.cadence || "irregular";
   const occ   = `x${p.occurrences || 0}`;
 
@@ -397,7 +398,7 @@ function openOccModal(groupIndex, patternIndex){
   ${categoryIconHTML(t.category)}
   <div class="occ-left">
         <div class="occ-date">${esc(shortDateISO(t.date))}</div>
-        <div class="occ-merchant">${esc((t.merchant || "").toUpperCase())}</div>
+        <div class="occ-merchant">${esc((t.merchant_display ? String(t.merchant_display) : (t.merchant || "").toUpperCase()))}</div>
         <div class="occ-meta">${esc(t.category || "")}${t.account_id ? " • acct " + esc(t.account_id) : ""}</div>
       </div>
   <div class="occ-amt">${money(t.amount)}</div>

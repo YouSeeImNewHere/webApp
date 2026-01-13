@@ -59,9 +59,7 @@ const HOME_IDS = {
 
   canvas: "netWorthChart",
 
-  monthButtons: "monthButtons",
-  monthSelect: "monthSelect",
-  monthSelectWrap: "monthSelectWrap"
+  monthButtons: "monthButtons"
 };
 
 let netWorthChartInstance = null;
@@ -339,7 +337,12 @@ if (DEBUG_SPENDING && currentChart().key === "spending") {
 
   if (netWorthChartInstance) netWorthChartInstance.destroy();
 
-  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+// Only use the accordion on actual touch devices (phones/tablets),
+// not just a narrow desktop window.
+const isMobile = window.matchMedia(
+  "(max-width: 900px) and (hover: none) and (pointer: coarse)"
+).matches;
+
 
 
 const isSpending = currentChart().key === "spending";
@@ -483,6 +486,57 @@ function setActiveMonthButton(btn) {
   if (btn) btn.classList.add("active");
 }
 
+// -----------------------------
+// Month budget card (Home sidebar)
+// -----------------------------
+async function loadMonthBudget() {
+  const safeEl  = document.getElementById("mbSafe");
+  const metaEl  = document.getElementById("mbMeta");
+  const incEl   = document.getElementById("mbIncome");
+  const spentEl = document.getElementById("mbSpent");
+  const billsEl = document.getElementById("mbBills");
+  const barFill = document.getElementById("mbBarFill");
+
+  // Card isn't mounted on some pages
+  if (!safeEl || !metaEl || !incEl || !spentEl || !billsEl || !barFill) return;
+
+  const res = await fetch("/month-budget");
+  if (!res.ok) {
+    console.error("month-budget failed:", res.status);
+    safeEl.textContent = "—";
+    metaEl.textContent = "Could not load";
+    return;
+  }
+
+  const j = await res.json();
+
+  const income = Number(j.income_expected || 0);
+  const spent  = Number(j.spent_so_far || 0);
+  const bills  = Number(j.bills_remaining || 0);
+  const safe   = Number(j.safe_to_spend || 0);
+
+  const availableBeforeBills = income - bills;
+
+  safeEl.textContent = money(safe);
+  incEl.textContent = money(income);
+  spentEl.textContent = money(spent);
+  billsEl.textContent = money(bills);
+
+  // Progress: spent vs (income - remaining bills)
+  let pct = 0;
+  if (availableBeforeBills <= 0) {
+    pct = spent > 0 ? 100 : 0;
+  } else {
+    pct = Math.min(100, Math.max(0, (spent / availableBeforeBills) * 100));
+  }
+
+  barFill.style.width = `${pct.toFixed(0)}%`;
+  if (spent > availableBeforeBills && availableBeforeBills > 0) barFill.classList.add("over");
+  else barFill.classList.remove("over");
+
+  const asOf = j.as_of ? formatMMMdd(j.as_of) : "today";
+  metaEl.textContent = `${asOf} • Spent ${money(spent)} of ${money(Math.max(0, availableBeforeBills))}`;
+}
 
 
 function money(n) {
@@ -672,30 +726,40 @@ async function loadCategoryTotalsThisMonth() {
 
   }
 
-  // divider-ish spacing (optional)
-  const spacer = document.createElement("li");
-  spacer.style.borderBottom = "none";
-  spacer.style.paddingTop = "10px";
-  spacer.style.opacity = "0.7";
-  spacer.innerHTML = `<span>Unassigned</span><span>${unassignedAllTime} tx (all-time)</span>`;
+// ---- Unassigned section ----
 await renderUnknownMerchantRow(ul);
-  renderUnassignedRow(ul, unassignedAllTime);
+renderUnassignedRow(ul, unassignedAllTime);
+
 }
 
 function renderUnassignedRow(ul, unassignedAllTime) {
-  const li = document.createElement("li");
-  li.innerHTML = `
-    <span style="display:flex; align-items:center; gap:8px;">
-      <strong>Unassigned</strong>
-      <button id="addRuleBtn" type="button" style="padding:2px 8px;">+ Rule</button>
-    </span>
-    <span>${unassignedAllTime}</span>
-  `;
-  ul.appendChild(li);
+  // Remove any existing unassigned row so we can’t ever double-add
+  ul.querySelectorAll(".unassigned-row").forEach(n => n.remove());
 
-  const btn = li.querySelector("#addRuleBtn");
+  const li = document.createElement("li");
+  li.className = "unassigned-row";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "category-pill";
+
+  btn.innerHTML = `
+    <span class="cat-left">
+      <span class="cat-name">Unassigned</span>
+      <span class="cat-badge" title="${unassignedAllTime} unassigned">${unassignedAllTime}</span>
+    </span>
+    <span style="display:flex; align-items:center; gap:8px;">
+      <span class="cat-amt">+ Rule</span>
+    </span>
+  `;
+
+  // Clicking anywhere on the row opens the rule modal
   btn.addEventListener("click", openRuleModal);
+
+  li.appendChild(btn);
+  ul.appendChild(li);
 }
+
 
 function updatePotentialToggleVisibility() {
   const wrap = document.getElementById("nwPotentialWrap");
@@ -901,11 +965,12 @@ if (potentialToggle) {
 
   setChartHeaderUI();
   loadChart();
-  loadBankTotals();
+loadBankTotals();
+loadMonthBudget();
   loadCategoryTotalsThisMonth();
   loadData();
 mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
-
+mountMonthBudgetCard("#monthBudgetMount");
 
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
@@ -992,16 +1057,26 @@ function renderTxList(data){
 
     const merchant = (row.merchant || "").toUpperCase();
     const sub = `${row.bank || ""}${row.card ? " • " + row.card : ""}`;
+    const amtNum = Number(row.amount || 0);
+    const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
 
+  const effectiveDate = (row.postedDate && row.postedDate !== "unknown") ? row.postedDate : ((row.purchaseDate && row.purchaseDate !== "unknown") ? row.purchaseDate : row.dateISO);
+wrap.dataset.txId = String(row.id ?? "");
 wrap.innerHTML = `
+  <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
   ${categoryIconHTML(row.category)}
-  <div class="tx-date">${shortDate(row.postedDate)}</div>
+</div>
+
+
+  <div class="tx-date">${shortDate(effectiveDate)}</div>
   <div class="tx-main">
-        <div class="tx-merchant">${merchant}</div>
-        <div class="tx-sub">${sub}</div>
-      </div>
-      <div class="tx-amt">${money(row.amount)}</div>
-    `;
+    <div class="tx-merchant">${merchant}</div>
+    <div class="tx-sub">${sub}</div>
+    <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
+  </div>
+  <div class="tx-amt">${money(row.amount)}</div>
+`;
+
 
     list.appendChild(wrap);
   });
@@ -1215,3 +1290,234 @@ async function renderUnknownMerchantRow(ul) {
   li.appendChild(btn);
   ul.appendChild(li);
 }
+
+function clamp0(n) {
+  n = Number(n || 0);
+  return n < 0 ? 0 : n;
+}
+
+function mountMonthBudgetCard(mountSel) {
+  const mount = document.querySelector(mountSel);
+  if (!mount) return;
+
+  // Use your existing "category-box" styling so it matches.
+  mount.innerHTML = `
+  <aside class="category-box category-box--sidebar" aria-label="This month">
+    <div class="category-box__header" style="display:flex; justify-content:space-between;">
+      <span>This month</span>
+      <span id="mbRange" style="opacity:.7; font-size:.85em;">—</span>
+    </div>
+
+    <ul class="category-box__list">
+      <li class="category-pill">
+        <span class="cat-name">Suspected income</span>
+        <span id="mbIncome" class="cat-amt">—</span>
+      </li>
+
+      <li class="category-pill">
+        <span class="cat-name">Spent so far</span>
+        <span id="mbSpent" class="cat-amt">—</span>
+      </li>
+
+      <li class="category-pill" style="border-top:1px dashed rgba(0,0,0,.15); padding-top:12px;">
+        <span class="cat-name"><strong>Safe to spend</strong></span>
+        <span id="mbSafe" class="cat-amt"><strong>—</strong></span>
+      </li>
+    </ul>
+
+    <div style="margin-top:8px; font-size:11px; opacity:.65;">
+      <span id="mbSafeHint">Income − spent − remaining bills</span>
+    </div>
+  </aside>
+`;
+
+
+  // mobile: stack cards
+  if (window.matchMedia("(max-width: 900px)").matches) {
+    const grid = mount.querySelector("div[style*='grid-template-columns']");
+    if (grid) grid.style.gridTemplateColumns = "1fr";
+  }
+
+  refreshMonthBudgetCard();
+}
+
+async function refreshMonthBudgetCard() {
+  const rangeEl = document.getElementById("mbRange");
+  const incomeEl = document.getElementById("mbIncome");
+  const spentEl = document.getElementById("mbSpent");
+  const safeEl = document.getElementById("mbSafe");
+
+  const incomeHint = document.getElementById("mbIncomeHint");
+  const billsHint = document.getElementById("mbBillsHint");
+  const safeHint = document.getElementById("mbSafeHint");
+
+  try {
+    const res = await fetch("/month-budget");
+    if (!res.ok) throw new Error("month-budget failed: " + res.status);
+    const d = await res.json();
+
+    if (rangeEl) rangeEl.textContent = `${formatMMMdd(d.month_start)} – ${formatMMMdd(d.month_end)}`;
+
+    const income = Number(d.income_expected || 0);
+    const spent = Number(d.spent_so_far || 0);
+    const billsRemaining = Number(d.bills_remaining || 0);
+
+    const safe = Number(d.safe_to_spend || 0);
+
+    if (incomeEl) incomeEl.textContent = money(income);
+    if (spentEl) spentEl.textContent = money(spent);
+
+    // Show negative in red-ish by using existing negative class pattern if you want,
+    // but keep it simple for now:
+    if (safeEl) safeEl.textContent = (safe < 0 ? "-" : "") + money(Math.abs(safe));
+
+    if (incomeHint) incomeHint.textContent = `Expected this month (paychecks + interest)`;
+    if (billsHint) billsHint.textContent = `Bills remaining: ${money(billsRemaining)}`;
+    if (safeHint) safeHint.textContent = `Income - spent - remaining bills`;
+
+  } catch (e) {
+    console.error(e);
+    if (rangeEl) rangeEl.textContent = "—";
+    if (incomeEl) incomeEl.textContent = "—";
+    if (spentEl) spentEl.textContent = "—";
+    if (safeEl) safeEl.textContent = "—";
+    if (incomeHint) incomeHint.textContent = "Could not load";
+    if (billsHint) billsHint.textContent = "";
+    if (safeHint) safeHint.textContent = "";
+  }
+
+
+}
+
+function ensureTxInspectModal() {
+  let root = document.getElementById("txInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "txInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-tx-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
+          <div id="txInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="txInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-tx-close]")) closeTxInspect();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeTxInspect();
+  });
+
+  return root;
+}
+
+function closeTxInspect() {
+  const root = document.getElementById("txInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function openTxInspect(txId) {
+  try {
+    const res = await fetch(`/transaction/${encodeURIComponent(txId)}`);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    const data = await res.json();
+    if (!data.ok) {
+      alert("Transaction not found: " + txId);
+      return;
+    }
+
+    const tx = data.transaction || {};
+    const backdrop = ensureTxInspectModal();
+
+    const titleEl = document.getElementById("txInspectTitle");
+    const subEl = document.getElementById("txInspectSub");
+    const bodyEl = document.getElementById("txInspectBody");
+
+    const merchant = tx.merchant || "(no merchant)";
+    const amount = (typeof money === "function") ? money(tx.amount) : String(tx.amount ?? "");
+    const bankCard = `${tx.bank || ""}${tx.card ? " • " + tx.card : ""}`.trim();
+
+    if (titleEl) titleEl.textContent = merchant;
+    if (subEl) subEl.textContent = `${amount}${bankCard ? " • " + bankCard : ""} • id ${tx.id ?? txId}`;
+
+    const entries = Object.entries(tx);
+
+// Optional: put the most useful fields first
+const priority = ["id","status","postedDate","purchaseDate","amount","merchant","bank","card","category","source","time","transfer_peer"];
+entries.sort((a,b) => {
+  const ai = priority.indexOf(a[0]); const bi = priority.indexOf(b[0]);
+  return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+});
+
+const kv = entries.map(([k, v]) => {
+  const vv =
+    v === null ? "null" :
+    v === undefined ? "undefined" :
+    (typeof v === "object" ? JSON.stringify(v) : String(v));
+
+  return `
+    <div class="tx-kv__k">${escapeHtml(k)}</div>
+    <div class="tx-kv__v">${escapeHtml(vv)}</div>
+  `;
+}).join("");
+
+bodyEl.innerHTML = `<div class="tx-kv">${kv}</div>`;
+
+
+    backdrop.classList.remove("hidden");
+  } catch (err) {
+    console.error(err);
+    alert("Failed to load transaction details.");
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const txList = document.getElementById("txList");
+  if (!txList) return;
+
+  txList.addEventListener("click", (e) => {
+    const hit = e.target.closest?.(".tx-icon-hit");
+    if (!hit) return;
+
+    const rowEl = hit.closest?.(".tx-row");
+    const txId = rowEl?.dataset?.txId;
+    if (txId) openTxInspect(txId);
+  });
+
+  // optional: keyboard support (Enter/Space) on the icon
+  txList.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const hit = e.target.closest?.(".tx-icon-hit");
+    if (!hit) return;
+    e.preventDefault();
+
+    const rowEl = hit.closest?.(".tx-row");
+    const txId = rowEl?.dataset?.txId;
+    if (txId) openTxInspect(txId);
+  });
+});

@@ -16,10 +16,9 @@ from transactionHandler import DB_PATH, makeKey
 # ============================================================
 
 # IMPORTANT: set this to your real table
-TABLE_NAME = "transactions"
-
+WRITE_TABLE = "transactions"
+LOOKUP_TABLE = "transactions"
 # Run only one job at a time
-ACTIVE_JOB = "capitalone_1047_deposit"
 
 IMPORT_JOBS = [
     {"name": "amex_72008", "csv": Path("../downloads/amexCredit_72008.csv"), "account_id": 2},
@@ -57,6 +56,110 @@ TARGET_YEAR = 2025  # keep consistent with your navy importer behavior
 # ============================================================
 
 WITHDRAWAL_KEYS_FILE = Path("withdrawalKey_test.json")
+
+PAYMENT_GENERIC_TOKENS = {
+    "payment", "pay", "thank", "thanks", "thankyou", "you",
+    "mobile", "autopay", "online", "electronic", "transfer"
+}
+
+def is_generic_payment_merchant(s: str) -> bool:
+    s = clean_spaces(s).lower()
+    if not s or s in ("unknown",):
+        return True
+    # normalize THANK YOU -> thankyou token
+    s = s.replace("thank you", "thankyou").replace("thanks", "thank")
+    toks = set(merchant_tokens(s))
+    return bool(toks) and (toks <= PAYMENT_GENERIC_TOKENS)
+
+
+def _id_exists(cur: sqlite3.Cursor, table: str, tx_id: str) -> bool:
+    row = cur.execute(f"SELECT 1 FROM {table} WHERE id = ? LIMIT 1", (tx_id,)).fetchone()
+    return row is not None
+
+
+def _id_exists_any(cur: sqlite3.Cursor, tx_id: str) -> bool:
+    """Check both lookup + write tables so we never generate an id that collides."""
+    if _id_exists(cur, LOOKUP_TABLE, tx_id):
+        return True
+    if WRITE_TABLE != LOOKUP_TABLE and _id_exists(cur, WRITE_TABLE, tx_id):
+        return True
+    return False
+
+
+def _copy_row_from_lookup_if_missing(cur: sqlite3.Cursor, tx_id: str) -> None:
+    """
+    TESTING MODE helper:
+    If a row exists in LOOKUP_TABLE but not in WRITE_TABLE, copy it over so we can
+    apply updates into WRITE_TABLE and see what would change.
+    """
+    if _id_exists(cur, WRITE_TABLE, tx_id):
+        return
+
+    row = cur.execute(f"SELECT * FROM {LOOKUP_TABLE} WHERE id = ? LIMIT 1", (tx_id,)).fetchone()
+    if row is None:
+        return
+
+    cols = [r[1] for r in cur.execute(f"PRAGMA table_info({LOOKUP_TABLE})").fetchall()]
+    if not cols:
+        return
+
+    # Only insert columns that exist in WRITE_TABLE too
+    write_cols = set(get_table_columns(cur, WRITE_TABLE))
+    keep_cols = [c for c in cols if c in write_cols]
+
+    if not keep_cols:
+        return
+
+    idx = {c: i for i, c in enumerate(cols)}
+    values = [row[idx[c]] for c in keep_cols]
+
+    col_sql = ", ".join(keep_cols)
+    qmarks = ", ".join(["?"] * len(keep_cols))
+    cur.execute(f"INSERT INTO {WRITE_TABLE} ({col_sql}) VALUES ({qmarks})", values)
+
+
+def _iso_from_mmddyy_sql(expr: str) -> str:
+    """SQLite expression: convert mm/dd/yy or mm/dd/yyyy string to YYYY-MM-DD (or NULL)."""
+    e = f"TRIM(COALESCE({expr},''))"
+    return f"""
+    CASE
+      WHEN LOWER({e}) = 'unknown' OR {e} = '' THEN NULL
+      WHEN {e} GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
+        '20' || substr({e}, 7, 2) || '-' || substr({e}, 1, 2) || '-' || substr({e}, 4, 2)
+      WHEN {e} GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
+        substr({e}, 7, 4) || '-' || substr({e}, 1, 2) || '-' || substr({e}, 4, 2)
+      ELSE NULL
+    END
+    """.strip()
+
+
+def get_latest_posted_cutoff(cur: sqlite3.Cursor, account_id: int) -> Optional[datetime.date]:
+    """
+    Latest transaction date among rows with status 'Posted' for THIS account in LOOKUP_TABLE.
+    Uses postedDate when valid; falls back to purchaseDate when postedDate is unknown/blank.
+    """
+    posted_iso = _iso_from_mmddyy_sql("postedDate")
+    purchase_iso = _iso_from_mmddyy_sql("purchaseDate")
+
+    sql = f"""
+      SELECT MAX(date(COALESCE({posted_iso}, {purchase_iso}))) AS max_d
+      FROM {LOOKUP_TABLE}
+      WHERE LOWER(TRIM(COALESCE(status,''))) = 'posted'
+        AND account_id = ?
+        AND COALESCE({posted_iso}, {purchase_iso}) IS NOT NULL
+    """
+    row = cur.execute(sql, (account_id,)).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        return datetime.strptime(row[0], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _row_effective_date(*ds: Optional[datetime.date]) -> Optional[datetime.date]:
+    ds2 = [d for d in ds if d]
+    return max(ds2) if ds2 else None
 
 
 def load_withdrawal_keys() -> dict:
@@ -153,7 +256,7 @@ def amount_id_component(amount: float) -> str:
     return f"{abs(amount):.2f}"
 
 
-def delete_stale_pending_email(cur, table: str, account_id: int, reference_date, days: int = 5) -> int:
+def delete_stale_pending_email(cur, table: str, account_id: int, reference_date, days: int = 5 ) -> int:
     """
     Deletes Pending+email rows for THIS account whose purchaseDate is older than
     (reference_date - days). reference_date should be the latest date found in the CSV file.
@@ -365,16 +468,20 @@ def find_existing_match_pending_email(cur: sqlite3.Cursor,table: str,account_id:
 
     best = None
     for row in candidates:
-        db_merch = row[4] if len(row) > 4 else ""
-        if merchants_similar(db_merch or "", merchant or ""):
-            if best is None:
-                best = row
-            else:
-                best_posted = (best[1] or "unknown").strip().lower()
-                row_posted  = (row[1] or "unknown").strip().lower()
-                if best_posted != "unknown" and row_posted == "unknown":
-                    best = row
-            return best
+        db_merch = (row[4] if len(row) > 4 else "") or ""
+        db_clean = clean_spaces(db_merch).lower()
+        csv_clean = clean_spaces(merchant or "").lower()
+
+        db_is_unknown = db_clean in ("", "unknown")
+        csv_is_unknown = csv_clean in ("", "unknown")
+
+        # ✅ If pending/email merchant is unknown OR generic payment text, match by amount+date alone
+        if (db_is_unknown or is_generic_payment_merchant(db_clean)) and not csv_is_unknown:
+            return row
+
+        # Otherwise, require similarity (old behavior)
+        if merchants_similar(db_clean, csv_clean):
+            return row
 
     return None
 
@@ -515,6 +622,7 @@ def find_any_match_any_status(cur: sqlite3.Cursor,table: str,account_id: int,amo
 # CORE UPSERT (shared by all importers)
 # ============================================================
 
+
 def upsert_csv_row(
     cur: sqlite3.Cursor,
     tx_cols: set,
@@ -529,20 +637,24 @@ def upsert_csv_row(
     allow_broad_override: bool,
 ) -> Tuple[str, Optional[str]]:
     """
+    TESTING MODE behavior:
+      - LOOKUP duplicates/matches in LOOKUP_TABLE (real transactions)
+      - APPLY inserts/updates into WRITE_TABLE (transactions_test)
+
     Returns: ("updated"/"inserted"/"skipped", matched_id_or_none)
     """
     if not merchant or purchase == "unknown":
         return ("skipped", None)
 
-    # 1) Pending/email exact match first
-    match = find_existing_match_pending_email(cur, TABLE_NAME, account_id, amount, purchase_d, merchant, window_days=4)
+    # 1) Pending/email exact match first (LOOKUP)
+    match = find_existing_match_pending_email(cur, LOOKUP_TABLE, account_id, amount, purchase_d, merchant, window_days=4)
     tip_adjust = False
 
-    # 2) Tip-adjust match (only when allowed)
+    # 2) Tip-adjust match (only when allowed) (LOOKUP)
     if not match and allow_tip_adjust:
         match = find_tip_adjust_match_pending_email(
             cur,
-            TABLE_NAME,
+            LOOKUP_TABLE,
             account_id=account_id,
             csv_amount=amount,
             csv_merchant=merchant,
@@ -551,23 +663,26 @@ def upsert_csv_row(
         )
         tip_adjust = True if match else False
 
-    # 3) If still no match, do broader override match (any status/source)
+    # 3) Broader override match (any status/source) (LOOKUP)
     if not match and allow_broad_override:
-        match = find_any_match_any_status(cur, TABLE_NAME, account_id, amount, purchase_d, merchant, window_days=4)
+        match = find_any_match_any_status(cur, LOOKUP_TABLE, account_id, amount, purchase_d, merchant, window_days=4)
         tip_adjust = False
 
     cat = categorize(merchant, rules)
 
-    # If matched, UPDATE/OVERRIDE
+    # If matched, UPDATE/OVERRIDE in WRITE_TABLE
     if match:
         existing_id = match[0]
 
-        # Tip-adjust: also update amount (final CSV total)
+        # Ensure the row exists in WRITE_TABLE so "testing mode" can show the update result
+        _copy_row_from_lookup_if_missing(cur, existing_id)
+
         if tip_adjust:
+            # Tip-adjust: also update amount (final CSV total)
             if posted != "unknown":
                 cur.execute(
                     f"""
-                    UPDATE {TABLE_NAME}
+                    UPDATE {WRITE_TABLE}
                     SET postedDate = ?,
                         purchaseDate = ?,
                         status = ?,
@@ -582,7 +697,7 @@ def upsert_csv_row(
             else:
                 cur.execute(
                     f"""
-                    UPDATE {TABLE_NAME}
+                    UPDATE {WRITE_TABLE}
                     SET purchaseDate = ?,
                         status = ?,
                         merchant = ?,
@@ -597,7 +712,7 @@ def upsert_csv_row(
             # Exact/override: update with CSV info (always override key fields)
             cur.execute(
                 f"""
-                UPDATE {TABLE_NAME}
+                UPDATE {WRITE_TABLE}
                 SET postedDate = ?,
                     purchaseDate = ?,
                     status = ?,
@@ -613,14 +728,12 @@ def upsert_csv_row(
         delete_withdrawal_key(existing_id)
         return ("updated", existing_id)
 
-    # Otherwise: INSERT new row
-    # canonical base id (account-aware, signed)
+    # Otherwise: INSERT new row into WRITE_TABLE
     base = makeKey(f"{amount:.2f}", purchase, account_id=account_id, seq=0)
 
-    # if already exists, bump seq
     tx_id = base
     n = 0
-    while cur.execute(f"SELECT 1 FROM {TABLE_NAME} WHERE id = ?", (tx_id,)).fetchone():
+    while _id_exists_any(cur, tx_id):
         n += 1
         tx_id = makeKey(f"{amount:.2f}", purchase, account_id=account_id, seq=n)
 
@@ -639,128 +752,30 @@ def upsert_csv_row(
 
     insert_keys = [k for k in payload.keys() if k in tx_cols]
     if not insert_keys:
-        raise RuntimeError(f"No matching columns found in {TABLE_NAME} table.")
+        raise RuntimeError(f"No matching columns found in {WRITE_TABLE} table.")
 
     cols_sql = ", ".join(insert_keys)
     qmarks = ", ".join(["?"] * len(insert_keys))
     values = [payload[k] for k in insert_keys]
 
     try:
-        cur.execute(f"INSERT INTO {TABLE_NAME} ({cols_sql}) VALUES ({qmarks})", values)
+        cur.execute(f"INSERT INTO {WRITE_TABLE} ({cols_sql}) VALUES ({qmarks})", values)
     except sqlite3.IntegrityError:
-        payload["id"] = next_id_for_base(cur, TABLE_NAME, base)
+        # Fallback, should be rare due to _id_exists_any()
+        payload["id"] = next_id_for_base(cur, WRITE_TABLE, base)
         values = [payload[k] for k in insert_keys]
-        cur.execute(f"INSERT INTO {TABLE_NAME} ({cols_sql}) VALUES ({qmarks})", values)
+        cur.execute(f"INSERT INTO {WRITE_TABLE} ({cols_sql}) VALUES ({qmarks})", values)
 
     return ("inserted", payload["id"])
 
-
-# ============================================================
-# IMPORTERS
-# ============================================================
-
-def import_navy_csv(
-    csv_path: Path,
-    account_id: int,
-    *,
-    allow_tip_adjust: bool,
-    allow_broad_override: bool,
-) -> Dict[str, int]:
-
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    tx_cols = set(get_table_columns(cur, TABLE_NAME))
-    rules = load_category_rules(cur)
-
-    inserted = 0
-    updated = 0
-    skipped = 0
-
-    latest_file_date = None
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            posted_raw = (row.get("Posting Date") or "").strip()
-            purchase_raw = (row.get("Transaction Date") or "").strip()
-
-            purchase_d = parse_mmddyyyy(purchase_raw)
-            posted_d = parse_mmddyyyy(posted_raw)
-
-            for d in (purchase_d, posted_d):
-                if d:
-                    latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
-            # ✅ keep rows relevant by EITHER date
-            if not purchase_d and not posted_d:
-                skipped += 1
-                continue
-
-            if not ((purchase_d and purchase_d.year == TARGET_YEAR) or (posted_d and posted_d.year == TARGET_YEAR)):
-                skipped += 1
-                continue
-
-            posted = to_mmddyy(posted_raw)  # can be "unknown"
-            purchase = (purchase_d or posted_d).strftime("%m/%d/%y")
-
-            merchant = (row.get("Description") or row.get("Transaction Description") or "").strip()
-            indicator = (row.get("Credit Debit Indicator") or "").strip()
-
-            try:
-                amt = normalize_amount_navy(row.get("Amount") or "0", indicator)
-            except ValueError:
-                skipped += 1
-                continue
-
-            if not merchant:
-                skipped += 1
-                continue
-
-            action, _ = upsert_csv_row(
-                cur=cur,
-                tx_cols=tx_cols,
-                rules=rules,
-                account_id=account_id,
-                purchase_d=purchase_d or posted_d,
-                purchase=purchase,
-                posted=posted,
-                amount=amt,
-                merchant=merchant,
-                allow_tip_adjust=allow_tip_adjust,
-                allow_broad_override=allow_broad_override,
-
-            )
-
-            if action == "inserted":
-                inserted += 1
-            elif action == "updated":
-                updated += 1
-            else:
-                skipped += 1
-
-    print("NAVY latest_file_date =", latest_file_date)
-    deleted = 0
-    if latest_file_date:
-        deleted = delete_stale_pending_email(cur, TABLE_NAME, account_id, reference_date=latest_file_date)
-    print(f"Deleted stale pending email rows: {deleted}")
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
-
-
 def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
-    """
-    Follows your older Amex parsing:
-      - Date column is the transaction date (use as purchase + posted)
-      - Amount already signed in the export
-      - Clean merchant using City/State column
-    Then applies SAME match/override logic as navy.
-    """
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    tx_cols = set(get_table_columns(cur, TABLE_NAME))
+    cutoff = get_latest_posted_cutoff(cur, account_id)
+    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+
+    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
 
     inserted = 0
@@ -776,18 +791,19 @@ def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
             d = parse_mmddyyyy(date_raw)
             latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
+            if cutoff and d and d < cutoff:
+                skipped += 1
+                continue
+
             if not d:
                 skipped += 1
                 continue
-            if d.year != TARGET_YEAR:
-                skipped += 1
-                continue
+
 
             purchase_d = d
             purchase = d.strftime("%m/%d/%y")
-            posted = purchase  # older behavior
+            posted = purchase
 
-            # Amount already signed
             try:
                 amt = float(str(row.get("Amount") or "0").strip())
             except ValueError:
@@ -802,7 +818,6 @@ def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
                 skipped += 1
                 continue
 
-            # Tip adjust: generally not needed for CC exports (they already include final amount)
             action, _ = upsert_csv_row(
                 cur=cur,
                 tx_cols=tx_cols,
@@ -823,15 +838,17 @@ def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
                 updated += 1
             else:
                 skipped += 1
+
     print("AMEX latest_file_date =", latest_file_date)
 
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, TABLE_NAME, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
         print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()
     conn.close()
     return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
 
 
 def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
@@ -846,7 +863,10 @@ def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    tx_cols = set(get_table_columns(cur, TABLE_NAME))
+    cutoff = get_latest_posted_cutoff(cur, account_id)
+    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+
+    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
 
     inserted = 0
@@ -875,11 +895,12 @@ def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
                 if d:
                     latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
-            # Keep only target year based on either date
-            if not ((purchase_d and purchase_d.year == TARGET_YEAR) or (posted_d and posted_d.year == TARGET_YEAR)):
+            eff_d = _row_effective_date(purchase_d, posted_d)
+            if cutoff and eff_d and eff_d < cutoff:
                 skipped += 1
                 continue
 
+            # Keep only target year based on either date
             effective_purchase_d = purchase_d or posted_d
             if not effective_purchase_d:
                 skipped += 1
@@ -942,7 +963,7 @@ def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     print("CAPITALONE latest_file_date =", latest_file_date)
     deleted = 0
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, TABLE_NAME, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
     print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()
@@ -962,7 +983,10 @@ def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    tx_cols = set(get_table_columns(cur, TABLE_NAME))
+    cutoff = get_latest_posted_cutoff(cur, account_id)
+    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+
+    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
 
     inserted = 0
@@ -991,7 +1015,8 @@ def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
                 if d:
                     latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
-            if not ((trans_d and trans_d.year == TARGET_YEAR) or (post_d and post_d.year == TARGET_YEAR)):
+            eff_d = _row_effective_date(trans_d, post_d)
+            if cutoff and eff_d and eff_d < cutoff:
                 skipped += 1
                 continue
 
@@ -1040,7 +1065,7 @@ def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     print("DISCOVER latest_file_date =", latest_file_date)
     deleted = 0
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, TABLE_NAME, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
     print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()
@@ -1067,7 +1092,10 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    tx_cols = set(get_table_columns(cur, TABLE_NAME))
+    cutoff = get_latest_posted_cutoff(cur, account_id)
+    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+
+    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
 
     inserted = 0
@@ -1089,12 +1117,14 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
             d = parse_yyyy_mm_dd(date_raw)
             latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
+            if cutoff and d and d < cutoff:
+                skipped += 1
+                continue
+
             if not d:
                 skipped += 1
                 continue
-            if d.year != TARGET_YEAR:
-                skipped += 1
-                continue
+
 
             purchase_d = d
             purchase = d.strftime("%m/%d/%y")
@@ -1136,7 +1166,7 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     if latest_file_date:
         deleted = delete_stale_pending_email(
             cur,
-            TABLE_NAME,
+            WRITE_TABLE,
             account_id,
             reference_date=latest_file_date
         )
@@ -1145,6 +1175,150 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn.commit()
     conn.close()
     return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+def import_navy_csv(
+    csv_path: Path,
+    account_id: int,
+    allow_tip_adjust: bool,
+    allow_broad_override: bool,
+) -> Dict[str, int]:
+    """
+    Navy Federal CSV importer (testing mode):
+      - cutoff based on LOOKUP_TABLE latest Posted
+      - dedupe/match against LOOKUP_TABLE
+      - write inserts/updates into WRITE_TABLE
+    Tries to be tolerant of Navy header variations.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cutoff = get_latest_posted_cutoff(cur, account_id)
+    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+
+    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
+    rules = load_category_rules(cur)
+
+    inserted = 0
+    updated = 0
+    skipped = 0
+    latest_file_date = None
+
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+
+        for row in reader:
+            # --- Dates (try multiple common Navy headers) ---
+            purchase_raw = (
+                row.get("Transaction Date")
+                or row.get("TransactionDate")
+                or row.get("Date")
+                or row.get("Trans Date")
+                or row.get("Posted Date")  # fallback if export only has one
+                or ""
+            ).strip()
+
+            posted_raw = (
+                row.get("Posted Date")
+                or row.get("Post Date")
+                or row.get("Posting Date")
+                or row.get("PostedDate")
+                or ""
+            ).strip()
+
+            purchase_d = parse_mmddyyyy(purchase_raw)
+            posted_d = parse_mmddyyyy(posted_raw) if posted_raw else None
+
+            if not purchase_d and not posted_d:
+                skipped += 1
+                continue
+
+            # Track latest date seen in file
+            for d in (purchase_d, posted_d):
+                if d:
+                    latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
+
+            # Effective date for cutoff filtering
+            eff_d = _row_effective_date(purchase_d, posted_d)
+            if cutoff and eff_d and eff_d < cutoff:
+                skipped += 1
+                continue
+
+
+            effective_purchase_d = purchase_d or posted_d
+            if not effective_purchase_d:
+                skipped += 1
+                continue
+
+            purchase = effective_purchase_d.strftime("%m/%d/%y")
+            posted = posted_d.strftime("%m/%d/%y") if posted_d else "unknown"
+
+            # --- Merchant/Description ---
+            merchant_raw = (
+                row.get("Description")
+                or row.get("Transaction Description")
+                or row.get("Merchant")
+                or row.get("Payee")
+                or ""
+            ).strip()
+            merchant = clean_spaces(merchant_raw)
+            if not merchant:
+                skipped += 1
+                continue
+
+            # --- Amount ---
+            # Navy often has Amount + Credit/Debit indicator, but exports vary.
+            amt_str = (
+                row.get("Amount")
+                or row.get("Transaction Amount")
+                or row.get("TransactionAmount")
+                or "0"
+            )
+            indicator = (
+                row.get("Credit/Debit Indicator")
+                or row.get("Credit Debit Indicator")
+                or row.get("Credit/Debit")
+                or row.get("Type")  # sometimes "Credit"/"Debit"
+                or ""
+            )
+
+            try:
+                amt = normalize_amount_navy(str(amt_str).strip(), str(indicator).strip())
+            except Exception:
+                skipped += 1
+                continue
+
+            # --- Upsert (testing mode) ---
+            action, _ = upsert_csv_row(
+                cur=cur,
+                tx_cols=tx_cols,
+                rules=rules,
+                account_id=account_id,
+                purchase_d=effective_purchase_d,
+                purchase=purchase,
+                posted=posted,
+                amount=amt,
+                merchant=merchant,
+                allow_tip_adjust=allow_tip_adjust,
+                allow_broad_override=allow_broad_override,
+            )
+
+            if action == "inserted":
+                inserted += 1
+            elif action == "updated":
+                updated += 1
+            else:
+                skipped += 1
+
+    print("NAVY latest_file_date =", latest_file_date)
+
+    if latest_file_date:
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
+        print(f"Deleted stale pending email rows: {deleted}")
+
+    conn.commit()
+    conn.close()
+    return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
 
 
 # ============================================================

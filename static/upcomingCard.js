@@ -23,6 +23,10 @@
     return d.toLocaleDateString("en-US", { weekday: "short" });
   }
 
+  function longLabel(d) {
+    return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
+
   function shortMD(d) {
     return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
   }
@@ -44,10 +48,26 @@
     return t === "income" || c === "paycheck" || c === "interest";
   }
 
-  function ellipsize(s, max = 14) {
+  function ellipsize(s, max = 18) {
     s = String(s || "").trim();
     if (s.length <= max) return s;
     return s.slice(0, max - 1) + "…";
+  }
+
+  // ✅ Robust category getter (handles backend naming differences)
+  function getCategory(e) {
+    const v =
+      e?.type ??
+      e?.category ??
+      "";
+
+    const s = String(v || "").trim();
+    if (s) return s;
+
+    // If backend doesn't send category for income-like events, make it nicer:
+    //if (isIncomeEvent(e)) return "Income";
+
+    return "Unassigned";
   }
 
   async function fetchRecurringCalendarMonth(year, month, { minOcc = 3, includeStale = "false" } = {}) {
@@ -81,36 +101,51 @@
     `;
   }
 
-  function renderDayCard({ dateObj, iso, events }) {
-    const cell = document.createElement("div");
-    cell.style.border = "1px solid #eee";
-    cell.style.borderRadius = "12px";
-    cell.style.padding = "10px";
-    cell.style.minHeight = "86px";
+  // ---------------- Modal ----------------
+  function ensureModal() {
+    let backdrop = document.getElementById("upcomingDayBackdrop");
+    if (backdrop) return backdrop;
 
-    const head = document.createElement("div");
-    head.style.display = "flex";
-    head.style.justifyContent = "space-between";
-    head.style.alignItems = "baseline";
-    head.style.gap = "8px";
-    head.innerHTML = `
-      <div style="font-weight:700;">${dayLabel(dateObj)}</div>
-      <div style="opacity:.75; font-size:.9em;">${shortMD(dateObj)}</div>
+    backdrop = document.createElement("div");
+    backdrop.id = "upcomingDayBackdrop";
+    backdrop.className = "upcoming-day-backdrop";
+    backdrop.innerHTML = `
+      <div class="upcoming-day-modal" role="dialog" aria-modal="true" aria-label="Upcoming day details">
+        <div class="upcoming-day-modal__head">
+          <div class="upcoming-day-modal__title" id="upcomingDayTitle"></div>
+          <button class="upcoming-day-modal__close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="upcoming-day-modal__body" id="upcomingDayBody"></div>
+      </div>
     `;
 
-    const list = document.createElement("div");
-    list.style.marginTop = "8px";
-    list.style.display = "flex";
-    list.style.flexDirection = "column";
-    list.style.gap = "6px";
+    document.body.appendChild(backdrop);
 
-    // If you want each day to be scrollable vertically (lots of items):
-    list.style.maxHeight = "84px";
-    list.style.overflowY = "auto";
+    const closeBtn = backdrop.querySelector(".upcoming-day-modal__close");
+    closeBtn?.addEventListener("click", () => (backdrop.style.display = "none"));
+
+    // click outside modal closes
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) backdrop.style.display = "none";
+    });
+
+    // esc closes
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") backdrop.style.display = "none";
+    });
+
+    return backdrop;
+  }
+
+  function openDayModal(dateObj, events) {
+    const backdrop = ensureModal();
+    const title = document.getElementById("upcomingDayTitle");
+    const body = document.getElementById("upcomingDayBody");
+    if (!title || !body) return;
+
+    title.textContent = longLabel(dateObj);
 
     const items = (events || []).slice();
-
-    // Sort: income first, then bigger abs amount
     items.sort((a, b) => {
       const ai = isIncomeEvent(a) ? 0 : 1;
       const bi = isIncomeEvent(b) ? 0 : 1;
@@ -119,37 +154,112 @@
     });
 
     if (!items.length) {
-      const empty = document.createElement("div");
-      empty.textContent = "—";
-      empty.style.opacity = "0.35";
-      list.appendChild(empty);
+      body.innerHTML = `<div style="opacity:.6;">No upcoming items.</div>`;
     } else {
-      // Show all items (since each day list scrolls), no "+N more"
+      body.innerHTML = "";
       items.forEach((e) => {
-        const line = document.createElement("div");
-        line.style.display = "flex";
-        line.style.justifyContent = "space-between";
-        line.style.gap = "8px";
-        line.style.fontSize = "0.9em";
-
-        const inc = isIncomeEvent(e);
+        const row = document.createElement("div");
+        row.className = "upcoming-day-row";
 
         const left = document.createElement("div");
-        left.textContent = ellipsize(e?.merchant || "(unknown)", 16);
-        left.style.opacity = "0.9";
+        left.className = "upcoming-day-row__left";
+
+        const merch = document.createElement("div");
+        merch.className = "upcoming-day-row__merchant";
+        merch.textContent = e?.merchant ? String(e.merchant) : "(unknown)";
+
+        const sub = document.createElement("div");
+        sub.className = "upcoming-day-row__sub";
+        sub.textContent = getCategory(e);
+
+        left.appendChild(merch);
+        left.appendChild(sub);
 
         const right = document.createElement("div");
-        right.textContent = signedMoney(e?.amount, inc);
+        right.className = "upcoming-day-row__amt";
+        right.textContent = signedMoney(e?.amount, isIncomeEvent(e));
+
+        row.appendChild(left);
+        row.appendChild(right);
+        body.appendChild(row);
+      });
+    }
+
+    backdrop.style.display = "flex";
+  }
+
+  // ---------------- Day cards (mini-calendar) ----------------
+  function renderDayCard({ dateObj, events }) {
+    const cell = document.createElement("div");
+    cell.className = "upcoming-day-card";
+
+    const head = document.createElement("div");
+    head.className = "upcoming-day-card__head";
+    head.innerHTML = `
+      <div class="upcoming-day-card__dow">${dayLabel(dateObj)}</div>
+      <div class="upcoming-day-card__md">${shortMD(dateObj)}</div>
+    `;
+
+    const list = document.createElement("div");
+    list.className = "upcoming-day-card__list";
+
+    const items = (events || []).slice();
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "upcoming-day-card__empty";
+      empty.textContent = "—";
+      list.appendChild(empty);
+    } else {
+      // Group by category
+      const map = new Map();
+      for (const e of items) {
+        const cat = getCategory(e);
+        const cur = map.get(cat) || { cat, total: 0, count: 0, anyIncome: false };
+        cur.total += Math.abs(Number(e?.amount || 0));
+        cur.count += 1;
+        if (isIncomeEvent(e)) cur.anyIncome = true;
+        map.set(cat, cur);
+      }
+
+      const groups = Array.from(map.values());
+      groups.sort((a, b) => b.total - a.total);
+
+      // Show top 3 categories; rest in modal
+      const top = groups.slice(0, 3);
+      const more = groups.length - top.length;
+
+      top.forEach((g) => {
+        const line = document.createElement("div");
+        line.className = "upcoming-day-card__line";
+
+        const left = document.createElement("div");
+        left.className = "upcoming-day-card__cat";
+        left.textContent = `${ellipsize(g.cat, 18)}${g.count > 1 ? ` (${g.count})` : ""}`;
+
+        const right = document.createElement("div");
+        right.className = "upcoming-day-card__sum";
+        right.textContent = (g.anyIncome ? "+" : "-") + money(g.total);
         right.style.fontWeight = "700";
 
         line.appendChild(left);
         line.appendChild(right);
         list.appendChild(line);
       });
+
+      if (more > 0) {
+        const m = document.createElement("div");
+        m.className = "upcoming-day-card__more";
+        m.textContent = `+${more} more`;
+        list.appendChild(m);
+      }
     }
 
     cell.appendChild(head);
     cell.appendChild(list);
+
+    // click opens modal with full merchants list
+    cell.addEventListener("click", () => openDayModal(dateObj, items));
+
     return cell;
   }
 
@@ -160,7 +270,6 @@
       return;
     }
 
-    // Render card skeleton
     mount.innerHTML = buildCardHTML();
     const body = mount.querySelector("[data-upcoming-body]");
     if (!body) return;
@@ -170,25 +279,19 @@
     const endD = addDays(today, Math.max(1, Number(daysAhead) || 30) - 1);
     const endIso = isoLocal(endD);
 
-    // Pull months that cover the date range
     const months = computeMonthsBetween(today, endD);
 
-    // Fetch events for all required months
     let events = [];
     for (const mm of months) {
       const json = await fetchRecurringCalendarMonth(mm.y, mm.m, { minOcc: 3, includeStale: "false" });
       if (Array.isArray(json?.events)) events = events.concat(json.events);
     }
 
-    // Optional filter by account
     if (accountId != null) {
       const aid = Number(accountId);
       events = events.filter((e) => Number(e?.account_id) === aid);
-      // Note: this requires backend events to include `account_id`.
-      // If paychecks/interest are global (no account_id), they will be excluded here.
     }
 
-    // Group by ISO date within range
     const byDate = {};
     for (const e of events || []) {
       const d = String(e?.date || "");
@@ -197,16 +300,13 @@
       (byDate[d] ||= []).push(e);
     }
 
-    // Render day cards
     body.innerHTML = "";
     for (let i = 0; i < (Number(daysAhead) || 30); i++) {
       const dObj = addDays(today, i);
       const iso = isoLocal(dObj);
-      const dayEvents = byDate[iso] || [];
-      body.appendChild(renderDayCard({ dateObj: dObj, iso, events: dayEvents }));
+      body.appendChild(renderDayCard({ dateObj: dObj, events: byDate[iso] || [] }));
     }
   }
 
-  // export
   window.mountUpcomingCard = mountUpcomingCard;
 })();

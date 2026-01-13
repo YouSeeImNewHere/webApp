@@ -103,11 +103,11 @@
             : ``
         }
 
-        ${
-          ids.monthButtons
-            ? `<div id="${ids.monthButtons}" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:12px;"></div>`
-            : ``
-        }
+        ${ ids.monthButtons
+  ? `<div id="${ids.monthButtons}" class="month-buttons" style="margin-top:12px;"></div>`
+  : ``
+}
+
       </section>
     `;
 

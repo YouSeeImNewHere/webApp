@@ -7,11 +7,38 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date
 import calendar
+import datetime as dt
 
 from emails.transactionHandler import DB_PATH
 from recurring import get_recurring, get_ignored_merchants_preview
 
 app = FastAPI()
+
+def get_category_from_db(tx_ids):
+    if not tx_ids:
+        return None
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    placeholders = ",".join("?" for _ in tx_ids)
+    cur.execute(
+        f"""
+        SELECT category
+        FROM transactions
+        WHERE id IN ({placeholders})
+          AND category IS NOT NULL
+          AND category != ''
+        LIMIT 1
+        """,
+        tx_ids,
+    )
+
+    row = cur.fetchone()
+    conn.close()
+
+    return row[0] if row else None
+
 
 def _last_day_of_month(y: int, m: int) -> int:
     return calendar.monthrange(y, m)[1]
@@ -102,6 +129,87 @@ def _paycheck_dates_for_month(year: int, month: int) -> list[date]:
 
     return sorted(set(paydays))
 
+def _account_label(conn, account_id: int) -> str:
+    r = conn.execute("SELECT institution, name FROM accounts WHERE id=?", (account_id,)).fetchone()
+    if not r:
+        return f"Account {account_id}"
+    return f"{r[0]} — {r[1]}"
+
+def _dateiso_expr(raw: str) -> str:
+    # returns a SQL expression that converts mm/dd/yy or mm/dd/yyyy to YYYY-MM-DD
+    return f"""
+    CASE
+      WHEN length({raw}) = 8 THEN
+        date('20' || substr({raw}, 7, 2) || '-' ||
+                   substr({raw}, 1, 2) || '-' ||
+                   substr({raw}, 4, 2))
+      WHEN length({raw}) = 10 THEN
+        date(substr({raw}, 7, 4) || '-' ||
+             substr({raw}, 1, 2) || '-' ||
+             substr({raw}, 4, 2))
+      ELSE NULL
+    END
+    """
+
+def _find_transfer_peer_account(conn, tx_id: str, window_days: int = 10):
+    """
+    Return peer account_id for a given transfer tx_id, or None.
+    Matches opposite sign, same abs(amount), different account, within +/- window_days.
+    """
+    # Pull the source tx with a normalized dateISO
+    src = conn.execute(f"""
+      SELECT
+        t.id,
+        t.account_id,
+        CAST(t.amount AS REAL) AS amount,
+        LOWER(TRIM(COALESCE(t.category,''))) AS category,
+        COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+        {_dateiso_expr("COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))")} AS dateISO
+      FROM transactions t
+      WHERE t.id = ?
+    """, (tx_id,)).fetchone()
+
+    if not src:
+        return None
+
+    # Only label actual Transfer category patterns
+    if (src["category"] or "") != "transfer":
+        return None
+
+    if not src["dateISO"]:
+        return None
+
+    amt = float(src["amount"] or 0.0)
+    if amt == 0:
+        return None
+
+    abs_amt = abs(amt)
+    sign = 1 if amt > 0 else -1
+
+    # Find best peer candidate
+    peer = conn.execute(f"""
+      SELECT
+        t.account_id AS peer_account_id,
+        ABS(CAST(t.amount AS REAL)) AS abs_amt,
+        CAST(t.amount AS REAL) AS amount,
+        {_dateiso_expr("COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))")} AS dateISO
+      FROM transactions t
+      WHERE t.id != ?
+        AND t.account_id != ?
+        AND LOWER(TRIM(COALESCE(t.category,''))) = 'transfer'
+        AND ABS(CAST(t.amount AS REAL)) = ?
+        AND (CAST(t.amount AS REAL) * ?) < 0
+        AND {_dateiso_expr("COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))")} IS NOT NULL
+        AND dateISO BETWEEN date(?, '-' || ? || ' day') AND date(?, '+' || ? || ' day')
+      ORDER BY ABS(julianday(dateISO) - julianday(?)) ASC
+      LIMIT 1
+    """, (
+        src["id"], src["account_id"], abs_amt, sign,
+        src["dateISO"], window_days, src["dateISO"], window_days,
+        src["dateISO"],
+    )).fetchone()
+
+    return int(peer["peer_account_id"]) if peer else None
 
 # =============================================================================
 # App + Static Frontend
@@ -277,12 +385,240 @@ def build_series(start_date, end_date, starting, transactions, value_fn):
 
     return results
 
+def _table_exists(cur, name: str) -> bool:
+    row = cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,)
+    ).fetchone()
+    return row is not None
+
+def _column_exists(cur, table: str, col: str) -> bool:
+    rows = cur.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == col for r in rows)
+
+def latest_rates_map(cur):
+    """
+    Returns { account_id: rate_decimal } for the most recent effective_date per account.
+    Assumes interest_rates columns: account_id, effective_date, apr
+    (You can treat 'apr' as a generic rate for any account type.)
+    """
+    rows = cur.execute("""
+      SELECT r.account_id, r.apr
+      FROM interest_rates r
+      JOIN (
+        SELECT account_id, MAX(effective_date) AS max_eff
+        FROM interest_rates
+        GROUP BY account_id
+      ) last
+        ON last.account_id = r.account_id
+       AND last.max_eff = r.effective_date
+    """).fetchall()
+
+    out = {}
+    for r in rows:
+        try:
+            out[int(r["account_id"])] = float(r["apr"])
+        except Exception:
+            pass
+    return out
 
 from recurring import get_recurring  # new file you created
 
+# -----------------------------
+# Transfer peer detection (best-effort)
+# -----------------------------
+MAX_TRANSFER_WINDOW_DAYS = 10  # allow weekends/holidays lag
+
+def _round_cents(x: float) -> int:
+    return int(round(float(x) * 100))
+
+def _is_transfer_like(cat: str) -> bool:
+    c = (cat or "").strip().lower()
+    return c in ("transfer", "card payment")
+
+def _parse_iso_date(s: str):
+    try:
+        return dt.date.fromisoformat(s)
+    except Exception:
+        return None
+
+def _business_days_between(a: dt.date, b: dt.date) -> int:
+    if a > b:
+        a, b = b, a
+    days = 0
+    cur = a
+    while cur < b:
+        cur += dt.timedelta(days=1)
+        if cur.weekday() < 5:
+            days += 1
+    return days
+
+def attach_transfer_peers(rows: list[dict], conn: sqlite3.Connection) -> list[dict]:
+    """Adds rows[i]['transfer_peer'] = 'Institution — Name' when a matching opposite-side transfer is found.
+    Works on the provided row subset (fast enough for 10k rows).
+    """
+    if not rows:
+        return rows
+
+    cur = conn.cursor()
+    acct_rows = cur.execute("SELECT id, institution, name FROM accounts").fetchall()
+    acct_name = {int(r["id"]): f'{r["institution"]} — {r["name"]}' for r in acct_rows}
+
+    # candidates are only transfer-like rows with a known normalized date
+    cands = []
+    for r in rows:
+        if not _is_transfer_like(r.get("category")):
+            continue
+        d = _parse_iso_date(str(r.get("dateISO") or ""))
+        if not d:
+            continue
+        amt = float(r.get("amount") or 0)
+        cents = abs(_round_cents(amt))
+        sign = -1 if amt < 0 else 1
+        cands.append({
+            "id": r.get("id"),
+            "account_id": int(r.get("account_id") or 0),
+            "date": d,
+            "cents": cents,
+            "sign": sign,
+        })
+
+    if not cands:
+        return rows
+
+    # index candidates by (cents, sign)
+    by_key: dict[tuple[int,int], list[dict]] = {}
+    for c in cands:
+        by_key.setdefault((c["cents"], c["sign"]), []).append(c)
+
+    # sort lists by date then id for stable matching
+    for k in by_key:
+        by_key[k].sort(key=lambda x: (x["date"], x["id"]))
+
+    # for each transfer-like row, find best opposite-side candidate
+    id_to_peer = {}
+    for c in cands:
+        opp_list = by_key.get((c["cents"], -c["sign"]), [])
+        if not opp_list:
+            continue
+
+        best = None
+        best_score = None
+
+        for o in opp_list:
+            if o["account_id"] == c["account_id"]:
+                continue
+            cal_days = abs((o["date"] - c["date"]).days)
+            if cal_days > MAX_TRANSFER_WINDOW_DAYS:
+                continue
+            biz_days = _business_days_between(c["date"], o["date"])
+            score = (biz_days, cal_days, str(o["id"]))
+
+            if best_score is None or score < best_score:
+                best_score = score
+                best = o
+
+        if best:
+            id_to_peer[c["id"]] = acct_name.get(best["account_id"])
+
+    # attach to output rows
+    for r in rows:
+        peer = id_to_peer.get(r.get("id"))
+        if peer:
+            r["transfer_peer"] = peer
+
+    return rows
+
+def build_transfer_display(tx_list, conn):
+    """
+    Given a list of tx (from recurring pattern),
+    return 'From A to B' or None
+    """
+    if not tx_list:
+        return None
+
+    # pick a representative tx
+    t = dict(tx_list[-1])
+
+    # recurring patterns use `date` (YYYY-MM-DD); matcher expects `dateISO`
+    t["dateISO"] = t.get("dateISO") or t.get("date")
+
+    # reuse your existing peer matcher
+    rows = [t]
+    attach_transfer_peers(rows, conn)
+
+    peer = rows[0].get("transfer_peer")
+    if not peer:
+        return None
+
+    acct = int(rows[0].get("account_id") or 0)
+    acct_name = None
+
+    r = conn.execute(
+        "SELECT institution, name FROM accounts WHERE id = ?",
+        (acct,)
+    ).fetchone()
+    if r:
+        acct_name = f"{r[0]} — {r[1]}"
+
+    if not acct_name:
+        return None
+
+    # sign convention: positive = money left
+    if float(rows[0]["amount"]) > 0:
+        return f"From {acct_name} to {peer}"
+    else:
+        return f"From {peer} to {acct_name}"
+
+
 @app.get("/recurring")
 def recurring(min_occ: int = 3, include_stale: bool = False):
-    return get_recurring(min_occ=min_occ, include_stale=include_stale)
+    groups = get_recurring(min_occ=min_occ, include_stale=include_stale)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+
+        for g in (groups or []):
+            for p in (g.get("patterns") or []):
+                tx = p.get("tx") or []
+                if not tx:
+                    continue
+
+                # Only decorate patterns where ALL tx are Transfer
+                cats = { (t.get("category") or "").strip().lower() for t in tx }
+                if cats != {"transfer"}:
+                    continue
+
+                # Pick most recent tx in this pattern and find peer account
+                tx_id = str(tx[-1].get("id"))
+                peer_aid = _find_transfer_peer_account(conn, tx_id, window_days=10)
+                if not peer_aid:
+                    continue
+
+                # Determine direction from representative tx amount
+                try:
+                    amt = float(tx[-1].get("amount") or 0.0)
+                except Exception:
+                    amt = 0.0
+
+                a_from = _account_label(conn, int(tx[-1].get("account_id") or 0))
+                a_to   = _account_label(conn, int(peer_aid))
+
+                # amt > 0 means money left this account
+                label = f"From {a_from} to {a_to}" if amt > 0 else f"From {a_to} to {a_from}"
+
+                p["merchant_display"] = label
+
+            # If every pattern is a decorated transfer, decorate group title too
+            labels = [pp.get("merchant_display") for pp in (g.get("patterns") or []) if pp.get("merchant_display")]
+            if labels and len(labels) == len(g.get("patterns") or []):
+                g["merchant_display"] = labels[0]
+
+    finally:
+        conn.close()
+
+    return groups
 
 # =============================================================================
 # Series Endpoints (Net Worth / Savings / Investments)
@@ -403,6 +739,8 @@ def transactions(limit: int = 15):
           t.merchant,
           t.amount,
           t.status,
+          t.account_id,
+          t.category,
           a.institution AS bank,
           a.name        AS card,
           LOWER(a.accountType) AS accountType,
@@ -424,13 +762,17 @@ def transactions(limit: int = 15):
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
       )
-      SELECT id, raw_date AS postedDate, merchant, amount, status, bank, card, accountType
+      SELECT id, account_id, raw_date AS postedDate, merchant, amount, status, bank, card, accountType, TRIM(category) AS category, d AS dateISO
       FROM tx
       ORDER BY d DESC, id DESC
       LIMIT ?
     """
 
-    return query_db(sql, (limit,))
+    rows = query_db(sql, (limit,))
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        attach_transfer_peers(rows, conn)
+    return rows
 
 
 @app.get("/account-transactions")
@@ -1135,9 +1477,138 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
       ORDER BY dateISO DESC, id DESC
     """, (account_id, start_date, end_date, limit, starting_balance_at_range, sign)).fetchall()
 
-    conn.close()
-
     tx = [dict(r) for r in rows]
+    # ---- Transfer peer detection (best-effort) ----
+    # For rows categorized as Transfer / Card Payment, try to find the matching
+    # opposite-signed transaction in a different account with the same abs(amount)
+    # within a small date window. Adds:
+    #   transfer_peer: "Institution — Name"
+    #   transfer_peer_id: int
+    #   transfer_dir: "from" | "to"   (relative to THIS account)
+    transfer_cats = {"transfer", "card payment"}
+    # Matching window: allow multi-day gaps (weekends/holidays/posting delays)
+    MAX_WINDOW_DAYS = 10  # calendar days
+    try:
+        # Build account display map once
+        acct_rows = cur.execute("SELECT id, institution, name FROM accounts").fetchall()
+        acct_name = {int(r["id"]): f'{r["institution"]} — {r["name"]}' for r in acct_rows}
+
+        # Expand window to catch 1-2 day posting differences
+        start_minus = (parse_iso(start) - timedelta(days=MAX_WINDOW_DAYS)).isoformat()
+        end_plus = (parse_iso(end) + timedelta(days=MAX_WINDOW_DAYS)).isoformat()
+
+        cand = cur.execute("""
+          WITH base AS (
+            SELECT
+              id,
+              account_id,
+              amount,
+              TRIM(category) AS category,
+              COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date
+            FROM transactions
+            WHERE TRIM(category) IS NOT NULL
+              AND LOWER(TRIM(category)) IN ('transfer','card payment')
+          ),
+          norm AS (
+            SELECT
+              id,
+              account_id,
+              amount,
+              category,
+              CASE
+                WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
+                  date('20' || substr(raw_date, 7, 2) || '-' ||
+                             substr(raw_date, 1, 2) || '-' ||
+                             substr(raw_date, 4, 2))
+                WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
+                  date(substr(raw_date, 7, 4) || '-' ||
+                       substr(raw_date, 1, 2) || '-' ||
+                       substr(raw_date, 4, 2))
+                ELSE NULL
+              END AS d
+            FROM base
+          )
+          SELECT id, account_id, amount, LOWER(TRIM(category)) AS cat, d AS dateISO
+          FROM norm
+          WHERE dateISO IS NOT NULL AND dateISO BETWEEN ? AND ?
+        """, (start_minus, end_plus)).fetchall()
+
+        candidates = [dict(r) for r in cand]
+
+        def _daydiff(a: str, b: str) -> int:
+            # iso yyyy-mm-dd
+            da = datetime.strptime(a, "%Y-%m-%d").date()
+            db = datetime.strptime(b, "%Y-%m-%d").date()
+            return abs((da - db).days)
+
+        def _bizdiff(a: str, b: str) -> int:
+                    # Count weekdays between two dates (approx business-day distance).
+                    da = datetime.strptime(a, "%Y-%m-%d").date()
+                    db = datetime.strptime(b, "%Y-%m-%d").date()
+                    if da > db:
+                        da, db = db, da
+                    days = 0
+                    d = da
+                    while d < db:
+                        d += timedelta(days=1)
+                        if d.weekday() < 5:  # Mon-Fri
+                            days += 1
+                    return days
+        
+        used_candidate_ids = set()
+
+        for row in tx:
+            cat = (row.get("category") or "").strip().lower()
+            if cat not in transfer_cats:
+                continue
+
+            a = float(row.get("amount") or 0.0)
+            date_iso = row.get("dateISO") or None
+            if not date_iso:
+                continue
+
+            best = None
+            best_key = None
+
+            for c in candidates:
+                if c["id"] in used_candidate_ids:
+                    continue
+                if int(c["account_id"]) == int(account_id):
+                    continue
+                # opposite sign (in/out)
+                ca = float(c["amount"] or 0.0)
+                if a == 0 or ca == 0:
+                    continue
+                if (a > 0 and ca > 0) or (a < 0 and ca < 0):
+                    continue
+                # same magnitude (allow tiny rounding)
+                if abs(abs(a) - abs(ca)) > 0.01:
+                    continue
+                # close date
+                dd = _daydiff(date_iso, c["dateISO"])
+                if dd > MAX_WINDOW_DAYS:
+                    continue
+
+                biz_dd = _bizdiff(date_iso, c["dateISO"])
+
+                key = (biz_dd, dd, str(c["dateISO"]), str(c["id"]))
+                if best is None or key < best_key:
+                    best = c
+                    best_key = key
+
+            if best:
+                used_candidate_ids.add(best["id"])
+                peer_id = int(best["account_id"])
+                row["transfer_peer_id"] = peer_id
+                row["transfer_peer"] = acct_name.get(peer_id, f"Account {peer_id}")
+
+                # direction relative to current account
+                row["transfer_dir"] = "from" if a < 0 else "to"
+    except Exception:
+        # Never break the page if matching fails
+        pass
+
+
     ending_balance = float(tx[0]["balance_after"]) if tx else float(starting_balance_at_range)
 
     # ---- DISPLAY NORMALIZATION (credit shows positive debt) ----
@@ -1146,6 +1617,8 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
         ending_balance = -float(ending_balance)
         for r in tx:
             r["balance_after"] = -float(r["balance_after"])
+
+    conn.close()
 
     return {
         "account_id": account_id,
@@ -1177,18 +1650,14 @@ def transactions_all(limit: int = 10000, offset: int = 0):
         SELECT
           base.*,
           CASE
-            -- MM/DD/YY
             WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
               date('20' || substr(raw_date, 7, 2) || '-' ||
                          substr(raw_date, 1, 2) || '-' ||
                          substr(raw_date, 4, 2))
-
-            -- MM/DD/YYYY
             WHEN raw_date GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
               date(substr(raw_date, 7, 4) || '-' ||
                    substr(raw_date, 1, 2) || '-' ||
                    substr(raw_date, 4, 2))
-
             ELSE NULL
           END AS dateISO
         FROM base
@@ -1198,7 +1667,16 @@ def transactions_all(limit: int = 10000, offset: int = 0):
       ORDER BY (dateISO IS NULL) ASC, dateISO DESC, id DESC
       LIMIT ? OFFSET ?
     """
-    return query_db(sql, (limit, offset))
+
+    rows = query_db(sql, (limit, offset))
+
+    # ✅ ADD THIS: attach transfer peers for Transfer / Card Payment rows
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        attach_transfer_peers(rows, conn)
+
+    return rows
+
 
 # TEST METHODS ------------------------------------------------------------------------------------------
 
@@ -1823,7 +2301,22 @@ def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: in
     # irregular/unknown => no projections
     return out
 
+# -----------------------------
+# Hard-coded paycheck amounts
+# -----------------------------
 PAYCHECK_MERCHANT = "SALARY REGULAR INCOME FROM DFAS"
+
+# Set these to whatever is correct for you
+PAYCHECK_AMOUNT_FOR_DAY = {
+    1: 1700.00,   # payday on the 1st (deposit date may be prior workday)
+    15: 1400.00,  # payday on the 15th
+}
+
+# Optional: if you ever want different values in specific months:
+# PAYCHECK_AMOUNT_BY_YYYYMM = {
+#     "2026-01": {1: 1700.00, 15: 1400.00},
+# }
+
 
 def _find_paycheck_amount(groups) -> float:
     """
@@ -1866,6 +2359,9 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
 
     groups = get_recurring(min_occ=min_occ, include_stale=include_stale)
 
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
     events = []
     for g in (groups or []):
         merchant = g.get("merchant") or ""
@@ -1900,20 +2396,35 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
                 month_end=month_end,
             )
 
+            # Transfer label (From A to B) for calendar too
+            merch_label = merchant
+            tx_list = p.get("tx") or []
+            tx_ids = [t["id"] for t in tx_list if "id" in t]
+
+            cat_label = get_category_from_db(tx_ids)
+
             # amount is already signed in recurring.py output (withdrawals are usually +)
             amt = float(p.get("amount") or 0.0)
             aid = int(p.get("account_id") or -1)
             for d in occs:
                 events.append({
                     "date": d.isoformat(),
-                    "merchant": merchant,
+                    "merchant": merch_label,
+                    "merchant_display": merch_label,
+                    "category": cat_label,
                     "amount": amt,
                     "cadence": cadence,
                     "account_id": aid,  # ✅ NEW
                 })
 
     # ---- PAYCHECK EVENTS (derived from recurring data) ----
-    pay_amt = _find_paycheck_amount(groups)
+    # Hard-coded paycheck amounts: based on the TARGET payday (1st vs 15th)
+    def paycheck_amount_for_target(target: date) -> float:
+        # Optional per-month override (if you add PAYCHECK_AMOUNT_BY_YYYYMM)
+        # key = f"{target.year:04d}-{target.month:02d}"
+        # if key in PAYCHECK_AMOUNT_BY_YYYYMM:
+        #     return float(PAYCHECK_AMOUNT_BY_YYYYMM[key].get(target.day, 0.0))
+        return float(PAYCHECK_AMOUNT_FOR_DAY.get(target.day, 0.0))
 
     # targets: 1st + 15th of this month, plus 1st of next month (if deposit lands in this month)
     targets = [date(year, month, 1), date(year, month, 15)]
@@ -1944,15 +2455,17 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
         if not include:
             continue
 
+        amt = paycheck_amount_for_target(target)
+
         events.append({
             "date": dep.isoformat(),  # deposit day shown on calendar grid
             "merchant": PAYCHECK_MERCHANT,
-            "amount": pay_amt,
+            "amount": amt,  # ✅ hard-coded amount
             "cadence": "paycheck",
-            "type": "income",
+            "type": "Income",
             "account_id": 3,
-            "pay_target": target.isoformat(),  # used for totals
-            "spillover": not (dep.year == year and dep.month == month),  # optional flag
+            "pay_target": target.isoformat(),
+            "spillover": not (dep.year == year and dep.month == month),
         })
 
     # ---- INTEREST EVENTS (estimated) ----
@@ -1990,12 +2503,14 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
             "merchant": f'INTEREST — {a["institution"]} {a["name"]}',
             "amount": round(est, 2),
             "cadence": "interest",
-            "type": "income",
+            "type": "Interest",
             "account_id": aid,  # ✅ NEW
         })
 
     conn.close()
 
+
+    conn.close()
 
     events.sort(key=lambda e: (e["date"], e["merchant"], abs(e["amount"])))
     return {
@@ -2262,3 +2777,316 @@ def unknown_merchant_total_range(start: str, end: str):
     conn.close()
     return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
 
+def latest_rates_map(cur):
+    """
+    Returns { account_id: rate } where rate is the most recent
+    interest_rates.apr for that account_id.
+    """
+    rows = cur.execute("""
+      SELECT r.account_id, r.apr
+      FROM interest_rates r
+      JOIN (
+        SELECT account_id, MAX(effective_date) AS max_eff
+        FROM interest_rates
+        GROUP BY account_id
+      ) last
+        ON last.account_id = r.account_id
+       AND last.max_eff = r.effective_date
+    """).fetchall()
+
+    return {int(r["account_id"]): float(r["apr"]) for r in rows if r["apr"] is not None}
+
+
+@app.get("/bank-info")
+def bank_info():
+    conn, cur = with_db_cursor()
+
+    # Current rate (decimal) from interest_rates: 0.0425 means 4.25%
+    rate_now = latest_rates_map(cur)
+
+    # Be robust to schema (you said you won't add extra columns)
+    has_credit_limit = _column_exists(cur, "accounts", "credit_limit")
+    has_notes = _column_exists(cur, "accounts", "notes")  # only if you choose to add it
+    has_card_benefits = _table_exists(cur, "card_benefits")
+
+    # Build SELECT lists without requiring non-existent columns
+    account_select = """
+      SELECT id AS account_id,
+             institution AS bank,
+             name,
+             LOWER(accountType) AS type
+    """
+    if has_notes:
+        account_select += ", notes"
+    account_select += """
+      FROM accounts
+      WHERE LOWER(accountType) != 'credit'
+      ORDER BY institution, name
+    """
+
+    card_select = """
+      SELECT id AS card_id,
+             institution AS bank,
+             name
+    """
+    if has_credit_limit:
+        card_select += ", credit_limit"
+    card_select += """
+      FROM accounts
+      WHERE LOWER(accountType) = 'credit'
+      ORDER BY institution, name
+    """
+
+    accounts = cur.execute(account_select).fetchall()
+    cards = cur.execute(card_select).fetchall()
+
+    # Optional rewards table
+    benefits_rows = []
+    if has_card_benefits:
+        benefits_rows = cur.execute("""
+          SELECT account_id, category, cashback_percent
+          FROM card_benefits
+          ORDER BY account_id, category
+        """).fetchall()
+
+    conn.close()
+
+    # Attach benefits by card
+    by_card = {}
+    for b in benefits_rows:
+        aid = int(b["account_id"])
+        by_card.setdefault(aid, []).append({
+            "categories": [b["category"]] if b["category"] else [],
+            "cashback_percent": float(b["cashback_percent"] or 0.0)
+        })
+
+    # Convert decimal rate -> percent number for the frontend pct() helper
+    def as_percent(rate_decimal):
+        if rate_decimal is None:
+            return None
+        try:
+            return float(rate_decimal) * 100.0
+        except Exception:
+            return None
+
+    accounts_out = []
+    for r in accounts:
+        aid = int(r["account_id"])
+        item = {
+            "account_id": aid,
+            "bank": r["bank"],
+            "name": r["name"],
+            "type": r["type"],
+            "apy": as_percent(rate_now.get(aid)),  # ✅ from interest_rates
+        }
+        if has_notes:
+            item["notes"] = r["notes"]
+        accounts_out.append(item)
+
+    cards_out = []
+    for r in cards:
+        cid = int(r["card_id"])
+        item = {
+            "card_id": cid,
+            "bank": r["bank"],
+            "name": r["name"],
+            "apr": as_percent(rate_now.get(cid)),  # ✅ from interest_rates
+            "benefits": by_card.get(cid, []),
+        }
+        if has_credit_limit:
+            item["credit_limit"] = r["credit_limit"]
+        cards_out.append(item)
+
+    return {
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "accounts": accounts_out,
+        "credit_cards": cards_out
+    }
+
+
+
+@app.post("/bank-info/refresh")
+def bank_info_refresh():
+    # placeholder for now
+    return {"ok": True}
+
+from fastapi import Body
+from pydantic import BaseModel
+
+class RateUpsert(BaseModel):
+    account_id: int
+    rate_percent: float              # user enters 3.54 (percent)
+    effective_date: str | None = None  # "YYYY-MM-DD" (optional)
+    note: str | None = None
+
+@app.post("/interest-rate")
+def set_interest_rate(payload: RateUpsert):
+    # validate
+    try:
+        rate_percent = float(payload.rate_percent)
+    except Exception:
+        return {"ok": False, "error": "rate_percent must be a number"}
+
+    if rate_percent < 0 or rate_percent > 100:
+        return {"ok": False, "error": "rate_percent must be between 0 and 100"}
+
+    eff = payload.effective_date
+    if not eff:
+        eff = datetime.now().strftime("%Y-%m-%d")
+
+    rate_decimal = rate_percent / 100.0
+
+    conn, cur = with_db_cursor()
+
+    # If you have a unique constraint on (account_id, effective_date) this is safe.
+    # If you don't, this still prevents duplicates for the same date.
+    cur.execute(
+        "DELETE FROM interest_rates WHERE account_id = ? AND effective_date = ?",
+        (int(payload.account_id), eff)
+    )
+
+    cur.execute("""
+      INSERT INTO interest_rates (account_id, apr, effective_date, note, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    """, (
+        int(payload.account_id),
+        float(rate_decimal),
+        eff,
+        (payload.note or "").strip() or None,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return {"ok": True, "account_id": int(payload.account_id), "effective_date": eff, "rate_percent": rate_percent}
+
+@app.get("/month-budget")
+def month_budget(min_occ: int = 3, include_stale: bool = False):
+    """
+    Summary for the current month:
+      - income_expected: projected income for the month (paychecks + interest)
+      - spent_so_far: actual spending posted so far this month (excludes transfers/card payments)
+      - bills_remaining: projected withdrawals remaining from today through month end
+      - safe_to_spend: income_expected - spent_so_far - bills_remaining
+    """
+    today = date.today()
+    year = today.year
+    month = today.month
+
+    month_start = date(year, month, 1)
+    month_end = date(year, month, _last_day_of_month(year, month))
+
+    # 1) Projected recurring events (withdrawals + income)
+    cal = recurring_calendar(year=year, month=month, min_occ=min_occ, include_stale=include_stale)
+    events = (cal or {}).get("events") or []
+
+    income_expected = 0.0
+    bills_remaining = 0.0
+
+    for e in events:
+        d = str(e.get("date") or "")
+        if not d:
+            continue
+
+        try:
+            ed = datetime.strptime(d, "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        if ed < month_start or ed > month_end:
+            continue
+
+        amt = float(e.get("amount") or 0.0)
+        etype = str(e.get("type") or "").lower().strip()
+        cadence = str(e.get("cadence") or "").lower().strip()
+        category = str(e.get("category") or "").strip()
+        merchant = str(e.get("merchant") or "")
+
+        is_income = (etype == "income") or (cadence in ("paycheck", "interest"))
+
+        if is_income:
+            income_expected += max(0.0, amt)
+            continue
+
+        # Remaining bills: only future-ish events (today through month end)
+        if ed < today:
+            continue
+
+        # Don't count transfers as "bills"
+        if category.lower() == "transfer" or merchant.lower().startswith("from "):
+            continue
+
+        bills_remaining += abs(amt)
+
+    # 2) Actual spending so far this month (same rules as /spending)
+    conn, cur = with_db_cursor()
+    tx_rows = cur.execute("""
+      SELECT
+        COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+        t.amount,
+        TRIM(t.category) AS category,
+        LOWER(a.accountType) AS accountType
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+    """).fetchall()
+    conn.close()
+
+    spent_so_far = 0.0
+    for r in tx_rows:
+        d = parse_posted_date(r["raw_date"])
+        if not d:
+            continue
+        if d < month_start or d > today:
+            continue
+
+        category = (r["category"] or "").strip().lower()
+        if category in ("card payment", "transfer"):
+            continue
+
+        try:
+            amt = float(r["amount"])
+        except Exception:
+            continue
+
+        if r["accountType"] in ("checking", "credit") and amt > 0:
+            spent_so_far += amt
+
+    safe_to_spend = income_expected - spent_so_far - bills_remaining
+
+    return {
+        "ok": True,
+        "month_start": month_start.isoformat(),
+        "month_end": month_end.isoformat(),
+        "as_of": today.isoformat(),
+        "income_expected": round(income_expected, 2),
+        "spent_so_far": round(spent_so_far, 2),
+        "bills_remaining": round(bills_remaining, 2),
+        "safe_to_spend": round(safe_to_spend, 2),
+    }
+
+@app.get("/transaction/{tx_id}")
+def transaction_detail(tx_id: str):
+    """Return *all* columns for a single transaction, plus account metadata."""
+    conn, cur = with_db_cursor()
+
+    row = cur.execute(
+        """
+        SELECT
+          t.*,
+          a.institution AS bank,
+          a.name        AS card,
+          LOWER(a.accountType) AS accountType
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        WHERE t.id = ?
+        LIMIT 1
+        """,
+        (tx_id,)
+    ).fetchone()
+
+    conn.close()
+    if not row:
+        return {"ok": False, "error": "not_found", "id": tx_id}
+
+    return {"ok": True, "transaction": dict(row)}
