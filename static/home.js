@@ -87,8 +87,9 @@ function shiftRangeByYears(yearDelta) {
   const e = document.getElementById("nw-end")?.value;
   if (!s || !e) return null;
 
-  const sd = new Date(s);
-  const ed = new Date(e);
+  const sd = parseISODateLocal(s);
+  const ed = parseISODateLocal(e);
+
 
   const nsY = sd.getFullYear() + yearDelta;
   const neY = ed.getFullYear() + yearDelta;
@@ -108,10 +109,7 @@ function rebuildYearDependentUI() {
   buildMonthDropdown();
 }
 
-
-function toISODate(d) {
-  return d.toISOString().split("T")[0];
-}
+function toISODate(d) { return isoLocal(d); }
 
 function firstDayOfMonth(year, monthIndex) {
   return new Date(year, monthIndex, 1);
@@ -170,9 +168,10 @@ function toggleChart() {
 
 
 function formatMMMdd(isoDateStr) {
-  const d = new Date(isoDateStr);
+  const d = parseISODateLocal(isoDateStr);
   return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
 }
+
 
 async function loadChart() {
   const start = document.getElementById("nw-start").value;
@@ -212,12 +211,24 @@ if (isNet && showPotentialGrowth) {
     const minOcc = 3;
     const includeStale = "false";
 
-    const calRes = await fetch(
-      `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`
-    );
+    // Pull the same event sources as "Upcoming Transactions":
+    //  - /recurring/calendar (bills/recurring/interest/etc)
+    //  - /les/paychecks (paychecks are computed, not stored as recurring rows)
+    const [payOut, calJson] = await Promise.all([
+      fetchPaychecksForMonth(y, m).catch(() => ({ events: [], breakdown: null })),
+      (async () => {
+        const calRes = await fetch(
+          `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`
+        );
+        return calRes.ok ? await calRes.json().catch(() => ({ events: [] })) : { events: [] };
+      })()
+    ]);
 
-    const calJson = calRes.ok ? await calRes.json() : { events: [] };
-    const events = Array.isArray(calJson?.events) ? calJson.events : [];
+    const payEvents = Array.isArray(payOut?.events) ? payOut.events : [];
+    const calEvents = Array.isArray(calJson?.events) ? calJson.events : [];
+
+    // merged events feed for projection
+    const events = [...calEvents, ...payEvents];
 
     // 2) Build daily delta map for remaining days in month (after today)
     const deltaByDate = {}; // { "YYYY-MM-DD": number }
@@ -231,8 +242,8 @@ if (isNet && showPotentialGrowth) {
       const amt = Number(e.amount) || 0;
 
       // Income rules:
-      // - paychecks show as cadence="paycheck" and type="income"
-      // - interest etc may have type="income"
+      // - paychecks from /les/paychecks should come through as type="income"/cadence="paycheck"
+      // - other income (interest, etc) may have type="income"
       const isIncome = (String(e.type || "").toLowerCase() === "income") || (String(e.cadence || "") === "paycheck");
 
       const delta = isIncome ? amt : -Math.abs(amt);
@@ -500,6 +511,42 @@ async function loadMonthBudget() {
   // Card isn't mounted on some pages
   if (!safeEl || !metaEl || !incEl || !spentEl || !billsEl || !barFill) return;
 
+  // Helper: fetch paychecks for a given month using the shared LES profile (localStorage via profile.js)
+  async function fetchPaychecks(year, month){
+    const profile0 = window.Profile?.get?.() || null;
+    if (!profile0?.paygrade) return [];
+
+    const profile = { ...profile0 };
+
+    // normalize a few fields so backend always understands them
+    if (profile.paygrade != null){
+      profile.paygrade = String(profile.paygrade)
+        .toUpperCase()
+        .replace(/\s+/g,"")
+        .replace("E-","E")
+        .replace("-","");
+    }
+    if (profile.service_start != null){
+      profile.service_start = String(profile.service_start);
+    }
+    if (profile.bah_override === "") profile.bah_override = null;
+
+    const res = await fetch("/les/paychecks", {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ year, month, profile })
+    });
+
+    if (!res.ok){
+      const txt = await res.text().catch(()=> "");
+      console.error("Paycheck calc failed:", res.status, txt);
+      return [];
+    }
+
+    const data = await res.json().catch(()=>null);
+    return Array.isArray(data?.events) ? data.events : [];
+  }
+
   const res = await fetch("/month-budget");
   if (!res.ok) {
     console.error("month-budget failed:", res.status);
@@ -510,15 +557,44 @@ async function loadMonthBudget() {
 
   const j = await res.json();
 
-  const income = Number(j.income_expected || 0);
+  // Base values from backend (currently includes interest; paychecks are added below)
+  let income = Number(j.income_expected || 0);
   const spent  = Number(j.spent_so_far || 0);
   const bills  = Number(j.bills_remaining || 0);
-  const safe   = Number(j.safe_to_spend || 0);
 
-  const availableBeforeBills = income - bills;
+  // Determine month/year to request paychecks for (use backend month_start if present)
+  let year = new Date().getFullYear();
+  let month = new Date().getMonth() + 1;
+  if (j.month_start && /^\d{4}-\d{2}-\d{2}$/.test(j.month_start)){
+    year = Number(j.month_start.slice(0,4));
+    month = Number(j.month_start.slice(5,7));
+  }
+
+  // Add LES paychecks (if profile exists)
+  let payIncome = 0;
+  try{
+    const payEvents = await fetchPaychecks(year, month);
+    const monthKey = `${year}-${String(month).padStart(2,"0")}`;
+    for (const e of (payEvents || [])){
+      // Only count deposits that actually land *in this calendar month*
+      // (ex: Jan 1 payday can deposit on Dec 31 — that's NOT January spendable income)
+      const d = String(e?.date || "");
+      if (!d.startsWith(monthKey)) continue;
+
+      const amt = Number(e?.amount || 0);
+      if (amt > 0) payIncome += amt;
+    }
+  } catch (err){
+    console.warn("Paychecks fetch failed:", err);
+  }
+
+  const totalIncome = income + payIncome;
+  const safe = totalIncome - spent - bills;
+
+  const availableBeforeBills = totalIncome - bills;
 
   safeEl.textContent = money(safe);
-  incEl.textContent = money(income);
+  incEl.textContent = money(totalIncome);
   spentEl.textContent = money(spent);
   billsEl.textContent = money(bills);
 
@@ -860,7 +936,7 @@ async function saveRule() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  
+
 // Build the shared chart UI (so Home matches every other page)
 mountChartCard("#homeChartMount", {
   ids: HOME_IDS,
@@ -923,7 +999,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   startInput.value = toISODate(firstOfMonth);
   endInput.value = toISODate(today);
-        
+
 
 const potentialToggle = document.getElementById("nwPotentialToggle");
 if (potentialToggle) {
@@ -967,10 +1043,18 @@ if (potentialToggle) {
   loadChart();
 loadBankTotals();
 loadMonthBudget();
-  loadCategoryTotalsThisMonth();
+
+  bindIncomeRowClick();
+loadCategoryTotalsThisMonth();
   loadData();
 mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
 mountMonthBudgetCard("#monthBudgetMount");
+
+  // If the LES profile changes anywhere, recompute expected income (paychecks) here too
+  window.Profile?.ensureUI?.();
+  window.Profile?.onChange?.(() => {
+    loadMonthBudget();
+  });
 
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
@@ -1309,9 +1393,12 @@ function mountMonthBudgetCard(mountSel) {
     </div>
 
     <ul class="category-box__list">
-      <li class="category-pill">
-        <span class="cat-name">Suspected income</span>
-        <span id="mbIncome" class="cat-amt">—</span>
+      <li id="mbIncomeRow" class="category-pill" role="button" tabindex="0" style="cursor:pointer;" title="View expected income breakdown">
+        <span class="cat-name">Expected income</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span id="mbIncome" class="cat-amt">—</span>
+          <span style="opacity:.45;">›</span>
+        </span>
       </li>
 
       <li class="category-pill">
@@ -1339,6 +1426,21 @@ function mountMonthBudgetCard(mountSel) {
   }
 
   refreshMonthBudgetCard();
+
+  // In case the Month Budget HTML is static (home.html), bind click too
+  bindIncomeRowClick();
+
+  const incomeRow = document.getElementById("mbIncomeRow");
+  if (incomeRow && !incomeRow.dataset.bound) {
+    incomeRow.dataset.bound = "1";
+    incomeRow.addEventListener("click", openIncomeBreakdown);
+    incomeRow.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openIncomeBreakdown();
+      }
+    });
+  }
 }
 
 async function refreshMonthBudgetCard() {
@@ -1387,6 +1489,255 @@ async function refreshMonthBudgetCard() {
   }
 
 
+}
+
+
+// =========================
+// Expected Income Breakdown Modal
+// =========================
+
+
+function bindIncomeRowClick() {
+  const incomeRow = document.getElementById("mbIncomeRow");
+  if (!incomeRow || incomeRow.dataset.bound) return;
+  incomeRow.dataset.bound = "1";
+
+  // make it accessible/clickable even if HTML was static
+  incomeRow.setAttribute("role", "button");
+  incomeRow.setAttribute("tabindex", "0");
+  incomeRow.style.cursor = "pointer";
+
+  incomeRow.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openIncomeBreakdown();
+  });
+  incomeRow.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openIncomeBreakdown();
+    }
+  });
+}
+
+function ensureIncomeInspectModal() {
+  let root = document.getElementById("incomeInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "incomeInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-income-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
+          <div id="incomeInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="incomeInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-income-close]")) closeIncomeInspect();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeIncomeInspect();
+  });
+
+  return root;
+}
+
+function closeIncomeInspect() {
+  const root = document.getElementById("incomeInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+async function fetchPaychecksForMonth(year, month) {
+  const profile0 = window.Profile?.get?.();
+  if (!profile0?.paygrade) return { events: [], breakdown: null };
+
+  // normalize a couple fields (same as recurring_page.js)
+  const profile = { ...profile0 };
+  if (profile.paygrade != null) {
+    profile.paygrade = String(profile.paygrade).toUpperCase().replace(/\s+/g, "").replace("E-", "E").replace("-", "");
+  }
+  if (profile.service_start != null) profile.service_start = String(profile.service_start);
+  if (profile.bah_override === "") profile.bah_override = null;
+
+  const res = await fetch("/les/paychecks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year, month, profile })
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error("Paycheck calc failed: " + res.status + " " + txt);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  return {
+    events: Array.isArray(data?.events) ? data.events : [],
+    breakdown: data?.breakdown || null,
+  };
+}
+
+async function fetchInterestForMonth(year, month) {
+  const res = await fetch(`/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  const events = Array.isArray(data?.events) ? data.events : [];
+
+  // only interest-like income events
+  return events.filter(e => {
+    const cadence = String(e?.cadence || "").toLowerCase();
+    const type = String(e?.type || "").toLowerCase();
+    return cadence === "interest" || (type === "income" && cadence !== "paycheck" && String(e?.merchant||"").toLowerCase().includes("interest"));
+  });
+}
+
+function kvRow(k, v) {
+  return `<div class="tx-kv__k">${escapeHtml(k)}</div><div class="tx-kv__v">${escapeHtml(v)}</div>`;
+}
+
+async function openIncomeBreakdown() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth() + 1;
+
+  const profile0 = window.Profile?.get?.();
+  if (!profile0?.paygrade) {
+    alert("Set your LES Profile first (top-right Profile button).");
+    return;
+  }
+
+  const modal = ensureIncomeInspectModal();
+  const titleEl = document.getElementById("incomeInspectTitle");
+  const subEl = document.getElementById("incomeInspectSub");
+  const bodyEl = document.getElementById("incomeInspectBody");
+
+  if (titleEl) titleEl.textContent = "Expected income";
+  if (subEl) subEl.textContent = "Loading…";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  modal.classList.remove("hidden");
+
+  try {
+    const [{ events: payEventsRaw, breakdown }, interestEventsRaw] = await Promise.all([
+      fetchPaychecksForMonth(year, month),
+      fetchInterestForMonth(year, month),
+    ]);
+
+    // Match the Home "Expected income" number:
+    // - Only count items that land inside the displayed month (deposit date)
+    // - Only count "IN" that lands in account_id 3 (your spendable account)
+    const SPENDABLE_ACCOUNT_ID = 3;
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+
+    const payEvents = (payEventsRaw || []).filter(e =>
+      String(e?.date || "").startsWith(monthKey + "-") &&
+      Number(e?.account_id) === SPENDABLE_ACCOUNT_ID
+    );
+
+    const interestEvents = (interestEventsRaw || []).filter(e =>
+      String(e?.date || "").startsWith(monthKey + "-") &&
+      Number(e?.account_id) === SPENDABLE_ACCOUNT_ID
+    );
+
+    const paycheckTotal = payEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
+    const interestTotal = interestEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
+    const grandTotal = paycheckTotal + interestTotal;
+
+    if (subEl) subEl.textContent = `${money(grandTotal)} • ${today.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+
+    const payList = payEvents
+      .slice()
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date)}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Paycheck")} • ${money(e.amount)}</div>`)
+      .join("");
+
+    const intList = interestEvents
+      .slice()
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date || "")}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Interest")} • ${money(e.amount)}</div>`)
+      .join("");
+
+    let breakdownHtml = "";
+    if (breakdown) {
+      const ent = breakdown.entitlements || {};
+      const ded = breakdown.deductions || {};
+      const net = breakdown.net || {};
+      const p = breakdown.profile || {};
+
+      breakdownHtml = `
+        <div style="margin-bottom:12px; font-weight:700;">How the paychecks are calculated</div>
+        <div class="tx-kv">
+          ${kvRow("Paygrade", p.paygrade ?? "")}
+          ${kvRow("Service start", p.service_start ?? "")}
+          ${kvRow("Dependents", (p.has_dependents ? "Yes" : "No"))}
+
+          ${kvRow("Base pay (monthly)", money(ent.base_pay))}
+          ${kvRow("BAH (monthly)", money(ent.bah))}
+          ${kvRow("BAS (monthly)", money(ent.bas))}
+          ${kvRow("Sub pay (monthly)", money(ent.submarine_pay))}
+          ${kvRow("Career sea pay (monthly)", money(ent.career_sea_pay))}
+          ${kvRow("Spec duty pay (monthly)", money(ent.spec_duty_pay))}
+
+          ${kvRow("Federal taxes", money(ded.federal_taxes))}
+          ${kvRow("FICA social security", money(ded.fica_social_security))}
+          ${kvRow("FICA medicare", money(ded.fica_medicare))}
+          ${kvRow("SGLI", money(ded.sgli))}
+          ${kvRow("AFRH", money(ded.afrh))}
+          ${kvRow("Roth TSP", money(ded.roth_tsp))}
+          ${kvRow("Meal deduction", money(ded.meal_deduction))}
+          ${kvRow("Allotments total", money(ded.allotments_total))}
+          ${kvRow("Mid-month collections", money(ded.mid_month_collections_total))}
+
+          ${kvRow("Mid-month net pay", money(net.mid_month_pay))}
+          ${kvRow("End-of-month net pay", money(net.eom))}
+        </div>
+      `;
+    }
+
+    bodyEl.innerHTML = `
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+        <span class="category-pill" style="padding:8px 10px;">Paychecks: <strong style="margin-left:6px;">${money(paycheckTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Interest: <strong style="margin-left:6px;">${money(interestTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
+      </div>
+
+      <div style="margin:0 0 12px; opacity:.7; font-size:12px;">
+        Only counting deposits <strong>into account 3</strong> that land in <strong>${monthKey}</strong>.
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Paychecks in this month</div>
+        <div class="tx-kv">${payList || `<div style="opacity:.7;">No paychecks found for this month.</div>`}</div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Estimated interest in this month</div>
+        <div class="tx-kv">${intList || `<div style="opacity:.7;">No interest events found.</div>`}</div>
+      </div>
+
+      ${breakdownHtml}
+    `;
+
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+  }
 }
 
 function ensureTxInspectModal() {

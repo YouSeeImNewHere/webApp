@@ -358,3 +358,80 @@
 } */
 
 }
+
+/* =============================================================================
+   Receipts page (mobile)
+   ============================================================================= */
+@media (max-width: 900px){
+  /* Receipts page uses .wrap not .page-container, so give it the same mobile padding */
+  .wrap{
+    width: 100% !important;
+    max-width: none !important;
+    margin: 12px auto !important;
+    padding: 0 10px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Make the filter/upload row stack neatly */
+  .wrap .row.card{
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  /* Make the list cards easier to read on phones */
+  .wrap .card{
+    padding: 12px !important;
+    border-radius: 14px !important;
+  }
+
+  /* The receipt list cards use .grid (1fr auto) which gets cramped; stack actions under info */
+  .wrap .grid{
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  .wrap .grid .row{
+    justify-content: flex-start !important;
+  }
+  .wrap .grid .row .btn{
+    width: 100% !important;
+  }
+
+  /* Modal: remove heavy padding and make it full-screen-ish */
+  .modalBack{
+    padding: 10px !important;
+  }
+  .modal{
+    width: 100% !important;
+    max-height: 92vh !important;
+    border-radius: 16px !important;
+    padding: 12px !important;
+  }
+
+  /* Two-column modal content should become single column on phones */
+  .two{
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Inputs/buttons a bit taller for touch */
+  input, select, .btn{
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+  input, select{
+    padding: 10px 12px !important;
+  }
+  .btn{
+    padding: 10px 12px !important;
+  }
+
+  /* OCR debug inner two-column layout also stacks */
+  details .two{
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Keep images within screen */
+  img.preview{
+    max-height: 55vh;
+    object-fit: contain;
+  }
+}

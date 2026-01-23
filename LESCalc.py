@@ -287,22 +287,3 @@ w4 = W4Settings(
     extra_withholding=0.00,
 )
 
-# October: ends on last day (31) => full day on the 31st
-inp_nov = LESInputs(
-    base_pay=base_pay,
-    submarine_pay=270.00,
-    career_sea_pay=160.00,
-    spec_duty_pay=150.00,
-    bas=465.77,
-    bah=1866.00,   # <-- November BAH
-)
-
-out_nov = generate_les_right_side(
-    inp_nov, w4,
-    meal_rate_per_day=13.30,
-    meal_year=2025, meal_month=11, meal_end_day=19,
-)
-
-
-print(inp_nov)
-print(out_nov)

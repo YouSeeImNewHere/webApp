@@ -18,6 +18,63 @@ DISCOVER_IT_ID = 7
 BCP_ACCOUNT_NUMBER = "51007"
 PLAT_ACCOUNT_NUMBER = "72008"
 
+import sqlite3
+from datetime import datetime, timedelta
+from transactionHandler import DB_PATH  # already used in your project
+
+def _parse_money_to_float(cost: str) -> float:
+    # "$1,234.56" -> 1234.56
+    return float(cost.replace("$", "").replace(",", ""))
+
+def find_existing_tx_key_by_amount_time_near_date(
+    cost: str,
+    date_mmddyy: str,
+    time_str: str,
+    *,
+    account_id: int,
+    use_test_table: bool = False
+) -> str | None:
+    table = "transactions_test" if use_test_table else "transactions"
+    amt = _parse_money_to_float(cost)
+
+    base = datetime.strptime(date_mmddyy, "%m/%d/%y").date()
+    candidates = [(base + timedelta(days=d)).strftime("%m/%d/%y") for d in (-1, 0, 1)]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        # try with time match first
+        cur.execute(
+            f"""
+            SELECT id
+            FROM {table}
+            WHERE account_id = ?
+              AND abs(amount - ?) < 0.005
+              AND purchaseDate IN (?,?,?)
+              AND time = ?
+            LIMIT 1
+            """,
+            (account_id, amt, *candidates, time_str)
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+
+        # fallback: match without time (in case one email lacks time / formats differ)
+        cur.execute(
+            f"""
+            SELECT id
+            FROM {table}
+            WHERE account_id = ?
+              AND abs(amount - ?) < 0.005
+              AND purchaseDate IN (?,?,?)
+            LIMIT 1
+            """,
+            (account_id, amt, *candidates)
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def transaction_exists(key: str, *, use_test_table: bool = False) -> bool:
     table = "transactions_test" if use_test_table else "transactions"
 
@@ -115,9 +172,22 @@ def navyFedWithdrawal(mail, msg_id_str, match, timeEmail, use_test_table: bool =
 
     key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
 
-    if transaction_exists(key, use_test_table=use_test_table):  # implement helper in transactionHandler
+    # 1) exact key exists → nothing to do
+    if transaction_exists(key, use_test_table=use_test_table):
         return
 
+    # 2) NEW: if a tx already exists under a slightly different key, don’t insert a duplicate
+    existing_key = find_existing_tx_key_by_amount_time_near_date(
+        cost, date, time,
+        account_id=NAVY_DEBIT_ID,
+        use_test_table=use_test_table
+    )
+    if existing_key:
+        # optional: label this email as “matched”
+        mail.store(msg_id_str, "+X-GM-LABELS", "(NavyFedWithdrawalMatched)")
+        return
+
+    # 3) otherwise it truly is unmatched → keep current behavior
     add_key(cost, date, time, msg_id_str, account_id=NAVY_DEBIT_ID)
 
     finalize_transaction(

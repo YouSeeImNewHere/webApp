@@ -70,6 +70,71 @@
     return "Unassigned";
   }
 
+
+// ---------------- Paychecks (LES) ----------------
+// Pulls paycheck events from /les/paychecks using the saved Profile (localStorage via profile.js).
+function getProfile() {
+  return window.Profile?.get?.() || null;
+}
+
+async function fetchPaychecks(year, month) {
+  const profile0 = getProfile();
+  if (!profile0) return [];
+  if (!profile0?.paygrade) {
+    console.warn("LES profile missing paygrade; skipping paycheck calc.");
+    return [];
+  }
+
+  // Normalize a few fields so the backend always understands them
+  const profile = { ...profile0 };
+  if (profile.paygrade != null) {
+    profile.paygrade = String(profile.paygrade)
+      .toUpperCase()
+      .replace(/\s+/g, "")
+      .replace("E-", "E")
+      .replace("-", "");
+  }
+  if (profile.service_start != null) {
+    profile.service_start = String(profile.service_start);
+  }
+  if (profile.bah_override === "") profile.bah_override = null;
+
+  const res = await fetch("/les/paychecks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year, month, profile }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    console.error("Paycheck calc failed:", res.status, txt);
+    return [];
+  }
+
+  const data = await res.json().catch(() => null);
+  return Array.isArray(data?.events) ? data.events : [];
+}
+
+function dedupeEvents(evts) {
+  const out = [];
+  const seen = new Set();
+  for (const e of evts || []) {
+    const key = [
+      String(e?.date || ""),
+      String(e?.pay_target || ""),
+      String(e?.merchant || ""),
+      String(e?.cadence || ""),
+      String(Number(e?.amount || 0)),
+      String(Number(e?.account_id || "")),
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
+
   async function fetchRecurringCalendarMonth(year, month, { minOcc = 3, includeStale = "false" } = {}) {
     const res = await fetch(
       `/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`,
@@ -283,14 +348,22 @@
 
     let events = [];
     for (const mm of months) {
-      const json = await fetchRecurringCalendarMonth(mm.y, mm.m, { minOcc: 3, includeStale: "false" });
-      if (Array.isArray(json?.events)) events = events.concat(json.events);
-    }
+  const json = await fetchRecurringCalendarMonth(mm.y, mm.m, { minOcc: 3, includeStale: "false" });
+  if (Array.isArray(json?.events)) events = events.concat(json.events);
+
+  // ✅ Add DFAS paycheck events (if Profile is set)
+  const pay = await fetchPaychecks(mm.y, mm.m);
+  if (pay.length) events = events.concat(pay);
+}
 
     if (accountId != null) {
       const aid = Number(accountId);
       events = events.filter((e) => Number(e?.account_id) === aid);
     }
+
+
+    // De-dupe across month fetches (spillover paycheck deposits can appear in adjacent months)
+    events = dedupeEvents(events);
 
     const byDate = {};
     for (const e of events || []) {

@@ -67,9 +67,10 @@ function shortDate(mmddyyOrIso) {
     const [m, d] = String(mmddyyOrIso).split("/");
     return `${m}/${d}`;
   }
-  const d = new Date(mmddyyOrIso);
+  const d = parseISODateLocal(mmddyyOrIso);
   return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
 }
+
 
 async function loadCategoryChart() {
   const category = getCategoryFromURL() || "Uncategorized";
@@ -91,9 +92,7 @@ if (t) t.textContent = category;
   // filter to selected range
   const filtered = series.filter(p => p.date >= start && p.date <= end);
 
-  const labels = filtered.map(p =>
-    new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "2-digit" })
-  );
+  const labels = filtered.map(p => formatMMMdd(p.date));
 
   const values = filtered.map(p => Number(p.amount || 0));
 
@@ -159,8 +158,7 @@ async function loadTrend(category, period) {
   const series = payload.series || [];
 
   const labels = series.map(p => {
-    const d = new Date(p.date);
-    return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+    return formatMMMdd(p.date);
   });
 
   const values = series.map(p => Number(p.amount || 0));

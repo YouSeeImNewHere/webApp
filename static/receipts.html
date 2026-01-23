@@ -1,0 +1,153 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Receipts</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .card { background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:14px; margin:12px 0; }
+    .grid { display:grid; grid-template-columns: 1fr auto; gap:10px; align-items:center; }
+    .pill { padding:4px 10px; border-radius:999px; border:1px solid #ddd; font-size:12px; }
+    .muted { color:#666; font-size:13px; }
+    .btn { padding:8px 12px; border-radius:10px; border:1px solid #ddd; background:#f7f7f7; cursor:pointer; }
+    .btn.primary { background:#111; color:#fff; border-color:#111; }
+    .modalBack { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding:20px; }
+    .modal { background:#fff; border-radius:16px; width:min(1000px, 100%); max-height:90vh; overflow:auto; padding:16px; }
+    .two { display:grid; grid-template-columns: 1.1fr .9fr; gap:14px; }
+    img.preview { width:100%; border:1px solid #eee; border-radius:12px; }
+    .cand { border:1px solid #eee; border-radius:12px; padding:10px; margin:8px 0; cursor:pointer; }
+    .cand:hover { background:#fafafa; }
+    input { width:100%; padding:8px 10px; border-radius:10px; border:1px solid #ddd; }
+
+    /* Verify modal layout tightening */
+    .form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .form-grid .span2{ grid-column: 1 / -1; }
+    .section-title{ font-weight:800; margin:0 0 8px 0; }
+    .cand-list{ max-height: 320px; overflow:auto; border:1px solid #eee; border-radius:12px; padding:10px; background:#fff; }
+    .actions-row{ display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+
+    /* Mobile: stack preview + form, make modal feel native */
+    @media (max-width: 900px) {
+      .wrap { margin: 12px auto; padding: 0 10px; }
+      .modalBack { padding: 0; }
+      .modal { width: 100%; max-height: 100vh; height: 100vh; border-radius: 0; padding: 12px; }
+      .two { grid-template-columns: 1fr; }
+      .form-grid{ grid-template-columns: 1fr; }
+      img.preview { max-height: 52vh; object-fit: contain; background: #fff; }
+      .row { gap: 10px; }
+      .row .btn { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="margin:0 0 14px 0;">Receipts</h1>
+
+    <div class="card" style="margin-top:0;">
+      <div class="row" style="justify-content:space-between;">
+        <div>
+          <div style="font-weight:700;">Upload</div>
+          <div class="muted">Add a receipt image and auto-parse date + total.</div>
+        </div>
+        <div class="row" style="justify-content:flex-end;">
+          <input id="file" type="file" accept="image/*" />
+          <button class="btn primary" id="uploadBtn">Upload & Parse</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row card">
+      <input id="q" placeholder="Search merchant or filename…" style="flex:1; min-width:260px;">
+      <button class="btn" id="refreshBtn">Refresh</button>
+    </div>
+
+    <div id="list"></div>
+  </div>
+
+  <div class="modalBack" id="modalBack">
+    <div class="modal">
+      <div class="row" style="justify-content:space-between;">
+        <h2 style="margin:0;">Verify & Attach</h2>
+        <button class="btn" id="closeModal">Close</button>
+      </div>
+
+      <div class="two" style="margin-top:12px;">
+        <div>
+          <img class="preview" id="imgPrev" src="" alt="Receipt preview">
+        </div>
+        <div>
+          <div class="card" style="margin:0;">
+            <div class="section-title">Verify</div>
+            <div class="form-grid">
+              <div class="span2">
+                <div class="muted">Merchant</div>
+                <input id="mMerchant" placeholder="(optional)" />
+              </div>
+              <div>
+                <div class="muted">Date (MM/DD/YY)</div>
+                <input id="mDate" placeholder="MM/DD/YY" />
+              </div>
+              <div>
+                <div class="muted">Total</div>
+                <input id="mTotal" placeholder="9.48" />
+              </div>
+            </div>
+
+            <div class="card" id="addrCard" style="margin:12px 0 0 0; background:#fafafa;">
+              <div class="section-title" style="margin:0 0 8px 0;">Address</div>
+              <div id="addrBox" class="muted" style="white-space:pre-line;"></div>
+            </div>
+
+
+            <div class="card" style="margin:12px 0 0 0; background:#fafafa;">
+              <div class="section-title" style="margin:0 0 8px 0;">Items</div>
+              <div id="itemsBox" class="card" style="margin:0; background:#fff;">
+                <div class="muted">No items parsed.</div>
+              </div>
+            </div>
+
+
+            <div class="actions-row" style="margin-top:12px;">
+              <span class="muted" id="mConf" style="margin-right:auto;"></span>
+              <button class="btn" id="reparseBtn">Re-run parsing</button>
+              <button class="btn primary" id="saveVerify">Save Verified</button>
+            </div>
+          </div>
+
+          <details class="card" style="margin:10px 0; background:#fafafa;">
+            <summary style="cursor:pointer;">OCR debug</summary>
+            <div class="row" style="margin:10px 0 0 0;">
+              <button class="btn" id="copyOcrDebug">Copy OCR debug JSON</button>
+            </div>
+            <div class="two" style="grid-template-columns: .9fr 1.1fr; gap:10px; margin-top:10px;">
+              <div>
+                <img id="dbgImg" style="width:100%; border-radius:12px; border:1px solid #eee;" />
+                <div id="dbgThumbs" class="row" style="margin-top:8px;"></div>
+              </div>
+              <div>
+                <div class="muted" id="dbgMeta"></div>
+                <textarea id="dbgText" style="width:100%; height:220px; border-radius:12px; border:1px solid #ddd; padding:10px;"></textarea>
+                <div class="muted" style="margin-top:10px;">Combined (fused) text</div>
+                <textarea id="dbgFused" style="width:100%; height:180px; border-radius:12px; border:1px solid #ddd; padding:10px;"></textarea>
+              </div>
+            </div>
+          </details>
+
+
+          <div class="card" style="margin-top:12px;">
+            <div class="section-title">Suggested transactions</div>
+            <div class="muted" style="margin-bottom:8px;">Click one to attach this receipt.</div>
+            <div id="candidates" class="cand-list"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/static/receipts.js"></script>
+</body>
+</html>

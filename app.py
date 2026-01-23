@@ -10,9 +10,16 @@ import calendar
 import datetime as dt
 
 from emails.transactionHandler import DB_PATH
-from recurring import get_recurring, get_ignored_merchants_preview
+from recurring import get_ignored_merchants_preview
+import inspect  # add near your imports
+
+from fastapi import HTTPException
+import os
+from Receipts.receipts import router as receipts_router
 
 app = FastAPI()
+app.include_router(receipts_router)  # ✅ THIS is what makes /receipts/* exist
+
 
 def get_category_from_db(tx_ids):
     if not tx_ids:
@@ -43,8 +50,10 @@ def get_category_from_db(tx_ids):
 def _last_day_of_month(y: int, m: int) -> int:
     return calendar.monthrange(y, m)[1]
 
+
 def _is_weekend(d: date) -> bool:
     return d.weekday() >= 5  # 5=Sat, 6=Sun
+
 
 def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
     # weekday: Mon=0..Sun=6
@@ -53,11 +62,13 @@ def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
         d += timedelta(days=1)
     return d + timedelta(days=7 * (n - 1))
 
+
 def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
     d = date(year, month, _last_day_of_month(year, month))
     while d.weekday() != weekday:
         d -= timedelta(days=1)
     return d
+
 
 def _observed(d: date) -> date:
     # Federal holiday observed rules: if Sat -> Fri, if Sun -> Mon
@@ -67,31 +78,34 @@ def _observed(d: date) -> date:
         return d + timedelta(days=1)
     return d
 
+
 def _us_federal_holidays_observed(year: int) -> set[date]:
     # Core federal holidays (observed)
     holidays = set()
 
     # Fixed-date holidays
-    holidays.add(_observed(date(year, 1, 1)))    # New Year's Day
-    holidays.add(_observed(date(year, 6, 19)))   # Juneteenth
-    holidays.add(_observed(date(year, 7, 4)))    # Independence Day
+    holidays.add(_observed(date(year, 1, 1)))  # New Year's Day
+    holidays.add(_observed(date(year, 6, 19)))  # Juneteenth
+    holidays.add(_observed(date(year, 7, 4)))  # Independence Day
     holidays.add(_observed(date(year, 11, 11)))  # Veterans Day
     holidays.add(_observed(date(year, 12, 25)))  # Christmas Day
 
     # Weekday-based holidays
-    holidays.add(_nth_weekday_of_month(year, 1, 0, 3))   # MLK Day: 3rd Mon Jan
-    holidays.add(_nth_weekday_of_month(year, 2, 0, 3))   # Presidents Day: 3rd Mon Feb
-    holidays.add(_last_weekday_of_month(year, 5, 0))     # Memorial Day: last Mon May
-    holidays.add(_nth_weekday_of_month(year, 9, 0, 1))   # Labor Day: 1st Mon Sep
+    holidays.add(_nth_weekday_of_month(year, 1, 0, 3))  # MLK Day: 3rd Mon Jan
+    holidays.add(_nth_weekday_of_month(year, 2, 0, 3))  # Presidents Day: 3rd Mon Feb
+    holidays.add(_last_weekday_of_month(year, 5, 0))  # Memorial Day: last Mon May
+    holidays.add(_nth_weekday_of_month(year, 9, 0, 1))  # Labor Day: 1st Mon Sep
     holidays.add(_nth_weekday_of_month(year, 10, 0, 2))  # Columbus Day: 2nd Mon Oct
     holidays.add(_nth_weekday_of_month(year, 11, 3, 4))  # Thanksgiving: 4th Thu Nov
 
     return holidays
 
+
 def _previous_workday(d: date, holiday_set: set[date]) -> date:
     while _is_weekend(d) or d in holiday_set:
         d -= timedelta(days=1)
     return d
+
 
 def _paycheck_dates_for_month(year: int, month: int) -> list[date]:
     """
@@ -129,11 +143,13 @@ def _paycheck_dates_for_month(year: int, month: int) -> list[date]:
 
     return sorted(set(paydays))
 
+
 def _account_label(conn, account_id: int) -> str:
     r = conn.execute("SELECT institution, name FROM accounts WHERE id=?", (account_id,)).fetchone()
     if not r:
         return f"Account {account_id}"
     return f"{r[0]} — {r[1]}"
+
 
 def _dateiso_expr(raw: str) -> str:
     # returns a SQL expression that converts mm/dd/yy or mm/dd/yyyy to YYYY-MM-DD
@@ -150,6 +166,7 @@ def _dateiso_expr(raw: str) -> str:
       ELSE NULL
     END
     """
+
 
 def _find_transfer_peer_account(conn, tx_id: str, window_days: int = 10):
     """
@@ -211,9 +228,356 @@ def _find_transfer_peer_account(conn, tx_id: str, window_days: int = 10):
 
     return int(peer["peer_account_id"]) if peer else None
 
+
 # =============================================================================
 # App + Static Frontend
 # =============================================================================
+
+
+from LESCalc import (
+    LESInputs as _LESInputs,
+    W4Settings as _W4Settings,
+    get_base_pay as _get_base_pay,
+    get_bah as _get_bah,
+    generate_les_right_side as _gen_les,
+)
+
+
+class LESProfileModel(BaseModel):
+    paygrade: str
+    service_start: str  # YYYY-MM-DD
+    has_dependents: bool = False
+
+    # entitlements
+    bas: float = 465.77
+    submarine_pay: float = 0.0
+    career_sea_pay: float = 0.0
+    spec_duty_pay: float = 0.0
+    tsp_rate: float = 0.05
+    bah_override: Optional[float] = None
+
+    # meal deduction rule
+    meal_rate: float = 13.30
+    meal_end_day: int = 31
+    meal_deduction_enabled: bool = False
+    meal_deduction_start: Optional[str] = None  # YYYY-MM-DD
+
+
+    # W-4
+    filing_status: str = "S"  # S/M/H
+    step2_multiple_jobs: bool = False
+    dep_under17: int = 0
+    other_dep: int = 0
+    other_income_annual: float = 0.0
+    other_deductions_annual: float = 0.0
+    extra_withholding: float = 0.0
+
+    # mid-month model inputs
+    mid_month_fraction: float = 0.50
+    allotments_total: float = 0.0
+    mid_month_collections_total: float = 0.0
+
+    fica_include_special_pays: bool = False
+
+
+class LESPaychecksRequest(BaseModel):
+    year: int
+    month: int
+    profile: LESProfileModel
+
+
+def _adjust_prev_business_day(d: date) -> date:
+    # If weekend, roll back to Friday
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+@app.post("/les/paychecks")
+def les_paychecks(req: LESPaychecksRequest):
+    y, m = req.year, req.month
+    p = req.profile
+
+    # as_of date: last day of the month being viewed
+    last_dom = calendar.monthrange(y, m)[1]
+    as_of = date(y, m, last_dom)
+
+    # compute base pay from chart in LESCalc
+    start_parts = [int(x) for x in p.service_start.split("-")]
+    start_dt = date(start_parts[0], start_parts[1], start_parts[2])
+    paygrade = p.paygrade.replace(" ", "").upper().replace("E", "E").replace("--", "-")
+    base_pay = _get_base_pay(paygrade.replace("-", ""), start_dt, as_of)
+
+    # compute BAH (table) unless overridden
+    bah = float(p.bah_override) if p.bah_override is not None else _get_bah(paygrade.replace("-", ""), p.has_dependents)
+
+    inp = _LESInputs(
+        base_pay=base_pay,
+        submarine_pay=p.submarine_pay,
+        career_sea_pay=p.career_sea_pay,
+        spec_duty_pay=p.spec_duty_pay,
+        bas=p.bas,
+        bah=bah,
+    )
+
+    w4 = _W4Settings(
+        pay_periods_per_year=12,
+        filing_status=p.filing_status,
+        step2_multiple_jobs=p.step2_multiple_jobs,
+        dep_under17=p.dep_under17,
+        other_dep=p.other_dep,
+        other_income_annual=p.other_income_annual,
+        other_deductions_annual=p.other_deductions_annual,
+        extra_withholding=p.extra_withholding,
+    )
+
+    # meal deduction: apply your rule via LESCalc.generate_les_right_side inputs
+    les_kwargs = dict(
+        tsp_rate=p.tsp_rate,
+        fica_wages_include_special_pays=p.fica_include_special_pays,
+        meal_rate_per_day=p.meal_rate,
+        meal_year=y, meal_month=m, meal_end_day=p.meal_end_day,
+        mid_month_fraction=p.mid_month_fraction,
+        allotments_total=p.allotments_total,
+        mid_month_collections_total=p.mid_month_collections_total,
+    )
+
+    allowed = set(inspect.signature(_gen_les).parameters.keys())
+    les_kwargs = {k: v for k, v in les_kwargs.items() if k in allowed}
+
+    out = _gen_les(inp, w4, **les_kwargs)
+
+    # target paydays
+    # --- paycheck targets: 1st + 15th of this month, plus 1st of next month ---
+    targets = [date(y, m, 1), date(y, m, 15)]
+    if m == 12:
+        targets.append(date(y + 1, 1, 1))
+    else:
+        targets.append(date(y, m + 1, 1))
+
+    hol_this = _us_federal_holidays_observed(y)
+
+    def deposit_for_target(target: date) -> date:
+        hol = hol_this if target.year == y else _us_federal_holidays_observed(target.year)
+        d = target - timedelta(days=1)  # day-before rule
+        return _previous_workday(d, hol)  # weekend/holiday rollback
+
+    def _month_bounds(year: int, month: int):
+        last_dom = calendar.monthrange(year, month)[1]
+        return date(year, month, 1), date(year, month, last_dom)
+
+    def _get_actual_midmonth_deposit(cur, year: int, month: int) -> float | None:
+        """
+        If we've already received the DFAS mid-month pay for (year, month),
+        return the *deposit amount* (positive float). Otherwise None.
+        """
+        month_start, month_end = _month_bounds(year, month)
+        target_dep = deposit_for_target(date(year, month, 15))
+
+        # pull candidate DFAS income tx in this month (income is stored as NEGATIVE in your DB)
+        rows = cur.execute("""
+          SELECT postedDate, purchaseDate, amount, merchant
+          FROM transactions
+          WHERE account_id = 3 AND category = 'Income' AND UPPER(merchant) LIKE '%DFAS%'
+        """).fetchall()
+
+        candidates = []
+        for r in rows:
+            posted = parse_posted_date(r["postedDate"])
+            purchase = parse_posted_date(r["purchaseDate"])
+            tx_date = posted if posted is not None else purchase
+            if tx_date is None:
+                continue
+            if not (month_start <= tx_date <= month_end):
+                continue
+
+            try:
+                amt = float(r["amount"])
+            except Exception:
+                continue
+
+            # expect DFAS income to be negative; convert to a positive "deposit" amount
+            dep_amt = abs(amt)
+            # keep only plausible mid-month window (closest to the expected deposit date)
+            delta_days = abs((tx_date - target_dep).days)
+            candidates.append((delta_days, tx_date, dep_amt))
+
+        if not candidates:
+            return None
+
+        # choose nearest to expected mid-month deposit date
+        candidates.sort(key=lambda x: (x[0], x[1]))
+        best_delta, best_date, best_amt = candidates[0]
+
+        # guardrail: only accept if it's reasonably close to the expected mid-month deposit date
+        if best_delta > 5:
+            return None
+
+        return float(best_amt)
+
+    def _compute_les_out_for_month(year: int, month: int):
+        """
+        Compute LES outputs for a given month using the *same* profile settings,
+        but with base pay tied to that month’s as_of date (last day of month).
+        """
+        last_dom = calendar.monthrange(year, month)[1]
+        as_of_local = date(year, month, last_dom)
+
+        base_pay_local = _get_base_pay(paygrade.replace("-", ""), start_dt, as_of_local)
+        bah_local = float(p.bah_override) if p.bah_override is not None else _get_bah(paygrade.replace("-", ""), p.has_dependents)
+
+        inp_local = _LESInputs(
+            base_pay=base_pay_local,
+            submarine_pay=p.submarine_pay,
+            career_sea_pay=p.career_sea_pay,
+            spec_duty_pay=p.spec_duty_pay,
+            bas=p.bas,
+            bah=bah_local,
+        )
+
+        # meal-deduction toggle/date should respect this month’s as_of date
+        apply_meal_local = bool(getattr(p, "meal_deduction_enabled", False))
+        start_iso_local = getattr(p, "meal_deduction_start", None)
+        if apply_meal_local and start_iso_local:
+            try:
+                apply_meal_local = (as_of_local >= parse_iso(str(start_iso_local)))
+            except Exception:
+                apply_meal_local = False
+
+        les_kwargs_local = dict(
+            tsp_rate=p.tsp_rate,
+            fica_wages_include_special_pays=p.fica_include_special_pays,
+
+            meal_rate_per_day=p.meal_rate,
+            meal_year=(year if apply_meal_local else None),
+            meal_month=(month if apply_meal_local else None),
+            meal_end_day=(p.meal_end_day if apply_meal_local else None),
+
+            # start each month from the configured "default" split (usually 0.5)
+            mid_month_fraction=p.mid_month_fraction,
+            allotments_total=p.allotments_total,
+            mid_month_collections_total=p.mid_month_collections_total,
+        )
+
+        allowed = set(inspect.signature(_gen_les).parameters.keys())
+        les_kwargs_local = {k: v for k, v in les_kwargs_local.items() if k in allowed}
+
+        return _gen_les(inp_local, w4, **les_kwargs_local)
+
+    # ---- Detect actual mid-month pay for the viewed month and adjust EOM ----
+    conn2, cur2 = with_db_cursor()
+    try:
+        actual_mid = _get_actual_midmonth_deposit(cur2, y, m)
+    finally:
+        conn2.close()
+
+    projected_monthly_net = float(out.mid_month_pay) + float(out.eom)
+
+    mid_month_display = float(actual_mid) if actual_mid is not None else float(out.mid_month_pay)
+    eom_display = (projected_monthly_net - mid_month_display) if actual_mid is not None else float(out.eom)
+
+    # ---- Also compute the "1st of month" paycheck as PREVIOUS month’s EOM ----
+    prev_year, prev_month = (y - 1, 12) if m == 1 else (y, m - 1)
+    out_prev = _compute_les_out_for_month(prev_year, prev_month)
+    projected_prev_net = float(out_prev.mid_month_pay) + float(out_prev.eom)
+
+    # optional: if the previous month’s mid-month is present in DB, adjust that too
+    conn3, cur3 = with_db_cursor()
+    try:
+        prev_actual_mid = _get_actual_midmonth_deposit(cur3, prev_year, prev_month)
+    finally:
+        conn3.close()
+
+    prev_mid_display = float(prev_actual_mid) if prev_actual_mid is not None else float(out_prev.mid_month_pay)
+    prev_eom_display = (projected_prev_net - prev_mid_display) if prev_actual_mid is not None else float(out_prev.eom)
+
+    events = []
+    for target in targets:
+        dep = deposit_for_target(target)
+
+        # same include rule you used in /recurring/calendar
+        include = (
+                (target.year == y and target.month == m) or
+                (dep.year == y and dep.month == m)
+        )
+        if not include:
+            continue
+
+        if not (dep.year == y and dep.month == m):
+            continue
+        # Map targets to the correct month:
+        # - 1st of the viewed month => previous month EOM
+        # - 15th of the viewed month => this month mid-month (actual if present)
+        # - 1st of next month (sometimes deposits early) => this month EOM (adjusted if mid-month is known)
+        if target.year == y and target.month == m and target.day == 1:
+            amt = prev_eom_display
+            label = "MIL PAY (EOM)"
+        elif target.year == y and target.month == m and target.day == 15:
+            amt = mid_month_display
+            label = "MIL PAY (Mid-Month)"
+        else:
+            amt = eom_display
+            label = "MIL PAY (EOM)"
+
+        events.append({
+            "date": dep.isoformat(),
+            "pay_target": target.isoformat(),
+            "cadence": "paycheck",
+            "merchant": label,
+            "amount": round(float(amt), 2),
+            "type": "Income",
+            "account_id": 3,
+            "spillover": not (dep.year == y and dep.month == m),
+        })
+    breakdown = {
+        "as_of": as_of.isoformat(),
+        "profile": {
+            "paygrade": paygrade.replace("-", ""),
+            "service_start": p.service_start,
+            "has_dependents": bool(p.has_dependents),
+        },
+        "entitlements": {
+            "base_pay": round(float(base_pay), 2),
+            "bah": round(float(bah), 2),
+            "bas": round(float(p.bas), 2),
+            "submarine_pay": round(float(p.submarine_pay), 2),
+            "career_sea_pay": round(float(p.career_sea_pay), 2),
+            "spec_duty_pay": round(float(p.spec_duty_pay), 2),
+        },
+        "w4": {
+            "filing_status": p.filing_status,
+            "step2_multiple_jobs": bool(p.step2_multiple_jobs),
+            "dep_under17": int(p.dep_under17),
+            "other_dep": int(p.other_dep),
+            "other_income_annual": round(float(p.other_income_annual), 2),
+            "other_deductions_annual": round(float(p.other_deductions_annual), 2),
+            "extra_withholding": round(float(p.extra_withholding), 2),
+        },
+        "rates": {
+            "tsp_rate": float(p.tsp_rate),
+            "meal_rate": float(p.meal_rate),
+            "meal_end_day": int(p.meal_end_day),
+            "mid_month_fraction": float(p.mid_month_fraction),
+        },
+        "deductions": {
+            "federal_taxes": round(float(out.federal_taxes), 2),
+            "fica_social_security": round(float(out.fica_social_security), 2),
+            "fica_medicare": round(float(out.fica_medicare), 2),
+            "sgli": round(float(out.sgli), 2),
+            "afrh": round(float(out.afrh), 2),
+            "roth_tsp": round(float(out.roth_tsp), 2),
+            "meal_deduction": round(float(out.meal_deduction), 2),
+            "allotments_total": round(float(p.allotments_total), 2),
+            "mid_month_collections_total": round(float(p.mid_month_collections_total), 2),
+        },
+        "net": {
+            "mid_month_pay": round(float(out.mid_month_pay), 2),
+            "eom": round(float(out.eom), 2),
+        },
+    }
+
+    return {"events": events, "breakdown": breakdown}
+
 
 @app.get("/__ping")
 def ping():
@@ -385,6 +749,7 @@ def build_series(start_date, end_date, starting, transactions, value_fn):
 
     return results
 
+
 def _table_exists(cur, name: str) -> bool:
     row = cur.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -392,9 +757,11 @@ def _table_exists(cur, name: str) -> bool:
     ).fetchone()
     return row is not None
 
+
 def _column_exists(cur, table: str, col: str) -> bool:
     rows = cur.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r["name"] == col for r in rows)
+
 
 def latest_rates_map(cur):
     """
@@ -422,6 +789,7 @@ def latest_rates_map(cur):
             pass
     return out
 
+
 from recurring import get_recurring  # new file you created
 
 # -----------------------------
@@ -429,18 +797,22 @@ from recurring import get_recurring  # new file you created
 # -----------------------------
 MAX_TRANSFER_WINDOW_DAYS = 10  # allow weekends/holidays lag
 
+
 def _round_cents(x: float) -> int:
     return int(round(float(x) * 100))
+
 
 def _is_transfer_like(cat: str) -> bool:
     c = (cat or "").strip().lower()
     return c in ("transfer", "card payment")
+
 
 def _parse_iso_date(s: str):
     try:
         return dt.date.fromisoformat(s)
     except Exception:
         return None
+
 
 def _business_days_between(a: dt.date, b: dt.date) -> int:
     if a > b:
@@ -452,6 +824,7 @@ def _business_days_between(a: dt.date, b: dt.date) -> int:
         if cur.weekday() < 5:
             days += 1
     return days
+
 
 def attach_transfer_peers(rows: list[dict], conn: sqlite3.Connection) -> list[dict]:
     """Adds rows[i]['transfer_peer'] = 'Institution — Name' when a matching opposite-side transfer is found.
@@ -487,7 +860,7 @@ def attach_transfer_peers(rows: list[dict], conn: sqlite3.Connection) -> list[di
         return rows
 
     # index candidates by (cents, sign)
-    by_key: dict[tuple[int,int], list[dict]] = {}
+    by_key: dict[tuple[int, int], list[dict]] = {}
     for c in cands:
         by_key.setdefault((c["cents"], c["sign"]), []).append(c)
 
@@ -528,6 +901,7 @@ def attach_transfer_peers(rows: list[dict], conn: sqlite3.Connection) -> list[di
             r["transfer_peer"] = peer
 
     return rows
+
 
 def build_transfer_display(tx_list, conn):
     """
@@ -586,7 +960,7 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
                     continue
 
                 # Only decorate patterns where ALL tx are Transfer
-                cats = { (t.get("category") or "").strip().lower() for t in tx }
+                cats = {(t.get("category") or "").strip().lower() for t in tx}
                 if cats != {"transfer"}:
                     continue
 
@@ -603,7 +977,7 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
                     amt = 0.0
 
                 a_from = _account_label(conn, int(tx[-1].get("account_id") or 0))
-                a_to   = _account_label(conn, int(peer_aid))
+                a_to = _account_label(conn, int(peer_aid))
 
                 # amt > 0 means money left this account
                 label = f"From {a_from} to {a_to}" if amt > 0 else f"From {a_to} to {a_from}"
@@ -619,6 +993,7 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
         conn.close()
 
     return groups
+
 
 # =============================================================================
 # Series Endpoints (Net Worth / Savings / Investments)
@@ -822,8 +1197,8 @@ def bank_totals():
     """).fetchall()
 
     starting = {
-      int(r["account_id"]): float(r["start_total"] or 0)
-      for r in cur.execute("""
+        int(r["account_id"]): float(r["start_total"] or 0)
+        for r in cur.execute("""
         SELECT account_id, SUM(Start) AS start_total
         FROM StartingBalance
         GROUP BY account_id
@@ -831,8 +1206,8 @@ def bank_totals():
     }
 
     tx_totals = {
-      int(r["account_id"]): float(r["trans_total"] or 0)
-      for r in cur.execute("""
+        int(r["account_id"]): float(r["trans_total"] or 0)
+        for r in cur.execute("""
         SELECT account_id, SUM(amount) AS trans_total
         FROM transactions
         GROUP BY account_id
@@ -844,26 +1219,26 @@ def bank_totals():
     by_type = {"checking": [], "savings": [], "investment": [], "credit": [], "other": []}
 
     for a in accounts:
-      aid = int(a["id"])
-      acc_type = a["accountType"] or "other"
+        aid = int(a["id"])
+        acc_type = a["accountType"] or "other"
 
-      start = starting.get(aid, 0.0)
-      trans = tx_totals.get(aid, 0.0)
+        start = starting.get(aid, 0.0)
+        trans = tx_totals.get(aid, 0.0)
 
-      # savings/investment: start + trans
-      # everything else (checking/credit): start - trans
-      balance = start - trans
+        # savings/investment: start + trans
+        # everything else (checking/credit): start - trans
+        balance = start - trans
 
-      bucket = acc_type if acc_type in by_type else "other"
-      display_name = f'{a["institution"]} — {a["name"]}'
-      by_type[bucket].append({"id": aid, "name": display_name, "total": balance})
+        bucket = acc_type if acc_type in by_type else "other"
+        display_name = f'{a["institution"]} — {a["name"]}'
+        by_type[bucket].append({"id": aid, "name": display_name, "total": balance})
 
     for k in by_type:
-      by_type[k].sort(key=lambda x: x["total"], reverse=True)
+        by_type[k].sort(key=lambda x: x["total"], reverse=True)
 
     return {
-      k: {"total": sum(x["total"] for x in lst), "accounts": lst}
-      for k, lst in by_type.items()
+        k: {"total": sum(x["total"] for x in lst), "accounts": lst}
+        for k, lst in by_type.items()
     }
 
 
@@ -873,7 +1248,7 @@ def bank_totals():
 
 class RuleCreate(BaseModel):
     category: str
-    keywords: List[str] = []     # e.g. ["chick fil a", "chick-fil-a"]
+    keywords: List[str] = []  # e.g. ["chick fil a", "chick-fil-a"]
     regex: Optional[str] = None  # advanced override
     apply_now: bool = True
 
@@ -1182,12 +1557,13 @@ def category_trend(category: str, period: str = "1m"):
 
     return {"category": category, "period": period, "series": daily}
 
+
 @app.get("/category-transactions")
 def category_transactions(
-    category: str,
-    start: str,
-    end: str,
-    limit: int = 500
+        category: str,
+        start: str,
+        end: str,
+        limit: int = 500
 ):
     sql = """
       WITH tx AS (
@@ -1222,6 +1598,7 @@ def category_transactions(
     """
     return query_db(sql, (category, start, end, limit))
 
+
 @app.get("/category-totals-lifetime")
 def category_totals_lifetime():
     conn, cur = with_db_cursor()
@@ -1241,9 +1618,10 @@ def category_totals_lifetime():
     conn.close()
 
     return [
-      {"category": r["category"], "total": float(r["total"] or 0)}
-      for r in rows
+        {"category": r["category"], "total": float(r["total"] or 0)}
+        for r in rows
     ]
+
 
 # =============================================================================
 # Account Details + Account Series
@@ -1354,7 +1732,7 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
     conn, cur = with_db_cursor()
 
     start_date = parse_iso(start).isoformat()
-    end_date   = parse_iso(end).isoformat()
+    end_date = parse_iso(end).isoformat()
 
     # account type
     row = cur.execute(
@@ -1542,19 +1920,19 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
             return abs((da - db).days)
 
         def _bizdiff(a: str, b: str) -> int:
-                    # Count weekdays between two dates (approx business-day distance).
-                    da = datetime.strptime(a, "%Y-%m-%d").date()
-                    db = datetime.strptime(b, "%Y-%m-%d").date()
-                    if da > db:
-                        da, db = db, da
-                    days = 0
-                    d = da
-                    while d < db:
-                        d += timedelta(days=1)
-                        if d.weekday() < 5:  # Mon-Fri
-                            days += 1
-                    return days
-        
+            # Count weekdays between two dates (approx business-day distance).
+            da = datetime.strptime(a, "%Y-%m-%d").date()
+            db = datetime.strptime(b, "%Y-%m-%d").date()
+            if da > db:
+                da, db = db, da
+            days = 0
+            d = da
+            while d < db:
+                d += timedelta(days=1)
+                if d.weekday() < 5:  # Mon-Fri
+                    days += 1
+            return days
+
         used_candidate_ids = set()
 
         for row in tx:
@@ -1607,7 +1985,6 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
     except Exception:
         # Never break the page if matching fails
         pass
-
 
     ending_balance = float(tx[0]["balance_after"]) if tx else float(starting_balance_at_range)
 
@@ -1727,7 +2104,7 @@ def transactions_test_range(account_id: int, start: str, end: str, limit: int = 
     conn, cur = with_db_cursor()
 
     start_date = parse_iso(start).isoformat()
-    end_date   = parse_iso(end).isoformat()
+    end_date = parse_iso(end).isoformat()
 
     # account type (same as prod)
     row = cur.execute(
@@ -1740,7 +2117,6 @@ def transactions_test_range(account_id: int, start: str, end: str, limit: int = 
     # savings/investment: balance += amount
     # checking/credit/etc: balance -= amount
     sign = 1 if acc_type == "investment" else -1
-
 
     # starting balance from table (same as prod)
     row = cur.execute("""
@@ -1973,6 +2349,7 @@ def ignore_category(name: str):
     conn.close()
     return {"ok": True}
 
+
 @app.get("/spending")
 def spending(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -2028,6 +2405,7 @@ def spending(start: str, end: str):
 
     return results
 
+
 @app.get("/spending-debug")
 def spending_debug(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -2082,6 +2460,7 @@ def spending_debug(start: str, end: str):
 
     return out
 
+
 @app.get("/category-totals-range")
 def category_totals_range(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -2130,7 +2509,9 @@ def category_totals_range(start: str, end: str):
         for r in rows
     ]
 
+
 from recurring import _norm_merchant, _amount_bucket  # matches your recurring.py helpers
+
 
 @app.post("/recurring/ignore/pattern")
 def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
@@ -2149,10 +2530,11 @@ def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
     conn.close()
     return {"ok": True}
 
+
 @app.post("/recurring/override-cadence")
 def override_cadence(merchant: str, amount: float, cadence: str, account_id: int = -1):
     cadence = (cadence or "").strip().lower()
-    allowed = {"weekly","biweekly","monthly","quarterly","yearly","irregular"}
+    allowed = {"weekly", "biweekly", "monthly", "quarterly", "yearly", "irregular"}
     if cadence not in allowed:
         return {"ok": False, "error": f"cadence must be one of {sorted(allowed)}"}
 
@@ -2172,6 +2554,7 @@ def override_cadence(merchant: str, amount: float, cadence: str, account_id: int
     conn.commit()
     conn.close()
     return {"ok": True}
+
 
 @app.post("/recurring/merchant-alias")
 def set_merchant_alias(alias: str, canonical: str):
@@ -2200,6 +2583,7 @@ def delete_merchant_alias(alias: str):
     conn.close()
     return {"ok": True}
 
+
 @app.post("/recurring/unignore/merchant")
 def unignore_merchant(name: str):
     conn, cur = with_db_cursor()
@@ -2208,9 +2592,11 @@ def unignore_merchant(name: str):
     conn.close()
     return {"ok": True}
 
+
 @app.get("/recurring/ignored-preview")
 def recurring_ignored_preview(min_occ: int = 3, include_stale: bool = False):
     return get_ignored_merchants_preview(min_occ=min_occ, include_stale=include_stale)
+
 
 # =========================
 # Recurring Calendar
@@ -2237,6 +2623,7 @@ def _interest_cycle_window(year: int, month: int, post_day: int | None):
     end_excl = post_date + timedelta(days=1)
     return start, end_excl, post_date
 
+
 def _interest_post_date(year: int, month: int, post_day: int | None) -> date:
     last_day = calendar.monthrange(year, month)[1]
 
@@ -2247,12 +2634,14 @@ def _interest_post_date(year: int, month: int, post_day: int | None) -> date:
     day = min(int(post_day), last_day)
     return date(year, month, day)
 
+
 def _add_months(d: date, months: int) -> date:
     # month-safe add: keeps "day of month" as close as possible
     y = d.year + (d.month - 1 + months) // 12
     m = (d.month - 1 + months) % 12 + 1
     day = min(d.day, _last_day_of_month(y, m))
     return date(y, m, day)
+
 
 def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: int, month_start: date, month_end: date):
     """
@@ -2301,6 +2690,7 @@ def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: in
     # irregular/unknown => no projections
     return out
 
+
 # -----------------------------
 # Hard-coded paycheck amounts
 # -----------------------------
@@ -2308,9 +2698,10 @@ PAYCHECK_MERCHANT = "SALARY REGULAR INCOME FROM DFAS"
 
 # Set these to whatever is correct for you
 PAYCHECK_AMOUNT_FOR_DAY = {
-    1: 1700.00,   # payday on the 1st (deposit date may be prior workday)
+    1: 1700.00,  # payday on the 1st (deposit date may be prior workday)
     15: 1400.00,  # payday on the 15th
 }
+
 
 # Optional: if you ever want different values in specific months:
 # PAYCHECK_AMOUNT_BY_YYYYMM = {
@@ -2359,14 +2750,14 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
 
     groups = get_recurring(min_occ=min_occ, include_stale=include_stale)
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-
     events = []
     for g in (groups or []):
-        merchant = g.get("merchant") or ""
-        if merchant.upper().strip() == PAYCHECK_MERCHANT:
+        # 🚫 Skip paycheck-like recurring groups entirely
+        if any((p.get("kind") or "").lower() == "paycheck" for p in (g.get("patterns") or [])):
             continue
+
+        merchant = g.get("merchant") or ""
+
         for p in (g.get("patterns") or []):
             # only “recurring” (withdrawals), not paychecks
             if (p.get("kind") or "").lower() == "paycheck":
@@ -2417,56 +2808,56 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
                     "account_id": aid,  # ✅ NEW
                 })
 
-    # ---- PAYCHECK EVENTS (derived from recurring data) ----
-    # Hard-coded paycheck amounts: based on the TARGET payday (1st vs 15th)
-    def paycheck_amount_for_target(target: date) -> float:
-        # Optional per-month override (if you add PAYCHECK_AMOUNT_BY_YYYYMM)
-        # key = f"{target.year:04d}-{target.month:02d}"
-        # if key in PAYCHECK_AMOUNT_BY_YYYYMM:
-        #     return float(PAYCHECK_AMOUNT_BY_YYYYMM[key].get(target.day, 0.0))
-        return float(PAYCHECK_AMOUNT_FOR_DAY.get(target.day, 0.0))
-
-    # targets: 1st + 15th of this month, plus 1st of next month (if deposit lands in this month)
-    targets = [date(year, month, 1), date(year, month, 15)]
-    if month == 12:
-        targets.append(date(year + 1, 1, 1))
-    else:
-        targets.append(date(year, month + 1, 1))
-
-    hol_this = _us_federal_holidays_observed(year)
-
-    def deposit_for_target(target: date) -> date:
-        hol = hol_this if target.year == year else _us_federal_holidays_observed(target.year)
-        d = target - timedelta(days=1)
-        return _previous_workday(d, hol)
-
-    for target in targets:
-        dep = deposit_for_target(target)
-
-        # Include if:
-        # 1) this paycheck's TARGET payday is in the requested month (Jan 1/15),
-        #    even if the deposit date is in the previous month (Dec 31)
-        # OR
-        # 2) the deposit date lands in the requested month (the "early deposit" for next month's 1st)
-        include = (
-                (target.year == year and target.month == month) or
-                (dep.year == year and dep.month == month)
-        )
-        if not include:
-            continue
-
-        amt = paycheck_amount_for_target(target)
-
-        events.append({
-            "date": dep.isoformat(),  # deposit day shown on calendar grid
-            "merchant": PAYCHECK_MERCHANT,
-            "amount": amt,  # ✅ hard-coded amount
-            "cadence": "paycheck",
-            "type": "Income",
-            "account_id": 3,
-            "pay_target": target.isoformat(),
-            "spillover": not (dep.year == year and dep.month == month),
-        })
+    # # ---- PAYCHECK EVENTS (derived from recurring data) ----
+    # # Hard-coded paycheck amounts: based on the TARGET payday (1st vs 15th)
+    # def paycheck_amount_for_target(target: date) -> float:
+    #     # Optional per-month override (if you add PAYCHECK_AMOUNT_BY_YYYYMM)
+    #     # key = f"{target.year:04d}-{target.month:02d}"
+    #     # if key in PAYCHECK_AMOUNT_BY_YYYYMM:
+    #     #     return float(PAYCHECK_AMOUNT_BY_YYYYMM[key].get(target.day, 0.0))
+    #     return float(PAYCHECK_AMOUNT_FOR_DAY.get(target.day, 0.0))
+    #
+    # # targets: 1st + 15th of this month, plus 1st of next month (if deposit lands in this month)
+    # targets = [date(year, month, 1), date(year, month, 15)]
+    # if month == 12:
+    #     targets.append(date(year + 1, 1, 1))
+    # else:
+    #     targets.append(date(year, month + 1, 1))
+    #
+    # hol_this = _us_federal_holidays_observed(year)
+    #
+    # def deposit_for_target(target: date) -> date:
+    #     hol = hol_this if target.year == year else _us_federal_holidays_observed(target.year)
+    #     d = target - timedelta(days=1)
+    #     return _previous_workday(d, hol)
+    #
+    # for target in targets:
+    #     dep = deposit_for_target(target)
+    #
+    #     # Include if:
+    #     # 1) this paycheck's TARGET payday is in the requested month (Jan 1/15),
+    #     #    even if the deposit date is in the previous month (Dec 31)
+    #     # OR
+    #     # 2) the deposit date lands in the requested month (the "early deposit" for next month's 1st)
+    #     include = (
+    #             (target.year == year and target.month == month) or
+    #             (dep.year == year and dep.month == month)
+    #     )
+    #     if not include:
+    #         continue
+    #
+    #     amt = paycheck_amount_for_target(target)
+    #
+    #     events.append({
+    #         "date": dep.isoformat(),  # deposit day shown on calendar grid
+    #         "merchant": PAYCHECK_MERCHANT,
+    #         "amount": amt,  # ✅ hard-coded amount
+    #         "cadence": "paycheck",
+    #         "type": "Income",
+    #         "account_id": 3,
+    #         "pay_target": target.isoformat(),
+    #         "spillover": not (dep.year == year and dep.month == month),
+    #     })
 
     # ---- INTEREST EVENTS (estimated) ----
     # Put a single "Estimated Interest" income chip on the LAST day of the month
@@ -2509,9 +2900,6 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
 
     conn.close()
 
-
-    conn.close()
-
     events.sort(key=lambda e: (e["date"], e["merchant"], abs(e["amount"])))
     return {
         "ok": True,
@@ -2522,6 +2910,7 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
         "events": events,
     }
 
+
 def _month_range(year: int, month: int):
     start = date(year, month, 1)
     if month == 12:
@@ -2529,6 +2918,7 @@ def _month_range(year: int, month: int):
     else:
         end = date(year, month + 1, 1)
     return start, end  # [start, end)
+
 
 def _get_rate_rows(cur, account_id: int):
     # return sorted effective-dated APRs
@@ -2546,6 +2936,7 @@ def _get_rate_rows(cur, account_id: int):
             pass
     return out
 
+
 def _apr_for_day(rate_rows, d: date) -> float:
     # rate_rows sorted asc by effective_date
     apr = 0.0
@@ -2555,6 +2946,7 @@ def _apr_for_day(rate_rows, d: date) -> float:
         else:
             break
     return apr
+
 
 def _estimate_interest_for_account_month(cur, account_id: int, year: int, month: int) -> float:
     """
@@ -2666,6 +3058,7 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
 
     return float(total_interest)
 
+
 # =============================================================================
 # Unknown merchant (for reconciliation cards)
 # =============================================================================
@@ -2776,6 +3169,7 @@ def unknown_merchant_total_range(start: str, end: str):
 
     conn.close()
     return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
+
 
 def latest_rates_map(cur):
     """
@@ -2904,20 +3298,21 @@ def bank_info():
     }
 
 
-
 @app.post("/bank-info/refresh")
 def bank_info_refresh():
     # placeholder for now
     return {"ok": True}
 
-from fastapi import Body
+
 from pydantic import BaseModel
+
 
 class RateUpsert(BaseModel):
     account_id: int
-    rate_percent: float              # user enters 3.54 (percent)
+    rate_percent: float  # user enters 3.54 (percent)
     effective_date: str | None = None  # "YYYY-MM-DD" (optional)
     note: str | None = None
+
 
 @app.post("/interest-rate")
 def set_interest_rate(payload: RateUpsert):
@@ -2961,6 +3356,7 @@ def set_interest_rate(payload: RateUpsert):
 
     return {"ok": True, "account_id": int(payload.account_id), "effective_date": eff, "rate_percent": rate_percent}
 
+
 @app.get("/month-budget")
 def month_budget(min_occ: int = 3, include_stale: bool = False):
     """
@@ -2980,6 +3376,10 @@ def month_budget(min_occ: int = 3, include_stale: bool = False):
     # 1) Projected recurring events (withdrawals + income)
     cal = recurring_calendar(year=year, month=month, min_occ=min_occ, include_stale=include_stale)
     events = (cal or {}).get("events") or []
+
+    # Only count *income* that lands in this account for the month budget card
+    # (spending / bills remain all-accounts)
+    spendable_account_id = 3
 
     income_expected = 0.0
     bills_remaining = 0.0
@@ -3006,7 +3406,13 @@ def month_budget(min_occ: int = 3, include_stale: bool = False):
         is_income = (etype == "income") or (cadence in ("paycheck", "interest"))
 
         if is_income:
-            income_expected += max(0.0, amt)
+            # Only count income that deposits into the "spendable" account (default: account_id 3)
+            try:
+                aid = int(e.get("account_id") or -1)
+            except Exception:
+                aid = -1
+            if aid == spendable_account_id:
+                income_expected += max(0.0, amt)
             continue
 
         # Remaining bills: only future-ish events (today through month end)
@@ -3065,6 +3471,7 @@ def month_budget(min_occ: int = 3, include_stale: bool = False):
         "safe_to_spend": round(safe_to_spend, 2),
     }
 
+
 @app.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
     """Return *all* columns for a single transaction, plus account metadata."""
@@ -3090,3 +3497,51 @@ def transaction_detail(tx_id: str):
         return {"ok": False, "error": "not_found", "id": tx_id}
 
     return {"ok": True, "transaction": dict(row)}
+
+
+@app.post("/transactions/{tx_id}/attach-receipt/{receipt_id}")
+def attach_receipt(tx_id: str, receipt_id: str):
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    # verify tx exists
+    cur.execute("SELECT 1 FROM transactions WHERE id=?", (tx_id,))
+    if not cur.fetchone():
+        con.close()
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # verify receipt exists
+    cur.execute("SELECT 1 FROM receipts WHERE id=?", (receipt_id,))
+    if not cur.fetchone():
+        con.close()
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    cur.execute(
+        "INSERT OR IGNORE INTO transaction_receipts (transaction_id, receipt_id) VALUES (?, ?)",
+        (tx_id, receipt_id),
+    )
+    con.commit()
+    con.close()
+    return {"ok": True}
+
+
+@app.get("/receipts-page")
+def receipts_page():
+    return FileResponse(os.path.join("static", "receipts.html"))
+
+@app.get("/transactions/{tx_id}/receipts")
+def list_receipts_for_tx(tx_id: str):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    rows = cur.execute("""
+      SELECT r.id, r.created_at, r.merchant_name, r.purchase_date, r.total, r.parse_status, r.confidence
+      FROM transaction_receipts tr
+      JOIN receipts r ON r.id = tr.receipt_id
+      WHERE tr.transaction_id = ?
+      ORDER BY datetime(r.created_at) DESC
+    """, (tx_id,)).fetchall()
+
+    con.close()
+    return {"tx_id": tx_id, "receipts": [dict(r) for r in rows]}

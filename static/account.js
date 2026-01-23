@@ -28,7 +28,8 @@ const ACCOUNT_CHART_IDS = {
 function qs(name){
   return new URLSearchParams(window.location.search).get(name);
 }
-function toISODate(d){ return d.toISOString().split("T")[0]; }
+function toISODate(d){ return isoLocal(d); }
+
 function money(n){
   const num = Number(n || 0);
   return num.toLocaleString("en-US", { style:"currency", currency:"USD" });
@@ -45,8 +46,8 @@ function escHtml(s){
 }
 
 function formatMMMdd(iso){
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month:"short", day:"2-digit" });
+  const d = parseISODateLocal(iso);
+  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
 }
 function firstDayOfMonth(y,m){ return new Date(y,m,1); }
 function lastDayOfMonth(y,m){ return new Date(y,m+1,0); }
@@ -232,7 +233,7 @@ function shortDate(mmddyyOrIso) {
     const [m,d] = mmddyyOrIso.split("/");
     return `${m}/${d}`;
   }
-  const d = new Date(mmddyyOrIso);
+  const d = parseISODateLocal(mmddyyOrIso);
   return d.toLocaleDateString("en-US", { month:"2-digit", day:"2-digit" });
 }
 

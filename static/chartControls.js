@@ -1,3 +1,15 @@
+function parseISODateLocal(iso) {
+  // iso: "YYYY-MM-DD"
+  const [y, m, d] = String(iso).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1); // local midnight, no UTC shift
+}
+
+function formatMMMdd(iso) {
+  const d = parseISODateLocal(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+}
+
+
 (function () {
   window.initChartControls = function initChartControls(ids, onUpdate) {
     let selectedYear = new Date().getFullYear();
@@ -15,7 +27,13 @@
     const cy = today.getFullYear();
     const cm = today.getMonth();
 
-    const iso = d => d.toISOString().split("T")[0];
+    const iso = d => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
     const firstDay = (y,m) => new Date(y,m,1);
     const lastDay  = (y,m) => new Date(y,m+1,0);
 

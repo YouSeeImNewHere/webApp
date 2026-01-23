@@ -1,4 +1,9 @@
-// --- guard against double-load ---
+// --- calendar state (GLOBAL, REQUIRED) ---
+const today = new Date();
+window.__calYear  = today.getFullYear();
+window.__calMonth = today.getMonth() + 1; // 1–12
+window.__calEventsByDate = {};
+
 if (window.__recurringPageLoaded) {
   console.warn("recurring_page.js loaded twice; skipping re-init");
 } else {
@@ -6,11 +11,53 @@ if (window.__recurringPageLoaded) {
 
   window.__mainData = window.__mainData || [];
   window.__reopenIgnoredAfterOcc = window.__reopenIgnoredAfterOcc ?? false;
-  window.__lastData = window.__lastData || [];
 
-  window.__calYear = window.__calYear ?? new Date().getFullYear();
-    window.__calMonth = window.__calMonth ?? (new Date().getMonth() + 1);
-    window.__calEventsByDate = window.__calEventsByDate || {};
+// Shared profile helpers (provided by /static/profile.js)
+function getProfile(){ return window.Profile?.get?.() || null; }
+function setProfile(p){ return window.Profile?.set?.(p); }
+function openProfile(){ return window.Profile?.open?.(); }
+function closeProfile(){ return window.Profile?.close?.(); }
+function bindProfileUI(){
+  // profile.js auto-mounts the UI; we only hook refresh behavior here.
+  window.Profile?.ensureUI?.();
+  window.Profile?.onChange?.(() => {
+    // Refresh month view with new profile
+    loadCalendar();
+  });
+}
+
+async function fetchPaychecks(year, month){
+  const profile0 = getProfile();
+  if (!profile0) return [];
+    if (!profile0?.paygrade) {
+      console.warn("LES profile missing paygrade; skipping paycheck calc.");
+      return [];
+}
+  // Normalize a few fields so the backend always understands them
+  const profile = {...profile0};
+  if (profile.paygrade != null){
+    profile.paygrade = String(profile.paygrade).toUpperCase().replace(/\s+/g,"").replace("E-","E").replace("-","");
+  }
+  if (profile.service_start != null){
+    profile.service_start = String(profile.service_start);
+  }
+  if (profile.bah_override === "") profile.bah_override = null;
+
+  const res = await fetch("/les/paychecks", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({year, month, profile})
+  });
+
+  if (!res.ok){
+    const txt = await res.text().catch(()=> "");
+    console.error("Paycheck calc failed:", res.status, txt);
+    return [];
+  }
+
+  const data = await res.json().catch(()=>null);
+  const events = Array.isArray(data?.events) ? data.events : [];
+  return events;
 }
 
 
@@ -54,7 +101,12 @@ async function loadCalendar(){
   }
 
   const data = await res.json();
-  const events = Array.isArray(data?.events) ? data.events : [];
+  let events = Array.isArray(data?.events) ? data.events : [];
+
+  // Add DFAS paycheck events based on profile + month being viewed
+  const payEvents = await fetchPaychecks(__calYear, __calMonth);
+  if (payEvents.length) events = events.concat(payEvents);
+
 
   // ---- Month totals (In/Out) ----
   let totalOut = 0;
@@ -101,52 +153,60 @@ function renderCalendarGrid(year, month){
   const grid = document.getElementById("calGrid");
   if (!grid) return;
 
-  const first = new Date(year, month-1, 1);
+  const first = new Date(year, month - 1, 1);
   const last  = new Date(year, month, 0); // last day of month
-  const startDow = first.getDay(); // 0=Sun
-  const daysInMonth = last.getDate();
 
-  // We’ll render 6 weeks (42 cells) for consistent height
-  const totalCells = 42;
+  // Start on the Sunday before (or on) the 1st
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+
+  // End on the Saturday after (or on) the last day
+  const end = new Date(last);
+  end.setDate(last.getDate() + (6 - last.getDay()));
+
+  // Keep a “calendar looking” minimum of 5 rows (35 cells).
+  // This prevents months like Feb-2026 (exact 4 weeks) from rendering only 4 rows,
+  // while avoiding the “two extra weeks” effect from always forcing 6 rows.
+  const MS_DAY = 24 * 60 * 60 * 1000;
+  const daysBetweenInclusive = (a, b) => Math.round((b - a) / MS_DAY) + 1;
+
+  while (daysBetweenInclusive(start, end) < 35){
+    end.setDate(end.getDate() + 7);
+  }
+
   const cells = [];
-
-  // Previous month info for leading blanks
-  const prevLast = new Date(year, month-1, 0);
-  const prevDays = prevLast.getDate();
-
-  for (let i=0; i<totalCells; i++){
-    const dayIndex = i - startDow + 1; // day-of-month for current month
-    let cellDate;
-    let inMonth = true;
-    let dayNum;
-
-    if (dayIndex < 1){
-      // prev month
-      inMonth = false;
-      dayNum = prevDays + dayIndex;
-      cellDate = new Date(year, month-2, dayNum);
-    } else if (dayIndex > daysInMonth){
-      // next month
-      inMonth = false;
-      dayNum = dayIndex - daysInMonth;
-      cellDate = new Date(year, month, dayNum);
-    } else {
-      // this month
-      inMonth = true;
-      dayNum = dayIndex;
-      cellDate = new Date(year, month-1, dayNum);
-    }
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)){
+    const cellDate = new Date(d);
+    const inMonth = cellDate.getMonth() === (month - 1);
+    const dayNum = cellDate.getDate();
 
     const key = isoYMD(cellDate);
     const evts = __calEventsByDate[key] || [];
 
-    const chips = evts
+    const grouped = (() => {
+      const byCat = {};
+      for (const e of evts){
+        const cat = (e.category || e.type || e.cat || "Unassigned");
+        const amt = Number(e.amount || 0);
+        if (!byCat[cat]) byCat[cat] = { cat, total: 0, count: 0 };
+        byCat[cat].total += amt;
+        byCat[cat].count += 1;
+      }
+      // sort by absolute total desc, then name
+      return Object.values(byCat).sort((a,b)=> (Math.abs(b.total)-Math.abs(a.total)) || a.cat.localeCompare(b.cat));
+    })();
+
+    const chips = grouped
       .slice(0, 3)
-      .map(e => `<div class="cal-chip" title="${esc(((e.merchant_display||e.merchant||"")).toUpperCase())}">${esc(truncMerchant(e.merchant_display||e.merchant))} • ${money(e.amount)}</div>`)
+      .map(g => {
+        const label = `${g.cat.toUpperCase()} • ${money(g.total)}`;
+        const tip = `${g.cat} (${g.count}) — ${money(g.total)}`;
+        return `<div class="cal-chip" title="${esc(tip)}">${esc(label)}</div>`;
+      })
       .join("");
 
-    const more = evts.length > 3
-      ? `<div class="cal-chip" style="opacity:.7;">+${evts.length - 3} more</div>`
+    const more = grouped.length > 3
+      ? `<div class="cal-chip cal-chip--more">+${grouped.length - 3} more</div>`
       : "";
 
     const cls = `cal-day${inMonth ? "" : " is-out"}`;
@@ -168,6 +228,18 @@ function renderCalendarGrid(year, month){
   grid.innerHTML = cells.join("");
 }
 
+function prettyLongDate(iso){
+  // iso = "YYYY-MM-DD"
+  if (!iso) return "";
+  const d = parseISODateLocal(iso);
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+}
+
 function openCalDayModal(isoDate){
   const modal = document.getElementById("calDayModal");
   const title = document.getElementById("calDayTitle");
@@ -178,21 +250,57 @@ function openCalDayModal(isoDate){
   const evts = __calEventsByDate[isoDate] || [];
   if (!evts.length) return;
 
-const d = parseISODateLocal(isoDate);
-  title.textContent = d.toLocaleDateString(undefined, { weekday:"long", year:"numeric", month:"long", day:"numeric" });
+  title.textContent = prettyLongDate(isoDate);
 
   const total = evts.reduce((a,e)=>a+Number(e.amount||0),0);
   sub.textContent = `${evts.length} expected • Total ${money(total)}`;
 
-  body.innerHTML = evts.map(e => `
-    <div class="occ-tx">
-      <div class="occ-left">
-        <div class="occ-merchant">${esc(((e.merchant_display || e.merchant || "")).toUpperCase())}</div>
-        <div class="occ-meta">${esc(e.cadence || "")}</div>
+  // Group by category, but show merchant rows inside each group
+  const byCat = {};
+  for (const e of evts){
+    const cat = (e.category || e.type || e.cat || "Unassigned");
+    if (!byCat[cat]) byCat[cat] = { cat, total: 0, count: 0, items: [] };
+    byCat[cat].total += Number(e.amount || 0);
+    byCat[cat].count += 1;
+    byCat[cat].items.push(e);
+  }
+
+  const groups = Object.values(byCat).sort((a,b)=>
+    (Math.abs(b.total)-Math.abs(a.total)) || a.cat.localeCompare(b.cat)
+  );
+
+  const itemRow = (e) => {
+    const merch = (e.merchant_display || e.merchant || "").trim() || "Unknown";
+    const cat = (e.category || e.category_label || "Unassigned");
+    const cadence = (e.cadence || "").trim();
+    return `
+      <div class="occ-tx occ-tx--sub">
+        <div class="occ-left">
+          <div class="occ-merchant">${esc(merch.toUpperCase())}</div>
+          <div class="occ-meta">${esc(cat)}${cadence ? " • " + esc(cadence) : ""}</div>
+        </div>
+        <div class="occ-amt">${money(Number(e.amount||0))}</div>
       </div>
-      <div class="occ-amt">${money(e.amount)}</div>
-    </div>
-  `).join("");
+    `;
+  };
+
+  body.innerHTML = groups.map(g => {
+    const items = (g.items || []).slice().sort((a,b)=>Math.abs(Number(b.amount||0))-Math.abs(Number(a.amount||0)));
+    return `
+      <div class="occ-group">
+        <div class="occ-tx">
+          <div class="occ-left">
+            <div class="occ-merchant">${esc(g.cat.toUpperCase())}</div>
+            <div class="occ-meta">${esc(String(g.count))} item${g.count===1?"":"s"}</div>
+          </div>
+          <div class="occ-amt">${money(g.total)}</div>
+        </div>
+        <div class="occ-sublist">
+          ${items.map(itemRow).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
 
   modal.classList.remove("hidden");
 }
@@ -242,6 +350,21 @@ function merchantHTML(g){
   `;
 }
 
+function patternCategory(p){
+  const tx = Array.isArray(p?.tx) ? p.tx : [];
+  // Prefer the most recent tx's category
+  for (let i = tx.length - 1; i >= 0; i--){
+    const c = (tx[i]?.category || "").trim();
+    if (c) return c;
+  }
+  // Fallback: first non-empty
+  for (let i = 0; i < tx.length; i++){
+    const c = (tx[i]?.category || "").trim();
+    if (c) return c;
+  }
+  return "";
+}
+
 function patternHTML(gIdx, pIdx, p){
   const freq = p.cadence || "irregular";
   const date = shortDateISO(p.last_seen);
@@ -253,8 +376,10 @@ function patternHTML(gIdx, pIdx, p){
 
   return `
     <div class="tx-row">
-      <div class="occ-ico-wrap">
-        <div class="occ-ico" title="Show transactions" onclick="openOccModal(${gIdx}, ${pIdx})">i</div>
+      <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0"
+           aria-label="Show transactions"
+           onclick="event.stopPropagation(); openOccModal(${gIdx}, ${pIdx});">
+        ${categoryIconHTML(patternCategory(p))}
       </div>
 
       <div class="tx-date">${esc(freq)}</div>
@@ -262,9 +387,9 @@ function patternHTML(gIdx, pIdx, p){
       <div class="tx-main">
         <div class="rec-sub">${esc(date)} • ${esc(occ)}</div>
         <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-          <button class="ignore-btn" onclick="ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
+          <button class="ignore-btn" onclick="event.stopPropagation(); ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
 
-          <select onchange="overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
+          <select onchange="event.stopPropagation(); overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
             <option value="">Set cadence…</option>
             <option value="weekly">weekly</option>
             <option value="monthly">monthly</option>
@@ -309,8 +434,10 @@ function patternHTMLIgnored(gIdx, pIdx, p){
 
   return `
     <div class="tx-row">
-      <div class="occ-ico-wrap">
-        <div class="occ-ico" title="Show transactions" onclick="openOccFromIgnored(${gIdx}, ${pIdx})">i</div>
+      <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0"
+           aria-label="Show transactions"
+           onclick="event.stopPropagation(); openOccFromIgnored(${gIdx}, ${pIdx});">
+        ${categoryIconHTML(patternCategory(p))}
       </div>
 
       <div class="tx-date">${esc(freq)}</div>
@@ -318,9 +445,9 @@ function patternHTMLIgnored(gIdx, pIdx, p){
       <div class="tx-main">
         <div class="rec-sub">${esc(date)} • ${esc(occ)}</div>
         <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-          <button class="ignore-btn" onclick="ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
+          <button class="ignore-btn" onclick="event.stopPropagation(); ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
 
-          <select onchange="overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
+          <select onchange="event.stopPropagation(); overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
             <option value="">Set cadence…</option>
             <option value="weekly">weekly</option>
             <option value="monthly">monthly</option>
@@ -395,7 +522,6 @@ function openOccModal(groupIndex, patternIndex){
   const tx = Array.isArray(p.tx) ? p.tx : [];
   body.innerHTML = tx.map(t => `
 <div class="occ-tx">
-  ${categoryIconHTML(t.category)}
   <div class="occ-left">
         <div class="occ-date">${esc(shortDateISO(t.date))}</div>
         <div class="occ-merchant">${esc((t.merchant_display ? String(t.merchant_display) : (t.merchant || "").toUpperCase()))}</div>
@@ -458,9 +584,6 @@ document.getElementById("includeStale")?.addEventListener("change", () => {
   loadRecurring();
   loadCalendar();
 });
-
-loadRecurring();
-loadCalendar();
 
 
 async function mergeMerchantPrompt(alias){
@@ -537,3 +660,10 @@ document.getElementById("calNext")?.addEventListener("click", () => {
   if (__calMonth > 12){ __calMonth = 1; __calYear += 1; }
   loadCalendar();
 });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    bindProfileUI();
+    loadRecurring();
+    loadCalendar();
+  });
+}

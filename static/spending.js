@@ -31,12 +31,7 @@ async function renderSpending(start, end) {
   const res = await fetch(`/spending?start=${start}&end=${end}`);
   const data = await res.json();
 
-  const labels = data.map(d =>
-    new Date(d.date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "2-digit"
-    })
-  );
+  const labels = data.map(d => formatMMMdd(d.date));
 
   const values = data.map(d => {
   const raw = String(d.value ?? 0);
@@ -158,4 +153,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 });
+
 

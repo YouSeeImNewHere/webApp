@@ -162,6 +162,50 @@ def _row_effective_date(*ds: Optional[datetime.date]) -> Optional[datetime.date]
     return max(ds2) if ds2 else None
 
 
+# ============================================================
+# IMPORT WINDOW (DB last posted + 1 ... yesterday)
+# ============================================================
+
+def get_import_window(
+    cur: sqlite3.Cursor,
+    account_id: int,
+    today: Optional[datetime.date] = None,
+) -> Tuple[Optional[datetime.date], datetime.date, Optional[datetime.date]]:
+    """
+    Returns (start_date, end_date, last_posted_date)
+
+    start_date:
+      - (last posted date in DB) + 1 day, or None if DB has no posted rows
+
+    end_date:
+      - yesterday (today - 1 day)
+
+    This intentionally excludes "today" so purchases made today that haven't posted yet
+    don't get imported prematurely.
+    """
+    if today is None:
+        today = datetime.now().date()
+    end_date = today - timedelta(days=1)
+
+    last_posted = get_latest_posted_cutoff(cur, account_id)
+    start_date = (last_posted + timedelta(days=1)) if last_posted else None
+    return start_date, end_date, last_posted
+
+
+def date_in_window(
+    d: Optional[datetime.date],
+    start_date: Optional[datetime.date],
+    end_date: datetime.date,
+) -> bool:
+    if not d:
+        return False
+    if start_date and d < start_date:
+        return False
+    if d > end_date:
+        return False
+    return True
+
+
 def load_withdrawal_keys() -> dict:
     if WITHDRAWAL_KEYS_FILE.exists():
         try:
@@ -463,6 +507,9 @@ def find_existing_match_pending_email(cur: sqlite3.Cursor,table: str,account_id:
         [account_id, float(amount), *dates],
     ).fetchall()
 
+    if len(candidates) == 1:
+        return candidates[0]
+
     if not candidates:
         return None
 
@@ -477,6 +524,15 @@ def find_existing_match_pending_email(cur: sqlite3.Cursor,table: str,account_id:
 
         # ✅ If pending/email merchant is unknown OR generic payment text, match by amount+date alone
         if (db_is_unknown or is_generic_payment_merchant(db_clean)) and not csv_is_unknown:
+            return row
+
+        db_toks = merchant_tokens(db_clean)
+        csv_toks = merchant_tokens(csv_clean)
+
+        db_is_weak = (len(db_toks) < 2)  # "S P" => []
+        csv_is_weak = (len(csv_toks) < 2)
+
+        if db_is_weak and not csv_is_weak:
             return row
 
         # Otherwise, require similarity (old behavior)
@@ -772,8 +828,8 @@ def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cutoff = get_latest_posted_cutoff(cur, account_id)
-    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+    start_date, end_date, last_posted = get_import_window(cur, account_id)
+    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
 
     tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
@@ -791,7 +847,7 @@ def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
             d = parse_mmddyyyy(date_raw)
             latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
-            if cutoff and d and d < cutoff:
+            if not date_in_window(d, start_date, end_date):
                 skipped += 1
                 continue
 
@@ -842,7 +898,7 @@ def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     print("AMEX latest_file_date =", latest_file_date)
 
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
         print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()
@@ -863,8 +919,8 @@ def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cutoff = get_latest_posted_cutoff(cur, account_id)
-    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+    start_date, end_date, last_posted = get_import_window(cur, account_id)
+    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
 
     tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
@@ -896,7 +952,7 @@ def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
                     latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
             eff_d = _row_effective_date(purchase_d, posted_d)
-            if cutoff and eff_d and eff_d < cutoff:
+            if not date_in_window(eff_d, start_date, end_date):
                 skipped += 1
                 continue
 
@@ -963,7 +1019,7 @@ def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     print("CAPITALONE latest_file_date =", latest_file_date)
     deleted = 0
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
     print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()
@@ -983,8 +1039,8 @@ def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cutoff = get_latest_posted_cutoff(cur, account_id)
-    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+    start_date, end_date, last_posted = get_import_window(cur, account_id)
+    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
 
     tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
@@ -1016,7 +1072,7 @@ def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
                     latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
             eff_d = _row_effective_date(trans_d, post_d)
-            if cutoff and eff_d and eff_d < cutoff:
+            if not date_in_window(eff_d, start_date, end_date):
                 skipped += 1
                 continue
 
@@ -1065,7 +1121,7 @@ def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     print("DISCOVER latest_file_date =", latest_file_date)
     deleted = 0
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
     print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()
@@ -1092,8 +1148,8 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cutoff = get_latest_posted_cutoff(cur, account_id)
-    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+    start_date, end_date, last_posted = get_import_window(cur, account_id)
+    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
 
     tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
@@ -1114,10 +1170,10 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
             desc_raw = (row[1] or "").strip()
             amt_raw = (row[2] or "").strip()
 
-            d = parse_yyyy_mm_dd(date_raw)
+            d = parse_mmddyyyy(date_raw)
             latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
 
-            if cutoff and d and d < cutoff:
+            if not date_in_window(d, start_date, end_date):
                 skipped += 1
                 continue
 
@@ -1168,7 +1224,7 @@ def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
             cur,
             WRITE_TABLE,
             account_id,
-            reference_date=latest_file_date
+            reference_date=min(latest_file_date, end_date)
         )
     print(f"Deleted stale pending email rows: {deleted}")
 
@@ -1192,8 +1248,8 @@ def import_navy_csv(
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    cutoff = get_latest_posted_cutoff(cur, account_id)
-    print("CUTOFF (latest Posted in LOOKUP_TABLE) =", cutoff)
+    start_date, end_date, last_posted = get_import_window(cur, account_id)
+    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
 
     tx_cols = set(get_table_columns(cur, WRITE_TABLE))
     rules = load_category_rules(cur)
@@ -1239,7 +1295,7 @@ def import_navy_csv(
 
             # Effective date for cutoff filtering
             eff_d = _row_effective_date(purchase_d, posted_d)
-            if cutoff and eff_d and eff_d < cutoff:
+            if not date_in_window(eff_d, start_date, end_date):
                 skipped += 1
                 continue
 
@@ -1312,7 +1368,7 @@ def import_navy_csv(
     print("NAVY latest_file_date =", latest_file_date)
 
     if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=latest_file_date)
+        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
         print(f"Deleted stale pending email rows: {deleted}")
 
     conn.commit()

@@ -2,7 +2,6 @@ import imaplib
 import email
 from email.header import decode_header
 from bs4 import BeautifulSoup
-from email.utils import parsedate_to_datetime
 from emails.email_handlers import *
 from dotenv import load_dotenv
 import os
@@ -68,7 +67,8 @@ def iter_message_ids(mail):
 
     for mbox in MAILBOXES:
         mail.select(mbox)
-        status, data = mail.search(None, "ALL")
+        status, data = mail.search(None, 'X-GM-RAW', 'newer_than:30d')
+
         if status != "OK" or not data or not data[0]:
             continue
 
@@ -209,6 +209,7 @@ def extract_email_body(msg) -> str:
 
     return payload.strip()
 
+from email.utils import parsedate_to_datetime
 
 def test():
     # In TEST_MODE:
@@ -235,11 +236,40 @@ def test():
 
     for msg_id_str in iter_message_ids(mail):
 
-        # ✅ Skip if already processed
         if msg_id_str in seen_skip:
             continue
 
+        res, hdr_data = mail.fetch(
+            msg_id_str,
+            "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])"
+        )
+        if res != "OK":
+            continue
+
+        raw_headers = b""
+        for part in hdr_data:
+            if isinstance(part, tuple):
+                raw_headers += part[1]
+
+        hdr_msg = email.message_from_bytes(raw_headers)
+
+        raw_subject, encoding = decode_header(hdr_msg.get("Subject", ""))[0]
+        subject = raw_subject.decode(encoding) if isinstance(raw_subject, bytes) else raw_subject
+
+        if not subject_matches(subject):
+            continue
+
+        raw_from, enc_from = decode_header(hdr_msg.get("From", ""))[0]
+        sender = raw_from.decode(enc_from) if isinstance(raw_from, bytes) else raw_from
+
+        date_header = hdr_msg.get("Date")
+        sent_dt = parsedate_to_datetime(date_header) if date_header else None
+        timeEmail = sent_dt.strftime("%I:%M %p") if sent_dt else ""
+
+        # 2) expensive: fetch full message only for matches
         res, msg_data = mail.fetch(msg_id_str, "(RFC822)")
+        if res != "OK":
+            continue
 
         for response in msg_data:
             if not isinstance(response, tuple):
