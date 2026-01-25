@@ -63,6 +63,7 @@ function setCategoryInURL(category) {
 
 function shortDate(mmddyyOrIso) {
   if (!mmddyyOrIso) return "";
+  if (String(mmddyyOrIso).toLowerCase() === "unknown") return "";
   if (String(mmddyyOrIso).includes("/")) {
     const [m, d] = String(mmddyyOrIso).split("/");
     return `${m}/${d}`;
@@ -95,16 +96,22 @@ if (t) t.textContent = category;
   const labels = filtered.map(p => formatMMMdd(p.date));
 
   const values = filtered.map(p => Number(p.amount || 0));
+const cumulative = [];
+let running = 0;
+for (const v of values) {
+  running += v;
+  cumulative.push(running);
+}
 
   // % Growth
   let growthStr = "—";
-  if (values.length >= 2 && Math.abs(values[0]) > 1e-9) {
-    const pct = ((values[values.length - 1] - values[0]) / Math.abs(values[0])) * 100;
-    growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
-  }
+  if (cumulative.length >= 2 && Math.abs(cumulative[0]) > 1e-9) {
+  const pct = ((cumulative[cumulative.length - 1] - cumulative[0]) / Math.abs(cumulative[0])) * 100;
+  growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+}
   setInlineGrowthByIds(CATEGORY_CHART_IDS, "% Growth", growthStr);
 
-  const last = values.length ? values[values.length - 1] : 0;
+  const last = cumulative.length ? cumulative[cumulative.length - 1] : 0;
 
   const l = document.getElementById(CATEGORY_CHART_IDS.breakLabel);
   const v = document.getElementById(CATEGORY_CHART_IDS.breakValue);
@@ -125,8 +132,8 @@ if (t) t.textContent = category;
     data: {
       labels,
       datasets: [{
-        label: `${category} (daily)`,
-        data: values,
+        label: `${category}`,
+        data: cumulative,
         tension: 0.2,
         pointRadius: 0,
         pointHitRadius: 12,
@@ -162,6 +169,12 @@ async function loadTrend(category, period) {
   });
 
   const values = series.map(p => Number(p.amount || 0));
+const cumulative = [];
+let running = 0;
+for (const v of values) {
+  running += v;
+  cumulative.push(running);
+}
 
   const canvas = document.getElementById("catChart");
   if (!canvas) return;
@@ -174,8 +187,8 @@ async function loadTrend(category, period) {
     data: {
       labels,
       datasets: [{
-        label: `${category} (daily total)`,
-        data: values,
+        label: `${category}`,
+        data: cumulative,
         tension: 0.2,
         pointRadius: 0,
         pointHitRadius: 12,
@@ -211,6 +224,7 @@ async function loadCategoryTransactions(category) {
 
   const data = await res.json();
 
+
   if (!Array.isArray(data) || data.length === 0) {
     list.innerHTML = `<div style="padding:10px;">No transactions in this range.</div>`;
     return;
@@ -220,16 +234,35 @@ async function loadCategoryTransactions(category) {
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
 
+    // Match Home: mark pending
+    if (String(row.status || "").toLowerCase() === "pending") {
+      wrap.classList.add("is-pending");
+    }
+
+    const merchant = (row.merchant || "").toUpperCase();
+    const sub = `${row.bank || ""}${row.card ? " • " + row.card : ""}`;
+    const amtNum = Number(row.amount || 0);
+    const transferText = row.transfer_peer
+      ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`)
+      : "";
+
+    // Match Home date logic: postedDate -> purchaseDate -> dateISO
+    const effectiveDate =
+  (row.postedDate && row.postedDate !== "unknown") ? row.postedDate :
+  (row.purchaseDate && row.purchaseDate !== "unknown") ? row.purchaseDate :
+  (row.raw_date && row.raw_date !== "unknown") ? row.raw_date :
+  (row.d ? row.d : row.dateISO);
 
     wrap.dataset.txId = String(row.id ?? "");
-wrap.innerHTML = `
+    wrap.innerHTML = `
       <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
         ${categoryIconHTML(row.category)}
       </div>
-      <div class="tx-date">${shortDate(row.postedDate)}</div>
+      <div class="tx-date">${shortDate(effectiveDate)}</div>
       <div class="tx-main">
-        <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
-        <div class="tx-sub">${[row.bank, row.card].filter(Boolean).join(" • ")}</div>
+        <div class="tx-merchant">${merchant}</div>
+        <div class="tx-sub">${sub}</div>
+        <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
       </div>
       <div class="tx-amt">${money(row.amount)}</div>
     `;
@@ -237,7 +270,7 @@ wrap.innerHTML = `
     list.appendChild(wrap);
   });
 
-  if (typeof attachTxInspect === 'function') attachTxInspect(list);
+  if (typeof window.attachTxInspect === 'function') window.attachTxInspect(list);
 }
 
 async function loadLifetimeSidebar(activeCategory) {
@@ -285,6 +318,16 @@ async function init() {
   let category = getCategoryFromURL();
   if (!category) category = "Uncategorized";
 
+async function refreshCategory(cat) {
+  // keep title in sync
+  const titleEl = document.getElementById("catTitle");
+  if (titleEl) titleEl.textContent = cat;
+
+  await loadCategoryChart();
+  await loadCategoryTransactions(cat);
+}
+
+
   const title = document.getElementById("catTitle");
   if (title) title.textContent = category;
   bindCatDrawerUI();
@@ -293,10 +336,17 @@ mountChartCard("#chartMount", {
   ids: CATEGORY_CHART_IDS,
   title: "Category",
   showToggle: false,
+  headerActionsHtml: `
+    <button id="catDrawerBtnHeader" class="chart-toggle chart-toggle--header" aria-label="All categories">
+      ☰
+    </button>
+  `
 });
-    initChartControls(CATEGORY_CHART_IDS, async () => {
-    await loadCategoryChart();
-     await loadCategoryTransactions(getCategoryFromURL() || "Uncategorized");
+
+// Place the drawer button where the Home "Next" pill usually is
+document.getElementById("catDrawerBtnHeader")?.addEventListener("click", openCatDrawer);
+   initChartControls(CATEGORY_CHART_IDS, async () => {
+  await refreshCategory(getCategoryFromURL() || "Uncategorized");
 });
 
 const chartTitle = document.getElementById(CATEGORY_CHART_IDS.title);
@@ -308,152 +358,14 @@ if (chartTitle) chartTitle.textContent = category;
   // LEFT sidebar first
   await loadLifetimeSidebar(category);
 
-  // RIGHT side
-  await loadCategoryChart();
-
-  await loadCategoryTransactions(category);
-
   // If user uses browser back/forward and category changes in URL
   window.addEventListener("popstate", async () => {
-    const currentCat = getCategoryFromURL() || "Uncategorized";
-    if (title) title.textContent = currentCat;
-
-    await loadLifetimeSidebar(currentCat);
-    await loadCategoryChart();
-
-    await loadCategoryTransactions(currentCat);
-  });
+  const currentCat = getCategoryFromURL() || "Uncategorized";
+  await loadLifetimeSidebar(currentCat);
+  await refreshCategory(currentCat);
+});
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   init().catch(err => console.error(err));
 });
-
-
-
-/* =============================================================================
-   Transaction Inspect (shared)
-   ============================================================================= */
-
-function ensureTxInspectModal(){
-  let root = document.getElementById("txInspectRoot");
-  if (root) return root;
-
-  root = document.createElement("div");
-  root.id = "txInspectRoot";
-  root.className = "tx-inspect hidden";
-
-  root.innerHTML = `
-    <div class="tx-inspect__backdrop" data-tx-close></div>
-    <div class="tx-inspect__card" role="dialog" aria-modal="true">
-      <div class="tx-inspect__head">
-        <div>
-          <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
-          <div id="txInspectSub" class="tx-inspect__sub">—</div>
-        </div>
-        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">✕</button>
-      </div>
-      <div id="txInspectBody" class="tx-inspect__body"></div>
-    </div>
-  `;
-
-  document.body.appendChild(root);
-
-  root.addEventListener("click", (e) => {
-    if (e.target && e.target.matches && e.target.matches("[data-tx-close]")) {
-      closeTxInspect();
-    }
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeTxInspect();
-  });
-
-  return root;
-}
-
-function closeTxInspect(){
-  const root = document.getElementById("txInspectRoot");
-  if (root) root.classList.add("hidden");
-}
-
-function _txEsc(s){
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-async function openTxInspect(txId){
-  const root = ensureTxInspectModal();
-  root.classList.remove("hidden");
-
-  const titleEl = document.getElementById("txInspectTitle");
-  const subEl = document.getElementById("txInspectSub");
-  const bodyEl = document.getElementById("txInspectBody");
-  if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.65;font-weight:700;">Loading…</div>`;
-
-  const res = await fetch(`/transaction/${encodeURIComponent(txId)}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-
-  const data = await res.json();
-  const tx = data.transaction || data || {};
-
-  const merchant = tx.merchant || "(no merchant)";
-  if (titleEl) titleEl.textContent = String(merchant).toUpperCase();
-  if (subEl) subEl.textContent = `id ${tx.id ?? txId}`;
-
-  const entries = Object.entries(tx);
-
-  // useful fields first, rest alphabetical
-  const priority = ["id","status","postedDate","purchaseDate","dateISO","time","amount","merchant","bank","card","accountType","account_id","category","source","transfer_peer","transfer_dir","where","notes","balance_after"];
-  entries.sort((a,b) => {
-    const ai = priority.indexOf(a[0]); const bi = priority.indexOf(b[0]);
-    if (ai === -1 && bi === -1) return String(a[0]).localeCompare(String(b[0]));
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
-
-  const kv = entries.map(([k,v]) => {
-    const vv =
-      v === null ? "null" :
-      v === undefined ? "undefined" :
-      (typeof v === "object" ? JSON.stringify(v) : String(v));
-    return `<div class="tx-kv__k">${_txEsc(k)}</div><div class="tx-kv__v">${_txEsc(vv)}</div>`;
-  }).join("");
-
-  if (bodyEl) bodyEl.innerHTML = `<div class="tx-kv">${kv}</div>`;
-}
-
-function attachTxInspect(container){
-  if (!container || container.__txInspectBound) return;
-  container.__txInspectBound = true;
-
-  container.addEventListener("click", async (e) => {
-    const hit = e.target.closest && e.target.closest(".tx-icon-hit");
-    if (!hit) return;
-    const row = hit.closest && hit.closest(".tx-row");
-    const txId = row && row.dataset ? row.dataset.txId : "";
-    if (!txId) return;
-
-    try { await openTxInspect(txId); }
-    catch (err) { console.error(err); }
-  });
-
-  container.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const hit = e.target.closest && e.target.closest(".tx-icon-hit");
-    if (!hit) return;
-    e.preventDefault();
-    const row = hit.closest && hit.closest(".tx-row");
-    const txId = row && row.dataset ? row.dataset.txId : "";
-    if (!txId) return;
-
-    try { await openTxInspect(txId); }
-    catch (err) { console.error(err); }
-  });
-}
-

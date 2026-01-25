@@ -9,6 +9,63 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+import sqlite3
+from emails.transactionHandler import DB_PATH
+
+# -----------------------------
+# Notifications (failed email parse)
+# -----------------------------
+def ensure_notifications_table():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            dedupe_key TEXT NOT NULL UNIQUE,
+            subject TEXT,
+            sender TEXT,
+            body TEXT,
+            created_at TEXT NOT NULL,
+            is_read INTEGER NOT NULL DEFAULT 0,
+            dismissed INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_dismissed ON notifications(dismissed)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)")
+    conn.commit()
+    conn.close()
+
+
+def log_parse_failure(msg_id_str: str, subject: str, sender: str, body: str):
+    """Insert one notification per email Message-ID (deduped by dedupe_key)."""
+    try:
+        ensure_notifications_table()
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO notifications (kind, dedupe_key, subject, sender, body, created_at, is_read, dismissed)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+            """,
+            (
+                "email_parse_failure",
+                msg_id_str,
+                subject,
+                sender,
+                body,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("Failed to log parse failure notification:", e)
+
+
+
 load_dotenv()
 
 EMAIL = os.getenv("GMAIL_ADDRESS")
@@ -32,8 +89,6 @@ def load_seen_ids(path: Path) -> dict:
         except Exception:
             # If file is corrupt for any reason, start fresh rather than crash
             return {}
-    return {}
-
     return {}
 
 def save_seen_ids(path: Path, seen: dict) -> None:
@@ -304,7 +359,15 @@ def test():
                     print(f"Matched rule: {rule['name']}")
 
                     # ✅ handler does DB insert; we pass use_test_table down
-                    rule["handler"](mail, msg_id_str, match, timeEmail, use_test_table=use_test_table)
+                    try:
+                        # ✅ handler does DB insert; we pass use_test_table down
+                        rule["handler"](mail, msg_id_str, match, timeEmail, use_test_table=use_test_table)
+                    except Exception as e:
+                        print("Handler failed:", e)
+                        # Create a notification, but keep email un-seen so we can try again later after you fix the rule.
+                        log_parse_failure(msg_id_str, subject, sender, body)
+                        matched_any = True
+                        break
 
                     # Optional: label processed in Gmail too
                     mail.store(msg_id_str, '+X-GM-LABELS', '(PROCESSED)')
@@ -319,6 +382,10 @@ def test():
 
             if not matched_any:
                 print("No rule matched this email.")
+                # Create one notification per email (deduped by Message-ID). We do NOT mark seen, so the email can be re-tried later.
+                log_parse_failure(msg_id_str, subject, sender, body)
+                # Create one notification per email (deduped by Message-ID). We do NOT mark seen, so the email can be re-tried later.
+                log_parse_failure(msg_id_str, subject, sender, body)
                 if re.search("declined", body, re.IGNORECASE):
                     print("Declined")
                     mail.store(msg_id_str, '+X-GM-LABELS', '(DECLINED)')

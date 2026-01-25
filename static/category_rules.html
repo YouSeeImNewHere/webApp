@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Category Rules</title>
+
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/mobile.css">
+  <!-- ensure theme applies on this page too -->
+  <script src="/static/theme.js"></script>
+</head>
+
+<body class="page-category-rules" data-page-title="Category Rules">
+  <div id="topBar"></div>
+
+  <div class="settings-wrap">
+    <section class="settings-section">
+      <div class="settings-section-head">
+        <h2 class="settings-section-title">Regex Rules</h2>
+        <div class="settings-muted" style="margin:0;">Edit categories, disable/delete rules, test regex, and re-apply to existing transactions.</div>
+      </div>
+
+      <div class="settings-card">
+        <div class="rules-toolbar">
+          <button id="refreshRulesBtn" class="settings-btn small">Refresh</button>
+          <span id="rulesStatus" class="settings-muted" style="margin:0;"></span>
+        </div>
+
+        <table class="settings-table rules-table" id="rulesTable">
+          <thead>
+            <tr>
+              <th style="width:44%;">Regex</th>
+              <th style="width:24%;">Category</th>
+              <th style="width:10%;">Matches</th>
+              <th style="width:10%;">Active</th>
+              <th style="width:12%;">Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <datalist id="categoryOptions"></datalist>
+      </div>
+    </section>
+  </div>
+
+  <!-- Test modal -->
+  <div id="ruleTestModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">Test Regex</div>
+          <div id="testSubtitle" class="settings-muted" style="margin:4px 0 0 0;"></div>
+        </div>
+        <button id="closeTestModal" class="settings-btn small">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-row" style="align-items:flex-end;">
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85; flex:1;">
+            Regex
+            <input id="testPattern" class="settings-input mono" placeholder="your regex..." />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85; width:120px;">
+            Flags
+            <input id="testFlags" class="settings-input mono" value="i" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85; width:120px;">
+            Recent limit
+            <input id="testLimit" class="settings-input mono" value="50" />
+          </label>
+          <button id="runTestBtn" class="settings-btn">Run test</button>
+        </div>
+
+        <div id="testResults" class="test-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomTabs"></div>
+
+  <script src="/static/topBar.js"></script>
+  <script src="/static/bottomTabs.js"></script>
+<script src="/static/notifs.js" defer></script>
+  <script src="/static/categoryRules.js"></script>
+</body>
+</html>

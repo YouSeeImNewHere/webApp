@@ -1,3 +1,4 @@
+// /static/bottomTabs.js
 (async function () {
   const host = document.getElementById("bottomTabs");
   if (!host) return;
@@ -10,16 +11,20 @@
   }
   host.innerHTML = await res.text();
 
-  // 2) Compute active tab (same logic you had in home.html)
+  // 2) Compute active tab
   const path = window.location.pathname || "";
 
-  let active = "home";
-  if (path.includes("all-transactions.html")) active = "all";
-  else if (path.includes("recurring.html")) active = "recurring";
+  let active = null;
+  if (path === "/") active = "home";
   else if (path.includes("spending.html")) active = "spending";
-  else active = "home";
+  else if (path.includes("all-transactions.html")) active = "all";
+  else if (path.includes("recurring.html")) active = "recurring";
+  else if (path.includes("receipts.html")) active = "receipts";
+  // NOTE: Settings is NOT a bottom tab anymore → no active tab on /settings
 
   // 3) Apply active class
-  const tab = host.querySelector(`.mobile-tab[data-tab="${active}"]`);
-  if (tab) tab.classList.add("active");
+  if (active) {
+    const tab = host.querySelector(`.mobile-tab[data-tab="${active}"]`);
+    if (tab) tab.classList.add("active");
+  }
 })();

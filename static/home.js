@@ -1,42 +1,3 @@
-async function loadData() {
-    const res = await fetch("/transactions");
-    const data = await res.json();
-
-    const tbody = document.querySelector("#dataTable tbody");
-    tbody.innerHTML = "";
-
-    data.forEach(row => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${row.postedDate}</td>
-            <td>${row.merchant}</td>
-            <td>${row.amount}</td>
-            <td>${row.bank}</td>
-            <td>${row.card}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-async function loadBankTotals() {
-  const res = await fetch("/bank-totals");
-  if (!res.ok) {
-    console.error("bank-totals failed:", res.status);
-    return;
-  }
-
-  const data = await res.json();
-
-  const container = document.getElementById("bankTotals");
-  container.innerHTML = "";
-
-  renderCategory(container, "Checking", data.checking);
-  renderCategory(container, "Card Balances", data.credit);
-  renderCategory(container, "Savings", data.savings);
-  renderCategory(container, "Investments", data.investment);
-}
-
-
 // IDs used by the shared chart card (chartCard.js)
 const HOME_IDS = {
   title: "chartTitle",
@@ -66,6 +27,657 @@ let netWorthChartInstance = null;
 const DEBUG_SPENDING = false;
 let showPotentialGrowth = (localStorage.getItem("showPotentialGrowth") === "true");
 let endBeforePotential = null;
+const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
+
+// =============================
+// UI Layout (server-persisted)
+// Requires /static/layout.js + /ui-layout backend
+// =============================
+let UI_LAYOUT = null;
+
+function getDefaultUILayout() {
+  return {
+    key: "home",
+    // big blocks on Home (we currently reorder: chart, upcoming, bank area, recent transactions)
+    home_sections: ["chart", "upcoming", "bankArea", "transactions"],
+    // sidebar cards inside the bank area
+    sidebar_sections: ["monthBudget", "monthlySpending"],
+    // order of account types in Bank Totals
+    bank_type_order: ["checking", "credit", "savings", "investment"],
+    // order of individual accounts (by account_id) within each type
+    bank_account_order: {
+      checking: [],
+      savings: [],
+      credit: [],
+      investment: []
+    }
+  };
+}
+
+function applyHomeSectionOrder() {
+  const host = document.getElementById("homeSections");
+  if (!host) return;
+
+  const nodes = Array.from(host.querySelectorAll(".home-section[data-home-section]"));
+  const map = new Map(nodes.map(n => [n.dataset.homeSection, n]));
+
+  const order = UI_LAYOUT?.home_sections || getDefaultUILayout().home_sections;
+  const seen = new Set();
+
+  for (const key of order) {
+    const el = map.get(key);
+    if (el && !seen.has(key)) {
+      host.appendChild(el);
+      seen.add(key);
+    }
+  }
+  // append anything not in saved list
+  for (const [key, el] of map.entries()) {
+    if (!seen.has(key)) host.appendChild(el);
+  }
+}
+
+function applySidebarOrder() {
+  const host = document.getElementById("sidebarStack");
+  if (!host) return;
+
+  const nodes = Array.from(host.querySelectorAll("[data-sidebar-section]"));
+  const map = new Map(nodes.map(n => [n.dataset.sidebarSection, n]));
+
+  const order = UI_LAYOUT?.sidebar_sections || getDefaultUILayout().sidebar_sections;
+  const seen = new Set();
+
+  for (const key of order) {
+    const el = map.get(key);
+    if (el && !seen.has(key)) {
+      host.appendChild(el);
+      seen.add(key);
+    }
+  }
+  for (const [key, el] of map.entries()) {
+    if (!seen.has(key)) host.appendChild(el);
+  }
+}
+
+// -----------------------------
+// Customize mode (drag/drop)
+// -----------------------------
+let _sortableHome = null;
+let _sortableSidebar = null;
+let _sortableBankTypes = null;
+let _sortableAccountsByType = new Map();
+
+function initCustomizeUI() {
+  const btn = document.getElementById("customizeBtn");         // optional (we're removing it)
+  const doneBtn = document.getElementById("customizeDoneBtn"); // optional (we're removing it)
+
+  // Inline "Done" bar (non-floating) for customize mode
+  let bar = document.getElementById("customizeBar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "customizeBar";
+    bar.className = "customize-bar";
+    bar.innerHTML = `
+      <div class="customize-bar__inner">
+        <div class="customize-bar__title">Customize layout</div>
+        <button type="button" class="customize-bar__done" id="customizeBarDoneBtn">Done</button>
+      </div>
+    `;
+    document.body.appendChild(bar);
+  }
+
+  const barDoneBtn = bar.querySelector("#customizeBarDoneBtn");
+
+  const enter = () => {
+    if (document.body.classList.contains("is-customizing")) return;
+    document.body.classList.add("is-customizing");
+    if (btn) btn.style.display = "none";
+    if (doneBtn) doneBtn.style.display = "none";
+    bar.style.display = "block";
+    initSortables();
+  };
+
+  const exit = () => {
+    if (!document.body.classList.contains("is-customizing")) return;
+    document.body.classList.remove("is-customizing");
+    if (btn) btn.style.display = "inline-flex";
+    if (doneBtn) doneBtn.style.display = "none";
+    bar.style.display = "none";
+    destroySortables();
+  };
+
+  // Bind optional old buttons if they still exist (safe)
+  if (btn) btn.addEventListener("click", enter);
+  if (doneBtn) doneBtn.addEventListener("click", exit);
+
+  if (barDoneBtn && !barDoneBtn.__bound) {
+    barDoneBtn.__bound = true;
+    barDoneBtn.addEventListener("click", exit);
+  }
+
+  // Expose for Settings -> Home one-tap customize
+  window.HomeCustomize = { enter, exit };
+}
+
+
+function initSortables() {
+  if (!window.Sortable) {
+    console.warn("SortableJS not loaded; customize disabled");
+    return;
+  }
+
+  // Home major blocks
+  const homeHost = document.getElementById("homeSections");
+  if (homeHost && !_sortableHome) {
+    _sortableHome = new Sortable(homeHost, {
+      animation: 150,
+      handle: ".drag-handle, .category-box__header, .bank-card__head, .bank-accordion__header",
+      draggable: ".home-section[data-home-section]",
+      onEnd: async () => {
+        UI_LAYOUT.home_sections = Array.from(homeHost.querySelectorAll(".home-section[data-home-section]"))
+          .map(el => el.dataset.homeSection);
+        await window.LayoutStore.save("home", UI_LAYOUT);
+      }
+    });
+  }
+
+  // Sidebar cards
+  const sidebarHost = document.getElementById("sidebarStack");
+  if (sidebarHost && !_sortableSidebar) {
+    _sortableSidebar = new Sortable(sidebarHost, {
+      animation: 150,
+      handle: ".category-box__header",
+      draggable: "[data-sidebar-section]",
+      onEnd: async () => {
+        UI_LAYOUT.sidebar_sections = Array.from(sidebarHost.querySelectorAll("[data-sidebar-section]"))
+          .map(el => el.dataset.sidebarSection);
+        await window.LayoutStore.save("home", UI_LAYOUT);
+      }
+    });
+  }
+
+  // Bank types + accounts
+  initBankSortablesOnly();
+}
+
+function initBankSortablesOnly() {
+  if (!window.Sortable) return;
+
+  const bankHost = document.getElementById("bankTotals");
+  if (bankHost && !_sortableBankTypes) {
+    _sortableBankTypes = new Sortable(bankHost, {
+      animation: 150,
+      handle: ".bank-card__head, .bank-accordion__header",
+      draggable: ".bank-type-block",
+      onEnd: async () => {
+        UI_LAYOUT.bank_type_order = Array.from(bankHost.querySelectorAll(".bank-type-block"))
+          .map(el => el.dataset.typeKey);
+        await window.LayoutStore.save("home", UI_LAYOUT);
+      }
+    });
+  }
+
+  // Accounts within each type
+  for (const inst of _sortableAccountsByType.values()) {
+    try { inst.destroy(); } catch (_) {}
+  }
+  _sortableAccountsByType.clear();
+
+  const typeBlocks = document.querySelectorAll(".bank-type-block");
+  typeBlocks.forEach(block => {
+    const typeKey = block.dataset.typeKey;
+    const ul = block.querySelector("ul.bank-sublist");
+    if (!typeKey || !ul) return;
+
+    const inst = new Sortable(ul, {
+      animation: 150,
+      handle: ".account-pill",
+      draggable: "li",
+      onEnd: async () => {
+        const ids = Array.from(ul.querySelectorAll("li[data-account-id]"))
+          .map(li => li.dataset.accountId)
+          .filter(Boolean);
+
+        if (!UI_LAYOUT.bank_account_order) UI_LAYOUT.bank_account_order = {};
+        UI_LAYOUT.bank_account_order[typeKey] = ids;
+        await window.LayoutStore.save("home", UI_LAYOUT);
+      }
+    });
+
+    _sortableAccountsByType.set(typeKey, inst);
+  });
+}
+
+function destroySortables() {
+  try { _sortableHome?.destroy(); } catch (_) {}
+  try { _sortableSidebar?.destroy(); } catch (_) {}
+  try { _sortableBankTypes?.destroy(); } catch (_) {}
+  _sortableHome = null;
+  _sortableSidebar = null;
+  _sortableBankTypes = null;
+
+  for (const inst of _sortableAccountsByType.values()) {
+    try { inst.destroy(); } catch (_) {}
+  }
+  _sortableAccountsByType.clear();
+}
+
+// --- ADD: credit usage notifications ---
+const CREDIT_USAGE_THRESHOLDS = [5, 10, 15];
+
+function isoDayLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+async function pushNotif({ kind, dedupe_key, subject, sender, body }) {
+  try {
+    await fetch("/notifications/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, dedupe_key, subject, sender, body }),
+    });
+  } catch (e) {
+    console.warn("pushNotif failed:", e);
+  }
+}
+
+function pctUtil(balance, limit) {
+  const used = Math.abs(Number(balance) || 0);
+  const lim = Number(limit) || 0;
+  if (!lim || lim <= 0) return null;
+  return Math.round((used / lim) * 100);
+}
+
+async function maybeTriggerCreditUsageNotifs(creditAccounts) {
+  if (!Array.isArray(creditAccounts) || creditAccounts.length === 0) return;
+
+  // helper: "used" is how much of the limit is consumed.
+  // In your UI logic, credit usage is represented by NEGATIVE balances.
+  // Positive balances are effectively a credit (overpaid/refund) -> 0 used.
+  const usedFromBal = (bal) => Math.max(0, -Number(bal || 0));
+
+  const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+  // ----- Per-card thresholds -----
+  for (const a of creditAccounts) {
+    const limit = Number(a.credit_limit || 0);
+    if (!(limit > 0)) continue; // includes Unlimited->0
+
+    const used = usedFromBal(a.total);
+
+    const pct = (used / limit) * 100;
+
+    for (const t of CREDIT_USAGE_THRESHOLDS) {
+      if (pct < t) continue;
+
+      await pushNotif({
+        kind: "credit_usage",
+        dedupe_key: `cc:${a.id}:${t}:${todayKey}`, // once per day per threshold
+        subject: `Credit usage: ${a.name} hit ${t}%`,
+        sender: "Credit Monitor",
+        body: `${a.name}: ${pct.toFixed(1)}% used (${money(used)} of ${money(limit)}).`,
+      });
+    }
+  }
+
+  // ----- Total thresholds -----
+  const limits = creditAccounts.map(a => Number(a.credit_limit || 0)).filter(x => x > 0);
+  const totalLimit = limits.reduce((s, x) => s + x, 0);
+  if (!(totalLimit > 0)) return;
+
+  const totalUsed = creditAccounts.reduce((s, a) => s + usedFromBal(a.total), 0);
+
+  const totalPct = (totalUsed / totalLimit) * 100;
+
+  for (const t of CREDIT_USAGE_THRESHOLDS) {
+    if (totalPct < t) continue;
+
+    await pushNotif({
+      kind: "credit_usage_total",
+      dedupe_key: `cc:TOTAL:${t}:${todayKey}`,
+      subject: `Total credit usage hit ${t}%`,
+      sender: "Credit Monitor",
+      body: `Total: ${totalPct.toFixed(1)}% used (${money(totalUsed)} of ${money(totalLimit)}).`,
+    });
+  }
+}
+
+function computeCreditSummary(accounts) {
+  let limitSum = 0;
+  let usedSum = 0;
+
+  for (const a of (accounts || [])) {
+    const lim = Number(a.credit_limit) || 0;
+    if (lim > 0) limitSum += lim;
+
+    // credit usage = debt only (negative balances)
+    const bal = Number(a.total) || 0;
+    usedSum += Math.max(0, -bal);
+  }
+
+  // Avail is based on your 30% cap
+  const capLimit = limitSum * CREDIT_UTILIZATION_CAP;
+  const available = Math.max(0, capLimit - usedSum);
+
+  // % used is REAL utilization (100% = total credit limit)
+  const pctUsed = (limitSum > 0)
+    ? Math.round((usedSum / limitSum) * 100)
+    : 0;
+
+  return { limitSum, usedSum, available, pctUsed };
+}
+
+
+async function loadData() {
+    const res = await fetch("/transactions");
+    const data = await res.json();
+
+    const tbody = document.querySelector("#dataTable tbody");
+    tbody.innerHTML = "";
+
+    data.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${row.postedDate}</td>
+            <td>${row.merchant}</td>
+            <td>${row.amount}</td>
+            <td>${row.bank}</td>
+            <td>${row.card}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function sortAccountsByOrder(accounts, orderList) {
+  if (!Array.isArray(accounts)) return [];
+  const pos = new Map();
+  (orderList || []).forEach((id, i) => pos.set(String(id), i));
+
+  return [...accounts].sort((a, b) => {
+    const ai = pos.has(String(a.id)) ? pos.get(String(a.id)) : 1e9;
+    const bi = pos.has(String(b.id)) ? pos.get(String(b.id)) : 1e9;
+    if (ai !== bi) return ai - bi;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+}
+
+async function loadBankTotals() {
+  const res = await fetch("/bank-totals");
+  if (!res.ok) {
+    console.error("bank-totals failed:", res.status);
+    return;
+  }
+
+  const data = await res.json();
+
+  const container = document.getElementById("bankTotals");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const map = {
+    checking: { title: "Checking", payload: data.checking },
+    credit:   { title: "Card Balances", payload: data.credit },
+    savings:  { title: "Savings", payload: data.savings },
+    investment:{ title: "Investments", payload: data.investment },
+  };
+
+  const order = (UI_LAYOUT?.bank_type_order && Array.isArray(UI_LAYOUT.bank_type_order))
+    ? UI_LAYOUT.bank_type_order
+    : ["checking", "credit", "savings", "investment"];
+
+  const seen = new Set();
+  const keys = [...order, ...Object.keys(map).filter(k => !order.includes(k))];
+
+  for (const typeKey of keys) {
+    const entry = map[typeKey];
+    if (!entry || seen.has(typeKey)) continue;
+    seen.add(typeKey);
+
+    const wrap = document.createElement("div");
+    wrap.className = "bank-type-block";
+    wrap.dataset.typeKey = typeKey;
+
+    await renderCategory(wrap, typeKey, entry.title, entry.payload);
+    container.appendChild(wrap);
+  }
+
+  if (document.body.classList.contains("is-customizing")) {
+    window.LayoutUI?.initBankSortables?.();
+  }
+}
+
+function creditUsagePctText(balance, limit) {
+  const bal = Number(balance) || 0;
+  const lim = Number(limit) || 0;
+  if (!lim || lim <= 0) return "";
+  const used = Math.max(0, -bal); // debt only
+  const pct = Math.round((used / lim) * 100);
+  return `${pct}%`;
+}
+
+
+
+async function renderCategory(container, typeKey, title, payload) {
+  const total = payload?.total ?? 0;
+  const accountsRaw = payload?.accounts ?? [];
+  const orderList = UI_LAYOUT?.bank_account_order?.[typeKey] ?? [];
+  const accounts = sortAccountsByOrder(accountsRaw, orderList);
+  const isCardBalances = title === "Card Balances";
+  const creditSummary = isCardBalances ? computeCreditSummary(accountsRaw) : null;
+const showCreditSummary = !!creditSummary && creditSummary.limitSum > 0;
+// --- fire credit-usage notifications (deduped server-side) ---
+if (isCardBalances && creditSummary) {
+  // renderCategory() is not async, so fire-and-forget
+  maybeTriggerCreditUsageNotifs(accountsRaw, creditSummary)
+    .catch(e => console.warn("credit usage notif check failed:", e));
+}
+
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+
+  const displayTotal = total;
+
+  // ---- MOBILE: accordion ----
+  if (isMobile) {
+    const wrap = document.createElement("div");
+    wrap.className = "bank-accordion";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "bank-accordion__header";
+
+    btn.innerHTML = `
+  <span>
+    ${title}<span class="bank-accordion__meta">${accounts.length} acct</span>
+  </span>
+
+  <span class="bank-accordion__right">
+    <div>${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ▾</div>
+    ${isCardBalances && showCreditSummary ? `
+      <div class="bank-accordion__sub">
+        Avail ${money(creditSummary.available)} • ${creditSummary.pctUsed}% used
+      </div>
+    ` : ""}
+  </span>
+`;
+
+
+    const panel = document.createElement("div");
+    panel.className = "bank-accordion__panel";
+    panel.hidden = true;
+
+    if (accounts.length) {
+      const ul = document.createElement("ul");
+      ul.className = "bank-sublist";
+
+      accounts.forEach(a => {
+        const li = document.createElement("li");
+        li.dataset.accountId = String(a.id);
+
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "account-pill";
+
+        const amt = a.total;
+        const usage = isCardBalances ? creditUsagePctText(amt, a.credit_limit) : "";
+pill.innerHTML = `
+  <span>${a.name}</span>
+  <span>
+    ${isCardBalances ? formatCardBalance(amt) : money(amt)}
+    ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
+  </span>
+`;
+
+        pill.addEventListener("click", () => {
+          if (document.body.classList.contains("is-customizing")) return;
+          window.location.href = `/account?account_id=${a.id}`;
+        });
+
+        li.appendChild(pill);
+        ul.appendChild(li);
+      });
+
+      panel.appendChild(ul);
+    }
+
+    btn.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      const rightEl = btn.querySelector(".bank-accordion__right > div");
+if (rightEl) {
+  rightEl.textContent =
+    `${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ${panel.hidden ? "▾" : "▴"}`;
+}
+
+    });
+
+    wrap.appendChild(btn);
+    wrap.appendChild(panel);
+    container.appendChild(wrap);
+    return;
+  }
+
+  // ---- DESKTOP: your existing card ----
+  const card = document.createElement("div");
+  card.className = "bank-card";
+
+  const head = document.createElement("div");
+  head.className = "bank-card__head";
+
+  const left = document.createElement("div");
+  left.innerHTML = `
+    <div class="bank-card__title">${title}</div>
+    <div class="bank-card__meta">${accounts.length} account${accounts.length === 1 ? "" : "s"}</div>
+  `;
+
+  const right = document.createElement("div");
+right.className = "bank-card__total" + (total < 0 ? " negative" : "");
+
+if (isCardBalances) {
+  right.innerHTML = `
+    <div>${formatCardBalance(displayTotal)}</div>
+    ${showCreditSummary ? `
+      <div class="bank-card__subtotal">
+        <span>Avail ${money(creditSummary.available)}</span>
+        <span class="dot">•</span>
+        <span>${creditSummary.pctUsed}% used</span>
+      </div>
+    ` : ""}
+  `;
+} else {
+  right.textContent = money(displayTotal);
+}
+
+  head.appendChild(left);
+  head.appendChild(right);
+  card.appendChild(head);
+
+  if (accounts.length) {
+    const ul = document.createElement("ul");
+    ul.className = "bank-sublist";
+
+    accounts.forEach(a => {
+      const li = document.createElement("li");
+      li.dataset.accountId = String(a.id);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "account-pill";
+
+      const amt = a.total;
+      const usage = isCardBalances ? creditUsagePctText(amt, a.credit_limit) : "";
+btn.innerHTML = `
+  <span>${a.name}</span>
+  <span>
+    ${isCardBalances ? formatCardBalance(amt) : money(amt)}
+    ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
+  </span>
+`;
+
+      btn.addEventListener("click", () => {
+        if (document.body.classList.contains("is-customizing")) return;
+        window.location.href = `/account?account_id=${a.id}`;
+      });
+
+      li.appendChild(btn);
+      ul.appendChild(li);
+    });
+
+    card.appendChild(ul);
+  }
+
+  container.appendChild(card);
+}
+
+async function bootHome() {
+  try {
+    UI_LAYOUT = await window.LayoutStore.load("home", getDefaultUILayout());
+    applyHomeSectionOrder();
+    applySidebarOrder();
+
+    initCustomizeUI();
+
+    // If Settings sent us here, auto-enter customize mode
+    const _params = new URLSearchParams(window.location.search || "");
+    if (_params.get("customize") === "1") {
+      window.HomeCustomize?.enter?.();
+      _params.delete("customize");
+      const qs = _params.toString();
+      const newUrl = window.location.pathname + (qs ? `?${qs}` : "") + (window.location.hash || "");
+      window.history.replaceState({}, "", newUrl);
+    }
+
+
+    setChartHeaderUI();
+    loadChart();
+    await loadBankTotals();
+    loadMonthBudget();
+
+    bindIncomeRowClick();
+    loadCategoryTotalsThisMonth();
+    loadData();
+    mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
+    try { mountMonthBudgetCard("#monthBudgetMount"); } catch(_) {}
+  } catch (err) {
+    console.error("bootHome failed:", err);
+
+    setChartHeaderUI();
+    loadChart();
+    loadBankTotals();
+    loadMonthBudget();
+    bindIncomeRowClick();
+    loadCategoryTotalsThisMonth();
+    loadData();
+    mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
+  }
+}
+
+window.bootHome = bootHome; // ✅ make it globally callable if other files want it
+
+
+
 function setYearLabel() {
   const el = document.getElementById("homeYearLabel");
   if (el) el.textContent = String(selectedYear);
@@ -507,6 +1119,7 @@ async function loadMonthBudget() {
   const spentEl = document.getElementById("mbSpent");
   const billsEl = document.getElementById("mbBills");
   const barFill = document.getElementById("mbBarFill");
+  const goalEl  = document.getElementById("mbGoal");
 
   // Card isn't mounted on some pages
   if (!safeEl || !metaEl || !incEl || !spentEl || !billsEl || !barFill) return;
@@ -589,14 +1202,40 @@ async function loadMonthBudget() {
   }
 
   const totalIncome = income + payIncome;
-  const safe = totalIncome - spent - bills;
 
-  const availableBeforeBills = totalIncome - bills;
+// Apply monthly savings goal (deduct from Safe to spend)
+const { goal: savingsGoal, cfg: savingsCfg } = await computeMonthlySavingsGoal(totalIncome);
+
+// Safe to spend is AFTER savings goal
+const safe = totalIncome - spent - bills - savingsGoal;
+
+// Total spend budget for the month (after bills + savings goal)
+const spendBudget = totalIncome - bills - savingsGoal;
+
+// Remaining spend budget after spending so far
+const spendRemaining = spendBudget - spent;
+
+// For the progress bar & meta, compare spend vs spend budget (after bills + savings)
+const availableBeforeBills = spendBudget;
 
   safeEl.textContent = money(safe);
   incEl.textContent = money(totalIncome);
   spentEl.textContent = money(spent);
   billsEl.textContent = money(bills);
+
+// Savings/spend goal line
+if (goalEl) {
+  if (savingsGoal > 0) {
+    const savedStr = (savingsCfg?.mode === "percent")
+      ? `${Number(savingsCfg.value || 0)}%`
+      : money(savingsGoal);
+
+    // "goal is to spend this month"
+    goalEl.textContent = `Spend goal: ${money(Math.max(0, spendBudget))} • Saving ${money(savingsGoal)}` + (savingsCfg?.mode === "percent" ? ` (${savedStr})` : "");
+  } else {
+    goalEl.textContent = "Spend goal: " + money(Math.max(0, spendBudget));
+  }
+}
 
   // Progress: spent vs (income - remaining bills)
   let pct = 0;
@@ -614,6 +1253,52 @@ async function loadMonthBudget() {
   metaEl.textContent = `${asOf} • Spent ${money(spent)} of ${money(Math.max(0, availableBeforeBills))}`;
 }
 
+
+
+// =========================
+// Savings goal (DB-persisted)
+// Backend contract:
+//   GET  /settings/savings-goal -> { mode: "percent"|"amount", value: number }
+//   POST /settings/savings-goal -> { ok: true }
+// =========================
+const SAVINGS_GOAL_ENDPOINT = "/settings/savings-goal";
+let _savingsGoalCfg = null;
+let _savingsGoalLoaded = false;
+
+function normalizeSavingsCfg(j){
+  if (!j) return null;
+  const mode = (j.mode === "amount") ? "amount" : (j.mode === "percent" ? "percent" : null);
+  const value = Number(j.value);
+  if (!mode) return null;
+  if (!isFinite(value) || value < 0) return null;
+  if (mode === "percent" && value > 100) return null;
+  return { mode, value };
+}
+
+async function getSavingsGoalConfig(){
+  if (_savingsGoalLoaded) return _savingsGoalCfg;
+  _savingsGoalLoaded = true;
+  try{
+    const res = await fetch(SAVINGS_GOAL_ENDPOINT, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json().catch(()=>null);
+    _savingsGoalCfg = normalizeSavingsCfg(j);
+  } catch(e){
+    console.warn("Savings goal load failed:", e);
+    _savingsGoalCfg = null; // treat as 0
+  }
+  return _savingsGoalCfg;
+}
+
+async function computeMonthlySavingsGoal(totalIncome) {
+  const cfg = await getSavingsGoalConfig();
+  if (!cfg) return { goal: 0, cfg: null };
+
+  if (cfg.mode === "percent") {
+    return { goal: Math.max(0, (Number(totalIncome) || 0) * (cfg.value / 100)), cfg };
+  }
+  return { goal: Math.max(0, cfg.value), cfg };
+}
 
 function money(n) {
   const num = Number(n || 0);
@@ -640,116 +1325,6 @@ function formatCardBalance(n, { showLabel = false } = {}) {
   if (x < 0) return `-${absStr}`;
   if (x > 0) return `+${absStr}`;
   return money(0);
-}
-
-function renderCategory(container, title, payload) {
-  const total = payload?.total ?? 0;
-  const accounts = payload?.accounts ?? [];
-  const isCardBalances = title === "Card Balances";
-  const isMobile = window.matchMedia("(max-width: 900px)").matches;
-
-  const displayTotal = total;
-
-  // ---- MOBILE: accordion ----
-  if (isMobile) {
-    const wrap = document.createElement("div");
-    wrap.className = "bank-accordion";
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "bank-accordion__header";
-
-    btn.innerHTML = `
-      <span>${title}<span class="bank-accordion__meta">${accounts.length} acct</span></span>
-      <span>${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ▾</span>
-    `;
-
-    const panel = document.createElement("div");
-    panel.className = "bank-accordion__panel";
-    panel.hidden = true;
-
-    if (accounts.length) {
-      const ul = document.createElement("ul");
-      ul.className = "bank-sublist";
-
-      accounts.forEach(a => {
-        const li = document.createElement("li");
-        const pill = document.createElement("button");
-        pill.type = "button";
-        pill.className = "account-pill";
-
-        const amt = a.total;
-        pill.innerHTML = `<span>${a.name}</span><span>${isCardBalances ? formatCardBalance(amt) : money(amt)}</span>`;
-
-        pill.addEventListener("click", () => {
-          window.location.href = `/account?account_id=${a.id}`;
-        });
-
-        li.appendChild(pill);
-        ul.appendChild(li);
-      });
-
-      panel.appendChild(ul);
-    }
-
-    btn.addEventListener("click", () => {
-      panel.hidden = !panel.hidden;
-      btn.querySelector("span:last-child").textContent =
-        `${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ${panel.hidden ? "▾" : "▴"}`;
-    });
-
-    wrap.appendChild(btn);
-    wrap.appendChild(panel);
-    container.appendChild(wrap);
-    return;
-  }
-
-  // ---- DESKTOP: your existing card ----
-  const card = document.createElement("div");
-  card.className = "bank-card";
-
-  const head = document.createElement("div");
-  head.className = "bank-card__head";
-
-  const left = document.createElement("div");
-  left.innerHTML = `
-    <div class="bank-card__title">${title}</div>
-    <div class="bank-card__meta">${accounts.length} account${accounts.length === 1 ? "" : "s"}</div>
-  `;
-
-  const right = document.createElement("div");
-  right.className = "bank-card__total" + (total < 0 ? " negative" : "");
-  right.textContent = isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal);
-
-  head.appendChild(left);
-  head.appendChild(right);
-  card.appendChild(head);
-
-  if (accounts.length) {
-    const ul = document.createElement("ul");
-    ul.className = "bank-sublist";
-
-    accounts.forEach(a => {
-      const li = document.createElement("li");
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "account-pill";
-
-      const amt = a.total;
-      btn.innerHTML = `<span>${a.name}</span><span>${isCardBalances ? formatCardBalance(amt) : money(amt)}</span>`;
-
-      btn.addEventListener("click", () => {
-        window.location.href = `/account?account_id=${a.id}`;
-      });
-
-      li.appendChild(btn);
-      ul.appendChild(li);
-    });
-
-    card.appendChild(ul);
-  }
-
-  container.appendChild(card);
 }
 
 async function loadCategoryTotalsThisMonth() {
@@ -859,8 +1434,13 @@ let unassignedQueue = [];
 let unassignedIndex = 0;
 
 function openBackdrop(show) {
-  document.getElementById("ruleModalBackdrop").style.display = show ? "block" : "none";
+  const el = document.getElementById("ruleModalBackdrop");
+  if (!el) return;
+
+  el.style.display = show ? "block" : "none";
+  document.body.classList.toggle("modal-open", show);
 }
+
 
 function fillModalFromTx(tx) {
   document.getElementById("ruleTxId").value = tx.id;
@@ -994,67 +1574,48 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateBtn = document.getElementById("nw-chart-btn");
   const toggleBtn = document.getElementById("chartToggleBtn");
 
+  // ✅ If the home chart inputs aren't on this page, this isn't the home page.
+  if (!startInput || !endInput) return;
+
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
   startInput.value = toISODate(firstOfMonth);
   endInput.value = toISODate(today);
 
+  const potentialToggle = document.getElementById("nwPotentialToggle");
+  if (potentialToggle) {
+    potentialToggle.checked = showPotentialGrowth;
 
-const potentialToggle = document.getElementById("nwPotentialToggle");
-if (potentialToggle) {
-  potentialToggle.checked = showPotentialGrowth;
+    potentialToggle.addEventListener("change", async () => {
+      showPotentialGrowth = potentialToggle.checked;
+      localStorage.setItem("showPotentialGrowth", String(showPotentialGrowth));
 
-  potentialToggle.addEventListener("change", async () => {
-    showPotentialGrowth = potentialToggle.checked;
-    localStorage.setItem("showPotentialGrowth", String(showPotentialGrowth));
+      const todayIso = isoLocal(new Date());
 
-    // Only applies to Net Worth + current month
-    const startInput = document.getElementById("nw-start");
-    const endInput = document.getElementById("nw-end");
-    const todayIso = isoLocal(new Date());
+      if (showPotentialGrowth) {
+        if (!sameMonthISO(todayIso, endInput.value) || currentChart().key !== "net") {
+          showPotentialGrowth = false;
+          potentialToggle.checked = false;
+          localStorage.setItem("showPotentialGrowth", "false");
+          return;
+        }
 
-    if (!startInput || !endInput) return;
-
-    if (showPotentialGrowth) {
-      // force: current month only
-      if (!sameMonthISO(todayIso, endInput.value) || currentChart().key !== "net") {
-        showPotentialGrowth = false;
-        potentialToggle.checked = false;
-        localStorage.setItem("showPotentialGrowth", "false");
-        return;
+        endBeforePotential = endInput.value;
+        endInput.value = endOfCurrentMonthISO();
+      } else {
+        if (endBeforePotential) endInput.value = endBeforePotential;
+        endBeforePotential = null;
       }
 
-      endBeforePotential = endInput.value;
-      endInput.value = endOfCurrentMonthISO();
-    } else {
-      if (endBeforePotential) endInput.value = endBeforePotential;
-      endBeforePotential = null;
-    }
+      await loadChart();
+    });
+  }
 
-    await loadChart();
-  });
-}
+  if (typeof window.bootHome === "function") window.bootHome();
 
-
-
-
-  setChartHeaderUI();
-  loadChart();
-loadBankTotals();
-loadMonthBudget();
-
-  bindIncomeRowClick();
-loadCategoryTotalsThisMonth();
-  loadData();
-mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
-mountMonthBudgetCard("#monthBudgetMount");
-
-  // If the LES profile changes anywhere, recompute expected income (paychecks) here too
   window.Profile?.ensureUI?.();
-  window.Profile?.onChange?.(() => {
-    loadMonthBudget();
-  });
+  window.Profile?.onChange?.(() => loadMonthBudget());
 
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
@@ -1164,6 +1725,11 @@ wrap.innerHTML = `
 
     list.appendChild(wrap);
   });
+
+  // Enable transaction inspect modal when tapping the category icon
+  if (typeof window.attachTxInspect === "function") {
+    window.attachTxInspect(list);
+  }
 }
 
 async function loadData() {
@@ -1180,33 +1746,36 @@ async function loadData() {
 
 let unassignedMode = localStorage.getItem("unassignedMode") || "freq";
 
-const toggleBtn = document.getElementById("unassignedToggle"); // add this button in HTML
+function initUnassignedToggle() {
+  const toggleBtn = document.getElementById("unassignedToggle");
+  if (!toggleBtn) return; // ✅ prevents crash on pages without the button
 
-function setToggleLabel() {
-  // show what you'll switch TO
-  toggleBtn.textContent = (unassignedMode === "freq")
-    ? "Most recent ▾"
-    : "Most frequent ▾";
-}
+  function setToggleLabel() {
+    toggleBtn.textContent = (unassignedMode === "freq")
+      ? "Most recent ▾"
+      : "Most frequent ▾";
+  }
 
-async function loadUnassigned() {
-  const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
-  const rows = await res.json();
+  async function loadUnassigned() {
+    const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+    if (!res.ok) return;
+    const rows = await res.json();
+    // render rows...
+  }
 
-  // render rows...
-  // if mode === "freq", rows include usage_count — show it if you want
-}
+  toggleBtn.addEventListener("click", () => {
+    unassignedMode = (unassignedMode === "freq") ? "recent" : "freq";
+    localStorage.setItem("unassignedMode", unassignedMode);
+    setToggleLabel();
+    loadUnassigned();
+  });
 
-toggleBtn.addEventListener("click", () => {
-  unassignedMode = (unassignedMode === "freq") ? "recent" : "freq";
-  localStorage.setItem("unassignedMode", unassignedMode);
   setToggleLabel();
   loadUnassigned();
-});
+}
 
-// on page load
-setToggleLabel();
-loadUnassigned();
+document.addEventListener("DOMContentLoaded", initUnassignedToggle);
+
 
 
 async function fetchUnassignedQueue() {
@@ -1413,7 +1982,8 @@ function mountMonthBudgetCard(mountSel) {
     </ul>
 
     <div style="margin-top:8px; font-size:11px; opacity:.65;">
-      <span id="mbSafeHint">Income − spent − remaining bills</span>
+      <span id="mbSafeHint">Income − spent − remaining bills</span><br/>
+      <span id="mbGoal" style="opacity:.85;">—</span>
     </div>
   </aside>
 `;
@@ -1431,16 +2001,21 @@ function mountMonthBudgetCard(mountSel) {
   bindIncomeRowClick();
 
   const incomeRow = document.getElementById("mbIncomeRow");
-  if (incomeRow && !incomeRow.dataset.bound) {
-    incomeRow.dataset.bound = "1";
-    incomeRow.addEventListener("click", openIncomeBreakdown);
-    incomeRow.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
+    if (incomeRow) {
+      incomeRow.addEventListener("click", (e) => {
         e.preventDefault();
+        e.stopPropagation();
         openIncomeBreakdown();
-      }
-    });
-  }
+      });
+
+      incomeRow.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openIncomeBreakdown();
+        }
+      });
+    }
+
 }
 
 async function refreshMonthBudgetCard() {
@@ -1851,24 +2426,5 @@ document.addEventListener("DOMContentLoaded", () => {
   const txList = document.getElementById("txList");
   if (!txList) return;
 
-  txList.addEventListener("click", (e) => {
-    const hit = e.target.closest?.(".tx-icon-hit");
-    if (!hit) return;
-
-    const rowEl = hit.closest?.(".tx-row");
-    const txId = rowEl?.dataset?.txId;
-    if (txId) openTxInspect(txId);
-  });
-
-  // optional: keyboard support (Enter/Space) on the icon
-  txList.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const hit = e.target.closest?.(".tx-icon-hit");
-    if (!hit) return;
-    e.preventDefault();
-
-    const rowEl = hit.closest?.(".tx-row");
-    const txId = rowEl?.dataset?.txId;
-    if (txId) openTxInspect(txId);
-  });
+  if (window.attachTxInspect) window.attachTxInspect(txList);
 });

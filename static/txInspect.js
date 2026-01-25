@@ -29,6 +29,7 @@
       </div>
       <div class="tx-inspect-body">
         <div class="tx-inspect-grid" id="txInspectGrid"></div>
+        <datalist id="txInspectCategoryOptions"></datalist>
       </div>
     `;
 
@@ -47,18 +48,75 @@
     document.body.appendChild(modal);
   }
 
-  function renderTxInspect(obj) {
+  let _cachedCategories = null;
+  async function getCategories() {
+    if (Array.isArray(_cachedCategories)) return _cachedCategories;
+    try {
+      const res = await fetch("/categories");
+      if (!res.ok) return [];
+      const cats = await res.json();
+      _cachedCategories = Array.isArray(cats) ? cats : [];
+      return _cachedCategories;
+    } catch {
+      return [];
+    }
+  }
+
+  function ensureCategoryDatalist(categories) {
+    const dl = document.getElementById("txInspectCategoryOptions");
+    if (!dl) return;
+    dl.innerHTML = "";
+    (categories || []).forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = String(c);
+      dl.appendChild(opt);
+    });
+  }
+
+  function updateAnyVisibleTxRows(txId, newCategory) {
+    const rows = document.querySelectorAll(
+      `.tx-row[data-tx-id="${CSS.escape(String(txId))}"]`
+    );
+
+    rows.forEach((row) => {
+      // icon
+      try {
+        const iconWrap = row.querySelector(".tx-icon-wrap");
+        if (iconWrap && typeof window.categoryIconHTML === "function") {
+          iconWrap.innerHTML = window.categoryIconHTML(newCategory);
+        }
+      } catch {}
+
+      // category label (usually last .tx-sub)
+      const subs = row.querySelectorAll(".tx-sub");
+      if (subs && subs.length) {
+        const catEl = subs[subs.length - 1];
+        const prev = (catEl.textContent || "").trim();
+        let tail = "";
+        const parts = prev.split(" • ");
+        if (parts.length > 1) tail = " • " + parts.slice(1).join(" • ");
+        catEl.textContent = `${(newCategory || "").trim()}${tail}`.trim();
+      }
+
+      row.dataset.category = (newCategory || "").trim();
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("tx:category-updated", { detail: { txId, category: newCategory } })
+    );
+  }
+
+  function renderTxInspect(obj, txId) {
     const grid = document.getElementById("txInspectGrid");
     if (!grid) return;
 
-    // Order keys nicely (fallback shows any extra keys at end)
     const preferred = [
-      "id", "status",
-      "purchaseDate", "postedDate", "dateISO", "time",
-      "merchant", "amount",
-      "bank", "card", "accountType", "account_id",
-      "category", "subcategory",
-      "where", "source",
+      "id","status",
+      "purchaseDate","postedDate","dateISO","time",
+      "merchant","amount",
+      "bank","card","accountType","account_id",
+      "category","subcategory",
+      "where","source",
       "transfer_peer",
       "notes"
     ];
@@ -68,11 +126,67 @@
     preferred.forEach(k => { if (keys.has(k)) { ordered.push(k); keys.delete(k); } });
     [...keys].sort().forEach(k => ordered.push(k));
 
-    grid.innerHTML = ordered.map(k => {
+    grid.innerHTML = ordered.map((k) => {
       const v = obj[k];
+
+      if (k === "category") {
+        const cur = (v ?? "");
+        return `
+          <div class="tx-k">${esc(k)}</div>
+          <div class="tx-v">
+            <div class="tx-inline-edit">
+              <input
+                id="txInspectCategoryInput"
+                class="tx-edit-input"
+                type="text"
+                list="txInspectCategoryOptions"
+                placeholder="Set category"
+                value="${esc(cur)}"
+                autocomplete="off"
+              />
+              <button id="txInspectCategorySave" class="tx-edit-btn" type="button">Save</button>
+            </div>
+            <div id="txInspectCategoryStatus" class="tx-edit-status" aria-live="polite"></div>
+          </div>
+        `;
+      }
+
       const val = (v === null || v === undefined || v === "") ? "—" : esc(v);
       return `<div class="tx-k">${esc(k)}</div><div class="tx-v">${val}</div>`;
     }).join("");
+
+    const btn = document.getElementById("txInspectCategorySave");
+    const input = document.getElementById("txInspectCategoryInput");
+    const status = document.getElementById("txInspectCategoryStatus");
+
+    if (btn && input) {
+      btn.onclick = async () => {
+        const next = (input.value || "").trim();
+        btn.disabled = true;
+        input.disabled = true;
+        if (status) status.textContent = "Saving…";
+
+        try {
+          const res = await fetch(`/transaction/${encodeURIComponent(txId)}/category`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ category: next }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const out = await res.json();
+          const saved = (out && out.category != null) ? String(out.category) : next;
+
+          updateAnyVisibleTxRows(txId, saved);
+          if (status) status.textContent = "Saved";
+        } catch (e) {
+          console.error(e);
+          if (status) status.textContent = "Failed to save";
+        } finally {
+          btn.disabled = false;
+          input.disabled = false;
+        }
+      };
+    }
   }
 
   async function openTxInspect(txId) {
@@ -86,15 +200,20 @@
     modal.style.display = "block";
     grid.innerHTML = `<div class="tx-inspect-loading">Loading…</div>`;
 
-    // ✅ Your API should be /transaction/{tx_id} (path param), not query params.
-    const res = await fetch(`/transaction/${encodeURIComponent(txId)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const [cats, res] = await Promise.all([
+      getCategories(),
+      fetch(`/transaction/${encodeURIComponent(txId)}`),
+    ]);
 
+    ensureCategoryDatalist(cats);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    renderTxInspect(data);
+    const tx = (data && data.transaction) ? data.transaction : data;
+
+    renderTxInspect(tx, txId);
   }
 
-  // Event delegation: call this once per list container
   function attachTxInspect(container) {
     if (!container || container.__txInspectBound) return;
     container.__txInspectBound = true;
@@ -107,32 +226,9 @@
       const txId = row?.dataset?.txId;
       if (!txId) return;
 
-      try {
-        await openTxInspect(txId);
-      } catch (err) {
-        console.error("openTxInspect failed:", err);
-      }
-    });
-
-    // keyboard support (Enter/Space) on focused icon
-    container.addEventListener("keydown", async (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return;
-      const hit = e.target.closest(".tx-icon-hit");
-      if (!hit || !container.contains(hit)) return;
-
-      e.preventDefault();
-      const row = hit.closest(".tx-row");
-      const txId = row?.dataset?.txId;
-      if (!txId) return;
-
-      try {
-        await openTxInspect(txId);
-      } catch (err) {
-        console.error("openTxInspect failed:", err);
-      }
+      try { await openTxInspect(txId); } catch (err) { console.error(err); }
     });
   }
 
-  // expose globally so page scripts can call attachTxInspect(...)
   window.attachTxInspect = attachTxInspect;
 })();

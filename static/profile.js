@@ -1,458 +1,407 @@
 // /static/profile.js
-// Shared LES Profile UI + persistence (localStorage)
-// This is injected on every page so changing the profile once updates everywhere.
-
+// LES Profile: localStorage cache + DB-backed persistence via /les-profile (so it stays the same across devices).
 (function () {
-  "use strict";
+  const KEY = "les_profile_v1";
+  const SERVER_KEY = "default";
 
-  const STORAGE_KEY = "les_profile_v1";
-  const STYLE_ID = "lesProfileStyleV1";
-  const MOUNT_ID = "lesProfileMountV1";
+  const DEFAULTS = {
+    // identity
+    paygrade: "E-5",
+    service_start: "2020-01-01",
+    has_dependents: true,
 
-  function _safeJsonParse(s) {
-    try { return JSON.parse(s); } catch { return null; }
+    // entitlements / special pays
+    bas: 460.25,
+    bah_override: null,
+    submarine_pay: 0,
+    career_sea_pay: 0,
+    spec_duty_pay: 0,
+
+    // W-4 (monthly withholding calc uses these)
+    filing_status: "S",            // S | MFJ | HOH
+    step2_multiple_jobs: false,
+    dep_under17: 0,
+    other_dep: 0,
+    other_income_annual: 0,
+    other_deductions_annual: 0,
+    extra_withholding: 0,
+
+    // mid-month / deductions / toggles
+    tsp_rate: 0.0,                 // 0.05 = 5%
+    fica_include_special_pays: false,
+
+    meal_rate: 13.30,
+    meal_end_day: 31,
+    meal_deduction_enabled: false,
+    meal_deduction_start: null,    // YYYY-MM-DD or null
+
+    mid_month_fraction: 0.50,      // default split, resets each month
+    allotments_total: 0.0,
+    mid_month_collections_total: 0.0,
+  };
+
+  function _clone(x){ return (typeof structuredClone === "function") ? structuredClone(x) : JSON.parse(JSON.stringify(x)); }
+
+  function _loadLocal() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return _clone(DEFAULTS);
+      const parsed = JSON.parse(raw);
+      return { ..._clone(DEFAULTS), ...(parsed || {}) };
+    } catch {
+      return _clone(DEFAULTS);
+    }
+  }
+
+  function _saveLocal(profile) {
+    const merged = { ..._clone(DEFAULTS), ...(profile || {}) };
+    try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch {}
+    return merged;
+  }
+
+  // in-memory cache so callers can stay sync
+  let _cache = _loadLocal();
+
+  const listeners = new Set();
+  function _emit(p) {
+    for (const fn of listeners) {
+      try { fn(p); } catch (_) {}
+    }
+  }
+
+  // ---- server sync ----
+  let _initPromise = null;
+  let _saveTimer = null;
+  let _lastServerWrite = 0;
+
+  async function _fetchServer() {
+    const res = await fetch(`/les-profile?key=${encodeURIComponent(SERVER_KEY)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("les-profile fetch failed");
+    return await res.json();
+  }
+
+  async function _writeServer(profile) {
+    // tiny debounce so typing doesn't hammer the server
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(async () => {
+      try {
+        _lastServerWrite = Date.now();
+        await fetch("/les-profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: SERVER_KEY, profile })
+        });
+      } catch (e) {
+        // keep silent; localStorage is still the source of truth offline
+        console.warn("LES profile save failed:", e);
+      }
+    }, 250);
+  }
+
+  async function init() {
+    if (_initPromise) return _initPromise;
+    _initPromise = (async () => {
+      // always start from local cache immediately
+      _cache = _saveLocal(_cache);
+
+      // then try to hydrate from server; if server empty but local has values, push local up
+      try {
+        const out = await _fetchServer();
+        const serverProfile = (out && out.profile) ? out.profile : {};
+        const serverHasAny = serverProfile && Object.keys(serverProfile).length > 0;
+
+        if (serverHasAny) {
+          _cache = _saveLocal({ ..._cache, ...serverProfile });
+          _emit(_cache);
+        } else {
+          // if server is blank, push our local cache so other devices can see it
+          await _writeServer(_cache);
+        }
+      } catch (e) {
+        // offline / server down — ok
+      }
+    })();
+    return _initPromise;
   }
 
   function get() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? _safeJsonParse(raw) : null;
+    // sync getter — returns local cache immediately
+    if (!_cache) _cache = _loadLocal();
+    return _cache;
   }
 
-  function set(p) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(p || {}));
-    // notify listeners in-page
-    window.dispatchEvent(new CustomEvent("les:profile-changed", { detail: { profile: p || {} } }));
+  function set(patch) {
+    const next = _saveLocal({ ...get(), ...(patch || {}) });
+    _cache = next;
+    _emit(next);
+    _writeServer(next);
+    return next;
   }
 
-  function _ensureStyle() {
-    if (document.getElementById(STYLE_ID)) return;
-
-    const css = `
-/* --- Shared Profile button (top-right) --- */
-.profile-btn{
-  position:fixed;
-  top:12px;
-  right:12px;
-  z-index:1200;
-  padding:10px 14px;
-  border-radius:999px;
-  border:1px solid rgba(0,0,0,0.12);
-  background:#fff;
-  box-shadow:0 6px 18px rgba(0,0,0,0.10);
-  font:600 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  cursor:pointer;
-}
-.profile-btn:hover{ box-shadow:0 10px 28px rgba(0,0,0,0.14); }
-.profile-btn:active{ transform:translateY(1px); }
-
-/* --- Modal --- */
-.profile-modal{ position:fixed; inset:0; z-index:1400; }
-.profile-modal.hidden{ display:none; }
-.profile-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,0.35); }
-.profile-card{
-  position: fixed;
-  top: 14px;
-  left: 14px;
-  right: auto;
-  bottom: auto;
-  transform: none;
-
-  max-width: 620px;
-  width: min(620px, calc(100% - 28px));
-  max-height: calc(100vh - 28px);
-  overflow: auto;
-
-  background:#fff;
-  border-radius:18px;
-  box-shadow:0 18px 60px rgba(0,0,0,0.20);
-  padding:16px;
-}
-
-.profile-head{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:12px;
-  margin-bottom:10px;
-}
-.profile-title{ font:700 16px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-.profile-x{
-  border:0;
-  background:transparent;
-  font-size:18px;
-  cursor:pointer;
-  padding:6px 10px;
-  border-radius:10px;
-}
-.profile-x:hover{ background:rgba(0,0,0,0.06); }
-
-.profile-form{
-  display:grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap:10px 12px;
-}
-.profile-field{ display:flex; flex-direction:column; gap:6px; }
-.profile-field label{ font-size:12px; opacity:0.8; }
-.profile-field input, .profile-field select{
-  padding:9px 10px;
-  border-radius:12px;
-  border:1px solid rgba(0,0,0,0.12);
-  background:#fff;
-  outline:none;
-}
-.profile-field input:focus, .profile-field select:focus{
-  border-color: rgba(0,0,0,0.25);
-  box-shadow:0 0 0 3px rgba(0,0,0,0.06);
-}
-
-.profile-fieldset{
-  grid-column:1 / -1;
-  border:1px solid rgba(0,0,0,0.08);
-  border-radius:14px;
-  padding:12px;
-}
-.profile-fieldset legend{
-  padding:0 8px;
-  font-size:12px;
-  opacity:0.8;
-}
-.profile-actions{
-  grid-column:1 / -1;
-  display:flex;
-  justify-content:flex-end;
-  gap:10px;
-  margin-top:6px;
-}
-.profile-actions button{
-  padding:10px 14px;
-  border-radius:12px;
-  border:1px solid rgba(0,0,0,0.12);
-  background:#fff;
-  cursor:pointer;
-  font-weight:600;
-}
-.profile-actions button.primary{
-  background:#111;
-  color:#fff;
-  border-color:#111;
-}
-.profile-actions button:hover{ filter:brightness(0.98); }
-.profile-actions button:active{ transform:translateY(1px); }
-
-@media (max-width: 900px){
-  .profile-form{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 560px){
-  .profile-form{ grid-template-columns: 1fr; }
-  .profile-card{ margin:4vh 10px; }
-}
-    `.trim();
-
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = css;
-    document.head.appendChild(style);
-  }
-
-  function _markup() {
-    // The markup is centralized here so every page stays in sync.
-    return `
-<button id="profileBtn" class="profile-btn" type="button" aria-label="Open profile">Profile</button>
-
-<div id="profileModal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
-  <div class="profile-backdrop" data-profile-close="1"></div>
-  <div class="profile-card">
-    <div class="profile-head">
-      <div id="profileTitle" class="profile-title">LES Profile</div>
-      <button class="profile-x" type="button" data-profile-close="1" aria-label="Close">✕</button>
-    </div>
-
-    <form id="profileForm" class="profile-form">
-      <div class="profile-field">
-        <label for="paygrade">Paygrade</label>
-        <input id="paygrade" name="paygrade" placeholder="E5" autocomplete="off" />
-      </div>
-
-      <div class="profile-field">
-        <label for="service_start">Service start (YYYY-MM-DD)</label>
-        <input id="service_start" name="service_start" placeholder="2021-06-30" autocomplete="off" />
-      </div>
-
-      <div class="profile-field">
-        <label for="has_dependents">Has dependents</label>
-        <select id="has_dependents" name="has_dependents">
-          <option value="false">No</option>
-          <option value="true">Yes</option>
-        </select>
-      </div>
-
-      <fieldset class="profile-fieldset">
-        <legend>Entitlements / Special Pays</legend>
-
-        <div class="profile-form">
-          <div class="profile-field">
-            <label for="bah_override">BAH override (optional)</label>
-            <input id="bah_override" name="bah_override" placeholder="" />
-          </div>
-
-          <div class="profile-field">
-            <label for="bas">BAS</label>
-            <input id="bas" name="bas" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="submarine_pay">Sub pay</label>
-            <input id="submarine_pay" name="submarine_pay" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="career_sea_pay">Career sea pay</label>
-            <input id="career_sea_pay" name="career_sea_pay" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="spec_duty_pay">Spec duty pay</label>
-            <input id="spec_duty_pay" name="spec_duty_pay" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="tsp_rate">Roth TSP rate</label>
-            <input id="tsp_rate" name="tsp_rate" placeholder="0.05" />
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset class="profile-fieldset">
-        <legend>Meal deduction (optional)</legend>
-
-        <div class="profile-form">
-          <div class="profile-field">
-            <label for="meal_deduction_enabled">Apply meal deduction?</label>
-            <select id="meal_deduction_enabled" name="meal_deduction_enabled">
-              <option value="false">No</option>
-              <option value="true">Yes</option>
-            </select>
-          </div>
-
-          <div class="profile-field">
-            <label for="meal_deduction_start">Start date</label>
-            <input id="meal_deduction_start" name="meal_deduction_start" type="date" />
-          </div>
-        </div>
-
-
-
-        <div class="profile-form">
-          <div class="profile-field">
-            <label for="meal_rate">Meal rate (per day)</label>
-            <input id="meal_rate" name="meal_rate" placeholder="13.30" />
-          </div>
-
-          <div class="profile-field">
-            <label for="meal_end_day">Meal end day (1–31)</label>
-            <input id="meal_end_day" name="meal_end_day" placeholder="31" />
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset class="profile-fieldset">
-        <legend>Mid-month / Allotments</legend>
-
-        <div class="profile-form">
-          <div class="profile-field">
-            <label for="mid_month_fraction">Mid-month fraction</label>
-            <input id="mid_month_fraction" name="mid_month_fraction" placeholder="0.5" />
-          </div>
-
-          <div class="profile-field">
-            <label for="allotments_total">Allotments total</label>
-            <input id="allotments_total" name="allotments_total" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="mid_month_collections_total">Mid-month collections</label>
-            <input id="mid_month_collections_total" name="mid_month_collections_total" placeholder="0" />
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset class="profile-fieldset">
-        <legend>W-4</legend>
-
-        <div class="profile-form">
-          <div class="profile-field">
-            <label for="filing_status">Filing status</label>
-            <select id="filing_status" name="filing_status">
-              <option value="S">Single</option>
-              <option value="M">Married</option>
-              <option value="H">Head of household</option>
-            </select>
-          </div>
-
-          <div class="profile-field">
-            <label for="step2_multiple_jobs">Step 2 (multiple jobs)</label>
-            <select id="step2_multiple_jobs" name="step2_multiple_jobs">
-              <option value="false">No</option>
-              <option value="true">Yes</option>
-            </select>
-          </div>
-
-          <div class="profile-field">
-            <label for="dep_under17">Dependents under 17</label>
-            <input id="dep_under17" name="dep_under17" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="other_dep">Other dependents</label>
-            <input id="other_dep" name="other_dep" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="other_income_annual">Other income (annual)</label>
-            <input id="other_income_annual" name="other_income_annual" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="other_deductions_annual">Other deductions (annual)</label>
-            <input id="other_deductions_annual" name="other_deductions_annual" placeholder="0" />
-          </div>
-
-          <div class="profile-field">
-            <label for="extra_withholding">Extra withholding (per pay)</label>
-            <input id="extra_withholding" name="extra_withholding" placeholder="0" />
-          </div>
-        </div>
-      </fieldset>
-
-      <div class="profile-actions">
-        <button type="button" data-profile-close="1">Cancel</button>
-        <button class="primary" type="submit">Save</button>
-      </div>
-    </form>
-  </div>
-</div>
-    `.trim();
-  }
-
-  function open() {
-    const modal = document.getElementById("profileModal");
-    if (!modal) return;
-    modal.classList.remove("hidden");
-  }
-
-  function close() {
-    const modal = document.getElementById("profileModal");
-    if (!modal) return;
-    modal.classList.add("hidden");
-  }
-
-  function _coerceValue(key, v) {
-    // Keep behavior consistent with your existing recurring_page.js parsing.
-    if (v === "true") return true;
-    if (v === "false") return false;
-
-    // ints
-    if (key.endsWith("_day") || key.startsWith("dep_") || key === "other_dep") {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : 0;
-    }
-
-    // floats (including 0.05)
-    const n = Number(v);
-    if (v !== "" && Number.isFinite(n)) return n;
-
-    return v;
-  }
-
-  function _hydrateForm(form, p) {
-    if (!form) return;
-    const prof = p || {};
-    for (const [k, v] of Object.entries(prof)) {
-      const el = form.elements.namedItem(k);
-      if (!el) continue;
-            if (v === null || v === undefined) {
-        el.value = "";
-      } else {
-        el.value = String(v);
-      }
-    }
-  }
-
-  function _bind() {
-    const btn = document.getElementById("profileBtn");
-    const modal = document.getElementById("profileModal");
-    const form = document.getElementById("profileForm");
-    if (!btn || !modal || !form) return;
-
-    if (!btn.__profileBound) {
-      btn.__profileBound = true;
-      btn.addEventListener("click", () => {
-        _hydrateForm(form, get());
-        open();
-      });
-    }
-
-    if (!modal.__profileBound) {
-      modal.__profileBound = true;
-
-      modal.addEventListener("click", (e) => {
-        if (e.target && e.target.dataset && e.target.dataset.profileClose) close();
-      });
-
-      modal.querySelectorAll("[data-profile-close]").forEach((el) => {
-        el.addEventListener("click", close);
-      });
-
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-
-        const fd = new FormData(form);
-        const prev = get() || {};
-        const p2 = { ...prev }; // keep existing fields
-
-        fd.forEach((val, key) => {
-          p2[key] = _coerceValue(key, String(val));
-        });
-
-        // empty overrides -> null
-        if (p2.bah_override === "" || p2.bah_override === undefined) p2.bah_override = null;
-        if (p2.meal_deduction_start === "" || p2.meal_deduction_start === undefined) p2.meal_deduction_start = null;
-
-        set(p2);
-        close();
-      });
-    }
-  }
-
-  function ensureUI() {
-    _ensureStyle();
-
-    // If markup doesn't exist yet, inject at end of <body>.
-    if (!document.getElementById(MOUNT_ID)) {
-      const mount = document.createElement("div");
-      mount.id = MOUNT_ID;
-      mount.innerHTML = _markup();
-      document.body.appendChild(mount);
-    }
-
-    _bind();
+  function replace(profile) {
+    const next = _saveLocal({ ..._clone(DEFAULTS), ...(profile || {}) });
+    _cache = next;
+    _emit(next);
+    _writeServer(next);
+    return next;
   }
 
   function onChange(fn) {
-    window.addEventListener("les:profile-changed", (e) => fn?.(e.detail?.profile || get() || {}));
-    // Also update if changed from another tab/window
-    window.addEventListener("storage", (e) => {
-      if (e.key === STORAGE_KEY) fn?.(get() || {});
+    listeners.add(fn);
+
+    // storage sync across tabs (same device)
+    const onStorage = (e) => {
+      if (e.key === KEY) {
+        try {
+          _cache = _loadLocal();
+          fn(_cache);
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    // fire immediately with current state
+    try { fn(get()); } catch {}
+
+    return () => {
+      listeners.delete(fn);
+      window.removeEventListener("storage", onStorage);
+    };
+  }
+
+  // ---- UI (inline editor) ----
+  function mountEditor(mountSelectorOrEl) {
+    const mount =
+      (typeof mountSelectorOrEl === "string")
+        ? document.querySelector(mountSelectorOrEl)
+        : mountSelectorOrEl;
+
+    if (!mount) return () => {};
+
+    // ensure we pull server state ASAP (but don't block initial render)
+    init().catch(() => {});
+
+    mount.innerHTML = `
+      <div class="settings-card">
+        <form id="profileForm" class="les-form" autocomplete="off">
+          <div class="les-grid">
+            <label class="les-field">
+              <span>Paygrade</span>
+              <input name="paygrade" type="text" placeholder="E-5" />
+            </label>
+
+            <label class="les-field">
+              <span>Service start (YYYY-MM-DD)</span>
+              <input name="service_start" type="text" placeholder="2020-01-01" />
+            </label>
+
+            <label class="les-field">
+              <span>Dependents</span>
+              <select name="has_dependents">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+
+            <label class="les-field">
+              <span>BAH override (blank = auto)</span>
+              <input name="bah_override" type="number" step="0.01" placeholder="" />
+            </label>
+
+            <label class="les-field">
+              <span>BAS</span>
+              <input name="bas" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>TSP rate (0.05 = 5%)</span>
+              <input name="tsp_rate" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Mid-month fraction</span>
+              <input name="mid_month_fraction" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>FICA include special pays</span>
+              <select name="fica_include_special_pays">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+
+            <label class="les-field">
+              <span>Submarine pay</span>
+              <input name="submarine_pay" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Career sea pay</span>
+              <input name="career_sea_pay" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Special duty pay</span>
+              <input name="spec_duty_pay" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Extra withholding (per month)</span>
+              <input name="extra_withholding" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Meal deduction enabled</span>
+              <select name="meal_deduction_enabled">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+
+            <label class="les-field">
+              <span>Meal deduction start (YYYY-MM-DD)</span>
+              <input name="meal_deduction_start" type="text" placeholder="" />
+            </label>
+
+            <label class="les-field">
+              <span>Meal rate (per day)</span>
+              <input name="meal_rate" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Meal end day</span>
+              <input name="meal_end_day" type="number" step="1" min="1" max="31" />
+            </label>
+
+            <label class="les-field">
+              <span>Allotments total</span>
+              <input name="allotments_total" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Mid-month collections total</span>
+              <input name="mid_month_collections_total" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Filing status</span>
+              <select name="filing_status">
+                <option value="S">Single</option>
+                <option value="MFJ">Married filing jointly</option>
+                <option value="HOH">Head of household</option>
+              </select>
+            </label>
+
+            <label class="les-field">
+              <span>Step 2: multiple jobs</span>
+              <select name="step2_multiple_jobs">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+
+            <label class="les-field">
+              <span>Dependents under 17</span>
+              <input name="dep_under17" type="number" step="1" />
+            </label>
+
+            <label class="les-field">
+              <span>Other dependents</span>
+              <input name="other_dep" type="number" step="1" />
+            </label>
+
+            <label class="les-field">
+              <span>Other income (annual)</span>
+              <input name="other_income_annual" type="number" step="0.01" />
+            </label>
+
+            <label class="les-field">
+              <span>Other deductions (annual)</span>
+              <input name="other_deductions_annual" type="number" step="0.01" />
+            </label>
+          </div>
+
+          <div class="settings-row" style="margin-top:12px;">
+            <button class="settings-btn primary" id="les_saveBtn" type="submit">Save</button>
+            <button class="settings-btn" id="les_resetBtn" type="button">Reset to defaults</button>
+            <span id="les_saveMsg" class="settings-muted" style="margin-left:auto;"></span>
+          </div>
+        </form>
+      </div>
+    `;
+
+    const form = mount.querySelector("#profileForm");
+    const msg = mount.querySelector("#les_saveMsg");
+
+    function hydrate(p) {
+      if (!form) return;
+      const prof = p || {};
+      for (const [k, v] of Object.entries({ ..._clone(DEFAULTS), ...(prof || {}) })) {
+        const el = form.elements.namedItem(k);
+        if (!el) continue;
+
+        if (el.tagName === "SELECT") {
+          if (typeof v === "boolean") el.value = v ? "true" : "false";
+          else el.value = (v === null || v === undefined) ? "" : String(v);
+        } else {
+          el.value = (v === null || v === undefined) ? "" : String(v);
+        }
+      }
+    }
+
+    // initial paint from local cache
+    hydrate(get());
+
+    // if init() pulls a newer server value, onChange will re-hydrate
+    const off = onChange((p) => hydrate(p));
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const next = {};
+
+      for (const [k, v0] of fd.entries()) {
+        let v = v0;
+
+        // empty -> null for some nullable fields
+        if (v === "") {
+          if (k === "bah_override" || k === "meal_deduction_start") v = null;
+          else v = "";
+        }
+
+        // coerce types
+        if (["bas","tsp_rate","mid_month_fraction","submarine_pay","career_sea_pay","spec_duty_pay","extra_withholding","meal_rate","allotments_total","mid_month_collections_total","other_income_annual","other_deductions_annual"].includes(k)) {
+          v = (v === null || v === "") ? 0 : Number(v);
+        }
+        if (["meal_end_day","dep_under17","other_dep"].includes(k)) {
+          v = (v === null || v === "") ? 0 : parseInt(String(v), 10);
+        }
+        if (["has_dependents","fica_include_special_pays","meal_deduction_enabled","step2_multiple_jobs"].includes(k)) {
+          v = (String(v) === "true");
+        }
+
+        next[k] = v;
+      }
+
+      const saved = replace({ ...get(), ...next });
+      msg.textContent = "Saved ✅";
+      setTimeout(() => (msg.textContent = ""), 1500);
+      hydrate(saved);
     });
+
+    mount.querySelector("#les_resetBtn").addEventListener("click", () => {
+      const next = replace(_clone(DEFAULTS));
+      hydrate(next);
+      msg.textContent = "Reset to defaults ✅";
+      setTimeout(() => (msg.textContent = ""), 1500);
+    });
+
+    return () => off();
   }
 
-  // expose
-  window.Profile = { get, set, open, close, ensureUI, onChange };
+  // Kick init in the background for any page that loads profile.js
+  try { init(); } catch {}
 
-  // auto-mount
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", ensureUI);
-  } else {
-    ensureUI();
-  }
+  window.Profile = { init, get, set, replace, onChange, mountEditor };
 })();

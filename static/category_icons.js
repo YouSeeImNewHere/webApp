@@ -1,24 +1,22 @@
-// static/category_icons.js
-
 function normalizeCategoryKey(cat) {
   return String(cat || "")
     .trim()
-    .toLowerCase(); // IMPORTANT: assumes your SVG filenames are lowercase
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")   // spaces & symbols → hyphen
+    .replace(/^-+|-+$/g, "");     // trim leading/trailing hyphens
 }
 
 const DEFAULT_CATEGORY_ICON = "/static/icons/categories/default.svg";
 
 /**
- * Assumes icon filenames match the normalized category key:
- *   "Self Care"  -> "self care.svg"
- *   "Card Payment" -> "card payment.svg"
- *
- * (Spaces are fine; the browser will request %20 in the URL.)
+ * Assumes icon filenames use kebab-case:
+ *   "Self Care"    -> "self-care.svg"
+ *   "Card Payment" -> "card-payment.svg"
  */
 function categoryIconUrl(category) {
   const key = normalizeCategoryKey(category);
   return key
-    ? `/static/icons/categories/${encodeURIComponent(key)}.svg`
+    ? `/static/icons/categories/${key}.svg`
     : DEFAULT_CATEGORY_ICON;
 }
 
@@ -30,12 +28,15 @@ function categoryIconHTML(category, extraTitle = "") {
   const src = categoryIconUrl(category);
 
   return `
-    <img class="tx-icon" src="${src}" alt="" title="${title}"
+    <img class="tx-icon"
+         src="${src}"
+         alt=""
+         title="${title}"
          onerror="this.onerror=null;this.src='${DEFAULT_CATEGORY_ICON}'">
   `;
 }
 
-// Optional: if other files import these
+// Optional: global exports
 window.categoryIconUrl = categoryIconUrl;
 window.categoryIconHTML = categoryIconHTML;
 window.normalizeCategoryKey = normalizeCategoryKey;

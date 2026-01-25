@@ -33,6 +33,12 @@ function closeBankPanel(){
 async function loadBankInfo(){
   const subtitle = document.getElementById("bankInfoSubtitle");
   const body = document.getElementById("bankInfoBody");
+
+  if (!subtitle || !body) {
+    console.warn("[bankInfo] Missing subtitle/body elements");
+    return;
+  }
+
   subtitle.textContent = "Loading…";
   body.innerHTML = "";
   body.innerHTML = `
@@ -242,20 +248,28 @@ function refreshInterestRates(){
 
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("bankInfoBtn");
+  if (!btn) return;
+
   const close = document.getElementById("bankInfoClose");
   const overlay = document.getElementById("bankInfoOverlay");
   const refreshBtn = document.getElementById("bankRatesRefreshBtn");
 
-  if (!btn) return;
-
   btn.addEventListener("click", async () => {
+    // Only open if panel exists; otherwise fail gracefully
+    const panel = document.getElementById("bankInfoPanel");
+    if (!overlay || !panel) {
+      console.warn("[bankInfo] Missing bankInfoOverlay/bankInfoPanel in DOM");
+      return;
+    }
+
     openBankPanel();
     await loadBankInfo();
   });
 
-  close.addEventListener("click", closeBankPanel);
-  overlay.addEventListener("click", closeBankPanel);
-  refreshBtn.addEventListener("click", refreshInterestRates);
+  // ✅ Guard every element before binding
+  if (close) close.addEventListener("click", closeBankPanel);
+  if (overlay) overlay.addEventListener("click", closeBankPanel);
+  if (refreshBtn) refreshBtn.addEventListener("click", refreshInterestRates);
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeBankPanel();

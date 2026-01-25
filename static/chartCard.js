@@ -17,59 +17,54 @@
     mount.innerHTML = `
       <section class="chart-card">
         <header class="chart-header chart-header--metrics2">
-  <!-- LEFT: % Growth + (optional toggle) + Total -->
+  <!-- LEFT: Total + % Diff -->
   <div class="chart-header-metrics">
-<!-- TOTAL first -->
-<div class="chart-breakdown chart-breakdown--metric">
-  <span id="${ids.breakLabel}">${cfg.breakdownLabel || ""}</span>
-  <strong id="${ids.breakValue}">${cfg.breakdownValue || "$0"}</strong>
-</div>
-
-<!-- % DIFF second (with toggle under it) -->
-<div class="chart-metric-stack">
-  ${ids.growthLabel && ids.growthValue ? `
+    <!-- TOTAL first -->
     <div class="chart-breakdown chart-breakdown--metric">
-      <span id="${ids.growthLabel}">% Diff</span>
-      <strong id="${ids.growthValue}">—</strong>
+      <span id="${ids.breakLabel}">${cfg.breakdownLabel || ""}</span>
+      <strong id="${ids.breakValue}">${cfg.breakdownValue || "$0"}</strong>
     </div>
 
-    ${cfg.growthToggleHtml ? `<div class="chart-growth-toggle">${cfg.growthToggleHtml}</div>` : ``}
-  ` : ``}
-</div>
+    <!-- % DIFF second (with toggle under it) -->
+    <div class="chart-metric-stack">
+      ${ids.growthLabel && ids.growthValue ? `
+        <div class="chart-breakdown chart-breakdown--metric">
+          <span id="${ids.growthLabel}">% Diff</span>
+          <strong id="${ids.growthValue}">—</strong>
+        </div>
 
+        ${cfg.growthToggleHtml ? `<div class="chart-growth-toggle">${cfg.growthToggleHtml}</div>` : ``}
+      ` : ``}
+    </div>
+  </div> <!-- ✅ THIS was missing -->
 
-  <!-- CENTER: Title + dots + Dates/Update -->
-<!-- CENTER: title centered on chart -->
-<div class="chart-header-center">
-  <div class="chart-title-wrap">
-    <h2 id="${ids.title}">${cfg.title || ""}</h2>
-    <div id="${ids.dots}" class="chart-dots"></div>
+  <!-- CENTER: Title + dots -->
+  <div class="chart-header-center">
+    <div class="chart-title-wrap">
+      <h2 id="${ids.title}">${cfg.title || ""}</h2>
+      <div id="${ids.dots}" class="chart-dots"></div>
+    </div>
   </div>
-</div>
 
-<!-- BETWEEN title and Next: Dates -->
-<div class="chart-header-dates">
-  <div class="chart-dates-inline chart-dates-inline--header">
-    <label>Start <input type="date" id="${ids.start}"></label>
-    <label>End <input type="date" id="${ids.end}"></label>
+  <!-- BETWEEN: Dates + Update -->
+  <div class="chart-header-dates">
+    <div class="chart-dates-inline chart-dates-inline--header">
+      <label>Start <input type="date" id="${ids.start}"></label>
+      <label>End <input type="date" id="${ids.end}"></label>
+    </div>
+    <button id="${ids.update}" class="chart-btn primary chart-update--header">Update</button>
   </div>
-  <button id="${ids.update}" class="chart-btn primary chart-update--header">
-    Update
-  </button>
-</div>
 
-
-  <!-- RIGHT: Next button -->
+  <!-- RIGHT: Next or custom action -->
   <div class="chart-header-actions">
     ${
       showToggle
-        ? `<button id="${ids.toggle}" class="chart-toggle chart-toggle--header">
-            ${cfg.toggleText || ""}
-          </button>`
-        : ``
+        ? `<button id="${ids.toggle}" class="chart-toggle chart-toggle--header">${cfg.toggleText || ""}</button>`
+        : (cfg.headerActionsHtml || ``)
     }
   </div>
 </header>
+
 
 
 

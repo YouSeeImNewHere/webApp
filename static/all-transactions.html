@@ -14,15 +14,12 @@
   <title>All Transactions</title>
 <link rel="stylesheet" href="/static/css/base.css">
 <link rel="stylesheet" href="/static/css/mobile.css">
+  <script src="/static/theme.js"></script>
 </head>
 
-<body class="page-alltx">
+<body class="page-alltx" data-page-title="All Transactions">
   <div class="page-container">
-
-    <div class="page-header">
-      <h2 style="margin:0;">All Transactions</h2>
-      <a href="/" class="back-btn">Back</a>
-    </div>
+    <div id="topBar"></div>
 
     <div style="max-width:900px;margin:0 auto;">
       <input
@@ -55,6 +52,8 @@
     navigator.serviceWorker.register("/static/sw.js").catch(console.error);
   }
 </script>
+<script src="/static/topBar.js"></script>
+<script src="/static/notifs.js" defer></script>
   <script src="/static/txInspect.js"></script>
 <script src="/static/category_icons.js"></script>
 

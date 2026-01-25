@@ -13,8 +13,9 @@
 body{
   font-family: Arial, sans-serif;
   margin: 0;
-  padding: 20px;               /* desktop padding */
-  background: #fff;
+  padding: 0;                 /* IMPORTANT */
+  background: var(--bg);
+  color: var(--text);
 }
 
 /* Page width limiter (desktop only) */
@@ -22,7 +23,7 @@ body{
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 16px;
-  padding-bottom: 120px;       /* room for bottom dock */
+  padding-bottom: 0;       /* room for bottom dock */
 }
 
 /* =============================================================================
@@ -95,10 +96,10 @@ body{
 .bank-box-fill{ width: 100%; }
 
 .category-box{
-  border: 1px solid #e7e7e7;
+  border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px;
-  background: #fff;
+  background: var(--card);
 }
 
 .category-box--sidebar{
@@ -186,7 +187,7 @@ body{
   border:1px solid #e7e7e7;
   border-radius:16px;
   padding:14px;
-  background:#fff;
+  background: var(--card);
   margin-bottom: 12px; /* keep your bank info spacing */
 }
 
@@ -294,9 +295,9 @@ body{
   align-items:center;
   padding:12px 14px;
   padding-left: 72px; /* room for big icon */
-  border:1px solid rgba(0,0,0,0.10);
+  border: 1px solid var(--border);
   border-radius:14px;
-  background:#fff;
+  background: var(--card);
 }
 
 .tx-date{
@@ -354,7 +355,7 @@ body{
 
 .section-divider{
   border: none;
-  border-top: 1px solid #e7e7e7;
+  border-top: 1px solid var(--border); /* optional: replace with var(--border) too */
   margin: 24px 0;
 }
 
@@ -1546,6 +1547,104 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
 }
 
 
+
+/* =============================================================================
+   Notifications (email parse failures)
+   ============================================================================= */
+
+.top-bar-right{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+}
+
+.notif-btn{ position:relative; }
+
+.notif-badge{
+  position:absolute;
+  top:-6px;
+  right:-6px;
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:900;
+  line-height:1;
+  background: var(--accent, #2b6cff);
+  color: white;
+  border: 2px solid var(--panel, #fff);
+}
+
+.notif-split{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:12px;
+}
+
+@media (min-width: 860px){
+  .notif-split{ grid-template-columns: 1fr 1.2fr; }
+  .notif-detail{ border-left:1px solid var(--border, #eee); padding-left:12px; }
+}
+
+.notif-empty{
+  padding:16px;
+  opacity:0.8;
+}
+
+.notif-list{ display:flex; flex-direction:column; gap:10px; }
+
+.notif-row{
+  text-align:left;
+  width:100%;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0,0,0,0.14));
+  border-radius: 14px;
+  padding: 12px 12px;
+  cursor:pointer;
+}
+.notif-row:hover{ filter: brightness(0.98); }
+.notif-row--unread{
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 0px;
+}
+
+.notif-row-top{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:6px;
+}
+.notif-row-sub{ font-size:12px; opacity:0.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.notif-row-time{ font-size:12px; opacity:0.6; white-space:nowrap; }
+.notif-row-title{ font-weight:800; font-size:13px; }
+
+.notif-detail-head{ margin-bottom:10px; }
+.notif-detail-sub{ font-size:12px; opacity:0.75; margin-bottom:6px; }
+.notif-detail-title{ font-weight:900; font-size:16px; margin-bottom:10px; }
+
+.notif-detail-body{
+  white-space:pre-wrap;
+  word-break:break-word;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0,0,0,0.14));
+  border-radius: 14px;
+  padding: 12px;
+  min-height: 200px;
+  max-height: 52vh;
+  overflow:auto;
+}
+
+.notif-detail-actions{
+  margin-top:10px;
+  display:flex;
+  justify-content:flex-end;
+}
+
 /* =============================================================================
    Category drawer
    ============================================================================= */
@@ -1591,13 +1690,29 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
    Pending Transactions
    ============================================================================= */
 
+/* =============================
+   Pending Transactions (themed)
+   ============================= */
+
+:root{
+  --pending-bg: #f2f2f2;
+  --pending-border: #d6d6d6;
+  --pending-hover: #ededed;
+}
+
+:root[data-theme="dark"]{
+  --pending-bg: rgba(255,255,255,0.06);
+  --pending-border: rgba(255,255,255,0.12);
+  --pending-hover: rgba(255,255,255,0.09);
+}
+
 .is-pending{
-  background: #f2f2f2;
-  border-color: #d6d6d6;
+  background: var(--pending-bg) !important;
+  border-color: var(--pending-border) !important;
 }
 
 .tx-row.is-pending:hover{
-  background: #ededed;
+  background: var(--pending-hover) !important;
 }
 
 /* =============================================================================
@@ -2307,4 +2422,1107 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+/* =============================
+   Home Layout Customize
+   ============================= */
+.customize-btn{
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 9999;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+  background: #fff;
+}
+
+.customize-btn--done{
+  background: #111;
+  color: #fff;
+}
+
+body.is-customizing .home-section,
+body.is-customizing #sidebarStack > [data-sidebar-section],
+body.is-customizing .bank-type-block{
+  outline: 2px dashed rgba(0,0,0,0.25);
+  outline-offset: 6px;
+}
+
+body.is-customizing .bank-type-block,
+body.is-customizing .home-section,
+body.is-customizing #sidebarStack > [data-sidebar-section]{
+  cursor: grab;
+}
+
+body.is-customizing .account-pill{
+  cursor: grab;
+}
+
+/* ================================
+   Rule Modal – Clean + Centered
+   ================================ */
+
+#ruleModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+
+  /* Center the modal */
+  display: none;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+
+  padding: 16px;
+}
+
+#ruleModalBackdrop[style*="display: block"] {
+  display: flex !important;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+
+  display: flex;
+  flex-direction: column;
+
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+
+  overflow: hidden;
+}
+
+/* Header stays pinned */
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 14px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-sub {
+  font-size: 12px;
+  opacity: .6;
+}
+
+/* Scrollable body */
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+/* Rows spacing cleanup */
+.modal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+/* Actions row */
+.modal-actions {
+  margin-top: 16px;
+}
+
+/* Lock background scroll when open */
+body.modal-open {
+  overflow: hidden;
+}
+
+
+
+/* =============================================================================
+   Settings Page
+   ============================================================================= */
+
+body.settings-page{
+  margin: 0;
+  padding: 0;
+  background: #f6f7f8;
+  color: #111;
+}
+
+.settings-wrap{
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 18px 16px 0;   /* IMPORTANT */
+}
+
+.settings-title{
+  margin: 6px 0 14px;
+  font-size: 28px;
+  letter-spacing: .2px;
+}
+
+.settings-section{
+  margin-top: 14px;
+}
+
+.settings-section-title{
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .2px;
+  opacity: .7;
+}
+
+.settings-card{
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.06);
+}
+
+.settings-row{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.settings-btn{
+  appearance:none;
+  border: 1px solid rgba(0,0,0,0.14);
+  background: #fff;
+  color: #111;
+  padding: 10px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform .08s ease, border-color .12s ease, box-shadow .12s ease, background .12s ease, opacity .12s ease;
+}
+
+.settings-btn:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  border-color: rgba(0,0,0,0.22);
+  background: #f7f7f7;
+}
+
+.settings-btn:active{
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-btn.primary{
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+.settings-btn.primary:hover{ opacity: .9; background:#111; }
+
+.settings-muted{
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .65;
+}
+
+@media (max-width: 700px){
+  .settings-wrap{ padding-bottom: 160px; }
+  .settings-title{ font-size: 24px; }
+}
+
+
+/* Foldable/accordion for Settings sections */
+.settings-accordion{
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.settings-accordion-body{
+  border-top: 1px solid var(--border);
+}
+
+
+.settings-accordion > summary{
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 14px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-accordion > summary::-webkit-details-marker{ display:none; }
+
+.settings-accordion > summary::after{
+  content: "▾";
+  margin-left: auto;
+  opacity: .55;
+  transition: transform .12s ease;
+}
+
+.settings-accordion[open] > summary::after{ transform: rotate(180deg); }
+
+.settings-accordion-body{
+  border-top: 1px solid rgba(0,0,0,0.08);
+  padding: 12px 12px 14px;
+}
+
+/* LES Profile form */
+.les-form .les-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.les-field{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.les-field > span{
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .75;
+}
+
+.les-field input,
+.les-field select{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  font-size: 14px;
+  outline: none;
+}
+
+.les-field input:focus,
+.les-field select:focus{
+  border-color: color-mix(in srgb, var(--btn-text) 22%, var(--btn-border));
+  background: var(--btn-bg);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+}
+
+
+@media (max-width: 700px){
+  .les-form .les-grid{ grid-template-columns: 1fr; }
+}
+
+/* =============================
+   Theme tokens (CSS variables)
+   ============================= */
+
+:root{
+  /* core */
+  --bg: #ffffff;
+  --text: #111111;
+  --muted: rgba(17,17,17,0.65);
+
+  /* surfaces */
+  --card: #ffffff;
+  --card-2: #f6f7f8;
+  --border: rgba(0,0,0,0.10);
+
+  /* controls */
+  --btn-bg: #ffffff;
+  --btn-text: #111111;
+  --btn-border: rgba(0,0,0,0.14);
+  --btn-hover: #f7f7f7;
+
+  /* accents */
+  --accent: #111111;
+  --accent-contrast: #ffffff;
+
+  /* shadows */
+  --shadow-soft: 0 10px 26px rgba(0,0,0,0.06);
+  --shadow-float: 0 12px 30px rgba(0,0,0,0.12);
+}
+
+/* Dark theme overrides */
+:root[data-theme="dark"]{
+  /* Backgrounds: give the app a subtle blue-black base */
+  --bg: #070A10;          /* page */
+  --card: #0E1420;        /* primary surface */
+  --card-2: #0A0F18;      /* recessed surface (charts/inner panels) */
+
+  /* Text */
+  --text: #EAF0FF;
+  --muted: rgba(234,240,255,0.65);
+
+  /* Borders & separation (slightly blue-tinted) */
+  --border: rgba(141,173,255,0.14);
+  --btn-border: rgba(141,173,255,0.18);
+
+  /* Controls */
+  --btn-bg: rgba(255,255,255,0.03);
+  --btn-text: var(--text);
+  --btn-hover: rgba(255,255,255,0.07);
+
+  /* Accent: add a color you can track with your eyes */
+  --accent: #7C5CFF;              /* purple */
+  --accent-contrast: #070A10;
+
+  /* Shadows (stronger so cards feel layered) */
+  --shadow-soft: 0 14px 40px rgba(0,0,0,0.45);
+  --shadow-float: 0 18px 55px rgba(0,0,0,0.55);
+
+  /* Optional semantic colors if you want them later */
+  --pos: #2EE59D;   /* income / good */
+  --neg: #FF5C7A;   /* spending / bad */
+  --warn:#FFC857;
+  --info:#57B6FF;
+
+  color-scheme: dark;
+}
+
+
+/* Make native controls match theme */
+:root[data-theme="dark"]{
+  color-scheme: dark;
+}
+
+/* Buttons */
+.back-btn,
+.month-btn,
+.chart-btn,
+.settings-btn,
+.profile-btn,
+.icon-btn{
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border-color: var(--btn-border);
+}
+
+.back-btn:hover,
+.month-btn:hover,
+.chart-btn:hover,
+.settings-btn:hover,
+.profile-btn:hover{
+  background: var(--btn-hover);
+}
+
+.month-btn.active{
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+/* Settings page currently hardcodes light bg; theme it */
+body.settings-page{
+  background: var(--card-2);
+  color: var(--text);
+}
+
+.settings-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+
+.mobile-tabs{
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-float);
+}
+
+.mobile-tab{
+  color: var(--muted);
+}
+
+/* =========================================
+   Theme hardcoded components -> variables
+   ========================================= */
+
+/* Generic “surface” helpers */
+:root{
+  --surface: var(--card);
+  --surface-2: var(--card-2);
+  --surface-hover: rgba(0,0,0,0.04);
+  --surface-pressed: rgba(0,0,0,0.07);
+  --chip-bg: rgba(0,0,0,0.02);
+  --chip-border: rgba(0,0,0,0.10);
+}
+
+:root[data-theme="dark"]{
+  --surface-hover: rgba(255,255,255,0.06);
+  --surface-pressed: rgba(255,255,255,0.10);
+  --chip-bg: rgba(255,255,255,0.05);
+  --chip-border: rgba(255,255,255,0.10);
+}
+
+/* ---- BANK “white bars” (account pills) ---- */
+.account-pill{
+  border: 1px solid var(--border) !important;
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+.account-pill:hover{
+  background: var(--surface-hover) !important;
+}
+
+/* ---- CATEGORY PILL (Monthly Spending) ---- */
+.category-pill{
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+.cat-badge{
+  background: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+
+/* ---- BANK ACCORDION HEADER ---- */
+.bank-accordion__header{
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+/* ---- CHART CARD + CONTROLS ---- */
+.chart-card{
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+}
+
+.chart-breakdown{
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+.chart-toggle,
+.chart-btn{
+  border: 1px solid var(--btn-border) !important;
+  background: var(--btn-bg) !important;
+  color: var(--btn-text) !important;
+}
+.chart-toggle:hover,
+.chart-btn:hover{
+  background: var(--btn-hover) !important;
+}
+
+.chart-btn.primary{
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+
+/* Chart dots were hardcoded to #111/#777 */
+.chart-dot{
+  border-color: color-mix(in srgb, var(--text) 45%, transparent) !important;
+}
+.chart-dot.active{
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+/* Date inputs */
+.chart-dates-inline input[type="date"]{
+  background: var(--btn-bg) !important;
+  color: var(--btn-text) !important;
+  border-color: var(--btn-border) !important;
+}
+
+/* ---- CALENDAR (upcoming/month calendar cards) ---- */
+.cal-box{
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+.cal-nav{
+  border: 1px solid var(--btn-border) !important;
+  color: var(--btn-text) !important;
+}
+.cal-day{
+  border: 1px solid var(--border) !important;
+  background: var(--chip-bg) !important;
+  color: var(--text) !important;
+}
+.cal-chip{
+  border: 1px solid var(--chip-border) !important;
+  background: transparent !important;
+  color: var(--text) !important;
+}
+.cal-dot{
+  background: color-mix(in srgb, var(--text) 55%, transparent) !important;
+}
+
+/* ---- SCROLLBAR (upcoming strip was hardcoded dark) ---- */
+.mini-calendar::-webkit-scrollbar-thumb{
+  background: color-mix(in srgb, var(--text) 25%, transparent) !important;
+}
+
+/* ---- MODALS / PANELS (lots of #fff) ---- */
+.occ-card,
+.upc-card,
+.upcoming-day-modal,
+.tx-inspect__card,
+.modal-card,
+.side-panel,
+.profile-modal .profile-card{
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+.occ-head,
+.upc-head,
+.upcoming-day-modal__head,
+.tx-inspect__head,
+.modal-head,
+.panel-header,
+.panel-actions{
+  background: var(--surface) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+.occ-close,
+.upc-close,
+.tx-inspect__close,
+.modal-actions button,
+.profile-x{
+  background: var(--btn-bg) !important;
+  color: var(--btn-text) !important;
+  border-color: var(--btn-border) !important;
+}
+
+/* ---- ICON BUTTONS / INFO BUTTONS ---- */
+.tx-info-btn{
+  background: var(--surface-hover) !important;
+}
+.tx-info-btn:active{
+  background: var(--surface-pressed) !important;
+}
+.icon-btn{
+  border-color: var(--btn-border) !important;
+}
+
+/* ---- BOTTOM DOCK TABS ---- */
+.mobile-tab:hover{ background: var(--surface-hover) !important; }
+.mobile-tab.active{ background: var(--surface-pressed) !important; color: var(--text) !important; }
+
+
+/* Make cards feel separated in dark mode */
+:root[data-theme="dark"] .category-box,
+:root[data-theme="dark"] .bank-card,
+:root[data-theme="dark"] .chart-card,
+:root[data-theme="dark"] .tx-row,
+:root[data-theme="dark"] .settings-card{
+  box-shadow: var(--shadow-soft);
+}
+
+/* Slight highlight on hover to guide the eye */
+:root[data-theme="dark"] .tx-row:hover,
+:root[data-theme="dark"] .category-box:hover,a
+:root[data-theme="dark"] .bank-card:hover{
+  background: color-mix(in srgb, var(--card) 86%, white);
+}
+
+/* Strong, consistent focus ring */
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] button:focus{
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, white);
+  outline-offset: 2px;
+}
+
+/* Fixed outer shell (full width) */
+.top-bar{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+
+  z-index: 1000;
+  height: 52px;
+  background: var(--panel, #fff);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Centered inner content (matches page width) */
+.top-bar-inner{
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 100%;
+
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+}
+
+
+
+.top-title{
+  text-align: center;
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.top-btn{
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(0,0,0,0.14));
+  background: var(--btn-bg, #f7f7f7);
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+:root{
+  --topbar-h: 52px;
+  --tabs-h: 70px; /* set this to whatever your bottom tabs actually occupy */
+}
+body{
+
+  padding-top: var(--topbar-h);
+  padding-bottom: var(--bars-bottom-pad);
+}
+
+:root{
+  --topbar-h: 52px;
+
+  /* bottom tabs are floating + bottom:18px, so reserve extra */
+  --tabs-safe: 18px;
+  --tabs-h: 70px; /* good estimate for your dock */
+  --bars-bottom-pad: calc(var(--tabs-h) + var(--tabs-safe) + 16px);
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.settings-table th,
+.settings-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.settings-input.saved {
+  outline: 2px solid var(--accent);
+}
+
+
+/* ===========================
+   Category Rules page extras
+   =========================== */
+
+.rules-toolbar{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 0 12px 0;
+}
+
+.rules-table td{ vertical-align: top; }
+
+.rule-actions{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:stretch;
+}
+
+@media (min-width: 520px){
+  .rule-actions{ flex-direction:row; align-items:center; }
+}
+
+.settings-btn.danger{
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger);
+}
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background: var(--card);
+  font-weight:900;
+}
+
+.rule-subrow{
+  margin-top:8px;
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+
+.toggle{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  font-size:12px;
+  font-weight:800;
+  opacity:.9;
+  user-select:none;
+}
+.toggle input{ transform: translateY(1px); }
+
+/* Switch (reuse for Active) */
+.switch{
+  position:relative;
+  display:inline-block;
+  width:46px;
+  height:26px;
+}
+.switch input{ opacity:0; width:0; height:0; }
+.switch .slider{
+  position:absolute;
+  cursor:pointer;
+  top:0; left:0; right:0; bottom:0;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background: var(--btn-bg);
+  transition: 160ms ease;
+}
+.switch .slider:before{
+  position:absolute;
+  content:"";
+  height:20px; width:20px;
+  left:3px; top:50%;
+  transform: translateY(-50%);
+  border-radius:999px;
+  background: var(--text);
+  opacity:.8;
+  transition: 160ms ease;
+}
+.switch input:checked + .slider{
+  background: color-mix(in srgb, var(--accent) 18%, var(--btn-bg));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.switch input:checked + .slider:before{
+  transform: translate(20px, -50%);
+  background: var(--accent);
+  opacity:1;
+}
+
+/* Modal for testing regex */
+#ruleTestModal.modal-overlay{
+  position:fixed;
+  inset:0;
+  background: color-mix(in srgb, #000 55%, transparent);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  z-index: 9999;
+}
+
+#ruleTestModal .modal{
+  width:min(840px, 96vw);
+  max-height: 88vh;
+  overflow:hidden;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 18px 60px rgba(0,0,0,.35);
+}
+
+#ruleTestModal .modal-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding: 14px 14px 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+#ruleTestModal .modal-title{
+  font-weight: 950;
+  font-size: 15px;
+}
+
+#ruleTestModal .modal-body{
+  padding: 14px;
+  overflow:auto;
+  max-height: calc(88vh - 64px);
+}
+
+.test-results{ margin-top: 12px; }
+.test-summary{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:12px;
+  margin: 8px 0 10px 0;
+}
+.test-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.test-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.test-row.hit{
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.test-merchant{ font-weight: 900; }
+.test-count{ opacity:.8; font-weight:900; }
+.test-badge{
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  opacity:.85;
+}
+
+/* Make sure new pages inherit theme variables */
+.page-category-rules{ background: var(--bg); color: var(--text); }
+
+[hidden] { display: none !important; }
+
+/* === Transaction Inspect Modal (overlay) === */
+.tx-inspect-backdrop {
+  position: fixed;
+  inset: 0;
+  display: none;              /* hidden until opened */
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0,0,0,0.55);
+  z-index: 9999;
+}
+
+.tx-inspect-backdrop.open {
+  display: flex;
+}
+
+.tx-inspect-modal {
+  width: min(560px, 100%);
+  max-height: min(80vh, 700px);
+  overflow: auto;
+  border-radius: 16px;
+  background: var(--card, #fff);
+  color: var(--text, #111);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+}
+
+.tx-inspect-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+
+.tx-inspect-title { font-weight: 700; }
+
+.tx-inspect-close {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+.tx-inspect-body {
+  padding: 12px 14px 14px;
+}
+
+.tx-inspect-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px 12px;
+}
+
+.tx-k { opacity: 0.7; font-size: 12px; }
+.tx-v { font-size: 14px; word-break: break-word; }
+
+.tx-cat-edit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tx-cat-edit input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.15);
+  background: transparent;
+  color: inherit;
+}
+
+.tx-cat-edit button {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 0;
+  cursor: pointer;
+  background: rgba(0,0,0,0.08);
+  color: inherit;
+}
+
+/* Customize layout bar — hidden unless customizing */
+.customize-bar {
+  display: none;
+}
+
+body.is-customizing .customize-bar {
+  display: block;
+}
+
+/* Ensure backdrop actually centers modal when JS sets display:block */
+#txInspectBackdrop[style*="display: block"]{
+  display: flex !important;
+}
+
+/* Make the modal a fixed overlay card */
+#txInspectModal{
+  position: fixed;
+  left: 50%;
+  top: 10%;
+  transform: translateX(-50%);
+  z-index: 10000;
+}
+
+/* Overlay should cover the whole viewport */
+#bankInfoOverlay{
+  inset: 0;                 /* full screen */
+  z-index: 1200;            /* below panel */
+}
+
+/* Panel stays between top bar and bottom tabs */
+#bankInfoPanel{
+  top: var(--topbar-h);
+  bottom: var(--bars-bottom-pad);
+  height: auto;
+  z-index: 1201;
+}
+/* Fixed outer shell (no visible background) */
+.top-bar{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  height: 52px;
+
+  /* turn the outer bar into a transparent positioning wrapper */
+  background: transparent;
+  border-bottom: none;
+
+  /* give the pill breathing room */
+  padding: 10px 0;
+}
+
+/* The actual pill */
+.top-bar-inner{
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 52px;
+
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+
+  /* pill look */
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+
+  /* match bottom dock width behavior */
+  width: min(560px, calc(100% - 40px));
+}
+
+/* Buttons match the pill vibe */
+.top-btn{
+  border-radius: 999px;
+}
+
+.cc-usage{
+  font-size: 12px;
+  opacity: .75;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.bank-card__subtotal{
+  font-size: 12px;
+  opacity: .75;
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.bank-accordion__right{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+
+.bank-accordion__sub{
+  font-size: 12px;
+  opacity: .75;
+  margin-top: 4px;
+}
+
+.dot{
+  opacity: .6;
 }

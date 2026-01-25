@@ -5,16 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="stylesheet" href="/static/css/base.css">
 <link rel="stylesheet" href="/static/css/mobile.css">
+  <script src="/static/theme.js"></script>
 </head>
 
-<body class="page-spending">
+<body class="page-spending" data-page-title="Spending">
 <div class="page-container">
-
-<div class="page-header">
-  <div></div>
-  <a href="/" class="back-btn">Back</a>
-</div>
-
+  <div id="topBar"></div>
 
   <!-- Chart -->
   <div id="chartMount"></div>
@@ -30,6 +26,7 @@
 </div>
 
 <div id="bottomTabs"></div>
+<script src="/static/topBar.js"></script>
 <script src="/static/category_icons.js"></script>
 <script src="/static/txInspect.js"></script>
 <script src="/static/profile.js"></script>
@@ -38,5 +35,6 @@
 <script src="/static/chartCard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="/static/spending.js"></script>
+<script src="/static/notifs.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Settings</title>
+<link href="/static/css/base.css" rel="stylesheet"/>
+<link href="/static/css/mobile.css" rel="stylesheet"/>
+    <script src="/static/theme.js"></script>
+</head>
+
+<body class="settings-page" data-page-title="Settings">
+
+  <div class="settings-wrap">
+
+  <div id="topBar"></div>
+    <section class="settings-section">
+  <h2 class="settings-section-title">Appearance</h2>
+
+  <div class="settings-card">
+    <div class="settings-row" style="align-items:flex-end;">
+      <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
+        Color scheme
+        <select id="themeSelect" style="padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--btn-bg); color:var(--btn-text); font-weight:800;">
+          <option value="system">System</option>
+          <option value="light">Default (Light)</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+
+      <div class="settings-muted" style="margin:0;">
+        Tip: “System” follows your device theme.
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section class="settings-section">
+<h2 class="settings-section-title">LES</h2>
+<details class="settings-accordion">
+  <summary>LES Profile</summary>
+  <div class="settings-accordion-body">
+    <div id="lesProfileMount"></div>
+  </div>
+</details>
+</section>
+
+<section class="settings-section">
+  <h2 class="settings-section-title">Savings goal</h2>
+
+  <div class="settings-card">
+    <div class="settings-row" style="flex-wrap:wrap; gap:12px; align-items:flex-end;">
+      <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
+        Mode
+        <select id="savingsGoalMode" style="padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--btn-bg); color:var(--btn-text); font-weight:800;">
+          <option value="percent">Percent of expected income</option>
+          <option value="amount">Fixed amount</option>
+        </select>
+      </label>
+
+      <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85; min-width:200px;">
+        Value
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input id="savingsGoalValue" inputmode="decimal" type="number" min="0" step="0.01"
+                 style="flex:1; padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--btn-bg); color:var(--btn-text); font-weight:800;">
+          <span id="savingsGoalSuffix" class="settings-muted" style="margin:0;">%</span>
+        </div>
+      </label>
+
+      <button class="settings-btn primary" id="saveSavingsGoalBtn" type="button">Save</button>
+    </div>
+
+    <div class="settings-muted" style="margin-top:10px;">
+      This goal is deducted from <strong>Safe to spend</strong> on Home. Percent is based on this month’s expected income.
+    </div>
+    <div class="settings-muted" id="savingsGoalMsg" style="margin-top:6px;"></div>
+  </div>
+</section>
+
+<section class="settings-section">
+<h2 class="settings-section-title">Home Page Layout</h2>
+<div class="settings-card">
+<div class="settings-row">
+<a class="settings-btn" href="/">Go to Home</a>
+<a class="settings-btn primary" href="/?customize=1">Customize Home Layout</a>
+<button class="settings-btn" id="resetHomeLayoutBtn" type="button">Reset layout to default</button>
+</div>
+<div class="settings-muted">
+          Tip: tap “Customize Home Layout”, drag cards/sections around, then press “Done”.
+        </div>
+<div class="settings-muted" id="layoutMsg"></div>
+</div>
+</section>
+
+  <section class="settings-section">
+    <h2 class="settings-section-title">Rules</h2>
+    <div class="settings-card">
+      <div class="settings-row" style="justify-content:space-between;">
+        <div>
+          <div style="font-weight:950;">Category regex rules</div>
+          <div class="settings-muted" style="margin:4px 0 0 0;">View matches, test regex, re-apply, disable, or delete rules.</div>
+        </div>
+        <button class="settings-btn" onclick="location.href='/static/category_rules.html'">Open</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+<div id="bottomTabs"></div>
+<script src="/static/layout.js"></script>
+<script src="/static/profile.js"></script>
+<script src="/static/bottomTabs.js"></script>
+<script src="/static/topBar.js"></script>
+<script>
+    // Mount the LES editor
+    Profile.mountEditor("#lesProfileMount");
+
+    // Reset Home layout by clearing saved layout; Home merges defaults back in on load
+    document.getElementById("resetHomeLayoutBtn").addEventListener("click", async () => {
+      const msg = document.getElementById("layoutMsg");
+      msg.textContent = "Resetting...";
+      await LayoutStore.save("home", {});
+      msg.textContent = "Reset ✅";
+      setTimeout(() => (msg.textContent = ""), 1500);
+    });
+  </script>
+
+<script>
+  (function(){
+    const sel = document.getElementById("themeSelect");
+    if (!sel || !window.Theme) return;
+
+    sel.value = Theme.get();
+    sel.addEventListener("change", () => Theme.set(sel.value));
+  })();
+</script>
+
+
+<script>
+  (function(){
+    const modeEl = document.getElementById("savingsGoalMode");
+    const valEl = document.getElementById("savingsGoalValue");
+    const sufEl = document.getElementById("savingsGoalSuffix");
+    const saveBtn = document.getElementById("saveSavingsGoalBtn");
+    const msgEl = document.getElementById("savingsGoalMsg");
+    if (!modeEl || !valEl || !saveBtn) return;
+
+    function setSuffix(){
+      const mode = modeEl.value;
+      if (sufEl) sufEl.textContent = (mode === "percent") ? "%" : "USD";
+      valEl.step = (mode === "percent") ? "0.1" : "0.01";
+      valEl.placeholder = (mode === "percent") ? "50" : "2000";
+    }
+
+    async function loadGoal(){
+      msgEl.textContent = "Loading…";
+      try{
+        const res = await fetch("/settings/savings-goal", { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const j = await res.json();
+        modeEl.value = (j.mode === "amount") ? "amount" : "percent";
+        valEl.value = (j.value != null) ? String(j.value) : "";
+        setSuffix();
+        msgEl.textContent = "";
+      } catch(e){
+        console.warn("loadGoal failed", e);
+        setSuffix();
+        msgEl.textContent = "Could not load (using 0).";
+      }
+    }
+
+    async function saveGoal(){
+      const mode = modeEl.value;
+      const value = Number(valEl.value);
+      if (!isFinite(value) || value < 0) {
+        msgEl.textContent = "Enter a valid number.";
+        return;
+      }
+      if (mode === "percent" && value > 100) {
+        msgEl.textContent = "Percent must be 0–100.";
+        return;
+      }
+      msgEl.textContent = "Saving…";
+      try{
+        const res = await fetch("/settings/savings-goal", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ mode, value })
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        msgEl.textContent = "Saved ✅";
+        setTimeout(()=> msgEl.textContent="", 1200);
+      } catch(e){
+        console.warn("saveGoal failed", e);
+        msgEl.textContent = "Save failed.";
+      }
+    }
+
+    modeEl.addEventListener("change", setSuffix);
+    saveBtn.addEventListener("click", saveGoal);
+
+    setSuffix();
+    loadGoal();
+  })();
+</script>
+
+
+</body>
+</html>

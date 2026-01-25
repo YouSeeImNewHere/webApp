@@ -20,6 +20,212 @@ from Receipts.receipts import router as receipts_router
 app = FastAPI()
 app.include_router(receipts_router)  # ✅ THIS is what makes /receipts/* exist
 
+# =============================================================================
+# Notifications (used for email parse failures)
+# =============================================================================
+
+def _ensure_notifications_table():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            dedupe_key TEXT NOT NULL UNIQUE,
+            subject TEXT,
+            sender TEXT,
+            body TEXT,
+            created_at TEXT NOT NULL,
+            is_read INTEGER NOT NULL DEFAULT 0,
+            dismissed INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_dismissed ON notifications(dismissed)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)")
+    conn.commit()
+    conn.close()
+
+# --- ADD: model + endpoint to push notifications from the UI ---
+
+class NotificationPush(BaseModel):
+    kind: str = "credit_usage"
+    dedupe_key: str
+    subject: str
+    sender: str = "System"
+    body: str = ""
+
+
+@app.post("/notifications/push")
+def push_notification(payload: NotificationPush):
+    _ensure_notifications_table()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    ts = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+    try:
+        cur.execute(
+            """
+            INSERT INTO notifications (kind, dedupe_key, subject, sender, body, created_at, is_read, dismissed)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+            """,
+            (
+                payload.kind,
+                payload.dedupe_key,
+                payload.subject,
+                payload.sender,
+                payload.body,
+                ts,
+            ),
+        )
+        conn.commit()
+        return {"ok": True, "created": True}
+    except sqlite3.IntegrityError:
+        # dedupe_key already exists → don't spam
+        return {"ok": True, "created": False}
+    finally:
+        conn.close()
+
+
+def _to_local_display(ts_iso: str) -> str:
+    try:
+        # Stored as UTC ISO; display in server local time (your box).
+        dt_utc = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+        dt_local = dt_utc.astimezone()
+        return dt_local.strftime("%a %m/%d/%Y %I:%M %p")
+    except Exception:
+        return ts_iso
+
+
+@app.get("/notifications")
+def list_notifications(limit: int = 200):
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, subject, sender, created_at, is_read
+        FROM notifications
+        WHERE dismissed = 0
+        ORDER BY is_read ASC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    items = []
+    for (id_, subject, sender, created_at, is_read) in rows:
+        items.append(
+            {
+                "id": id_,
+                "subject": subject,
+                "sender": sender,
+                "created_at": created_at,
+                "created_at_local": _to_local_display(created_at),
+                "is_read": bool(is_read),
+            }
+        )
+    return {"items": items}
+
+
+@app.get("/notifications/unread-count")
+def unread_count():
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE dismissed = 0 AND is_read = 0
+        """
+    )
+    (n,) = cur.fetchone()
+    conn.close()
+    return {"unread": int(n)}
+
+
+@app.get("/notifications/{notif_id}")
+def get_notification(notif_id: int):
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, subject, sender, body, created_at, is_read, dismissed
+        FROM notifications
+        WHERE id = ?
+        """,
+        (notif_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    id_, subject, sender, body, created_at, is_read, dismissed = row
+    return {
+        "id": id_,
+        "subject": subject,
+        "sender": sender,
+        "body": body,
+        "created_at": created_at,
+        "created_at_local": _to_local_display(created_at),
+        "is_read": bool(is_read),
+        "dismissed": bool(dismissed),
+    }
+
+
+@app.post("/notifications/{notif_id}/read")
+def mark_notification_read(notif_id: int):
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notif_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/notifications/{notif_id}/dismiss")
+def dismiss_notification(notif_id: int):
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE notifications SET dismissed = 1 WHERE id = ?", (notif_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/notifications/mark-all-read")
+def mark_all_notifications_read():
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE notifications SET is_read = 1 WHERE dismissed = 0")
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/notifications/clear-read")
+def clear_read_notifications():
+    _ensure_notifications_table()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    # Dismiss anything already read
+    cur.execute("UPDATE notifications SET dismissed = 1 WHERE dismissed = 0 AND is_read = 1")
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 
 def get_category_from_db(tx_ids):
     if not tx_ids:
@@ -590,6 +796,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 def home():
     return FileResponse("static/home.html")
+
+
+@app.get("/settings")
+def settings_page():
+    return FileResponse("static/settings.html")
 
 
 @app.get("/account")
@@ -1187,12 +1398,35 @@ def account_transactions(account_id: int, limit: int = 200):
 # Bank Totals Sidebar
 # =============================================================================
 
+def _to_float_or_zero(v):
+    if v is None:
+        return 0.0
+    # sqlite might return strings; handle "$8,000", "8000", "Unlimited", etc.
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return 0.0
+        # common non-numeric cases
+        if s.lower() in {"unlimited", "n/a", "na", "none"}:
+            return 0.0
+        # remove $, commas, spaces
+        s = s.replace("$", "").replace(",", "").replace(" ", "")
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @app.get("/bank-totals")
 def bank_totals():
     conn, cur = with_db_cursor()
 
     accounts = cur.execute("""
-      SELECT id, institution, name, LOWER(accountType) AS accountType
+      SELECT id, institution, name, LOWER(accountType) AS accountType, credit_limit
       FROM accounts
     """).fetchall()
 
@@ -1231,7 +1465,13 @@ def bank_totals():
 
         bucket = acc_type if acc_type in by_type else "other"
         display_name = f'{a["institution"]} — {a["name"]}'
-        by_type[bucket].append({"id": aid, "name": display_name, "total": balance})
+        item = {"id": aid, "name": display_name, "total": balance}
+
+        # only meaningful for credit cards, but safe to include
+        if bucket == "credit":
+            item["credit_limit"] = _to_float_or_zero(a["credit_limit"])
+
+        by_type[bucket].append(item)
 
     for k in by_type:
         by_type[k].sort(key=lambda x: x["total"], reverse=True)
@@ -1339,6 +1579,243 @@ def create_category_rule(payload: RuleCreate):
     conn.close()
 
     return {"ok": True, "pattern": pattern, "applied": applied}
+
+
+class RuleUpdate(BaseModel):
+    category: str
+    reapply_existing: bool = False
+
+
+class RuleActiveUpdate(BaseModel):
+    is_active: bool
+
+
+class RuleTestBody(BaseModel):
+    pattern: str
+    flags: str = "i"
+    limit: int = 50
+
+
+def _compile_rule(pattern: str, flags: str):
+    re_flags = 0
+    if flags and "i" in flags:
+        re_flags |= re.IGNORECASE
+    return re.compile(pattern, re_flags)
+
+
+def _recent_merchants(cur, limit: int = 50):
+    # Distinct recent merchants (with counts) so test results are useful.
+    rows = cur.execute(
+        """
+        WITH tx AS (
+          SELECT
+            merchant,
+            COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')) AS raw_date,
+            date(
+              '20' || substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 7, 2) || '-' ||
+              substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 1, 2) || '-' ||
+              substr(COALESCE(NULLIF(postedDate,'unknown'), NULLIF(purchaseDate,'unknown')), 4, 2)
+            ) AS d
+          FROM transactions
+          WHERE merchant IS NOT NULL AND TRIM(merchant) <> ''
+        )
+        SELECT merchant, COUNT(*) AS c, MAX(d) AS last_d
+        FROM tx
+        GROUP BY merchant
+        ORDER BY last_d DESC, c DESC
+        LIMIT ?
+        """,
+        (int(limit or 50),),
+    ).fetchall()
+
+    return [{"merchant": r["merchant"], "count": int(r["c"] or 0)} for r in rows]
+
+
+def _rule_match_count(cur, rx: re.Pattern):
+    # Count ALL transactions whose merchant matches this rule.
+    rows = cur.execute(
+        "SELECT merchant FROM transactions WHERE merchant IS NOT NULL AND TRIM(merchant) <> ''"
+    ).fetchall()
+    c = 0
+    for r in rows:
+        if rx.search(r["merchant"] or ""):
+            c += 1
+    return c
+
+
+def _apply_rule_override(cur, category: str, rx: re.Pattern):
+    # Re-apply to existing transactions.
+    #
+    # Safety: avoid overwriting structural categories.
+    protected = {"Transfer", "Card Payment", "Income", "Interest"}
+
+    rows = cur.execute(
+        """
+        SELECT id, merchant, TRIM(COALESCE(category,'')) AS category
+        FROM transactions
+        WHERE merchant IS NOT NULL AND TRIM(merchant) <> ''
+        """
+    ).fetchall()
+
+    matched_ids = []
+    for r in rows:
+        merchant = r["merchant"] or ""
+        if not rx.search(merchant):
+            continue
+
+        current_cat = (r["category"] or "").strip()
+        if current_cat in protected:
+            continue
+
+        matched_ids.append(r["id"])
+
+    if matched_ids:
+        cur.executemany(
+            "UPDATE transactions SET category = ? WHERE id = ?",
+            [(category, txid) for txid in matched_ids],
+        )
+
+    return len(matched_ids)
+
+
+@app.get("/category-rules/list")
+def list_category_rules(include_inactive: int = 0, with_counts: int = 0):
+    conn, cur = with_db_cursor()
+
+    where = ""
+    if not include_inactive:
+        where = "WHERE is_active = 1"
+
+    rows = cur.execute(
+        f"""
+        SELECT id, pattern, flags, category, is_active
+        FROM CategoryRules
+        {where}
+        ORDER BY is_active DESC, id DESC
+        """
+    ).fetchall()
+
+    rules = [dict(r) for r in rows]
+
+    if with_counts:
+        # Compute counts in Python (SQLite doesn't have regex by default).
+        # This is OK for typical personal DB sizes.
+        tx_merchants = cur.execute(
+            "SELECT merchant FROM transactions WHERE merchant IS NOT NULL AND TRIM(merchant) <> ''"
+        ).fetchall()
+        merchants = [r["merchant"] or "" for r in tx_merchants]
+
+        for r in rules:
+            try:
+                rx = _compile_rule(r["pattern"], r.get("flags") or "")
+            except Exception:
+                r["match_count"] = 0
+                r["regex_error"] = "Invalid regex"
+                continue
+
+            c = 0
+            for m in merchants:
+                if rx.search(m):
+                    c += 1
+            r["match_count"] = c
+
+    conn.close()
+    return rules
+
+
+@app.post("/category-rules/{rule_id}")
+def update_category_rule(rule_id: int, payload: RuleUpdate):
+    category = (payload.category or "").strip()
+    if not category:
+        return {"ok": False, "error": "Category is required"}
+
+    conn, cur = with_db_cursor()
+
+    row = cur.execute(
+        "SELECT id, pattern, flags FROM CategoryRules WHERE id = ?",
+        (int(rule_id),),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return {"ok": False, "error": "Rule not found"}
+
+    pattern = row["pattern"]
+    flags = row["flags"] or "i"
+
+    cur.execute(
+        "UPDATE CategoryRules SET category = ? WHERE id = ?",
+        (category, int(rule_id)),
+    )
+
+    applied = 0
+    if payload.reapply_existing:
+        try:
+            rx = _compile_rule(pattern, flags)
+        except Exception:
+            conn.close()
+            return {"ok": False, "error": "Invalid regex; cannot re-apply"}
+        applied = _apply_rule_override(cur, category, rx)
+
+    # refresh match_count for UI convenience
+    try:
+        rx = _compile_rule(pattern, flags)
+        match_count = _rule_match_count(cur, rx)
+    except Exception:
+        match_count = 0
+
+    conn.commit()
+    conn.close()
+    return {"ok": True, "applied": applied, "match_count": match_count}
+
+
+@app.post("/category-rules/{rule_id}/active")
+def set_rule_active(rule_id: int, payload: RuleActiveUpdate):
+    conn, cur = with_db_cursor()
+
+    cur.execute(
+        "UPDATE CategoryRules SET is_active = ? WHERE id = ?",
+        (1 if payload.is_active else 0, int(rule_id)),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": int(rule_id), "is_active": bool(payload.is_active)}
+
+
+@app.delete("/category-rules/{rule_id}")
+def delete_rule(rule_id: int):
+    conn, cur = with_db_cursor()
+    cur.execute("DELETE FROM CategoryRules WHERE id = ?", (int(rule_id),))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "deleted": int(rule_id)}
+
+
+@app.post("/category-rules/test")
+def test_rule(body: RuleTestBody):
+    pattern = (body.pattern or "").strip()
+    if not pattern:
+        return {"ok": False, "error": "Pattern is required"}
+
+    flags = (body.flags or "i").strip()
+    try:
+        rx = _compile_rule(pattern, flags)
+    except Exception as e:
+        return {"ok": False, "error": f"Invalid regex: {e}"}
+
+    conn, cur = with_db_cursor()
+    recent = _recent_merchants(cur, limit=max(1, min(int(body.limit or 50), 200)))
+    conn.close()
+
+    tested = []
+    for r in recent:
+        merchant = r["merchant"]
+        tested.append(
+            {"merchant": merchant, "count": int(r["count"]), "matched": bool(rx.search(merchant or ""))}
+        )
+
+    return {"ok": True, "tested": tested}
+
 
 
 @app.get("/category-totals-month")
@@ -1559,44 +2036,64 @@ def category_trend(category: str, period: str = "1m"):
 
 
 @app.get("/category-transactions")
-def category_transactions(
-        category: str,
-        start: str,
-        end: str,
-        limit: int = 500
-):
+def category_transactions(category: str, start: str, end: str, limit: int = 500):
     sql = """
       WITH tx AS (
         SELECT
           t.id,
-          COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')) AS raw_date,
+
+          t.postedDate AS postedDate_raw,
+          t.purchaseDate AS purchaseDate_raw,
+
+          -- "effective" display date (Home-style)
+          COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS postedDate,
+
           t.merchant,
           t.amount,
           TRIM(t.category) AS category,
           a.institution AS bank,
           a.name AS card,
+
           CASE
-            WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 8 THEN
-              date('20' || substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),7,2) || '-' ||
-                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),1,2) || '-' ||
-                         substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),4,2))
-            WHEN length(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))) = 10 THEN
-              date(substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),7,4) || '-' ||
-                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),1,2) || '-' ||
-                   substr(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')),4,2))
+            WHEN length(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')))) = 8 THEN
+              date(
+                '20' || substr(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))),7,2) || '-' ||
+                       substr(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))),1,2) || '-' ||
+                       substr(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))),4,2)
+              )
+            WHEN length(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown')))) = 10 THEN
+              date(
+                substr(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))),7,4) || '-' ||
+                substr(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))),1,2) || '-' ||
+                substr(TRIM(COALESCE(NULLIF(t.postedDate,'unknown'), NULLIF(t.purchaseDate,'unknown'))),4,2)
+              )
             ELSE NULL
-          END AS d
+          END AS dateISO
+
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
         WHERE TRIM(t.category) = TRIM(?)
       )
-      SELECT *
+      SELECT DISTINCT
+        id,
+        postedDate,
+        merchant,
+        amount,
+        category,
+        bank,
+        card,
+        dateISO,
+        postedDate_raw,
+        purchaseDate_raw
       FROM tx
-      WHERE d BETWEEN ? AND ?
-      ORDER BY d DESC, id DESC
+      WHERE dateISO IS NOT NULL
+        AND dateISO BETWEEN ? AND ?
+      -- Newest at top, oldest at bottom (and deterministic within same day)
+      ORDER BY dateISO DESC, id DESC
       LIMIT ?
     """
     return query_db(sql, (category, start, end, limit))
+
 
 
 @app.get("/category-totals-lifetime")
@@ -3545,3 +4042,215 @@ def list_receipts_for_tx(tx_id: str):
 
     con.close()
     return {"tx_id": tx_id, "receipts": [dict(r) for r in rows]}
+
+# =============================================================================
+# UI Layout Persistence
+# =============================================================================
+
+import json
+from typing import Any, Dict
+from pydantic import BaseModel
+from fastapi import HTTPException
+
+def _ensure_ui_layout_table():
+    # uses the same DB_PATH + connection style as everything else
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS ui_layout (
+          key TEXT PRIMARY KEY,
+          layout_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+class SaveLayoutBody(BaseModel):
+    key: str
+    layout: Dict[str, Any]
+
+@app.get("/ui-layout")
+def get_ui_layout(key: str):
+    _ensure_ui_layout_table()
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT layout_json FROM ui_layout WHERE key = ?",
+            (key,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return {"key": key, "layout": {}}
+
+    return {"key": key, "layout": json.loads(row[0])}
+
+@app.post("/ui-layout")
+def save_ui_layout(body: SaveLayoutBody):
+    _ensure_ui_layout_table()
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            INSERT INTO ui_layout(key, layout_json, updated_at)
+            VALUES(?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              layout_json = excluded.layout_json,
+              updated_at = excluded.updated_at
+            """,
+            (body.key, json.dumps(body.layout), now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"key": body.key, "layout": body.layout}
+
+
+# =============================================================================
+# LES Profile Persistence (DB-backed so it syncs across devices)
+# =============================================================================
+
+import json as _json
+from typing import Any as _Any, Dict as _Dict
+
+def _ensure_les_profile_table():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS les_profile (
+          key TEXT PRIMARY KEY,
+          profile_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+class SaveLESProfileBody(BaseModel):
+    key: str = "default"
+    profile: _Dict[str, _Any]
+
+@app.get("/les-profile")
+def get_les_profile(key: str = "default"):
+    _ensure_les_profile_table()
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT profile_json FROM les_profile WHERE key = ?",
+            (key,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return {"key": key, "profile": {}}
+
+    try:
+        return {"key": key, "profile": _json.loads(row[0])}
+    except Exception:
+        return {"key": key, "profile": {}}
+
+@app.post("/les-profile")
+def save_les_profile(body: SaveLESProfileBody):
+    _ensure_les_profile_table()
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            INSERT INTO les_profile(key, profile_json, updated_at)
+            VALUES(?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              profile_json = excluded.profile_json,
+              updated_at = excluded.updated_at
+            """,
+            (body.key, _json.dumps(body.profile), now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"key": body.key, "profile": body.profile}
+
+from pydantic import BaseModel
+from fastapi import HTTPException
+import sqlite3, json
+
+class SavingsGoalIn(BaseModel):
+    mode: str  # "percent" | "amount"
+    value: float
+
+def _ensure_app_settings(conn: sqlite3.Connection):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    """)
+    conn.execute("""
+    INSERT OR IGNORE INTO app_settings(key, value_json)
+    VALUES ('savings_goal', '{"mode":"percent","value":0}');
+    """)
+    conn.commit()
+
+@app.get("/settings/savings-goal")
+def get_savings_goal():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_app_settings(conn)
+        row = conn.execute(
+            "SELECT value_json FROM app_settings WHERE key='savings_goal' LIMIT 1"
+        ).fetchone()
+        if not row:
+            return {"mode": "percent", "value": 0}
+
+        j = json.loads(row["value_json"])
+        mode = j.get("mode", "percent")
+        value = float(j.get("value", 0) or 0)
+        if mode not in ("percent", "amount"):
+            mode = "percent"
+        if value < 0:
+            value = 0
+        if mode == "percent" and value > 100:
+            value = 100
+        return {"mode": mode, "value": value}
+    finally:
+        conn.close()
+
+@app.post("/settings/savings-goal")
+def set_savings_goal(body: SavingsGoalIn):
+    mode = body.mode if body.mode in ("percent", "amount") else None
+    if mode is None:
+        raise HTTPException(status_code=422, detail="mode must be 'percent' or 'amount'")
+    value = float(body.value)
+    if value < 0:
+        raise HTTPException(status_code=422, detail="value must be >= 0")
+    if mode == "percent" and value > 100:
+        raise HTTPException(status_code=422, detail="percent must be <= 100")
+
+    payload = json.dumps({"mode": mode, "value": value})
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _ensure_app_settings(conn)
+        conn.execute(
+            "INSERT INTO app_settings(key, value_json, updated_at) VALUES(?, ?, datetime('now')) "
+            "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=datetime('now')",
+            ("savings_goal", payload),
+        )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()

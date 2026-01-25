@@ -9,10 +9,11 @@
     overflow-x: hidden !important;
   }
 
-  body{
-    padding: 0 !important;
-    padding-bottom: 74px; /* room for bottom tab bar */
-  }
+body{
+  padding-top: var(--topbar-h) !important;
+  padding-bottom: 74px !important;  /* your mobile bottom bar height */
+}
+
 
   .page-container{
     max-width: none !important;
@@ -434,4 +435,6 @@
     max-height: 55vh;
     object-fit: contain;
   }
+
+
 }

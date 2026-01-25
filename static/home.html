@@ -3,245 +3,204 @@
 <head>
   <link rel="icon" href="data:,">
   <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Finance" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Finance" />
 
-<meta name="theme-color" content="#ffffff" />
-<link rel="manifest" href="/static/manifest.webmanifest" />
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
 
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="/static/css/mobile.css">
+  <script src="/static/theme.js"></script>
 </head>
 
-<body class="page-home">
+<body class="page-home" data-page-title="Home">
+<div class="page-container">
 
-  <!-- =============================================================================
-       Page Container
-       ============================================================================= -->
-  <div class="page-container">
+  <!-- Shared top bar (settings + title + optional back button) -->
+  <div id="topBar"></div>
 
-    <div id="homeChartMount"></div>
+    <!-- ADD: data-home-section directly on the existing block -->
+    <div id="homeChartMount" data-home-section="chart"></div>
 
     <hr class="section-divider" />
 
-    <!-- =============================================================================
-     Upcoming (7-day mini calendar)
-     ============================================================================= -->
-<div id="upcomingMount" style="margin-top:14px;"></div>
+    <div id="upcomingMount" data-home-section="upcoming" style="margin-top:14px;"></div>
+
     <hr class="section-divider" />
-    <!-- =============================================================================
-         Bank Totals + Monthly Spending Sidebar
-         ============================================================================= -->
-<section class="bank-area">
 
-  <!-- LEFT SIDEBAR (stacked vertically) -->
-<!-- Sidebar stack (Month budget + Monthly Spending) -->
-<aside class="sidebar-stack">
+    <!-- ADD: data-home-section on the existing bank-area section -->
+    <section class="bank-area" data-home-section="bankArea">
 
-  <!-- Month Budget (new) -->
-  <div id="monthBudget" class="category-box category-box--sidebar" aria-label="Month budget">
-    <div class="category-box__header">This month</div>
+      <!-- ADD: id + data-sidebar-section on existing cards (no markup change) -->
+      <aside class="sidebar-stack" id="sidebarStack">
 
-    <div class="month-budget__top">
-      <div class="mb-kpi">
-        <div class="mb-label">Safe to spend</div>
-        <div class="mb-value" id="mbSafe">—</div>
-      </div>
-      <div class="mb-meta" id="mbMeta">—</div>
+      <div id="monthBudget" class="category-box category-box--sidebar"
+     data-sidebar-section="monthBudget" aria-label="Month budget">
+  <div class="category-box__header">This month</div>
+
+  <div class="month-budget__top">
+    <div class="mb-kpi">
+      <div class="mb-label">Safe to spend</div>
+      <div class="mb-value" id="mbSafe">—</div>
     </div>
-
-    <div class="mb-bar" aria-hidden="true">
-      <div class="mb-bar__fill" id="mbBarFill" style="width:0%"></div>
-    </div>
-
-    <ul class="category-box__list" style="margin-top:10px;">
-      <li id="mbIncomeRow" class="category-pill" role="button" tabindex="0" style="cursor:pointer;" title="View expected income breakdown">
-        <div class="cat-left"><span class="cat-name">Expected income</span></div>
-        <span class="cat-amt" id="mbIncome">—</span>
-      </li>
-      <li class="category-pill is-static">
-        <div class="cat-left"><span class="cat-name">Spent so far</span></div>
-        <span class="cat-amt" id="mbSpent">—</span>
-      </li>
-      <li class="category-pill is-static">
-        <div class="cat-left"><span class="cat-name">Remaining bills</span></div>
-        <span class="cat-amt" id="mbBills">—</span>
-      </li>
-    </ul>
+    <div class="mb-meta" id="mbMeta">—</div>
+    <div class="mb-goal" id="mbGoal" style="margin-top:6px; font-size:12px; opacity:.75;">—</div>
   </div>
 
-  <!-- Monthly Spending (existing) -->
-  <div id="categoryTotals" class="category-box category-box--sidebar">
-    <div class="category-box__header">Monthly Spending</div>
-    <ul id="categoryTotalsList" class="category-box__list"></ul>
+  <div class="mb-bar" aria-hidden="true">
+    <div class="mb-bar__fill" id="mbBarFill" style="width:0%"></div>
   </div>
 
-</aside>
+  <!-- IMPORTANT: restore the pill layout your CSS styles -->
+  <ul class="category-box__list" style="margin-top:10px;">
+    <li id="mbIncomeRow" class="category-pill" role="button" tabindex="0"
+        style="cursor:pointer;" title="View expected income breakdown">
+      <div class="cat-left"><span class="cat-name">Expected income</span></div>
+      <span class="cat-amt" id="mbIncome">—</span>
+    </li>
 
+    <li class="category-pill is-static">
+      <div class="cat-left"><span class="cat-name">Spent so far</span></div>
+      <span class="cat-amt" id="mbSpent">—</span>
+    </li>
 
-  <!-- RIGHT MAIN -->
-  <div class="bank-main">
-
-        <div class="category-box bank-box-fill">
-  <div class="category-box__header" id="bankTotalsHeader"
-       style="display:flex; align-items:center; gap:8px;">
-    <span>Bank Totals</span>
-
-    <!-- Bank info button -->
-    <button id="bankInfoBtn"
-            class="icon-btn"
-            title="Bank info"
-            aria-label="Bank info">
-      i
-    </button>
-  </div>
-
-  <div id="bankTotals"></div>
+    <li class="category-pill is-static">
+      <div class="cat-left"><span class="cat-name">Remaining bills</span></div>
+      <span class="cat-amt" id="mbBills">—</span>
+    </li>
+  </ul>
 </div>
 
+
+        <div id="categoryTotals" class="category-box category-box--sidebar"
+             data-sidebar-section="monthlySpending">
+          <div class="category-box__header">Monthly Spending</div>
+          <ul id="categoryTotalsList" class="category-box__list"></ul>
+        </div>
+
+      </aside>
+
+      <div class="bank-main">
+        <div class="category-box bank-box-fill">
+          <div class="category-box__header" id="bankTotalsHeader"
+               style="display:flex; align-items:center; gap:8px;">
+            <span>Bank Totals</span>
+            <button id="bankInfoBtn" class="icon-btn" title="Bank info" aria-label="Bank info">i</button>
+          </div>
+
+          <div id="bankTotals"></div>
+        </div>
       </div>
 
     </section>
 
     <hr id="txDivider" class="section-divider" />
 
-
-
-    <!-- =============================================================================
-         Transactions Table
-         ============================================================================= -->
-  <section aria-label="Transactions">
-  <div class="category-box">
-    <div class="category-box__header">Recent Transactions</div>
-    <div id="txList" class="tx-list"></div>
-  </div>
-</section>
-
-
+    <!-- ADD: data-home-section on existing transactions section -->
+    <section aria-label="Transactions" data-home-section="transactions">
+      <div class="category-box">
+        <div class="category-box__header">Recent Transactions</div>
+        <div id="txList" class="tx-list"></div>
+      </div>
+    </section>
 
   </div><!-- /.page-container -->
 
-
-  <!-- =============================================================================
-       Rule Modal
-       ============================================================================= -->
-  <div
-    id="ruleModalBackdrop"
-    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35);"
-  >
-    <div
-      id="ruleModal"
-      style="max-width:520px; margin:8vh auto; background:#fff; border-radius:16px; padding:16px; box-shadow:0 10px 40px rgba(0,0,0,0.2);"
-    >
-
-      <!-- Modal header -->
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-        <h3 style="margin:0;">Create category rule</h3>
-        <button id="ruleModalClose" type="button">✕</button>
-      </div>
-
-      <!-- Modal navigation -->
-      <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
-        <button id="rulePrevBtn" type="button">◀ Prev</button>
-        <div id="ruleCounter" style="opacity:0.75;"></div>
-        <button id="ruleNextBtn" type="button">Next ▶</button>
-      </div>
-
-      <!-- Transaction preview -->
-      <div style="margin-top:12px; border:1px solid #eee; border-radius:12px; padding:12px;">
-        <div><strong>Description:</strong> <span id="ruleTxMerchant">—</span></div>
-        <div><strong>Account:</strong> <span id="ruleTxAccount">—</span></div>
-        <div><strong>Amount:</strong> <span id="ruleTxAmount">—</span></div>
-        <div><strong>Date:</strong> <span id="ruleTxDate">—</span></div>
-        <input type="hidden" id="ruleTxId" />
-      </div>
-
-      <!-- Rule form -->
-      <div class="rule-form">
-          <button id="unassignedToggle" class="btn">Most recent ▾</button>
-
-        <div class="rule-field">
-          <label for="ruleCategory">Category</label>
-          <input id="ruleCategory" list="categoryOptions" placeholder="e.g. Food" />
-          <datalist id="categoryOptions"></datalist>
-        </div>
-
-        <div class="rule-field">
-          <label for="ruleKeywords">Keywords (comma-separated)</label>
-          <input id="ruleKeywords" placeholder="e.g. chick-fil-a, chick fil a" />
-        </div>
-
-        <div class="rule-field checkbox">
-          <label>
-            <input id="ruleApplyNow" type="checkbox" checked />
-            Apply to existing unassigned now
-          </label>
-        </div>
-
-        <div class="rule-actions">
-          <button id="ruleSaveBtn" type="button">Save rule</button>
-        </div>
-
-        <div id="ruleSaveMsg" class="rule-msg"></div>
-
-      </div><!-- /.rule-form -->
-
-    </div><!-- /#ruleModal -->
-  </div><!-- /#ruleModalBackdrop -->
-
-
-
+  <!-- KEEP: rule modal, bottom tabs, bank info panel, service worker script, etc. -->
   <div id="bottomTabs"></div>
 
-  <!-- ================================
-     Bank Info Panel
-================================ -->
-<div id="bankInfoOverlay" class="overlay hidden"></div>
-
-<div id="bankInfoPanel" class="side-panel hidden" role="dialog" aria-modal="true">
-  <div class="panel-header">
-    <div>
-      <div class="panel-title">Bank info</div>
-      <div class="panel-subtitle" id="bankInfoSubtitle">—</div>
+  <!-- Rule Modal (Unassigned) -->
+<div id="ruleModalBackdrop" class="modal-backdrop" style="display:none;">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-label="Create rule">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Create rule</div>
+        <div id="ruleCounter" class="modal-sub">—</div>
+      </div>
+      <button id="ruleModalClose" class="icon-btn" type="button" aria-label="Close">✕</button>
     </div>
 
-    <button id="bankInfoClose" class="icon-btn" aria-label="Close">✕</button>
-  </div>
+    <div class="modal-body">
+      <input id="ruleTxId" type="hidden" />
 
-  <div class="panel-actions">
-    <button id="bankRatesRefreshBtn" class="btn">
-      Update interest rates
-    </button>
-  </div>
+      <div class="tx-kv" style="margin-bottom:12px;">
+        <div class="tx-kv__k">Merchant</div><div id="ruleTxMerchant" class="tx-kv__v">—</div>
+        <div class="tx-kv__k">Account</div><div id="ruleTxAccount" class="tx-kv__v">—</div>
+        <div class="tx-kv__k">Amount</div><div id="ruleTxAmount" class="tx-kv__v">—</div>
+        <div class="tx-kv__k">Date</div><div id="ruleTxDate" class="tx-kv__v">—</div>
+      </div>
 
-  <div id="bankInfoBody" class="panel-body">
-    <!-- populated by JS -->
+      <div class="modal-row">
+        <label>Category</label>
+        <input id="ruleCategory" list="categoryOptions" placeholder="Start typing…" />
+        <datalist id="categoryOptions"></datalist>
+      </div>
+
+      <div class="modal-row">
+        <label>Keywords (comma separated)</label>
+        <input id="ruleKeywords" type="text" placeholder="e.g. amazon, prime" />
+      </div>
+
+      <label class="modal-row" style="display:flex; gap:8px; align-items:center;">
+        <input id="ruleApplyNow" type="checkbox" checked />
+        Apply to existing transactions
+      </label>
+
+      <div class="modal-actions" style="display:flex; gap:10px; justify-content:space-between; align-items:center;">
+        <div style="display:flex; gap:8px;">
+          <button id="rulePrevBtn" class="btn" type="button">‹ Prev</button>
+          <button id="ruleNextBtn" class="btn" type="button">Next ›</button>
+        </div>
+
+        <button id="ruleSaveBtn" class="btn btn-primary" type="button">Save</button>
+      </div>
+
+      <div id="ruleSaveMsg" class="mini-note" style="margin-top:10px;"></div>
+    </div>
   </div>
 </div>
 
 
+<div id="bankInfoOverlay" class="overlay hidden"></div>
 
-<script>
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js").catch(console.error);
-  }
-</script>
+<div id="bankInfoPanel" class="side-panel hidden">
+  <div class="panel-header">
+    <div>
+      <div class="panel-title">Bank info</div>
+      <div id="bankInfoSubtitle" class="panel-subtitle"></div>
+    </div>
+    <button id="bankInfoClose" class="icon-btn">✕</button>
+  </div>
 
-  <!-- =============================================================================
-       Scripts
-       ============================================================================= -->
+  <div id="bankInfoBody" class="panel-body"></div>
+</div>
 
-<script src="/static/bankInfo.js"></script>
-<script src="/static/profile.js"></script>
-<script src="/static/bottomTabs.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js").catch(console.error);
+    }
+  </script>
+
+  <script src="/static/topBar.js"></script>
+<script src="/static/notifs.js" defer></script>
+  <script src="/static/txInspect.js"></script>
+  <script src="/static/bankInfo.js"></script>
+  <script src="/static/profile.js"></script>
+  <script src="/static/bottomTabs.js"></script>
   <script src="/static/category_icons.js"></script>
-<script src="/static/upcomingCard.js"></script>
+  <script src="/static/upcomingCard.js"></script>
   <script src="/static/chartControls.js"></script>
   <script src="/static/chartCard.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- NEW -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="/static/layout.js"></script>
+
   <script src="/static/home.js"></script>
 </body>
 </html>

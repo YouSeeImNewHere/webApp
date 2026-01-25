@@ -1,0 +1,53 @@
+<header class="top-bar">
+  <div class="top-bar-inner">
+    <a class="top-btn" href="/settings" aria-label="Settings">⚙️</a>
+
+    <div class="top-title" id="topBarTitle">Page</div>
+
+    <div class="top-bar-right">
+      <button class="top-btn notif-btn" id="topBarNotif" type="button" aria-label="Notifications">
+        🔔
+        <span class="notif-badge hidden" id="topBarNotifBadge">0</span>
+      </button>
+
+      <button class="top-btn" id="topBarBack" type="button" aria-label="Back">←</button>
+    </div>
+  </div>
+
+  <!-- Notifications drawer -->
+  <div class="overlay hidden" id="notifOverlay" aria-hidden="true"></div>
+
+  <aside class="side-panel hidden" id="notifPanel" aria-hidden="true" aria-label="Notifications panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Notifications</div>
+        <div class="panel-subtitle" id="notifSubtitle">—</div>
+      </div>
+      <button class="top-btn" id="notifCloseBtn" type="button" aria-label="Close">✕</button>
+    </div>
+
+    <div class="panel-actions">
+      <button class="btn" id="notifRefreshBtn" type="button">Refresh</button>
+      <button class="btn btn-ghost" id="notifMarkAllReadBtn" type="button">Mark all read</button>
+      <button class="btn btn-ghost" id="notifClearReadBtn" type="button">Clear read</button>
+    </div>
+
+    <div class="panel-body">
+      <div class="notif-split">
+        <div class="notif-list" id="notifList"></div>
+        <div class="notif-detail hidden" id="notifDetail">
+          <div class="notif-detail-head">
+            <div class="notif-detail-sub" id="notifDetailMeta"></div>
+            <div class="notif-detail-title" id="notifDetailTitle"></div>
+          </div>
+          <pre class="notif-detail-body" id="notifDetailBody"></pre>
+          <div class="notif-detail-actions">
+            <button class="btn" id="notifDismissBtn" type="button">Dismiss</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</header>
+
+
