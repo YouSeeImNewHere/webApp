@@ -4,6 +4,7 @@ window.__calYear  = today.getFullYear();
 window.__calMonth = today.getMonth() + 1; // 1–12
 window.__calEventsByDate = {};
 
+
 if (window.__recurringPageLoaded) {
   console.warn("recurring_page.js loaded twice; skipping re-init");
 } else {
@@ -196,16 +197,29 @@ function renderCalendarGrid(year, month){
       return Object.values(byCat).sort((a,b)=> (Math.abs(b.total)-Math.abs(a.total)) || a.cat.localeCompare(b.cat));
     })();
 
-    const chips = grouped
-      .slice(0, 3)
-      .map(g => {
-        const label = `${g.cat.toUpperCase()} • ${money(g.total)}`;
-        const tip = `${g.cat} (${g.count}) — ${money(g.total)}`;
-        return `<div class="cal-chip" title="${esc(tip)}">${esc(label)}</div>`;
-      })
-      .join("");
+    // After you compute `grouped`...
 
-    const more = grouped.length > 3
+    const isMobile = window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+
+    const topCats = grouped.slice(0, 3);
+
+    const chips = isMobile
+      ? `
+        <div class="cal-icons" aria-hidden="true">
+          ${topCats.map(g => {
+            const tip = `${g.cat} (${g.count}) — ${money(g.total)}`;
+            return `<span class="cal-ic" title="${esc(tip)}">${categoryIconHTML(g.cat)}</span>`;
+          }).join("")}
+        </div>
+      `
+      : topCats.map(g => {
+          const label = `${g.cat.toUpperCase()} • ${money(g.total)}`;
+          const tip = `${g.cat} (${g.count}) — ${money(g.total)}`;
+          return `<div class="cal-chip" title="${esc(tip)}">${esc(label)}</div>`;
+        }).join("");
+
+    // Desktop only: keep the "+N more" chip
+    const more = (!isMobile && grouped.length > 3)
       ? `<div class="cal-chip cal-chip--more">+${grouped.length - 3} more</div>`
       : "";
 
@@ -312,8 +326,12 @@ function closeCalDayModal(){
 
 function money(n){
   const x = Number(n || 0);
-  return x.toLocaleString(undefined, { style:"currency", currency:"USD" });
+  const sign = x < 0 ? "-" : "";
+  const abs = Math.abs(x);
+  // Force "$" always (no "US$")
+  return sign + "$" + abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
+
 
 function shortDateISO(iso){
   if (!iso) return "—";
@@ -330,21 +348,24 @@ function esc(s){
     .replaceAll("'","&#39;");
 }
 
-function merchantHTML(g){
-    const m = (g.merchant_display || g.merchant || "").toUpperCase();
-
+function merchantHTML(g, gi){
+  const m = (g.merchant_display || g.merchant || "").toUpperCase();
   const date = shortDateISO(g.last_seen);
 
   return `
-    <div class="rec-merchant">
-      <div>
-        <div class="rec-merchant-name" title="${esc(m)}">${esc(m)}</div>
+    <div class="rec-head">
+      <button class="rec-toggle" type="button" data-gi="${gi}" aria-expanded="true">
+        <span class="rec-caret">▾</span>
+      </button>
+
+      <div class="rec-head-main">
+        <button class="rec-merchant-name" type="button" data-full="${esc(m)}">${esc(m)}</button>
         <div class="rec-merchant-sub">${esc(date)}</div>
       </div>
 
       <div class="rec-merchant-actions">
-        <button class="ignore-btn" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
-        <button class="ignore-btn" onclick="ignoreMerchant('${esc(g.merchant)}')">Ignore</button>
+        <button class="pill-btn" type="button" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
+        <button class="pill-btn" type="button" onclick="ignoreMerchant('${esc(g.merchant)}')">Ignore</button>
       </div>
     </div>
   `;
@@ -366,99 +387,90 @@ function patternCategory(p){
 }
 
 function patternHTML(gIdx, pIdx, p){
-  const freq = p.cadence || "irregular";
+  const freq = (p.cadence || "irregular").toLowerCase();
   const date = shortDateISO(p.last_seen);
   const occ  = `x${p.occurrences || 0}`;
 
   const merchant = p.merchant ?? __lastData[gIdx]?.merchant ?? "";
-  const amount = p.amount;
-  const accountId = p.account_id ?? -1; // optional if you include it from backend
+  const amount = Number(p.amount || 0);
+  const accountId = p.account_id ?? -1;
 
   return `
-    <div class="tx-row">
+    <div class="rec-item">
       <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0"
            aria-label="Show transactions"
            onclick="event.stopPropagation(); openOccModal(${gIdx}, ${pIdx});">
         ${categoryIconHTML(patternCategory(p))}
       </div>
 
-      <div class="tx-date">${esc(freq)}</div>
-
-      <div class="tx-main">
-        <div class="rec-sub">${esc(date)} • ${esc(occ)}</div>
-        <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-          <button class="ignore-btn" onclick="event.stopPropagation(); ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
-
-          <select onchange="event.stopPropagation(); overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
-            <option value="">Set cadence…</option>
-            <option value="weekly">weekly</option>
-            <option value="monthly">monthly</option>
-            <option value="quarterly">quarterly</option>
-            <option value="yearly">yearly</option>
-            <option value="irregular">irregular</option>
-          </select>
-        </div>
+      <div class="rec-mid">
+        <div class="rec-freq">${esc(freq)}</div>
+        <div class="rec-meta">${esc(date)} • ${esc(occ)}</div>
       </div>
 
-      <div class="tx-amt">${money(p.amount)}</div>
+      <div class="rec-right">
+        <button class="pill-btn pill-btn--sub"
+          onclick="event.stopPropagation(); ignorePattern('${esc(merchant)}', ${amount}, ${Number(accountId)})">
+          Ignore
+        </button>
+        <div class="rec-amt">${money(amount)}</div>
+      </div>
     </div>
   `;
 }
 
-function merchantHTMLIgnored(g){
+function merchantHTMLIgnored(g, gi){
   const m = (g.merchant_display || g.merchant || "").toUpperCase();
   const date = shortDateISO(g.last_seen);
 
   return `
-    <div class="rec-merchant">
-      <div>
-        <div class="rec-merchant-name" title="${esc(m)}">${esc(m)}</div>
+    <div class="rec-head">
+      <button class="rec-toggle" type="button" data-gi="${gi}" aria-expanded="true">
+        <span class="rec-caret">▾</span>
+      </button>
+
+      <div class="rec-head-main">
+        <button class="rec-merchant-name" type="button" data-full="${esc(m)}">${esc(m)}</button>
         <div class="rec-merchant-sub">${esc(date)}</div>
       </div>
-      <div style="display:flex; gap:8px;">
-        <button class="ignore-btn" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
-        <button class="ignore-btn" onclick="unignoreMerchant('${esc(g.merchant)}')">Unignore</button>
+
+      <div class="rec-merchant-actions">
+        <button class="pill-btn" type="button" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
+        <button class="pill-btn" type="button" onclick="ignoreMerchant('${esc(g.merchant)}')">Unignore</button>
       </div>
     </div>
   `;
 }
 
 function patternHTMLIgnored(gIdx, pIdx, p){
-  const freq = p.cadence || "irregular";
+  const freq = (p.cadence || "irregular").toLowerCase();
   const date = shortDateISO(p.last_seen);
   const occ  = `x${p.occurrences || 0}`;
 
-  const merchant = p.merchant ?? window.__ignoredData?.[gIdx]?.merchant ?? "";
-  const amount = p.amount;
+  const merchant = p.merchant ?? __lastData[gIdx]?.merchant ?? "";
+  const amount = Number(p.amount || 0);
   const accountId = p.account_id ?? -1;
 
   return `
-    <div class="tx-row">
+    <div class="rec-item">
       <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0"
            aria-label="Show transactions"
-           onclick="event.stopPropagation(); openOccFromIgnored(${gIdx}, ${pIdx});">
+           onclick="event.stopPropagation(); openOccModal(${gIdx}, ${pIdx});">
         ${categoryIconHTML(patternCategory(p))}
       </div>
 
-      <div class="tx-date">${esc(freq)}</div>
-
-      <div class="tx-main">
-        <div class="rec-sub">${esc(date)} • ${esc(occ)}</div>
-        <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-          <button class="ignore-btn" onclick="event.stopPropagation(); ignorePattern('${esc(merchant)}', ${Number(amount)}, ${Number(accountId)})">Ignore this</button>
-
-          <select onchange="event.stopPropagation(); overrideCadence('${esc(merchant)}', ${Number(amount)}, this.value, ${Number(accountId)})">
-            <option value="">Set cadence…</option>
-            <option value="weekly">weekly</option>
-            <option value="monthly">monthly</option>
-            <option value="quarterly">quarterly</option>
-            <option value="yearly">yearly</option>
-            <option value="irregular">irregular</option>
-          </select>
-        </div>
+      <div class="rec-mid">
+        <div class="rec-freq">${esc(freq)}</div>
+        <div class="rec-meta">${esc(date)} • ${esc(occ)}</div>
       </div>
 
-      <div class="tx-amt">${money(p.amount)}</div>
+      <div class="rec-right">
+        <button class="pill-btn pill-btn--sub"
+          onclick="event.stopPropagation(); ignorePattern('${esc(merchant)}', ${amount}, ${Number(accountId)})">
+          Ignore
+        </button>
+        <div class="rec-amt">${money(amount)}</div>
+      </div>
     </div>
   `;
 }
@@ -490,9 +502,16 @@ async function loadRecurring(){
     return;
   }
 
-  list.innerHTML = __lastData.map((g, gi) => (
-    merchantHTML(g) + (g.patterns || []).map((p, pi) => patternHTML(gi, pi, p)).join("")
-  )).join("");
+list.innerHTML = __lastData.map((g, gi) => (
+  `<div class="rec-card" data-gi="${gi}">
+     ${merchantHTML(g, gi)}
+     <div class="rec-body">
+       ${(g.patterns || []).map((p, pi) => patternHTML(gi, pi, p)).join("")}
+     </div>
+   </div>`
+)).join("");
+
+
 }
 
 async function ignoreMerchant(name){
@@ -633,8 +652,12 @@ async function openIgnoredModal(){
   window.__ignoredData = groups;
 
   body.innerHTML = groups.map((g, gi) => (
-    merchantHTMLIgnored(g) + (g.patterns || []).map((p, pi) => patternHTMLIgnored(gi, pi, p)).join("")
-  )).join("");
+  `<div class="rec-group">` +
+    merchantHTMLIgnored(g) +
+    (g.patterns || []).map((p, pi) => patternHTMLIgnored(gi, pi, p)).join("") +
+  `</div>`
+)).join("");
+
 
 
   // store for modal drilldown
@@ -667,3 +690,74 @@ document.getElementById("calNext")?.addEventListener("click", () => {
     loadCalendar();
   });
 }
+(function setupNameBubble(){
+  if (window.__nameBubbleSetup) return;
+  window.__nameBubbleSetup = true;
+
+  let bubble = null;
+  let hideTimer = null;
+
+  function ensureBubble(){
+    if (bubble) return bubble;
+    bubble = document.createElement("div");
+    bubble.className = "name-bubble";
+    document.body.appendChild(bubble);
+    return bubble;
+  }
+
+  function hideBubble(){
+    if (!bubble) return;
+    bubble.classList.remove("is-on");
+  }
+
+  function showBubbleOver(el, text){
+    const b = ensureBubble();
+    b.textContent = text;
+
+    // position centered above the tapped element
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = Math.max(10, r.top - 8); // above it
+
+    b.style.left = `${x}px`;
+    b.style.top  = `${y}px`;
+
+    // show
+    b.classList.add("is-on");
+
+    // auto-hide
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hideBubble, 1400);
+  }
+
+  // tap merchant name => bubble
+    function handleNameTap(e){
+  const el = e.target.closest?.(".rec-merchant-name");
+  if (!el) return;
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+
+  e.stopPropagation?.();
+
+  const full = (el.dataset.full || el.getAttribute("title") || el.textContent || "").trim();
+  if (full) showBubbleOver(el, full);
+}
+
+// strongest reliability on real phones
+document.addEventListener("pointerdown", handleNameTap, { capture: true });
+
+  // hide bubble if user scrolls
+  window.addEventListener("scroll", hideBubble, { passive: true });
+})();
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.(".rec-toggle");
+  if (!btn) return;
+
+  const card = btn.closest(".rec-card");
+  if (!card) return;
+
+  const collapsed = card.classList.toggle("is-collapsed");
+  btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+
+  const caret = btn.querySelector(".rec-caret");
+  if (caret) caret.textContent = collapsed ? "▸" : "▾";
+});

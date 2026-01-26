@@ -8,6 +8,8 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime, timezone
+import re
+import requests
 
 import sqlite3
 from emails.transactionHandler import DB_PATH
@@ -39,7 +41,7 @@ def ensure_notifications_table():
     conn.close()
 
 
-def log_parse_failure(msg_id_str: str, subject: str, sender: str, body: str):
+def log_parse_failure(dedupe_key: str, subject: str, sender: str, body: str):
     """Insert one notification per email Message-ID (deduped by dedupe_key)."""
     try:
         ensure_notifications_table()
@@ -52,7 +54,7 @@ def log_parse_failure(msg_id_str: str, subject: str, sender: str, body: str):
             """,
             (
                 "email_parse_failure",
-                msg_id_str,
+                dedupe_key,
                 subject,
                 sender,
                 body,
@@ -65,13 +67,311 @@ def log_parse_failure(msg_id_str: str, subject: str, sender: str, body: str):
         print("Failed to log parse failure notification:", e)
 
 
+def parse_money_to_float(s: str | None):
+    if not s:
+        return None
+    # handles "$1,234.56" and "1234.56" and "-123.45"
+    s = s.strip().replace("$", "").replace(",", "")
+    try:
+        return float(s)
+    except:
+        return None
+
+
+def extract_fields(rule_name: str, m) -> dict:
+    """
+    Return best-effort: merchant, cost, date.
+    date is returned as whatever format the regex captures (string).
+    """
+    out = {}
+
+    # NAVY FED CARD: (1) $amount (2) credit/debit (3) merchant (4) time (5) mm/dd/yy
+    if rule_name == "navy credit":
+        out["cost"] = parse_money_to_float(m.group(1))
+        card_kind = (m.group(2) or "").strip().lower()  # credit|debit
+        out["merchant"] = (m.group(3) or "").strip()
+        out["time"] = (m.group(4) or "").strip()
+        out["date"] = (m.group(5) or "").strip()
+
+        # ✅ match handler mapping (navyFedCard)
+        out["account_id"] = NAVY_CASHREWARDS_ID if card_kind == "credit" else NAVY_DEBIT_ID
+        return out
+
+    # NAVY FED WITHDRAWAL: (1) $amount (2) mm/dd/yy (3) time
+    if rule_name == "navy withdrawal":
+        out["cost"] = parse_money_to_float(m.group(1))
+        out["date"] = (m.group(2) or "").strip()
+        return out
+
+    # NAVY FED DEPOSIT: (1) $amount (2) mm/dd/yy (3) time
+    if rule_name == "navy deposit":
+        out["cost"] = parse_money_to_float(m.group(1))
+        out["date"] = (m.group(2) or "").strip()
+        return out
+
+    # NAVY FED CREDIT HOLD: (1) merchant (2) time (3) mm/dd/yy
+    if rule_name == "navy credit hold":
+        out["merchant"] = (m.group(1) or "").strip()
+        out["date"] = (m.group(3) or "").strip()
+        return out
+
+    # AMEX CHARGE: (1) acct (2) merchant (3) $amount (4) date
+    if rule_name == "american express":
+        acct = (m.group(1) or "").strip()
+        out["merchant"] = (m.group(2) or "").strip()
+        out["cost"] = parse_money_to_float(m.group(3))
+        out["date"] = (m.group(4) or "").strip()  # note: handler normalizes format later
+
+        # ✅ same mapping as email_handlers.americanExpress()
+        if acct == PLAT_ACCOUNT_NUMBER:
+            out["account_id"] = AMEX_PLATINUM_ID
+        elif acct == BCP_ACCOUNT_NUMBER:
+            out["account_id"] = AMEX_BCP_ID
+        return out
+
+    # CAP ONE DEBIT: (1) $amount (2) merchant (3) date
+    if rule_name == "capital one debit":
+        out["cost"] = parse_money_to_float(m.group(1))
+        out["merchant"] = (m.group(2) or "").strip()
+        out["date"] = (m.group(3) or "").strip()
+        out["account_id"] = CAPONE_DEBIT_ID
+        return out
+
+    if rule_name == "capital one credit":
+        out["date"] = (m.group(1) or "").strip()
+        out["merchant"] = (m.group(2) or "").strip()
+        out["cost"] = parse_money_to_float(m.group(3))
+        out["account_id"] = CAPONE_SAVOR_ID
+        return out
+
+    if rule_name == "discovery credit":
+        out["date"] = (m.group(1) or "").strip()
+        out["merchant"] = (m.group(2) or "").strip()
+        out["cost"] = parse_money_to_float(m.group(3))
+        out["account_id"] = DISCOVER_IT_ID
+        return out
+
+    # AMEX PAYMENT: (1) acct (2) amount (3) date
+    if rule_name == "amex payment":
+        out["cost"] = parse_money_to_float(m.group(2))
+        out["date"] = (m.group(3) or "").strip()
+        return out
+
+    # DISCOVER PAYMENT: (1) amount (2) date
+    if rule_name == "discover payment":
+        out["cost"] = parse_money_to_float(m.group(1))
+        out["date"] = (m.group(2) or "").strip()
+        return out
+
+    # CAP ONE PAYMENT: (1) amount (2) date
+    if rule_name == "capital one payment":
+        out["cost"] = parse_money_to_float(m.group(1))
+        out["date"] = (m.group(2) or "").strip()
+        return out
+
+    # NAVY FED ZELLE: (1) amount (2) to person (3) date
+    if rule_name == "navy federal zelle":
+        out["cost"] = parse_money_to_float(m.group(1))
+        out["merchant"] = (m.group(2) or "").strip()
+        out["date"] = (m.group(3) or "").strip()
+        return out
+
+    # default: no known mapping
+    return out
+
 
 load_dotenv()
+
+# -----------------------------
+# Pushover (phone notifications)
+# -----------------------------
+# -----------------------------
+# Pushover (phone notifications)
+# -----------------------------
+PUSHOVER_API_TOKEN = (os.getenv("PUSHOVER_API_TOKEN") or "").strip()
+PUSHOVER_USER_KEY  = (os.getenv("PUSHOVER_USER_KEY")  or "").strip()
+PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
+
+def send_pushover(message: str, title: str = "Finance", priority: int = 0) -> None:
+    if not PUSHOVER_API_TOKEN or not PUSHOVER_USER_KEY:
+        print("Pushover not configured (missing token/user).")
+        return
+
+    # Pushover rejects empty message
+    message = (message or "").strip()
+    if not message:
+        print("Pushover skipped: empty message")
+        return
+
+    try:
+        r = requests.post(
+            PUSHOVER_URL,
+            data={
+                "token": PUSHOVER_API_TOKEN,
+                "user": PUSHOVER_USER_KEY,
+                "title": title[:250],
+                "message": message[:1024],
+                "priority": priority,
+            },
+            timeout=10,
+        )
+
+        if not r.ok:
+            # ✅ This will tell you *exactly* why it’s 400 (bad token/user/etc.)
+            print("Pushover error:", r.status_code, r.text)
+
+        r.raise_for_status()
+
+    except Exception as e:
+        print("Pushover failed:", e)
+
 
 EMAIL = os.getenv("GMAIL_ADDRESS")
 PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
 # -----------------------------
+
+def _first_nonempty(d: dict, keys: list[str]) -> str:
+    for k in keys:
+        v = d.get(k)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s:
+            return s
+    return ""
+
+def card_label_from_account_id(account_id: int | None) -> str:
+    if not account_id:
+        return ""
+
+    # These constants already exist in email_handlers.py (imported via `from emails.email_handlers import *`)
+    # :contentReference[oaicite:2]{index=2}
+    mapping = {
+        NAVY_DEBIT_ID: "Debit",
+        NAVY_CASHREWARDS_ID: "cashRewards",
+        AMEX_PLATINUM_ID: "Platinum",
+        AMEX_BCP_ID: "Blue Cash Preferred",
+        CAPONE_DEBIT_ID: "Capital One Debit",
+        CAPONE_SAVOR_ID: "Savor",
+        DISCOVER_IT_ID: "Discover It",
+    }
+    return mapping.get(account_id, f"Account {account_id}")
+
+def get_bank_and_card_from_db(account_id: int | None) -> tuple[str, str]:
+    """
+    Returns (bank, card_name) from accounts table.
+    accounts: id, institution, name, ...
+    """
+    if not account_id:
+        return ("", "")
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT institution, name FROM accounts WHERE id = ?", (int(account_id),))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return ("", "")
+        bank, card = row[0] or "", row[1] or ""
+        return (str(bank).strip(), str(card).strip())
+    except Exception as e:
+        print("Account lookup failed:", e)
+        return ("", "")
+
+def _guess_card_label(extracted: dict) -> str:
+    # ✅ Prefer account_id mapping
+    try:
+        acct_id = extracted.get("account_id")
+        if acct_id is not None:
+            label = card_label_from_account_id(int(acct_id))
+            if label:
+                return label
+    except Exception:
+        pass
+
+    # (keep your existing logic)
+    label = _first_nonempty(
+        extracted,
+        ["card_used","card","card_name","account","account_name","payment_method",
+         "source","acct","account_last4","acct_last4","card_last4","last4"]
+    )
+    if label:
+        return label
+
+    for k, v in extracted.items():
+        lk = str(k).lower()
+        if any(tok in lk for tok in ("last4", "card", "account", "acct")):
+            s = str(v).strip()
+            if s:
+                return s
+    return ""
+
+def _guess_datetime_label(extracted: dict) -> str:
+    # If your parser provides a combined datetime field, prefer that.
+    dt = _first_nonempty(extracted, ["datetime", "date_time", "timestamp", "posted_at", "authorized_at"])
+    if dt:
+        return dt
+
+    date = _first_nonempty(extracted, ["date", "posted_date", "transaction_date"])
+    time = _first_nonempty(extracted, ["time", "transaction_time"])
+    if date and time:
+        return f"{date} {time}"
+    return date or time
+
+def format_purchase_pushover(extracted: dict) -> str:
+    merchant = _first_nonempty(extracted, ["merchant", "description", "merchant_name"]).strip()
+
+    # cost
+    raw_cost = extracted.get("cost", "")
+    cost_val = None
+    try:
+        if isinstance(raw_cost, (int, float)):
+            cost_val = float(raw_cost)
+        else:
+            s = str(raw_cost).replace(",", "")
+            s = re.sub(r"[^0-9.\-]", "", s)
+            cost_val = float(s) if s else None
+    except Exception:
+        cost_val = None
+
+    date = _first_nonempty(extracted, ["date", "posted_date", "transaction_date"]).strip()
+    time = _first_nonempty(extracted, ["time", "transaction_time"]).strip()
+
+    # ✅ Prefer DB truth via account_id (bank + card)
+    bank = ""
+    card = ""
+    try:
+        acct_id = extracted.get("account_id")
+        if acct_id is not None:
+            bank, card = get_bank_and_card_from_db(int(acct_id))
+    except Exception:
+        pass
+
+    # fallback if DB lookup didn’t return a label
+    if not card:
+        card = _guess_card_label(extracted)
+
+    # Build sentence (skip missing parts gracefully)
+    cost_txt = f"${cost_val:,.2f}" if cost_val is not None else ""
+
+    subject = " ".join([x for x in [bank, card] if x]).strip()
+    if not subject:
+        subject = "A card"
+
+    parts = [f"{subject} was used"]
+    if merchant:
+        parts.append(f"at {merchant}")
+    if cost_txt:
+        parts.append(f"for {cost_txt}")
+    if date:
+        parts.append(f"on {date}")
+    if time:
+        parts.append(f"at {time}")
+
+    return " ".join(parts).strip() + "."
+
 # De-dupe: processed Message-IDs
 # -----------------------------
 SEEN_IDS_FILE = Path(__file__).resolve().parent / "seen_ids.json"
@@ -87,13 +387,77 @@ def load_seen_ids(path: Path) -> dict:
             with path.open("r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
-            # If file is corrupt for any reason, start fresh rather than crash
             return {}
     return {}
 
 def save_seen_ids(path: Path, seen: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(seen, f, indent=2)
+
+def mark_seen_test(
+    seen: dict,
+    dedupe_key: str,
+    subject: str,
+    sender: str,
+    date_header: str,
+    imap_id: str,
+    matched_rule: str,
+    matched: bool,
+    note: str = "",
+    extracted: dict | None = None,
+) -> None:
+    """
+    New JSON format:
+      {
+        "<message-id>": {
+           "subject": "...",
+           "sender": "...",
+           "date": "...",
+           "imap_id": "...",
+           "matched": true/false,
+           "matched_rule": "rule name or ''",
+           "note": "...",
+           "processed_at": "...",
+           "extracted": { "merchant": "...", "cost": 0.0, "date": "..." }   # optional
+        }
+      }
+    """
+    entry = {
+        "subject": subject or "",
+        "sender": sender or "",
+        "date": date_header or "",
+        "imap_id": imap_id,
+        "matched": bool(matched),
+        "matched_rule": matched_rule or "",
+        "note": note or "",
+        "processed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if extracted:
+        # only keep non-empty values
+        entry["extracted"] = {k: v for k, v in extracted.items() if v not in (None, "", [])}
+
+    seen[dedupe_key] = entry
+
+def decode_hdr(val: str) -> str:
+    if not val:
+        return ""
+    parts = decode_header(val)
+    out = []
+    for chunk, enc in parts:
+        if isinstance(chunk, bytes):
+            out.append(chunk.decode(enc or "utf-8", errors="ignore"))
+        else:
+            out.append(str(chunk))
+    return "".join(out)
+
+def get_dedupe_key_from_headers(hdr_msg, sender: str, subject: str, date_header: str, fallback_imap_id: str) -> str:
+    msgid = (hdr_msg.get("Message-ID") or "").strip().lower()
+    if msgid:
+        return msgid
+    # Rare fallback if Message-ID missing
+    return f"{sender.strip().lower()}|{subject.strip().lower()}|{(date_header or '').strip()}|imap:{fallback_imap_id}"
+
 
 
 def mark_seen(path: Path, seen: dict, msg_id_str: str, subject: str) -> None:
@@ -267,36 +631,23 @@ def extract_email_body(msg) -> str:
 from email.utils import parsedate_to_datetime
 
 def test():
-    # In TEST_MODE:
-    #   - skip anything already in seen_ids.json (prod)
-    #   - ALSO skip anything already in seen_ids_test.json (so re-runs don't duplicate)
-    #   - write new processed IDs ONLY to seen_ids_test.json
-    #   - insert into transactions_test via handlers (use_test_table=True)
-    if TEST_MODE:
-        seen_prod = load_seen_ids(SEEN_IDS_FILE)
-        seen_test = load_seen_ids(SEEN_IDS_TEST_FILE)
-        seen_skip = set(seen_prod.keys()) | set(seen_test.keys())
-        seen_write_path = SEEN_IDS_TEST_FILE
-        seen_write = seen_test
-        use_test_table = True
-    else:
-        seen_prod = load_seen_ids(SEEN_IDS_FILE)
-        seen_skip = set(seen_prod.keys())
-        seen_write_path = SEEN_IDS_FILE
-        seen_write = seen_prod
-        use_test_table = False
+    # ✅ always test mode for this run
+    use_test_table = False
+    seen_path = SEEN_IDS_FILE
+
+    # Load existing seen file so we can skip already-processed emails
+    seen = load_seen_ids(seen_path)
+    seen_keys = set(seen.keys())  # dedupe_key = Message-ID
 
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL, PASSWORD)
 
     for msg_id_str in iter_message_ids(mail):
 
-        if msg_id_str in seen_skip:
-            continue
-
+        # 1) Fetch headers (cheap)
         res, hdr_data = mail.fetch(
             msg_id_str,
-            "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])"
+            "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID SUBJECT FROM DATE)])"
         )
         if res != "OK":
             continue
@@ -308,96 +659,186 @@ def test():
 
         hdr_msg = email.message_from_bytes(raw_headers)
 
-        raw_subject, encoding = decode_header(hdr_msg.get("Subject", ""))[0]
-        subject = raw_subject.decode(encoding) if isinstance(raw_subject, bytes) else raw_subject
+        subject = decode_hdr(hdr_msg.get("Subject", ""))
+        sender = decode_hdr(hdr_msg.get("From", ""))
+        date_header = hdr_msg.get("Date") or ""
 
-        if not subject_matches(subject):
+        dedupe_key = get_dedupe_key_from_headers(hdr_msg, sender, subject, date_header, msg_id_str)
+
+        # ✅ Skip if already processed
+        if dedupe_key in seen_keys:
             continue
 
-        raw_from, enc_from = decode_header(hdr_msg.get("From", ""))[0]
-        sender = raw_from.decode(enc_from) if isinstance(raw_from, bytes) else raw_from
-
-        date_header = hdr_msg.get("Date")
-        sent_dt = parsedate_to_datetime(date_header) if date_header else None
+        # compute timeEmail for handlers
+        sent_dt = None
+        try:
+            sent_dt = parsedate_to_datetime(date_header) if date_header else None
+        except Exception:
+            sent_dt = None
         timeEmail = sent_dt.strftime("%I:%M %p") if sent_dt else ""
 
-        # 2) expensive: fetch full message only for matches
-        res, msg_data = mail.fetch(msg_id_str, "(RFC822)")
-        if res != "OK":
+        # If not a subject we care about, still record it as seen? (you previously did)
+        # If you ONLY want to record matched ones, change this to `continue` without mark_seen_test.
+        if not subject_matches(subject):
+            mark_seen_test(
+                seen=seen,
+                dedupe_key=dedupe_key,
+                subject=subject,
+                sender=sender,
+                date_header=date_header,
+                imap_id=msg_id_str,
+                matched_rule="",
+                matched=False,
+                note="subject_not_matched",
+                extracted=None
+            )
+            save_seen_ids(seen_path, seen)
+            seen_keys.add(dedupe_key)
             continue
 
+        # 2) Fetch full message (expensive)
+        res, msg_data = mail.fetch(msg_id_str, "(RFC822)")
+        if res != "OK":
+            mark_seen_test(
+                seen=seen,
+                dedupe_key=dedupe_key,
+                subject=subject,
+                sender=sender,
+                date_header=date_header,
+                imap_id=msg_id_str,
+                matched_rule="",
+                matched=False,
+                note="fetch_rfc822_failed",
+                extracted=None
+            )
+            save_seen_ids(seen_path, seen)
+            seen_keys.add(dedupe_key)
+            continue
+
+        full_msg = None
         for response in msg_data:
-            if not isinstance(response, tuple):
+            if isinstance(response, tuple):
+                full_msg = email.message_from_bytes(response[1])
+                break
+
+        if full_msg is None:
+            mark_seen_test(
+                seen=seen,
+                dedupe_key=dedupe_key,
+                subject=subject,
+                sender=sender,
+                date_header=date_header,
+                imap_id=msg_id_str,
+                matched_rule="",
+                matched=False,
+                note="no_message_bytes",
+                extracted=None
+            )
+            save_seen_ids(seen_path, seen)
+            seen_keys.add(dedupe_key)
+            continue
+
+        # Re-read headers from full message (sometimes cleaner)
+        subject = decode_hdr(full_msg.get("Subject", subject))
+        sender = decode_hdr(full_msg.get("From", sender))
+        date_header = full_msg.get("Date", date_header) or date_header
+
+        body = extract_email_body(full_msg)
+
+        matched = False
+        matched_rule = ""
+        extracted = None
+
+        # 3) Match rules + INSERT into transactions_test via handler
+        for rule in RULES:
+            if not sender_matches(rule, sender):
                 continue
 
-            msg = email.message_from_bytes(response[1])
-            date_header = msg["Date"]
-            sent_dt = parsedate_to_datetime(date_header)
-            timeEmail = sent_dt.strftime("%I:%M %p")
-
-            raw_subject, encoding = decode_header(msg["Subject"])[0]
-            subject = raw_subject.decode(encoding) if isinstance(raw_subject, bytes) else raw_subject
-
-            if not subject_matches(subject):
+            m = rule["regex"].search(body or "")
+            if not m:
                 continue
 
-            raw_from, enc_from = decode_header(msg.get("From"))[0]
-            sender = raw_from.decode(enc_from) if isinstance(raw_from, bytes) else raw_from
+            matched = True
+            matched_rule = rule.get("name", "")
+            extracted = extract_fields(matched_rule, m) or None
 
-            body = extract_email_body(msg)
+            # If the regex didn't capture time, use the handler-style fallback
+            if extracted is not None and "time" not in extracted:
+                extracted["time"] = timeEmail
 
-            print("Subject:", subject)
-            print("From:", sender)
+            # ✅ INSERT to DB test table (via your existing handler)
+            try:
+                rule["handler"](mail, msg_id_str, m, timeEmail, use_test_table=use_test_table)
+            except Exception as e:
+                print("Handler failed:", e)
+                log_parse_failure(dedupe_key, subject, sender, body)
+                # ❌ DO NOT mark seen — retry next run
+                continue
+            break
 
-            matched_any = False
-            for rule in RULES:
-                if not sender_matches(rule, sender):
-                    continue
+        # 4) Record outcome in JSON
+        if matched:
+            note = "inserted_transactions_test"
+            mark_seen_test(
+                seen=seen,
+                dedupe_key=dedupe_key,
+                subject=subject,
+                sender=sender,
+                date_header=date_header,
+                imap_id=msg_id_str,
+                matched_rule=matched_rule,
+                matched=True,
+                note=note,
+                extracted=extracted
+            )
+            save_seen_ids(seen_path, seen)
+            seen_keys.add(dedupe_key)
 
-                match = rule["regex"].search(body)
-                if match:
-                    print(f"Matched rule: {rule['name']}")
+            print("✅ Inserted + seen:", dedupe_key, "|", matched_rule, "|", extracted)
 
-                    # ✅ handler does DB insert; we pass use_test_table down
-                    try:
-                        # ✅ handler does DB insert; we pass use_test_table down
-                        rule["handler"](mail, msg_id_str, match, timeEmail, use_test_table=use_test_table)
-                    except Exception as e:
-                        print("Handler failed:", e)
-                        # Create a notification, but keep email un-seen so we can try again later after you fix the rule.
-                        log_parse_failure(msg_id_str, subject, sender, body)
-                        matched_any = True
-                        break
+            # ✅ Phone notification for PURCHASES only (no webapp notifications table entry)
+            try:
+                rule_lower = (matched_rule or "").lower()
+                is_non_purchase = any(x in rule_lower for x in ["payment", "deposit", "withdrawal", "transfer", "interest"])
+                has_purchase_fields = bool(extracted and extracted.get("merchant") and extracted.get("cost") is not None)
+                if (not is_non_purchase) and has_purchase_fields:
+                    message = format_purchase_pushover(extracted)
+                    send_pushover(
+                        title="Purchase Alert",
+                        message=message,
+                    )
+            except Exception as e:
+                print("Purchase notification build failed:", e)
 
-                    # Optional: label processed in Gmail too
-                    mail.store(msg_id_str, '+X-GM-LABELS', '(PROCESSED)')
-                    mail.store(msg_id_str, '-X-GM-LABELS', r'(\Processed)')
-                    # ✅ Archive: remove from Inbox
-                    mail.store(msg_id_str, "-X-GM-LABELS", r"(\Inbox)")
+        else:
+            # If you want unmatched emails to stay un-seen so you can retry later, do NOT write them.
+            # Current behavior: still record them to seen file so you don't keep re-parsing noise.
+            note = "no_rule_matched"
+            if re.search("declined", body or "", re.IGNORECASE):
+                note = "no_rule_matched_declined_detected"
 
-                    # ✅ Mark as processed in the appropriate JSON (prod OR test)
-                    mark_seen(seen_write_path, seen_write, msg_id_str, subject)
-                    matched_any = True
-                    break
+            mark_seen_test(
+                seen=seen,
+                dedupe_key=dedupe_key,
+                subject=subject,
+                sender=sender,
+                date_header=date_header,
+                imap_id=msg_id_str,
+                matched_rule="",
+                matched=False,
+                note=note,
+                extracted=None
+            )
+            save_seen_ids(seen_path, seen)
+            seen_keys.add(dedupe_key)
 
-            if not matched_any:
-                print("No rule matched this email.")
-                # Create one notification per email (deduped by Message-ID). We do NOT mark seen, so the email can be re-tried later.
-                log_parse_failure(msg_id_str, subject, sender, body)
-                # Create one notification per email (deduped by Message-ID). We do NOT mark seen, so the email can be re-tried later.
-                log_parse_failure(msg_id_str, subject, sender, body)
-                if re.search("declined", body, re.IGNORECASE):
-                    print("Declined")
-                    mail.store(msg_id_str, '+X-GM-LABELS', '(DECLINED)')
-                    mail.store(msg_id_str, '-X-GM-LABELS', r'(\Processed)')
-                    # ✅ don’t keep re-checking declined emails forever
-                    mark_seen(seen_write_path, seen_write, msg_id_str, subject)
-                print(body)
+            # optional: also log parse failure notification for unmatched (you used to)
+            log_parse_failure(dedupe_key, subject, sender, body)
 
-            print("=" * 80)
+            print("— No match:", dedupe_key, "|", subject)
 
     mail.logout()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test()

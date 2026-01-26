@@ -1,7 +1,12 @@
+/* =============================================================================
+   MOBILE (single source of truth) — CLEANED (duplicates removed)
+   Replace the entire file with this version.
+   ============================================================================= */
+
 @media (max-width: 900px){
 
   /* -----------------------------
-     Global: prevent page-wide sideways scroll
+     Global: prevent sideways scroll
      ----------------------------- */
   html, body{
     width: 100%;
@@ -9,29 +14,30 @@
     overflow-x: hidden !important;
   }
 
-body{
-  padding-top: var(--topbar-h) !important;
-  padding-bottom: 74px !important;  /* your mobile bottom bar height */
-}
-
+  body{
+    margin: 0 !important;
+    padding-top: var(--topbar-h) !important;
+    padding-bottom: 74px !important; /* bottom tabs height */
+  }
 
   .page-container{
     max-width: none !important;
     width: 100% !important;
     margin: 0 !important;
-    padding: 0 6px !important;
-    padding-bottom: 80px;
-    box-sizing: border-box;
+    padding: 0 6px !important;      /* default mobile gutter */
+    padding-bottom: 80px !important;
+    box-sizing: border-box !important;
   }
 
-  /* In flex layouts, allow children to shrink (prevents subtle overflow) */
+  /* Allow flex/grid children to shrink (prevents overflow) */
   .bank-main, .cat-main, .chart-card, .chart-header, .chart-header-center, .chart-header-dates{
     min-width: 0 !important;
   }
 
-  /* -----------------------------
-     Home layout stacking
-     ----------------------------- */
+  /* =============================================================================
+     HOME (mobile)
+     ============================================================================= */
+
   body.page-home .bank-area{
     display: flex;
     flex-direction: column;
@@ -51,13 +57,115 @@ body{
     align-self: stretch;
   }
 
-  /* -----------------------------
-     Month buttons (ALL pages) — Home behavior
-     IMPORTANT:
-     - The ROW scrolls (overflow-x:auto)
-     - The PAGE does NOT scroll (html/body overflow-x hidden)
-     - Keep row width constrained to its parent (width:100%, max-width:100%)
-     ----------------------------- */
+  /* Edge-to-edge sections on Home only */
+  body.page-home .page-container{
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  body.page-home .category-box,
+  body.page-home .chart-card,
+  body.page-home .bank-card{
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  body.page-home .category-box{ padding: 10px 8px 12px !important; }
+  body.page-home .chart-card{ padding: 12px 10px 14px !important; }
+
+  body.page-home .section-divider,
+  body.page-home #txDivider{
+    margin: 10px 0 !important;
+    border-top: 1px solid var(--border) !important;
+  }
+
+  /* =============================================================================
+     Bank Totals (Home, mobile) — show acct count + (Card Balances) Avail/% used WITHOUT expanding
+     ============================================================================= */
+
+  /* Prevent any inherited flex from generic ".category-box > div" rules */
+  body.page-home #bankTotals{
+    display: block !important;
+  }
+
+  body.page-home #bankTotals .bank-accordion{
+    margin: 8px 0;
+  }
+
+  body.page-home #bankTotals .bank-accordion__header{
+    display: grid !important;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 2px 10px;
+    align-items: center !important;
+
+    padding: 10px 12px !important;
+    border-radius: 14px !important;
+
+    /* IMPORTANT: allow header to grow for subline */
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Left: title + "N acct" */
+  body.page-home #bankTotals .bank-accordion__header > span:first-child{
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    min-width: 0 !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.page-home #bankTotals .bank-accordion__meta{
+    margin-left: 0 !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    opacity: .70 !important;
+    white-space: nowrap !important;
+  }
+
+  /* Right: total + optional subline */
+  body.page-home #bankTotals .bank-accordion__right{
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    min-width: 0 !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    gap: 2px !important;
+
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body.page-home #bankTotals .bank-accordion__right > div:first-child{
+    font-size: 14px !important;
+    font-weight: 900 !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+  }
+
+  /* "Avail … • % used" line */
+  body.page-home #bankTotals .bank-accordion__sub{
+    display: block !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    opacity: .78 !important;
+    white-space: nowrap !important;
+  }
+
+  /* =============================================================================
+     Month buttons rows (all pages)
+     ============================================================================= */
+
   #monthButtons,
   #aButtons,
   #catMonthButtons,
@@ -77,10 +185,9 @@ body{
     touch-action: pan-x;
 
     justify-content: flex-start !important;
-    padding: 6px 12px 2px 2px !important; /* right padding so last pill isn't clipped */
+    padding: 6px 12px 2px 2px !important;
   }
 
-  /* Hide scrollbar (optional) */
   #monthButtons::-webkit-scrollbar,
   #aButtons::-webkit-scrollbar,
   #catMonthButtons::-webkit-scrollbar,
@@ -99,12 +206,8 @@ body{
     white-space: nowrap;
   }
 
-  /* Annual pill same as others */
-  .month-btn.is-annual{
-    font-weight: 800;
-  }
+  .month-btn.is-annual{ font-weight: 800; }
 
-  /* If dropdown selects exist anywhere, keep them sane */
   #monthSelect,
   #aMonthSelect{
     width: 100%;
@@ -117,9 +220,10 @@ body{
     background: #fff;
   }
 
-  /* -----------------------------
-     Quarters + Year row — same row
-     ----------------------------- */
+  /* =============================================================================
+     Charts (mobile)
+     ============================================================================= */
+
   .chart-controls.chart-controls-grid2{
     display: flex !important;
     align-items: center !important;
@@ -135,7 +239,7 @@ body{
 
     width: 100% !important;
     max-width: 100% !important;
-    box-sizing: border-box;
+    box-sizing: border-box !important;
 
     overflow-x: auto !important;
     overflow-y: hidden !important;
@@ -166,37 +270,23 @@ body{
     white-space: nowrap;
   }
 
-  /* -----------------------------
-     Category layout stacks (mobile)
-     ----------------------------- */
-  .cat-layout{
-    flex-direction: column;
-  }
-  .cat-sidebar{
-    width: 100%;
-    flex: 0 0 auto;
-  }
+  .cat-layout{ flex-direction: column; }
+  .cat-sidebar{ width: 100%; flex: 0 0 auto; }
 
-  /* -----------------------------
-     Chart sizing on phones
-     ----------------------------- */
   .chart-canvas-box{
     max-width: 100% !important;
-    overflow-x: hidden; /* prevents canvas from ever widening card */
-  }
-
-  .chart-canvas-box{
+    overflow-x: hidden !important;
     height: 300px;
   }
 
-  /* Let the month row scroll inside the card (don’t clip it) */
   .chart-card{
     overflow: visible;
     max-width: 100% !important;
-    overflow-x: hidden;
-    width: 100%
+    width: 100% !important;
+    overflow-x: hidden !important;
   }
-  .chart-canvas-box{ overflow: hidden !important; } /* keep canvas safe */
+
+  .chart-canvas-box{ overflow: hidden !important; }
 
   .chart-header.chart-header--metrics2{
     display: grid !important;
@@ -228,9 +318,7 @@ body{
     justify-self: end !important;
   }
 
-  .chart-header--metrics2 .chart-header-metrics{
-    display: contents !important;
-  }
+  .chart-header--metrics2 .chart-header-metrics{ display: contents !important; }
 
   .chart-header--metrics2 .chart-breakdown--metric{
     grid-area: total !important;
@@ -274,7 +362,7 @@ body{
     width: 100%;
   }
 
-  /* Account page: center chart title only */
+  /* Account page title centering */
   body.page-account .chart-header.chart-header--metrics2{
     grid-template-areas:
       "title title"
@@ -286,21 +374,18 @@ body{
     justify-content: center !important;
     grid-column: 1 / -1 !important;
   }
-  body.page-account .chart-title-wrap{
-    align-items: center !important;
-  }
-  body.page-account .chart-title-wrap h2{
-    text-align: center !important;
-  }
+  body.page-account .chart-title-wrap{ align-items: center !important; }
+  body.page-account .chart-title-wrap h2{ text-align: center !important; }
 
-  /* -----------------------------
-     Transactions tighten
-     ----------------------------- */
+  /* =============================================================================
+     Generic transaction row tighten (used on other pages)
+     ============================================================================= */
+
   .tx-row{
     grid-template-columns: max-content 1fr auto;
     gap: 8px;
     padding: 8px 10px;
-    padding-left: 72px;
+    padding-left: 72px; /* default tx-row icon offset */
     max-width: 100%;
     box-sizing: border-box;
   }
@@ -312,7 +397,10 @@ body{
 
   .section-divider{ margin: 16px 0; }
 
-  /* Bottom tabs: mobile bar */
+  /* =============================================================================
+     Bottom tabs (mobile bar)
+     ============================================================================= */
+
   .mobile-tabs{
     left: 0;
     right: 0;
@@ -346,25 +434,217 @@ body{
     border-color: #111;
   }
 
-  /*@media (max-width: 900px){
-  #monthButtons, #aButtons, #catMonthButtons, #spMonthButtons{
+  /* =============================================================================
+     RECURRING (mobile) — single card per merchant, FULL WIDTH
+     ============================================================================= */
+
+  body.page-recurring .page-container{
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  body.page-recurring .cal-box,
+  body.page-recurring .category-box{
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 10px 10px 12px !important;
+  }
+
+  body.page-recurring .rec-card{
+    margin: 12px 0 !important;
+    border-top: 1px solid var(--border) !important;
+    border-bottom: 1px solid var(--border) !important;
+    border-left: 0 !important;
+    border-right: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  body.page-recurring .rec-head{
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 10px;
+    align-items: center;
+
+    padding: 10px 12px !important;
+    background: rgba(0,0,0,0.02);
+  }
+
+  body.page-recurring .rec-toggle{
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  body.page-recurring .rec-head-main{
+    min-width: 0 !important;
+  }
+
+  body.page-recurring .rec-merchant-name{
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+
+    display: block;
     width: 100% !important;
     max-width: 100% !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch;
-    padding-right: 18px !important;
-    box-sizing: border-box !important;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    font-size: 13px !important;
+    font-weight: 900;
+
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
-} */
 
-}
+  body.page-recurring .rec-merchant-sub{
+    font-size: 10px !important;
+    opacity: .65;
+    margin-top: 2px;
+  }
 
-/* =============================================================================
-   Receipts page (mobile)
-   ============================================================================= */
-@media (max-width: 900px){
-  /* Receipts page uses .wrap not .page-container, so give it the same mobile padding */
+  body.page-recurring .rec-merchant-actions{
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+
+  body.page-recurring .pill-btn{
+    height: 28px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-weight: 900;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  body.page-recurring .pill-btn--sub{
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  body.page-recurring .rec-body{
+    border-top: 1px solid rgba(0,0,0,0.08);
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+  }
+
+  body.page-recurring .rec-item{
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    gap: 10px;
+    align-items: center;
+
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+  }
+  body.page-recurring .rec-item:last-child{
+    border-bottom: 0;
+  }
+
+  body.page-recurring .rec-item .tx-icon-wrap{
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 999px !important;
+
+    display: grid;
+    place-items: center;
+    justify-self: start;
+    align-self: center;
+  }
+
+  body.page-recurring .rec-mid{
+    min-width: 0 !important;
+  }
+
+  body.page-recurring .rec-freq{
+    font-size: 11px;
+    font-weight: 900;
+    opacity: .8;
+    text-transform: lowercase;
+  }
+
+  body.page-recurring .rec-meta{
+    font-size: 10px;
+    opacity: .65;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.page-recurring .rec-right{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  body.page-recurring .rec-amt{
+    font-weight: 900;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  body.page-recurring .rec-card.is-collapsed .rec-body{
+    display: none;
+  }
+
+  /* Bubble */
+  .name-bubble{
+    position: fixed;
+    z-index: 2147483647;
+    max-width: min(320px, calc(100vw - 24px));
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(20,20,20,0.92);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -8px);
+    transition: opacity .12s ease, transform .12s ease;
+  }
+  .name-bubble.is-on{
+    opacity: 1;
+    transform: translate(-50%, -14px);
+  }
+  .name-bubble::after{
+    content:"";
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid rgba(20,20,20,0.92);
+  }
+
+  /* =============================================================================
+     Receipts page (mobile)
+     ============================================================================= */
+
   .wrap{
     width: 100% !important;
     max-width: none !important;
@@ -373,20 +653,17 @@ body{
     box-sizing: border-box !important;
   }
 
-  /* Make the filter/upload row stack neatly */
   .wrap .row.card{
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 10px !important;
   }
 
-  /* Make the list cards easier to read on phones */
   .wrap .card{
     padding: 12px !important;
     border-radius: 14px !important;
   }
 
-  /* The receipt list cards use .grid (1fr auto) which gets cramped; stack actions under info */
   .wrap .grid{
     grid-template-columns: 1fr !important;
     gap: 10px !important;
@@ -398,7 +675,6 @@ body{
     width: 100% !important;
   }
 
-  /* Modal: remove heavy padding and make it full-screen-ish */
   .modalBack{
     padding: 10px !important;
   }
@@ -409,12 +685,10 @@ body{
     padding: 12px !important;
   }
 
-  /* Two-column modal content should become single column on phones */
   .two{
     grid-template-columns: 1fr !important;
   }
 
-  /* Inputs/buttons a bit taller for touch */
   input, select, .btn{
     font-size: 16px; /* prevents iOS zoom on focus */
   }
@@ -425,16 +699,183 @@ body{
     padding: 10px 12px !important;
   }
 
-  /* OCR debug inner two-column layout also stacks */
   details .two{
     grid-template-columns: 1fr !important;
   }
 
-  /* Keep images within screen */
   img.preview{
     max-height: 55vh;
     object-fit: contain;
   }
 
+  /* Calendar: icon stack (mobile only) */
+  .cal-icons{
+    display: flex;
+    align-items: center;
+    margin-top: 4px;
+  }
 
+  .cal-ic{
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .cal-ic + .cal-ic{
+    margin-left: -9px; /* 50% overlap */
+  }
+
+  .cal-ic svg{
+    width: 14px;
+    height: 14px;
+    display: block;
+  }
+
+  body.page-recurring .category-box > div{
+    gap: 8px;
+  }
+
+  body.page-recurring .category-box label{
+    font-size: 13px;
+  }
+
+  /* =============================================================================
+     HOME tx cards (mobile) — match desktop layout
+     (keep ONE copy)
+     ============================================================================= */
+  body.page-home .tx-row{
+    position: relative;
+    display: grid;
+    grid-template-columns: max-content 1fr auto; /* date | main | amount */
+    align-items: center;
+    padding-left: 72px; /* room for icon */
+  }
+
+  body.page-home .tx-icon-wrap{
+    position: absolute !important;
+    left: 12px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 38px;
+    height: 38px;
+  }
+
+  body.page-home .tx-amt{
+    justify-self: end;
+    white-space: nowrap;
+  }
+}
+
+/* =============================================================================
+   Smaller phones: calendar density tweaks
+   ============================================================================= */
+@media (max-width: 520px){
+  .cal-day{
+    min-height: 52px !important;
+    padding: 4px !important;
+    border-radius: 8px !important;
+  }
+  .cal-daynum{
+    font-size: 10px !important;
+    opacity: .7;
+  }
+  .cal-chip{
+    font-size: 9px !important;
+    padding: 2px 4px !important;
+  }
+
+  .cal-icons{
+    display: flex;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .cal-ic{
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .cal-ic + .cal-ic{
+    margin-left: -9px;
+  }
+  .cal-ic svg{
+    width: 14px;
+    height: 14px;
+    display: block;
+  }
+
+
+  /* ============================
+   RECURRING (mobile) — stop wrapper clipping + true edge-to-edge
+   ============================ */
+
+body.page-recurring .page-container{
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* These wrappers are what clip the edges */
+body.page-recurring .cal-box,
+body.page-recurring .category-box{
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important; /* <- THIS prevents edge cutoff */
+}
+
+/* Keep the calendar area padded (but not the whole wrapper) */
+body.page-recurring .cal-head,
+body.page-recurring #calSummary,
+body.page-recurring .cal-weekdays,
+body.page-recurring #calGrid{
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+body.page-recurring .cal-head{ padding-top: 10px !important; }
+body.page-recurring #calGrid{ padding-bottom: 10px !important; }
+
+/* Controls padded; list edge-to-edge */
+body.page-recurring .category-box__header{ padding: 12px 12px 8px !important; }
+body.page-recurring .category-box > label{ padding: 0 12px 8px !important; }
+body.page-recurring .category-box > div{ padding: 0 12px 12px !important; }
+
+body.page-recurring #recurringList{
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* Keep each control from shrinking weirdly */
+  body.page-recurring .category-box > div > *{
+    flex: 0 0 auto !important;
+  }
+
+  /* Make the number input compact and not stretch */
+  body.page-recurring #minOcc{
+    width: 64px !important;
+    height: 28px !important;
+    padding: 0 8px !important;
+    text-align: center !important;
+  }
+
+  /* Keep buttons consistent height */
+  body.page-recurring .category-box button{
+    height: 28px !important;
+    padding: 0 12px !important;
+    white-space: nowrap !important;
+  }
+
+  /* Optional: hide scrollbar but keep scroll */
+  body.page-recurring .category-box > div::-webkit-scrollbar{
+    height: 0;
+  }
 }

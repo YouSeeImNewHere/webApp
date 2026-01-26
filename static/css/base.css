@@ -3083,6 +3083,18 @@ body.settings-page{
   padding: 6px 16px;
 }
 
+/* Full-bleed bar, constrained content lane (desktop like page-container) */
+.top-bar{
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.top-bar-inner{
+  width: min(1200px, calc(100% - 32px)); /* match .page-container padding */
+  margin: 0 auto;
+  padding: 10px 0; /* padding handled by the width calc above */
+}
 
 
 .top-title{
@@ -3525,4 +3537,514 @@ body.is-customizing .customize-bar {
 
 .dot{
   opacity: .6;
+}
+/* Hide scrollbar but keep scrolling */
+html, body {
+  overflow-y: scroll;
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE / Edge */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;                /* Chrome, Safari, iOS */
+}
+/* =============================================================================
+   RECURRING — DESKTOP LAYOUT
+   ============================================================================= */
+
+@media (min-width: 901px){
+
+  /* Container */
+  body.page-recurring #recurringList{
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Card */
+  body.page-recurring .rec-card{
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card, #fff);
+    overflow: hidden;
+  }
+
+  /* Header row */
+  body.page-recurring .rec-head{
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 12px;
+
+    padding: 12px 16px;
+    background: rgba(0,0,0,0.03);
+  }
+
+  /* REMOVE caret + fold behavior on desktop */
+  body.page-recurring .rec-toggle{
+    display: none !important;
+  }
+
+  /* Merchant name = plain text, not button */
+  body.page-recurring .rec-merchant-name{
+    pointer-events: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+
+    font-size: 14px;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.page-recurring .rec-merchant-sub{
+    font-size: 12px;
+    opacity: 0.6;
+    margin-top: 2px;
+  }
+
+  body.page-recurring .rec-merchant-actions{
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Body always visible on desktop */
+  body.page-recurring .rec-body{
+    display: block !important;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Pattern rows */
+  body.page-recurring .rec-item{
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    align-items: center;
+    gap: 12px;
+
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+  }
+
+  body.page-recurring .rec-item:last-child{
+    border-bottom: 0;
+  }
+
+  body.page-recurring .rec-freq{
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  body.page-recurring .rec-meta{
+    font-size: 11px;
+    opacity: 0.6;
+  }
+
+  body.page-recurring .rec-right{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  body.page-recurring .rec-amt{
+    font-weight: 700;
+    font-size: 13px;
+  }
+}
+/* =============================================================================
+   Recurring page (Desktop) — NEW layout (.rec-card/.rec-item)
+   ============================================================================= */
+
+body.page-recurring #recurringList.tx-list{
+  display: block;
+}
+
+/* Card container */
+body.page-recurring .rec-card{
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+  margin: 12px 0;
+}
+
+/* Header row */
+body.page-recurring .rec-head{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.02);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+body.page-recurring .rec-toggle{
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+body.page-recurring .rec-caret{
+  font-weight: 900;
+  line-height: 1;
+}
+
+body.page-recurring .rec-head-main{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Merchant name: REMOVE “button” feel on desktop */
+@media (min-width: 901px){
+  body.page-recurring .rec-merchant-name{
+    appearance: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: default;
+    pointer-events: none; /* truly not clickable on desktop */
+  }
+}
+
+body.page-recurring .rec-merchant-name{
+  font-weight: 900;
+  letter-spacing: .2px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.page-recurring .rec-merchant-sub{
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .6;
+}
+
+body.page-recurring .rec-merchant-actions{
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Body rows */
+body.page-recurring .rec-body{
+  display: flex;
+  flex-direction: column;
+}
+
+body.page-recurring .rec-item{
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+body.page-recurring .rec-item + .rec-item{
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+
+/* ✅ THIS is why your “images disappeared” on desktop:
+   base.css defines .tx-icon-wrap as position:absolute globally.
+   For recurring rows, force it back to normal flow. */
+body.page-recurring .rec-item .tx-icon-wrap{
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
+  width: 40px;
+  height: 40px;
+  border-width: 1px;
+  border-color: rgba(0,0,0,0.14);
+}
+
+body.page-recurring .rec-mid{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+body.page-recurring .rec-freq{
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.85;
+  text-transform: lowercase;
+}
+
+body.page-recurring .rec-meta{
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.60;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.page-recurring .rec-right{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+body.page-recurring .rec-amt{
+  font-weight: 900;
+  min-width: 90px;
+  text-align: right;
+  white-space: nowrap;
+}
+/* =========================================
+   Recurring buttons — DESKTOP styling
+   ========================================= */
+
+body.page-recurring button,
+body.page-recurring .pill-btn,
+body.page-recurring .ignore-btn,
+body.page-recurring .merge-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border: 1px solid var(--btn-border);
+  border-radius: 999px;
+
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background .12s ease,
+    border-color .12s ease,
+    box-shadow .12s ease,
+    transform .08s ease;
+}
+
+body.page-recurring button:hover {
+  background: var(--btn-hover);
+  border-color: color-mix(in srgb, var(--btn-text) 22%, var(--btn-border));
+}
+
+body.page-recurring button:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+/* Merge = primary */
+body.page-recurring .merge-btn {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+body.page-recurring .merge-btn:hover {
+  opacity: 0.9;
+}
+
+/* Ignore = neutral */
+body.page-recurring .ignore-btn {
+  opacity: 0.9;
+}
+/* Recurring controls: single horizontal row */
+.category-box > div{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;           /* allows wrap on tiny screens */
+  gap: 10px;
+}
+
+/* Keep label + input together */
+.category-box label{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+/* Min occurrences input */
+#minOcc{
+  width: 56px;
+  height: 28px;
+  text-align: center;
+}
+
+/* Buttons align nicely */
+.category-box button{
+  height: 28px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+body.page-recurring .category-box > div{
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .tx-list { align-items: stretch; }  /* ensures rows fill the box */
+.tx-row  { width: 100%; }
+/* ============================
+   Upcoming transactions: force single horizontal scroll row
+   (override the global .category-box > div { flex-wrap: wrap; })
+   ============================ */
+
+.category-box > .mini-calendar[data-upcoming-body]{
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;          /* ✅ do NOT wrap into multiple rows */
+  gap: 10px;
+  overflow-x: auto;           /* ✅ horizontal scroll */
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Make each day card a fixed-width item in the strip */
+.category-box > .mini-calendar[data-upcoming-body] > *{
+  flex: 0 0 132px;
+  min-width: 132px;
+}
+
+/* Optional: hide scrollbar (still scrolls) */
+.category-box > .mini-calendar[data-upcoming-body]::-webkit-scrollbar{
+  height: 0;
+}
+/* =============================================================================
+   Top Bar — full width bar like bottom tabs
+   ============================================================================= */
+
+:root{
+  --topbar-h: 62px; /* adjust if you want */
+}
+
+.top-bar{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+
+  background: #fff;
+  border-bottom: 1px solid #e6e6e6;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.06);
+  z-index: 1100;
+}
+
+/* centered “lane” for the contents, similar to bottom tabs width behavior */
+.top-bar-inner{
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  padding: 10px 12px;
+}
+
+.top-title{
+  font-weight: 900;
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Make room so content doesn’t slide under the fixed top bar */
+body{
+  padding-top: var(--topbar-h);
+}
+/* TOP BAR: full-width block (no pill) */
+.top-bar{
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 62px;
+
+  background: #fff;
+  border-bottom: 1px solid rgba(0,0,0,0.10);
+  border-radius: 0 !important;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.06);
+
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+}
+.top-bar-inner{
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  background: transparent;
+  border: 0;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+/* Top bar layout: allow true screen-centered title */
+.top-bar-inner{
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Title is centered to the viewport (not between buttons) */
+.top-title{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+
+  font-weight: 900;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* keep it from sitting under the buttons */
+  max-width: calc(100% - 160px);
+  pointer-events: none; /* clicks go to buttons, not title */
+}
+
+/* keep right-side buttons grouped */
+.top-bar-right{
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

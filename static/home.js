@@ -490,19 +490,24 @@ if (isCardBalances && creditSummary) {
     btn.className = "bank-accordion__header";
 
     btn.innerHTML = `
-  <span>
-    ${title}<span class="bank-accordion__meta">${accounts.length} acct</span>
+  <span class="bank-accordion__left">
+    <span class="bank-accordion__title">${title}</span>
+    <span class="bank-accordion__meta">${accounts.length} acct</span>
   </span>
 
   <span class="bank-accordion__right">
-    <div>${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ▾</div>
+    <div class="bank-accordion__total">
+      ${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ▾
+    </div>
+
     ${isCardBalances && showCreditSummary ? `
       <div class="bank-accordion__sub">
-        Avail ${money(creditSummary.available)} • ${creditSummary.pctUsed}% used
+        ${accounts.length} acct • Avail ${money(creditSummary.available)} • ${creditSummary.pctUsed}% used
       </div>
     ` : ""}
   </span>
 `;
+
 
 
     const panel = document.createElement("div");
