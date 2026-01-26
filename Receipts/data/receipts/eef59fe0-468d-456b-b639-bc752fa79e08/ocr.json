@@ -1,0 +1,476 @@
+{
+  "receipt_id": "eef59fe0-468d-456b-b639-bc752fa79e08",
+  "parsed": {
+    "merchant": "NOW HIRING",
+    "purchase_date": "01/15/26",
+    "purchase_date_mmddyy": "01/15/26",
+    "total": 9.28,
+    "items": [
+      {
+        "name": "600 Sth AVE SOUTH",
+        "price": null,
+        "meta": [],
+        "raw_line": "600 Sth AVE SOUTH"
+      },
+      {
+        "name": "SEATTLE WA 98104 706-624-6248",
+        "price": null,
+        "meta": [],
+        "raw_line": "SEATTLE WA 98104 706-624-6248"
+      },
+      {
+        "name": "WWW, UWAJTMAYA.COM",
+        "price": null,
+        "meta": [],
+        "raw_line": "WWW, UWAJTMAYA.COM"
+      },
+      {
+        "name": "STORE DIRECTOR: REX H.",
+        "price": null,
+        "meta": [],
+        "raw_line": "STORE DIRECTOR: REX H."
+      },
+      {
+        "name": "OPEN DAILY: 8:00 AM - 9:00 PM",
+        "price": null,
+        "meta": [],
+        "raw_line": "OPEN DAILY: 8:00 AM - 9:00 PM"
+      },
+      {
+        "name": "NOW HIRING",
+        "price": null,
+        "meta": [],
+        "raw_line": "NOW HIRING"
+      },
+      {
+        "name": "WWW. UWAJTMAYA, COM/CAREERS",
+        "price": null,
+        "meta": [],
+        "raw_line": "WWW. UWAJTMAYA, COM/CAREERS"
+      }
+    ]
+  },
+  "box_lines_used_for_items": [
+    "™ ais ka UE hk",
+    "UWAJIMAYA SEATTLE",
+    "600 Sth AVE SOUTH",
+    "SEATTLE WA 98104 706-624-6248",
+    "WWW, UWAJTMAYA.COM",
+    "STORE DIRECTOR: REX H.",
+    "OPEN DAILY: 8:00 AM - 9:00 PM",
+    "NOW HIRING",
+    "WWW. UWAJTMAYA, COM/CAREERS",
+    "Cashier: Jared",
+    "PRODUCE",
+    "COSMIC CRISP APPLES 1,23 F",
+    "3507 1.24|b @ .99 /Ib",
+    "SAVINGS ~ 2 AB",
+    "RED GLOBE GRAPES 3,46 F",
+    "¥ 4636 - 1./5ib @ 1.99 /|b",
+    "SAVINGS ~ 4,38",
+    "STEM & LEAF MANDARIN 4.57 F",
+    "3029 1.311b @ 3.49 /1b",
+    "SUBTOTAL 3 9,98",
+    "TOTAL 9,28",
+    "DUE 9,28",
+    "AV ISAM 9.28",
+    "EPS Response Desc APPROVED)",
+    "01/15/2026 19:96:49",
+    "WISA CREDIT = =. Entry Method:Cntetless",
+    "CARD #; AXKXKXKAKXKN7O 1G",
+    "PURCHASE » APPROVED",
+    "AUTH CODE: 09496)"
+  ],
+  "items_debug": {
+    "header_anchor_hit": {
+      "idx": 9,
+      "line": "Cashier: Jared"
+    },
+    "first_itemlike_hit": {
+      "idx": 2,
+      "line": "600 Sth AVE SOUTH"
+    },
+    "footer_hit": {
+      "idx": 19,
+      "line": "SUBTOTAL 3 9,98"
+    },
+    "start_idx": 10,
+    "end_idx": 19,
+    "window": [
+      {
+        "line": "™ ais ka UE hk",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "UWAJIMAYA SEATTLE",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "600 Sth AVE SOUTH",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SEATTLE WA 98104 706-624-6248",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "WWW, UWAJTMAYA.COM",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "STORE DIRECTOR: REX H.",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "OPEN DAILY: 8:00 AM - 9:00 PM",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "NOW HIRING",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "WWW. UWAJTMAYA, COM/CAREERS",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Cashier: Jared",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "PRODUCE",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "COSMIC CRISP APPLES 1,23 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "3507 1.24|b @ .99 /Ib",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SAVINGS ~ 2 AB",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "RED GLOBE GRAPES 3,46 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "¥ 4636 - 1./5ib @ 1.99 /|b",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SAVINGS ~ 4,38",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "STEM & LEAF MANDARIN 4.57 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "3029 1.311b @ 3.49 /1b",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SUBTOTAL 3 9,98",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TOTAL 9,28",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "DUE 9,28",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AV ISAM 9.28",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "EPS Response Desc APPROVED)",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "01/15/2026 19:96:49",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "WISA CREDIT = =. Entry Method:Cntetless",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "CARD #; AXKXKXKAKXKN7O 1G",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "PURCHASE » APPROVED",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AUTH CODE: 09496)",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      }
+    ],
+    "sliced_lines": [
+      "PRODUCE",
+      "COSMIC CRISP APPLES 1,23 F",
+      "3507 1.24|b @ .99 /Ib",
+      "SAVINGS ~ 2 AB",
+      "RED GLOBE GRAPES 3,46 F",
+      "¥ 4636 - 1./5ib @ 1.99 /|b",
+      "SAVINGS ~ 4,38",
+      "STEM & LEAF MANDARIN 4.57 F",
+      "3029 1.311b @ 3.49 /1b"
+    ]
+  },
+  "items_extracted": [
+    {
+      "name": "600 Sth AVE SOUTH",
+      "price": null,
+      "meta": [],
+      "raw_line": "600 Sth AVE SOUTH"
+    },
+    {
+      "name": "SEATTLE WA 98104 706-624-6248",
+      "price": null,
+      "meta": [],
+      "raw_line": "SEATTLE WA 98104 706-624-6248"
+    },
+    {
+      "name": "WWW, UWAJTMAYA.COM",
+      "price": null,
+      "meta": [],
+      "raw_line": "WWW, UWAJTMAYA.COM"
+    },
+    {
+      "name": "STORE DIRECTOR: REX H.",
+      "price": null,
+      "meta": [],
+      "raw_line": "STORE DIRECTOR: REX H."
+    },
+    {
+      "name": "OPEN DAILY: 8:00 AM - 9:00 PM",
+      "price": null,
+      "meta": [],
+      "raw_line": "OPEN DAILY: 8:00 AM - 9:00 PM"
+    },
+    {
+      "name": "NOW HIRING",
+      "price": null,
+      "meta": [],
+      "raw_line": "NOW HIRING"
+    },
+    {
+      "name": "WWW. UWAJTMAYA, COM/CAREERS",
+      "price": null,
+      "meta": [],
+      "raw_line": "WWW. UWAJTMAYA, COM/CAREERS"
+    }
+  ]
+}

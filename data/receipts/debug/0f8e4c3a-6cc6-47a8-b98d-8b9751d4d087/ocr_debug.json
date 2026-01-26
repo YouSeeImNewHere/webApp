@@ -1,0 +1,198 @@
+{
+  "variants": [
+    {
+      "variant": 0,
+      "name": "orig",
+      "img_path": "data\\receipts\\debug\\0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087\\v0_orig.jpg",
+      "img_url": "/receipts/0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087/debug/v0_orig.jpg"
+    },
+    {
+      "variant": 1,
+      "name": "gray_clahe",
+      "img_path": "data\\receipts\\debug\\0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087\\v1_gray_clahe.jpg",
+      "img_url": "/receipts/0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087/debug/v1_gray_clahe.jpg"
+    },
+    {
+      "variant": 2,
+      "name": "adaptive",
+      "img_path": "data\\receipts\\debug\\0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087\\v2_adaptive.jpg",
+      "img_url": "/receipts/0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087/debug/v2_adaptive.jpg"
+    },
+    {
+      "variant": 3,
+      "name": "otsu",
+      "img_path": "data\\receipts\\debug\\0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087\\v3_otsu.jpg",
+      "img_url": "/receipts/0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087/debug/v3_otsu.jpg"
+    },
+    {
+      "variant": 4,
+      "name": "sharp",
+      "img_path": "data\\receipts\\debug\\0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087\\v4_sharp.jpg",
+      "img_url": "/receipts/0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087/debug/v4_sharp.jpg"
+    }
+  ],
+  "runs": [
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 6",
+      "score": 152.72556277056276,
+      "avg_conf": 63.627813852813844,
+      "text": "(| MART\n1601 2nd Ave\nPa SEATTLE, WA 98109\n\u2018a 206-829-9296\nDP AYWENT METHOD : \u00a5VISA\nDATE TIME : 1/6/2026 7:34:07 PK\nRECEIPI # : R?09518704\nCASHIER + BRAVO\nREGISTER # + Regl4\nORANGE FRUITS SWISS ROLL 7.3702 SP\n*& GROCERY (F) $ 6.99\nCV BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F ) $ 2,49\n{ = STATE TAX ITEM\nF = FOODSTAHP ITEN\nSUB TOTAL $ 9 48\nSALES TAX $ 0.00\nTOTAL $ 9.48 \u00a9\na e's win c Cre ae ra\nDateline : 1/6/2026 19:43:42\nCard Type \u00bb YISA\nAccount Wii ea"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 3 --psm 6",
+      "score": 152.72556277056276,
+      "avg_conf": 63.627813852813844,
+      "text": "(| MART\n1601 2nd Ave\nPa SEATTLE, WA 98109\n\u2018a 206-829-9296\nDP AYWENT METHOD : \u00a5VISA\nDATE TIME : 1/6/2026 7:34:07 PK\nRECEIPI # : R?09518704\nCASHIER + BRAVO\nREGISTER # + Regl4\nORANGE FRUITS SWISS ROLL 7.3702 SP\n*& GROCERY (F) $ 6.99\nCV BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F ) $ 2,49\n{ = STATE TAX ITEM\nF = FOODSTAHP ITEN\nSUB TOTAL $ 9 48\nSALES TAX $ 0.00\nTOTAL $ 9.48 \u00a9\na e's win c Cre ae ra\nDateline : 1/6/2026 19:43:42\nCard Type \u00bb YISA\nAccount Wii ea"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 4",
+      "score": 152.29565959681344,
+      "avg_conf": 61.47829798406721,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME ; 1/6/2026 7:34:07 PH\nRECEIPT # ; R209518704\nCASHIER : BRAVO\nBao TER # ; Regd\n> Meme ARO) eet Cor a. Aled wae dnd Bab Wee te Doth\naoe Rene on PH Rte Chat OME Bee L RENE oe SE cast he SU ee A SR\nORANGE FRUITS SWISS ROLL ve 3702 \u201c6p\n*# GROCERY (F) $\nSY BULDAK CUP(CARBONARA) 2.4/02 1\n** GROCERY (F ) $\n[= STATE TAX ITEH\nF = FOODSTAHP ITEN\nWim a a ape nd te ae te IOS\nTs 2he UD GW Wh CAR Ar Ge PRA wee HH UH AL de Ce ANT Oh eve Lt) AL Vem\nSUB TOTAL $ 9 AB\nSALES TAX $ 0.00\nTOTAL $9.48\n: eo ee wm ne Wee fe) me Ge oe Om\nSALE\nDateline + 1/6/2026 19:43:42\nCard Type : VISA\nAccount \u00bb 214)"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 6",
+      "score": 152.1444217687075,
+      "avg_conf": 60.72210884353741,
+      "text": "JMART |\nis 1601 2nd Ave\n\u2018i SEATTLE, WA 98109\n3 206-829-9296\nP PAYMENT METHOD ; *VISA -\nDATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # \u00bb R209518704\n| CASHIER ; BRAVO\nREGISTER # : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 SP\n#4 GROCERY (F) $ 6,99 |\nSY BULDAK CUP(CARBONARA) 2.4702 1\n+ GROCERY (F) oe 7.49\n[ = STATE TAX ITEM\nF = FOODSTAHP ITEM\nSUB TOTAL esses\nSALES TAX \u00a2 9,00\nTOTAL Oat.\npio Se eee\n| Dateline =\u00bb: 1/6/2026 19:48:42 \u2014\n| Card Type =~ \u201cWISA | _.."
+    },
+    {
+      "variant": 4,
+      "config": "--oem 3 --psm 6",
+      "score": 152.1444217687075,
+      "avg_conf": 60.72210884353741,
+      "text": "JMART |\nis 1601 2nd Ave\n\u2018i SEATTLE, WA 98109\n3 206-829-9296\nP PAYMENT METHOD ; *VISA -\nDATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # \u00bb R209518704\n| CASHIER ; BRAVO\nREGISTER # : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 SP\n#4 GROCERY (F) $ 6,99 |\nSY BULDAK CUP(CARBONARA) 2.4702 1\n+ GROCERY (F) oe 7.49\n[ = STATE TAX ITEM\nF = FOODSTAHP ITEM\nSUB TOTAL esses\nSALES TAX \u00a2 9,00\nTOTAL Oat.\npio Se eee\n| Dateline =\u00bb: 1/6/2026 19:48:42 \u2014\n| Card Type =~ \u201cWISA | _.."
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 11",
+      "score": 151.44839402427638,
+      "avg_conf": 57.24197012138189,
+      "text": "ART\nJ\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\n4\ng\n\u2018VISA\nPAYMENT METHOD\n9\n\u00bb\nDATE TIME\n1/6/2026 7:34:07 PM\n\u00e9\n4\nR2095 18/04\nRECEIPT #\na\n4\nBRAVO\nCASHIER\n6\nREGISTER i!\n8\nRega\nao pre DOR CTH Ho &\nSN TO, aoey th Cie ame eons eee ee ole\nAad} be Goer,\none onan ee Eee\npo ee con ee rie oi tien aust wae ave @ anne FO Te, aus Sok cay tah\nOp Oar Me\n2 PES IOP Yee TE BAS GR UTD TKN\nRA Ot Vee\nORANGE FRUITS SHISS ROLL 7 370Z SP\n6.99\n** GROCERY (F)\n$\nSY BULDAK CUP(CARBONARA) 2\nZ.AI0Z 1\n*%* GROCERY (F)\n$\n2.49\nae\nSTATE TAX {TEN\nFOODSTAHP ITEM\nOb tate ate Cas) apes\nA Whe bn ae W\ni he wD me HE Ue\nNeda Ceeh 4S Oh eve Ley BAY VD\nSUB TOTAL\n$\n9.48\nSALES TAA\n$\n0,00\nTOTAL\n$\n9.48\n~~ es ee ss\n> 9) ee Ome uae Om me ok aon\nae eee a ee a | a ne os dials\nSALE\nDatetine\n: 1/6/2026 19; a a2.\nCord Type\n1 VIBA\nAccount\nee"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 4",
+      "score": 150.95089881283653,
+      "avg_conf": 54.75449406418265,
+      "text": "JMART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nelle Ube Akad Al Ws, Se CARE Baile doe CO NIM SOAR 24UE ortega RR Yeas BN!\nOUR. WRN eat ena eR Gone: Tet\nsate OVE LEAT UPAR LONE FADE EET BAe HOLES Gay cores HAN FLOR\n= ane Oat ete Hem A\nBARE OMe chet ae Fp \u00a9 A1UTR eh AEH FQNR AMEE TOR TKR Shee to FatEE Ce\nSe ee EE iaee carne aon Cpe NE bee us aan aise tae my\nORANGE FRUITS SWISS ROLL 1 3702 5P\n*k GROCERY (F) $ 6.99\nCV BIILDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F) $ 2.49\npA RY AA\nT = STATE TAX ITEH\nF = FOODSTAHP ITEM\nwa WON hale de ie ete a RY a CED Pry a So oo tl oC\nSUB TOTAL $ 9.48\n4 1s 2th WO A We (AD ner dee Pik wer WE WU Ae de ft EE Ol re Ul AAT VER\nSALES TAX $ 0.00\nTOTAL $ 9.48\nor 9h ie we Pear Vw TemEy. v4\nap - balan ae ad id oh ee ee ee\n\u2018\nSALE\nDateting =\u00bb t-1/6/2026 19: be A.\nCord Types VISA\nACCOUNT ke aint"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 4",
+      "score": 150.75337831758884,
+      "avg_conf": 53.76689158794421,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98102\n206-829-9290\nPAYMENT METHOD : *VIOA\nDATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nReGioIch we Reg04\nPe Bady WM O, aat GAA Oe BAe DH pen eso Ob A4GR ORR FO Ge RNS White Bip!\nPANE OY BR WR PID \u00a9 can chs Gate VE 4aDt Fe Foe cgi ook chat RD. wae EA EE LRRD EE ENE: hte\n2 OA OSH WA HD AY Oris OLD TKOME\na Ss 408) CFe Bem & tr\nSe ee OS loo Sly Sees le ade Se Rh aks wir love agitate\nORANGE FRUITS SHISS ROLL 7 370Z SP\n*# GROCERY (F ) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F ) $ 2,49\n2 STATE TAX ITEN\n- FOODSTAHP ITEN\nSUB TOTAL $ 9,48\nSALES TAA $ 0,00\nTOTAL $ 9.48\na kaw\nDateline \u00a7 =\u00bb \u00a7-: 1/6/2026 19; a he\nGord type A VISA\nAccount - rie"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 6",
+      "score": 150.32090955340954,
+      "avg_conf": 51.60454776704776,
+      "text": "ee oe ies tal Bs ern g es, one \u201d GO ww 2\nitl 2nd A\nital. 1601 2nd Ave\n: SEATTLE, WA 98109\ni 829-9296\nz 7 * ae ~\n\u201c ag , 206 oe -\n= ETHOD : *VISA\nwe \" , at\nBe a \u00a5 a\nDATE TIME : 1/6/2026 7:34:\n)\n\u00bb R209518704\nR 3\n: BRAVO\n. a\n\u201c @\nREGISTER # : Regd4\neetth Ue Ada ATH Ws th, te GOA TAS teak AH CO NIM BAG O4ER One Are AAR et Bute STD ededd aun OVE abies a. ba ee eucwen ee ~*~ vane paeio\neee cae Lees tane: carte seen c6te Ul 0M ite Oi eh Ua IS ih A RN Mame We eaLeT LE AB OR NEB OY NE ON fa\n| 5S ROLL 7.3702 SP\nORANGE FRUITS SWiss R 3/0,\n*# GROCERY (F) $ 6.99\nDUP (CARBONARA) 2.4702 1\nSY BULDAK C t .\n\u2018 \u2018 1\nt\n** GROCERY (F) $ 2.49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEM\nPe a ee, fete WR CU apt he TD ee A We (AD ner dele Peek mr HE A) de ft EE Ol re Ul AA Ege\nSUB TOTAL $ 9.48\nOALES TAX 0.00\n\u201cJ ,\nTOTAL $ 9.48 .\nen Ae nr aD Om EY A BY FH mae tlm ey Eee me wh MR Or tre We ee wey UL OMe UF New rae Mie FLL BWR ae i le Be URE ER Bk Oe Oe me me\nard vp we EF eee Ee AES ee ae eee ot\nee tee ES BE Cay oe els a a UNS Ra Ree in, Sek"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 3 --psm 6",
+      "score": 150.32090955340954,
+      "avg_conf": 51.60454776704776,
+      "text": "ee oe ies tal Bs ern g es, one \u201d GO ww 2\nitl 2nd A\nital. 1601 2nd Ave\n: SEATTLE, WA 98109\ni 829-9296\nz 7 * ae ~\n\u201c ag , 206 oe -\n= ETHOD : *VISA\nwe \" , at\nBe a \u00a5 a\nDATE TIME : 1/6/2026 7:34:\n)\n\u00bb R209518704\nR 3\n: BRAVO\n. a\n\u201c @\nREGISTER # : Regd4\neetth Ue Ada ATH Ws th, te GOA TAS teak AH CO NIM BAG O4ER One Are AAR et Bute STD ededd aun OVE abies a. ba ee eucwen ee ~*~ vane paeio\neee cae Lees tane: carte seen c6te Ul 0M ite Oi eh Ua IS ih A RN Mame We eaLeT LE AB OR NEB OY NE ON fa\n| 5S ROLL 7.3702 SP\nORANGE FRUITS SWiss R 3/0,\n*# GROCERY (F) $ 6.99\nDUP (CARBONARA) 2.4702 1\nSY BULDAK C t .\n\u2018 \u2018 1\nt\n** GROCERY (F) $ 2.49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEM\nPe a ee, fete WR CU apt he TD ee A We (AD ner dele Peek mr HE A) de ft EE Ol re Ul AA Ege\nSUB TOTAL $ 9.48\nOALES TAX 0.00\n\u201cJ ,\nTOTAL $ 9.48 .\nen Ae nr aD Om EY A BY FH mae tlm ey Eee me wh MR Or tre We ee wey UL OMe UF New rae Mie FLL BWR ae i le Be URE ER Bk Oe Oe me me\nard vp we EF eee Ee AES ee ae eee ot\nee tee ES BE Cay oe els a a UNS Ra Ree in, Sek"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 6",
+      "score": 149.18669974469975,
+      "avg_conf": 45.93349872349872,
+      "text": "s sou ae aus , a as\nF CP IMART\n\u2014_\u2014 CEATTLE, WA 98109\nj i fad te bf\nZ 206-829-9296\n| a\n> PAYMENT METHOD ; *VISA\n~ DATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # \u00bb R209518704\n} 4\nCASHIER : BRAVO\n2 a\nREGISTER # - Regd4\na Nae ek EE ec\na eS ay Ce re Gok CI cect mi eh rs ear ere wi ei i kt le Ren fs ese as ek endnote 4\n| 55 3707 5P\nORANGE FRUITS SWISS ROLL \u20182\n## GROCERY (CF) > 6,99\n. FARBI rerMe |\nSY BULDAK CUP (CARBONARA)\n: ROCERY 2,49\n#* GROCERY (F ) $ :\ntz STATE TAX ITEH\nF = FOODSTAHP ITE\nSa enw wuwenwactn\nSUB TOTAL $ 9 48\nSALES TAX $ 0.0\nTOTAL $ 9.48 |\nll EM i EM a ee ee a en en a ee a\n\u2014\u00abDaterinn =} 1/6/2008 hm\n\u2014 ferdetye U S e......\nPPR Ch eee hat lel eae\nAccounts: VDA i eee ey Le"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 3 --psm 6",
+      "score": 149.18669974469975,
+      "avg_conf": 45.93349872349872,
+      "text": "s sou ae aus , a as\nF CP IMART\n\u2014_\u2014 CEATTLE, WA 98109\nj i fad te bf\nZ 206-829-9296\n| a\n> PAYMENT METHOD ; *VISA\n~ DATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # \u00bb R209518704\n} 4\nCASHIER : BRAVO\n2 a\nREGISTER # - Regd4\na Nae ek EE ec\na eS ay Ce re Gok CI cect mi eh rs ear ere wi ei i kt le Ren fs ese as ek endnote 4\n| 55 3707 5P\nORANGE FRUITS SWISS ROLL \u20182\n## GROCERY (CF) > 6,99\n. FARBI rerMe |\nSY BULDAK CUP (CARBONARA)\n: ROCERY 2,49\n#* GROCERY (F ) $ :\ntz STATE TAX ITEH\nF = FOODSTAHP ITE\nSa enw wuwenwactn\nSUB TOTAL $ 9 48\nSALES TAX $ 0.0\nTOTAL $ 9.48 |\nll EM i EM a ee ee a en en a ee a\n\u2014\u00abDaterinn =} 1/6/2008 hm\n\u2014 ferdetye U S e......\nPPR Ch eee hat lel eae\nAccounts: VDA i eee ey Le"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 4",
+      "score": 140.59613057501946,
+      "avg_conf": 52.98065287509732,
+      "text": "eed 5\nie\nwid ay\nL\nme\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : #VISA =\nDATE TIME \u2014s::_:1/6/2026 7:34:07 PM\nRECEIPT # \u2014:-: R209518704\nCASHIER - BRAVO\nREGISTER # \u2014: Reg04\nORANGE \u201cFRUITS \u2018SWISS ROLL 7, 3702 Sp\nkk GROCERY (F) $\neV BILDAK CUPR(CARBONARA) 2.4702 1\n*& GROCERY (F) $\nT= STATE TAX ITEH\nF = FOODSTAHP ITEN\nFIs VEN Cali Hb ih OR WD tet GS Le SOY fare alte ibs) aps ha TRY 2a, YOR AW WR CAR Ter te wh wer YE We GAL Uede VM A4y Ch ava Ly AL Wap\nte bhp Ant ae me me Re Whe ear\nPOY We BAe GR ag SR NS gh Uh Wo Ge ye ee yy UWA ue ee Nee Hee Aue \u201coR SR See gee\nfi ; _ 2 eA Soe ere Cee ee\nSALE\nDateline + 1/6/2026 19:43:42\n\u00abCord Type = t \u00abVISA |\n- Peoount saa"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 11",
+      "score": 92.86612836438923,
+      "avg_conf": 64.33064182194616,
+      "text": "44\nART\n601 2nd Ave\nSEATTLE, WA 98102\n206-829-9296\nPAYMENT METHOD\nAVISA\nDATE TIME\n/6/2026 7:34:07 PM\nRECEIPT #\nR209518704\nCASHIER\nBRAVO\nBao TER a\n> oe eae i\nWk.\nGT Whe HMI\nono.\nwe ol Be Sines\nORANGE FRUITS SWISS ROLL re 3702 \u201c6p\n*# GROCERY (F\nSY BULDAK CUP(CARBONARA) 2.4702 1\n49\n** GROCERY (F )\n[= STATE TAX ITEH\nF = FOODSTAHP ITEN\nals ae nwa wht as VD\nred or\neek ote\nAA Wwe\nSUB TOTAL\n9, 48\nSALES TAK\n0.00\nWIR\n2 10\nnad \u2014 oe eS 7 real ~~\n~~ \u2014\n\u2014 rr\nSALE\nDateline\n1/6/2026 19:49:42\nCard Type\nVISA\nAccount\n2141"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 11",
+      "score": 91.54110341713081,
+      "avg_conf": 57.70551708565407,
+      "text": "JMART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\na\nPAYMENT METHOD\n\"\nAVISA\n9\nDATE TIME\n>\n1/6/2026 7:34:07 PM\n+\nRECEIPT #\n4\nR2095 18704\n\u00e9\nCASHIER\na\nBRAVO\n@\na\nRega\nREGISTER #\nOd\noy\na Fant gat Was ae Oe etene Tho\neee O94 CFe Hemp\noe Cpe NE bee us aan aise ir\nAa gab Us Or\nCe babe dct ER NINA\nAdy Uh RNY AAR\nnaw tse, eae reo Tantais saveave OEE TH TKK IU em EEE CRS\nead meee\nA A, At\nORANGE FRUITS SWISS ROLL 7 3702 6p\n6.99\n** GROCERY (F)\n$\nSY BULDAK CUP(CARBONARA) 2\n2.4102 |\n** GROCERY (F)\n$\n2.49\nif\nSTATE TAX ITEM\nF\nFOODSTAHP ITEM\nvem Se ee cl\nre stk WN\nwr thle PHA wer HH UE\n7 Me oo\nSUB TOTAL\n9.48\n$\nOALES TAX\n$\n0.00\nTOTAL\n$\n9.48\nVo ee a OM ae\nOOF FR ie We ay Ge ek ee\ndoe ae oe en EL | an eu <n &\nww 8 be\n> we\nSALE\nDateaTing\n+ 1/6/2026 193 hs 42\nCard Type\nt VISA\nAccount:\naay"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 11",
+      "score": 91.09041666666667,
+      "avg_conf": 55.452083333333334,
+      "text": "i\n601 2nd Ave\nSEATTLE, WA 981023\n206-829-9296\nPAYMENT METHOD\n\u2018VISA\nDATE TIME\n1/6/2026 7:34:07 PM\nRECEIPT #\nR209518704\nBRAVO\nCASHIER\ngee TER i\neye Eihade (8 AR\nee\nyale\noe\nFe FO ce Cs Sega et\nAL IGT Chlhhe HAD OIL ERI\nfer\noy Bae 698 TH gers\noY te oa Gi uae a\nA cack se ers BER Oe Oe Se cen sian\nORANGE FRUITS SHISS ROLL 7 3702 6p\n** GROCERY (F\nSY BULDAK CUP(CARBONARA) 2.4/02 1\n#* GROCERY (F )\nAg\nT= STATE TAX ITEH\nF = FOODSTAHP ITEN\nwhe aks ta no tet Os ty\nwhee acd\nym\ncd\nAL VED\nSUB TOTAL\n$\ney 48\nSALES TAA\n$\n0.00\nTOTAL\n$\n9.48\npee a oe em ae ~y oy\ntas\ncid\nee\nWise eR AUR ee Gee en\nSALE\nDateline\n/6/2026 19:43:42\nCard Type\n: VISA\nAccount\n2141"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 11",
+      "score": 16.25298814910166,
+      "avg_conf": 31.2649407455083,
+      "text": "aS Yen\nea\noF\nbeige\neee\nries\nay\nthins\nhe\nARR SS\nPar by\ntal S\nAy\nBatt\nAS\nSeid,\nwee\nH\nSect pue\nOe\nAPRN TET,\nhae ape\nPARE sen ang\nBS\nBeBe\n\u2122\nra\nOey\n4e\nHBS\n9 Fh\ntas\nages\ncaS\n285\nem\nos\n\u2018\nwey\na\nSpgs\ney\nvie\nye pen\n2 Ron\nters\nFiat\nReet redo at st 6\nsee\na\n*\nPg\nHe\nry\nDhar\nPa\nBy\nPERS dy 5,\nog\n$25\nio\na\nme\npeed\nge\not\nuh\nsh\n2 Py iene Ca\nAtay:\nBle.\nseer\n\u2018oe\nat\nFoavee\nene\nCES\nes\nee\nLy\nas 4\n\u2018ey\nBia\n2,\nois 3\nie\ndata\nBea\nfo\n*y\na.\n4\nWS\naot |\nhs\ncer Tey\nsion,\n+\nsoya, Fey\n\u201ca\nrN\nna\na\ntian\na\n\u201c\na\nA,\nPa\n8.\nA\nAte\nrae\ni\ney\nfs\nee\nse\nSeri eat\nweg\nees\nx\nshat\niE\nae)\nvr\nJw\nats.\n&\nah\nshee\nPore\naaa\nve\nAin\naa SMe\noy\nwe\ncA\noe\nhs\nAg\naN\n\"hy\nee\noh\nice\nsty A\nsted bala:\nbe mi:\nii\nae\nre\nries\nPrece\nbt S\nR\noda\nat\nKaye \u20182%\nea\nFa ae\nit oad aeeaemnt ate redo\ngoatee TNE\nWe\nak\nAY\nran\nmy\nai\nES\nBr\nan\non\neta\nta\nre\na\na)\nPree,\nwee\nAy\nfe\nap\nae\nFS\naia\nEAE\noe)\nEw\nre\ntk\noy\nAES\nas\nSY\nat fe\niw jt\nre\nPuy\n5%,\n74\nPed\n43\na\nFat\nPade\nwe\nsey\niets\n4\nfur\nA i\nebay Gem\noe\nes\npe net\noh\nthy\nw)\nset\nean\ntd\nRaps.\nte\nyes\n*4\n\u201c\nhe\nys\nwe\na)\n2d\n\u00a7\ney\nareaaNes\nie\ni\nwet\nYi\noy\nyd\n4\neh\naS\nbe\nra]\nay\nvty\nwar\ncanes\nEt\n9\nve\n*\nSTA\nve\nau\n4 ode ede\nae\nsth\na?\nRo\nae)\nCoa ata\nrs\nPer\nee,\nag\na\nsae\nMe\neo\na\nrg\nS\na\nge\nJ\nmn\nag\ny\nAOS A\nRe\nee\n4\n4%\n3%\nxe\nWy\nmy\nwa\niad\n<a\n\u201cv.\nan\nne\nFe\nwhe\na\n0\na1\nee\nes\noa\nber\nMy\n3\nie\niii\nat\nrp\nSon\n\u00a5\na\nVp tts\nye\nMeet\nis\nwt\nRe\non\nod\nen\naa\nay\nred\nSythe\nva;\naS\na\nery\ncite\nfs\nPit\nok\nrd\nse\nas\nwe\nfe\nar\now\nPy,\naN\na\ne\nsy\nAs\ne\nBEE\nne\nUe\nfe\n6 o,\nPe\nAf\nFim\nBy\nFa\nai\nfe\n3\n4p\nfn-8\nEwe\nA\nWt gn Peg\npe\nate\n+\nyo\nth\nwe\nwy\nte\na\nite\ng:\nery\nve\nnS\ntet.\nmg\nPin\nshy)\nin\nath 4\noe\ns\nay\nBye\nkeke\n21\nwget\nae\naaa\nas\nae\nvs\n\"Sak\nfas\ns\nwe\n\u00ab\n-\n\u201c.\nbev:\nis\nRY\nYs\niy\nWh\nae\nxt,\nvee\nwe\nae\nHe\nPeay\nEtna\nan\na\nrete\nwee,\naes,\nen\nVie\nfia\neae\nwo\nce\nwe?\nbape\no\nat\na\nty\nale\non\ns\nyaree\nA say:\nSs,\na\nAY\npit\nfxs\na\nAd\npla\nFind\nLed\nar\nAad\nwa\n\"6.\neof\na2\nant\ngee\nvara\naes\nTe\na\nve\na\na\n\u201ct\nve\nwee\ni\nLe\na\nSPat\nne\n7\nva\neee\nMy\n4\nae\nee\n2\nA\nChae!\n\u00a5 &\naes\nve\nye\nFae\n4\nFe\nke\ncre\n7\nae\nPe\nAny\niH\nBa\n&..\nHawes\nar\non\nhe\net\nDrs\nY.\nfe\nPe\nBe\n3\n2\nWW\n\u00a3\na\noa\nrane\nPa\nstag\nety ees\n4\nee At\nag\noe)\n$4\nate\nue\naaa\u2019\ntoa)\naha\ni\nxt\nve\nreg\ni.\nFete\nmn ye\n\u201cs\nYee\nae\na P\nie\nys hs\nety\nse abe\nva\na\nfy\nas\n*\na\n29\nak\nue\nTh\nwt\nte\nPit\nors\nBe\na\nhae\n25\noh\nPet\nBe we\nA ees\n\u201c\n\u20183\nx\n7 if\nfe\naes\n*\nra)\nUN bast\nin\nz\nhe\nSale.\na\nvas\ntt\ngod\n>\nte\n\u201c\nHes\n4\nre\nOK\ne\nNEV\net\n\"e\nnae\nwt\nWL\na\n~\nPa\nea\nwh\nma\ney\ncanTy\nFEW\nee\npo\nRe\nLs\nor\nae\n4\nmgt 4\neee\ne\ney eed\n4\ny Bae\nce\nte\n:*\nis\nre\na\nA:\nas\nrm |\n\u2018es\noe\nCA\nVS)\nyt\nhe\na}\nte\nBe\nnes\nig! Aon 6\n\u201c,\n#Y,\nene\nNb\n\u00a3?\nrt\nbe\n2\na kaye\u2019\nran\nwe\none)\nyee\nne\nse\nte\nYh\nvse\nit\nva\n\u00e9y\nta\neee\nus\n?\nre\nwe\nSe\na\nfe\nqe\ny\nie\nPere\ni\nua\n*\nae\ned\na\na\na\nae\nCrate\u2019\neae\nra\nts\na,\no\nty te ph\nuh\nwoe\neM\nae\n\u201d\nrae\na\n04\nees\npees\nmae\niF,\nx!\nog\n4\ncs ane\n\u201c\ni\nra\now\n4s\nPr\nINee\nry\nota\nte\n\u201c+\nts\nES\nEe\n(Si\noa\n4\n>\nSES\n\u201d\nage\nte\nPr\nxe\nant\ns\nMe\n\u2018s\nMt\nny\nBS\n33\naf\nHgely\nat\n#\nMe\ne\nF\nst\nwe\nas\naed\nhe\noa\na\nie\n\u2018oo\nas\nis\nMi\npele.\nPe\nte\n&\n\"\non\nBethe\nte\nif\na\nee\nwee\nyt\nyey\nos\nBS\n\u00bb\nAD\n8\n7\na\nway\n\u00bb\nA\nta\nBas\noh\na\nte,\nre\nv\u00a2\nne\nvi:\nCF\nos\n4\npine\n1\nOTe.\nree\nrane\nfe\n2),\naw\nBir S\nuM\nee\nvan\n\u201c4,\nrey\nete\na\na8\nwe ais\nos\n*\nae\nte\nCw\nAn\noat\n\u201c\n\u201c\nae\nAve.\nLF\noct\n60\n*\n1\n+e\n\u201c\nae\n+\neae\nqe.\nse\n1\noe\nah\noa\nwy\nme\nI.\nz\nay\nva\nat\n\u2018NY\nMed Tow\nA\nTL.\nja.\n1S\nWA\nTe\na\nvat\nBi\nwt\nSey\n+\nVu\neu\ntye\n\u201d\nva\nFy\nras\nhw\nsabe\nata\nan\nyay\n90\nce\nfa\n200\n9\n\u2018epi em\nte\nmine\nhe\nata\nae\ned\nan\ned\nVISA\nye\nAYMENT METHOD\nane\n\u00bb@\n\u20186\noP\nars\n\u00abSa\n7\n34\nO7.\nPM\n|\n)\n20\n0\nant\nDATE TIME\nwy\non\nde\nos\na.\n\u00a7.\n2095\n04\n2\nRECEIPT #\n<\nse\ns\noy\n0\n_\nBR\n<8\n\u201cASHIER \u00a9\na\n1\nos\nie\nre)\nye\nat\nwe\n\u201c\nRe\n04\nREGISTER\n+\n;\nowe Kies rie puede Beth Siyat mann\ncae Orin tw wre LUM PHA won yous wen sy way \u2018gia rae\ncpacd icgad ca sas ates Soi 2S woe \u201cvia, ON ot\nnt Ham Te ae mand ten mln wit we efor eee\nOR DAL Str | peed tes pam Apa) gieuh loro\nsd Ca vba NUON Sach SUMTER FAYE Ait\n.\nre sae ney tie\nag uae eh ere ye er Hat) on me\nvuee\nan\ncm\nts\nn~\na\nxf\n1.3\n70Z: SP.\nSWI\n5\nROLL\nORANGE FRUITS\nrs\n;\n99\n\u00a5k GR\nOCE\nB\nny\nae\n.\nCl.\nARBONARA\n4/02\n-s\n)\nBY\nra\nDA\nbes\noe\nne\ns\n4\nGRO\naf\nERY\nna\niw\noa\nws\nre\nis\nye\n1\n\u2018wr.\nie\nwe\n.\nTEN:\n5\nii\na\nrs\nTATE\n4\nEe\nA\nPay\nPc\nae\nae\nITE\nite\nwie\nBe\nos\noi\nme\naera\nm3.\nF\nwe\nae\n2\n7%\nae\nan\noa |\nfay\nSoin\na\noa\n*\nas. tes \u2018see \u2018nme aie wt nN \u201cfete ae. tush ones phd TMA tae, Udy Fd WK\nwe\nme 8 a a\u201d ALY ue, Ne \u2018a tea \u2018eva Any aay: vent\n\u2014\nvy\nty\nTeo\nsi\nae\n<4\nwe\n.\nyr\n\u20184\nee\nws\nae\ni\nN\nPaes\nVv\nes\n\u2018oy\nwy\noa\nae\nas\n*\nwow\n\u201ca\nvon\nmy\ncA\nye\nate\n)\nme\nre\nre\nVe\nae\nyt\n1\non\ns\n%\na\nwe\n\u00a2\n\\\nva\nPay\nak\nos\nfe\nta\ntA\n>\nya\n~~\n*\n&\nSe,\nae\nad\nao\npeel\nfs\nal\n\u201c\nMao\nae\nven\ncd\nne\nxe\nfom\noe\nas\nsi\nre\noe\nwy,\nae\nAl.\n=\nee\nat\nwe\nPee\non\nwee\npa\n\u2018\n=\nves\noe\ngua\noo\n* he\nwe\n7\nWe\nyer\nfw waa pp Sek ph te a at ae ne\nme ae We, fa ee a. te ee ey oe We\nayey\nra\nat\noe\nae\noa\na\noe\nyee\nye,\nre)\nca\na\nad\nres\n-\na\nB\nee,\ni\n2\nos\nfe\not\ncays\na\neee\nv's\nein\neps\n0\n<a\n\u00bb\nof,\noan\nhen\n\"\nye\nras\nrs\nNero\nwees\n4\nca\nMtg\nay\ntory\nke\nte\nSA\nor\noe\nre\noars\na\nLind\nsf\nNe\nPo\n8\n_\na\nLg\nee\nts\n0\nty\natest\net\nTee\nes\n$n\ntp\nrake\nto\nvin\nva\nts\ni\naa\na\na\nt\nVn\n2\nBEES,\nvt\nir\nmy\ntag\na:\ney\nweet\nrey\neye\nvi\nfe\naro\nby\nee\nay\n43.\n4\nut\nan\nar\nra\nes\n#&\nwive?\neo\ntye\nre\nve\naes\ntug\n%\nft\nrd\nfe\nvase\nve\nayes\nSages\na\nif\nes\nrAd\nBy\nat\nane\n\u201cy\nBt |\ney\nA\nMate!\nes\nbs\neee\n5\na4\nary\nhe\nae\nfe\na\nes\nSoy\nNy\niS\n7)\n20\na\n*y\nRey\nuke\nty\neh,\nwy\ni?\nee\nwe\nD Sd\n3\n\u201c\n|\n(\n5,\n6\n/\nwe\n7\n4\nPox\nWe\n#\nfee\npag\nae\nmot\nWw\nrin\neghy\nae\n\u201ca\nry)\na,\n.\noy\nSy?\nsy?\neat\nad\nA\naati\nat,\nIe a\nveda\nwi\nti\n_\ncos\nat\nrats\nHa\nae &\noy\na)\na\nwate\nhy\nBay\na\na\n+t\naye\nKe\nee\n\u2018at\na\nLoe,\nval\nfs\nrts\nre\nVerne\na\n2\nPars\nte\na\nne\nPo\nVe.\noh\nSot\nney\nCah ht\n\u2018yee\nA\npet\n\u2018\"\nat\not\nTUES,\nfe\na\nny\nis\na\n\u00a5e\n4\nia\nvy\nOS,\n\u201cf\nee\n9.\n2\n44\nMS\noa it\nsat\nws\ncata a\nVe\nBas\nNy\nye\"\noa\nRees\net\niy\ni \u00a5\nre\nst\nwhe\nval\nay\nqt\nsey\nots\n\u2018eer\nts\n+2\nconn\n4,\nie\na\nxi\nae\na\nay\na\n4\nAl\nAye\nte)\nog\na)\nea\nra\nSe hi\nRY\nalate\nGog\nwe\n8,\nst\nast\nay\nvos\n#e\nraises\nwa\nFR\niy\need\ntia\nwh\nfe\nyak\nted\nyey\nah\nif\nsy\na\nta\nee\nhi\ngo\nae\n\u201c\nye\nae ee\noy\nig\nora\na\nQ\n[\nvee\nod\n|\nse\nBe\nINF\nae\na\nEas\n4,\nee\nae\nay\nee\nn,\n>)\nrel\nawe\nSpb\n\u201d\nBre.\nse\nae\naT\na\n2@\nfears\nay\n\u00a3ey\nre\nFong\ntee\n\u201co\nPatil hf\nag hs\n\"\ni\n25\neo\nfas\nBog\n3\nit\neer\noe\nae\n7:\nre\n38\nri\nen\nta\nca\nfev\natt\nwe.\nwok\nped\nme\nA\n$5\naH\nay\nope\nfi\nnt? ps\nia\nay\noF\nwee\n24\n*\"\n)\nvv\n-\ni\"\nvee\nme\ni\nrue\nBe Toes sees\nvs!\nea\na;\nAi\nW\nHo\nay\nis\n\u201c3\ney\nay\nPen\nrrerans\nfi\n\u201cyl\naa\noy"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 4",
+      "score": 15.164566115702481,
+      "avg_conf": 25.8228305785124,
+      "text": "DATE TIME.\nRECEIPT #\n\u201cASHIER \u00a9\nREGISTER\nad | Ant te pam APA) stake Urge\n| Mapsney een en tet Len et baie\ncaus sega cats spony ones enue baie HV KOHL nana wine. pen Oe oe ime Mabe pee Pane eee am caus Be Ne wre UM\u2019 Ppa won yous wen sy wey tena rans\neee ee\nTd) oop Aion cd be ae tnt fm BK tu nd Hes Somds Wyn er Yaal fou ta\nee\nwr Lo on nal\u201d Ay Ue oy wea \u2018a \u2018a tea \u2018we Any aay: omen ae"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 6",
+      "score": 13.993578996268505,
+      "avg_conf": 19.96789498134253,
+      "text": "Liat fae rhe Song ce beg Pe be pete \u00a9 a ea fb Sy ee SS SRAREC I Pea eit) stant\nah stephens oy oe RE Dea RC Res nek, pee EU hte in eg ee\neit Fee 2 Ce a By MOT ie MR AE SED tg eel ey ge ob Rongeedg Eke Sh A en rat teehee ates\nBH eke rah OB Ne a Tawa nae nt ata Eee nanbhetbti ne tele\u2019 ee dey Be eat\nAe Bao ts Pt Shek fag, gisenhen ag wae Seo A as a RT or erin Atay Ada ie nhac Wha RE TAS raat ert Te OR eS\nBe ae BI a Sree wea eS Loe eG Steg age ES do ca anil pm A got Daas de at oa yg Da ee ew na OS Tye Egy RS Le SS\nRG, oon ey. re pie teh Rercee pee tare oe stay ae pecans ets Pa ivatace er yng Paar Wn snr SRE RNC ie oh wc sas\nero ee Date CRE oP Rahn ened Pee eas Sk ak sears He geet em yr ioe eae loath wee Ser a eta ga ie gs ee ee eet caaeed Sac Re yt Oe\nHee getiaiyr as Cee eS as beat soe Rey Cet, Eee Serre ect winged ctie ar \"ELE eA ea ge SCAN : Hier a teucnraare Rr ePs re iseon Mate tt\npega iaS Pe aia Ea Be fie o eee! ee apes Beres eater a piace ths ilanoes \u2018 Saito aids aires ipa wae igen Sahl canoe RE eaniesisn oahotis fa key eee\nIPE ORS Oye Be Feber a, oe Te To re eae ate eet ot Aa ee ole htt OTR CS meg ate an Pe Dh eg Se tes SP Pau reg ey Pasty tay Wye he Sette NaF, 2 TEE eS Sepia oy atte: ae) aye\nRae Dee oo ee Soe tercnl 2 ORS ey we UE ho: ee eg MT sey Bega ee et poe PRI OS Reh a UN a pes\nty Ble 3 Ores ees ce nd een ae emer erore Saye oat oye a ae F a .: we seg eh ee oe ee we for ts Fa re a ee re te \u2018 wit MAM ae i ee \u00a2 Ran gee AN Nias Mitt i\nE . 7 A TLL oe Rees LEA SES ea \u201c4 pat A eos ett. Bes al A a Re a Sa gt ee ESE atte ee eS ae rane en Aga. Bist oe\nGe Praia crete ype Ry aed ae Coe Og CE Be ol PERS wae EE isn ae eee Apes S ak Pes ree Cet ae\n, ra OE a SE eg EE hl ere DU ee CE gS not hee Be Sart OP EG feed Cemented Wie S000) Seren)\n. ay Goes POO RILIe ATE we BR Nahe Go o8 nes ee ae Py a vod wa PRT age : \u00b0 OE Sere ge oe Lee Raracc ed, EER ERE) PR Foes antes\nqe: ENP Rg Ve tare e gee ese eee oe Neen LE on EE ET eg cst TER Fees foes Be aa.\naon nae > ony aes YAP AYRES Dien Cit s\\eneree \u201c 20 toatl Poitiers \u00ab nsec ans PEE naa Mak oe ee . a. peeraes pe Meroe tet a a\nLE pte ee On ad tax va keen Tees a ats Eee \u201c : es oe re Fe A a rent eens ie pres. SS ASS eee fel Pe ay eer seat\nwoes oS MRE A Bie ES GY, ae : oe eee ete r? iO ect a ee Oo ga eRe FR iy Sane SS acy Arett ORES obet cee Parks gs\nCe hy LALA AST aa eth 5 wee Usain faye fad foe yn ngS Yee paee = Me Bere: * eke as Inet S ek ee ee ee if ce yay be Ly eee pes het TES ae\nFiore hee eds eg It med oe Ee aan ae one Tue ts CaN see Beare . es . soe tt fo rs fees ie ere oe Loney erent ger te F\nOR gle eee Pea SC a aaa? Piers eae feee\u2019 eT paet ha PEs hoe dyes Yaa coer ogi Sees a A NE SARS DR ER OY ee ara\neee ee eee ee ney hey ode\u2019 2 bebe EO aN eet i ae ESE rae 2 hae Cae im bP. Erie PB etsy DE OT ay eee Ee sig ge\nye ee ee eR TN AS Pate eee fe gio oe ae = rh, ae oy : WG on ies ang ce ca oo EE oe fone aed Sess 8 ae rae opr ae\nCae . 2 ee oat Ds fading ee\u201d A Ag te Ye aon hy ie : ce Nace: Se A ae ke Dewy ln oe & hs Beyer . ree\u2019\n: : oa 1 eta, F \u00ab0% eet vou ae \u2014 e x Fi on : . : eee a a aess\n: Doe ete SEL aren Ge 4 a ore Pee Peers ee \u2014s 2 a gal a cn Cae\nDED eae ay a rae Petr seer Actas a are : : = 2 : \u2018 Luge \u201c2 co 0 BRD\nSle fa et ee : a oe nel nat el Ave ae Lt . PERS ees Be\noy ' ASHILER : ae SY os Ba Ms * Bee BM Bee tem \u00a9 : : ae, . an Gee\neee, CASHIER | os RAVO ERM eT to! wn BES\na By oes . : rT dee gay dace ith dae GAC, MM MAK Y : 1 RO, MEANY YAR, DAKE Ta Kena ap phe _ oe wae # 5 pte ? ; oo Ag Beles\n. bas chee gE : ee st Wek Sate italy: Gia Pak RY AN ONS MhiMt ee ie cad elm nmecusy fexaee wae =. Po * ; > 7\nen a : . . \u2018ie he oe ms oe eo Sin @ ; wns anes A rite aunt ee Sach lgue mec anes Onn por we ay somes Wen TIO\u201d . ae auh\nae oot a 7 oe Segre Yo. oo aetod us % a 5 ae r ot . . i . * . : we\nSLE oR GROCE eer rte JL he ea\nete A Ps eee bec ore ed Ate ET ie Oe ee eee Gb eab em | ath Ale ames Sn ey LBS | a = i.\nce eee RS, fas Se ee g i hae Leider nt tent mk te OS ori: eae 7 \u00a2 Ba Ee ag ay ae cee ee wa ey en) oe Wee dl Lay othe\neee aaa mye te pote get \u2018 ae 198 nip au eh Wh a 2 : woe ee eye Bi My tye ot geese ae\nel gh : Diane pas bad PRI REE TS . : wen eee 4 ; . : ee oa wT eng es ok oo\u2019 Bo, vB te\ney Oa eo ee ae TRO et Tee iA EAU EEST Bo Set Fant ae erane PTE Mad Sa ea CELE a he Sap Sree nea ara eee Ate PERS rie tae Ta eee wd ets 2 fCey\neae RES e, BS neee pores EER Lei Ek Father pid | hone gh eget esd Raped eee EAE ERE ASE EON ONS SG eared\n- EY Spt lor tee aye iene eth eh are os a HW ie filly Meee e ep Se aye Sa Bon ee he pa UE ae EE A Ee fon k Ree, Eee Malad oa a ee ee Faas Aveta Be\neV Bae F Flew, \u00a5. - q fhe Py, SPRL ey oy 1 7 | \u00a2 tee Pp ET ep eee hae Og aS EY ee oe Pers rare May chee Sees Ge See ee BAe ees RS he RL oot\nSerum ees Me teats"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 3 --psm 6",
+      "score": 13.993578996268505,
+      "avg_conf": 19.96789498134253,
+      "text": "Liat fae rhe Song ce beg Pe be pete \u00a9 a ea fb Sy ee SS SRAREC I Pea eit) stant\nah stephens oy oe RE Dea RC Res nek, pee EU hte in eg ee\neit Fee 2 Ce a By MOT ie MR AE SED tg eel ey ge ob Rongeedg Eke Sh A en rat teehee ates\nBH eke rah OB Ne a Tawa nae nt ata Eee nanbhetbti ne tele\u2019 ee dey Be eat\nAe Bao ts Pt Shek fag, gisenhen ag wae Seo A as a RT or erin Atay Ada ie nhac Wha RE TAS raat ert Te OR eS\nBe ae BI a Sree wea eS Loe eG Steg age ES do ca anil pm A got Daas de at oa yg Da ee ew na OS Tye Egy RS Le SS\nRG, oon ey. re pie teh Rercee pee tare oe stay ae pecans ets Pa ivatace er yng Paar Wn snr SRE RNC ie oh wc sas\nero ee Date CRE oP Rahn ened Pee eas Sk ak sears He geet em yr ioe eae loath wee Ser a eta ga ie gs ee ee eet caaeed Sac Re yt Oe\nHee getiaiyr as Cee eS as beat soe Rey Cet, Eee Serre ect winged ctie ar \"ELE eA ea ge SCAN : Hier a teucnraare Rr ePs re iseon Mate tt\npega iaS Pe aia Ea Be fie o eee! ee apes Beres eater a piace ths ilanoes \u2018 Saito aids aires ipa wae igen Sahl canoe RE eaniesisn oahotis fa key eee\nIPE ORS Oye Be Feber a, oe Te To re eae ate eet ot Aa ee ole htt OTR CS meg ate an Pe Dh eg Se tes SP Pau reg ey Pasty tay Wye he Sette NaF, 2 TEE eS Sepia oy atte: ae) aye\nRae Dee oo ee Soe tercnl 2 ORS ey we UE ho: ee eg MT sey Bega ee et poe PRI OS Reh a UN a pes\nty Ble 3 Ores ees ce nd een ae emer erore Saye oat oye a ae F a .: we seg eh ee oe ee we for ts Fa re a ee re te \u2018 wit MAM ae i ee \u00a2 Ran gee AN Nias Mitt i\nE . 7 A TLL oe Rees LEA SES ea \u201c4 pat A eos ett. Bes al A a Re a Sa gt ee ESE atte ee eS ae rane en Aga. Bist oe\nGe Praia crete ype Ry aed ae Coe Og CE Be ol PERS wae EE isn ae eee Apes S ak Pes ree Cet ae\n, ra OE a SE eg EE hl ere DU ee CE gS not hee Be Sart OP EG feed Cemented Wie S000) Seren)\n. ay Goes POO RILIe ATE we BR Nahe Go o8 nes ee ae Py a vod wa PRT age : \u00b0 OE Sere ge oe Lee Raracc ed, EER ERE) PR Foes antes\nqe: ENP Rg Ve tare e gee ese eee oe Neen LE on EE ET eg cst TER Fees foes Be aa.\naon nae > ony aes YAP AYRES Dien Cit s\\eneree \u201c 20 toatl Poitiers \u00ab nsec ans PEE naa Mak oe ee . a. peeraes pe Meroe tet a a\nLE pte ee On ad tax va keen Tees a ats Eee \u201c : es oe re Fe A a rent eens ie pres. SS ASS eee fel Pe ay eer seat\nwoes oS MRE A Bie ES GY, ae : oe eee ete r? iO ect a ee Oo ga eRe FR iy Sane SS acy Arett ORES obet cee Parks gs\nCe hy LALA AST aa eth 5 wee Usain faye fad foe yn ngS Yee paee = Me Bere: * eke as Inet S ek ee ee ee if ce yay be Ly eee pes het TES ae\nFiore hee eds eg It med oe Ee aan ae one Tue ts CaN see Beare . es . soe tt fo rs fees ie ere oe Loney erent ger te F\nOR gle eee Pea SC a aaa? Piers eae feee\u2019 eT paet ha PEs hoe dyes Yaa coer ogi Sees a A NE SARS DR ER OY ee ara\neee ee eee ee ney hey ode\u2019 2 bebe EO aN eet i ae ESE rae 2 hae Cae im bP. Erie PB etsy DE OT ay eee Ee sig ge\nye ee ee eR TN AS Pate eee fe gio oe ae = rh, ae oy : WG on ies ang ce ca oo EE oe fone aed Sess 8 ae rae opr ae\nCae . 2 ee oat Ds fading ee\u201d A Ag te Ye aon hy ie : ce Nace: Se A ae ke Dewy ln oe & hs Beyer . ree\u2019\n: : oa 1 eta, F \u00ab0% eet vou ae \u2014 e x Fi on : . : eee a a aess\n: Doe ete SEL aren Ge 4 a ore Pee Peers ee \u2014s 2 a gal a cn Cae\nDED eae ay a rae Petr seer Actas a are : : = 2 : \u2018 Luge \u201c2 co 0 BRD\nSle fa et ee : a oe nel nat el Ave ae Lt . PERS ees Be\noy ' ASHILER : ae SY os Ba Ms * Bee BM Bee tem \u00a9 : : ae, . an Gee\neee, CASHIER | os RAVO ERM eT to! wn BES\na By oes . : rT dee gay dace ith dae GAC, MM MAK Y : 1 RO, MEANY YAR, DAKE Ta Kena ap phe _ oe wae # 5 pte ? ; oo Ag Beles\n. bas chee gE : ee st Wek Sate italy: Gia Pak RY AN ONS MhiMt ee ie cad elm nmecusy fexaee wae =. Po * ; > 7\nen a : . . \u2018ie he oe ms oe eo Sin @ ; wns anes A rite aunt ee Sach lgue mec anes Onn por we ay somes Wen TIO\u201d . ae auh\nae oot a 7 oe Segre Yo. oo aetod us % a 5 ae r ot . . i . * . : we\nSLE oR GROCE eer rte JL he ea\nete A Ps eee bec ore ed Ate ET ie Oe ee eee Gb eab em | ath Ale ames Sn ey LBS | a = i.\nce eee RS, fas Se ee g i hae Leider nt tent mk te OS ori: eae 7 \u00a2 Ba Ee ag ay ae cee ee wa ey en) oe Wee dl Lay othe\neee aaa mye te pote get \u2018 ae 198 nip au eh Wh a 2 : woe ee eye Bi My tye ot geese ae\nel gh : Diane pas bad PRI REE TS . : wen eee 4 ; . : ee oa wT eng es ok oo\u2019 Bo, vB te\ney Oa eo ee ae TRO et Tee iA EAU EEST Bo Set Fant ae erane PTE Mad Sa ea CELE a he Sap Sree nea ara eee Ate PERS rie tae Ta eee wd ets 2 fCey\neae RES e, BS neee pores EER Lei Ek Father pid | hone gh eget esd Raped eee EAE ERE ASE EON ONS SG eared\n- EY Spt lor tee aye iene eth eh are os a HW ie filly Meee e ep Se aye Sa Bon ee he pa UE ae EE A Ee fon k Ree, Eee Malad oa a ee ee Faas Aveta Be\neV Bae F Flew, \u00a5. - q fhe Py, SPRL ey oy 1 7 | \u00a2 tee Pp ET ep eee hae Og aS EY ee oe Pers rare May chee Sees Ge See ee BAe ees RS he RL oot\nSerum ees Me teats"
+    }
+  ],
+  "winner": {
+    "variant": 0,
+    "score": 152.72556277056276,
+    "config": "--oem 1 --psm 6"
+  },
+  "overlay_url": "/receipts/0f8e4c3a-6cc6-47a8-b98d-8b9751d4d087/debug/overlay_lines.jpg",
+  "items_extracted": [
+    {
+      "name": "*& GROCERY (F)",
+      "price": 6.99,
+      "meta": [],
+      "raw_line": "*& GROCERY (F) $ 6.99"
+    },
+    {
+      "name": "CV BULDAK CUP(CARBONARA) 2.4702 1",
+      "price": 2.49,
+      "meta": [
+        "** GROCERY (F )"
+      ],
+      "raw_price_line": "** GROCERY (F ) $ 2,49"
+    }
+  ]
+}

@@ -1,0 +1,435 @@
+{
+  "receipt_id": "f8ff78cb-769b-460b-a212-21e79ed7029c",
+  "parsed": {
+    "merchant": "GROC",
+    "purchase_date": "12/12/25",
+    "purchase_date_mmddyy": "12/12/25",
+    "total": null,
+    "items": [
+      {
+        "name": "Seattle Pike Plaza - 206-494-3250",
+        "price": null,
+        "meta": [],
+        "raw_line": "Seattle Pike Plaza - 206-494-3250"
+      },
+      {
+        "name": "11 2nd Ave",
+        "price": null,
+        "meta": [],
+        "raw_line": "11 2nd Ave"
+      },
+      {
+        "name": "Seattle, Washington 98101-2007",
+        "price": null,
+        "meta": [],
+        "raw_line": "Seattle, Washington 98101-2007"
+      },
+      {
+        "name": "12/12/2025 07:26 PM",
+        "price": null,
+        "meta": [],
+        "raw_line": "12/12/2025 07:26 PM"
+      },
+      {
+        "name": "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i",
+        "price": null,
+        "meta": [],
+        "raw_line": "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i"
+      },
+      {
+        "name": "GROC",
+        "price": 3.49,
+        "meta": [
+          "$3.49"
+        ],
+        "raw_line": "GROC"
+      },
+      {
+        "name": "212080742 HIDDEN VLLEY",
+        "price": 4.79,
+        "meta": [
+          "$4.79"
+        ],
+        "raw_line": "212080742 HIDDEN VLLEY"
+      },
+      {
+        "name": "266090011 GRAPES",
+        "price": 8.28,
+        "meta": [
+          "$8.28"
+        ],
+        "raw_line": "266090011 GRAPES"
+      }
+    ]
+  },
+  "box_lines_used_for_items": [
+    "Baw:",
+    "Seattle Pike Plaza - 206-494-3250",
+    "11 2nd Ave",
+    "Seattle, Washington 98101-2007",
+    "12/12/2025 07:26 PM",
+    "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i",
+    "GROC",
+    "$3.49",
+    "212080742 HIDDEN VLLEY",
+    "$4.79",
+    "266090011 GRAPES",
+    "$8.28",
+    "SUBTOTAL",
+    "$0.00",
+    "NO TAX",
+    "$8.28",
+    "OTAL",
+    "*7616 VISA CHAR",
+    "90000000310,",
+    "AID: A",
+    "AUTH CODE:",
+    "CREDIT",
+    "090510",
+    "WHEN YOU RETURN ANY ITEM",
+    "INCLUDE",
+    "RETURN CREDIT WILL NOT",
+    "ANY",
+    "PROMOTIONAL DISCOUNT",
+    "OR CO",
+    "UPON",
+    "APPLIED TO THE ORIGINAL op",
+    "DER.",
+    "Visit 1800recycl@.Wa, goy",
+    "Or call 1-",
+    "800-RECYCLE to fiNd elagtp",
+    "Nie product",
+    "recycling service",
+    "S in yo",
+    "ur area,",
+    "et OM tee ey on",
+    "gd oe owt ew a"
+  ],
+  "items_debug": {
+    "header_anchor_hit": null,
+    "first_itemlike_hit": {
+      "idx": 1,
+      "line": "Seattle Pike Plaza - 206-494-3250"
+    },
+    "footer_hit": {
+      "idx": 12,
+      "line": "SUBTOTAL"
+    },
+    "start_idx": 0,
+    "end_idx": 12,
+    "window": [
+      {
+        "line": "Baw:",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Seattle Pike Plaza - 206-494-3250",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "11 2nd Ave",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Seattle, Washington 98101-2007",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "12/12/2025 07:26 PM",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "GROC",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "$3.49",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": true
+      },
+      {
+        "line": "212080742 HIDDEN VLLEY",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "$4.79",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": true
+      },
+      {
+        "line": "266090011 GRAPES",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "$8.28",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": true
+      },
+      {
+        "line": "SUBTOTAL",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "$0.00",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": true
+      },
+      {
+        "line": "NO TAX",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "$8.28",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": true
+      },
+      {
+        "line": "OTAL",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "*7616 VISA CHAR",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "90000000310,",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AID: A",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AUTH CODE:",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "CREDIT",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      }
+    ],
+    "sliced_lines": [
+      "Baw:",
+      "Seattle Pike Plaza - 206-494-3250",
+      "11 2nd Ave",
+      "Seattle, Washington 98101-2007",
+      "12/12/2025 07:26 PM",
+      "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i",
+      "GROC",
+      "$3.49",
+      "212080742 HIDDEN VLLEY",
+      "$4.79",
+      "266090011 GRAPES",
+      "$8.28"
+    ]
+  },
+  "items_extracted": [
+    {
+      "name": "Seattle Pike Plaza - 206-494-3250",
+      "price": null,
+      "meta": [],
+      "raw_line": "Seattle Pike Plaza - 206-494-3250"
+    },
+    {
+      "name": "11 2nd Ave",
+      "price": null,
+      "meta": [],
+      "raw_line": "11 2nd Ave"
+    },
+    {
+      "name": "Seattle, Washington 98101-2007",
+      "price": null,
+      "meta": [],
+      "raw_line": "Seattle, Washington 98101-2007"
+    },
+    {
+      "name": "12/12/2025 07:26 PM",
+      "price": null,
+      "meta": [],
+      "raw_line": "12/12/2025 07:26 PM"
+    },
+    {
+      "name": "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i",
+      "price": null,
+      "meta": [],
+      "raw_line": "WAVNAIUIRAVENELVGIOGEIOUVENV RAVINE UU RIRUG)UGGUI i"
+    },
+    {
+      "name": "GROC",
+      "price": 3.49,
+      "meta": [
+        "$3.49"
+      ],
+      "raw_line": "GROC"
+    },
+    {
+      "name": "212080742 HIDDEN VLLEY",
+      "price": 4.79,
+      "meta": [
+        "$4.79"
+      ],
+      "raw_line": "212080742 HIDDEN VLLEY"
+    },
+    {
+      "name": "266090011 GRAPES",
+      "price": 8.28,
+      "meta": [
+        "$8.28"
+      ],
+      "raw_line": "266090011 GRAPES"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="64"
+   height="64"
+   viewBox="0 0 64 64"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   sodipodi:docname="Snack.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     inkscape:zoom="13.42398"
+     inkscape:cx="28.493784"
+     inkscape:cy="33.931814"
+     inkscape:window-width="2560"
+     inkscape:window-height="1417"
+     inkscape:window-x="2552"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <circle
+       style="fill:#000000"
+       id="path1"
+       cx="21.400784"
+       cy="39.400784"
+       r="5.4007826" />
+    <circle
+       style="fill:#000000"
+       id="path1-8"
+       cx="37.400784"
+       cy="39.400784"
+       r="5.4007826" />
+    <rect
+       style="fill:#aa0000"
+       id="rect2"
+       width="30.318876"
+       height="14.302762"
+       x="14.228269"
+       y="23.614456" />
+    <rect
+       style="fill:#666666"
+       id="rect3"
+       width="59.222374"
+       height="2.1603131"
+       x="2.3837936"
+       y="44.770626" />
+  </g>
+</svg>

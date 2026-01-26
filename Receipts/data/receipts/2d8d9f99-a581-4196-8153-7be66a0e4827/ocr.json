@@ -1,0 +1,461 @@
+{
+  "receipt_id": "2d8d9f99-a581-4196-8153-7be66a0e4827",
+  "parsed": {
+    "merchant": "esate et",
+    "purchase_date": null,
+    "purchase_date_mmddyy": null,
+    "total": 23.81,
+    "address": {
+      "street": null,
+      "city": null,
+      "state": null,
+      "zip": null,
+      "website": null,
+      "store_name": "Quality Food Centers"
+    },
+    "items": [
+      {
+        "name": "QFC ADVANTAGE CUSTOMER = *******2032",
+        "price": null,
+        "meta": [],
+        "raw_line": "QFC ADVANTAGE CUSTOMER = *******2032"
+      },
+      {
+        "name": "RED BARRON PIZZA QA 3.99 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "RED BARRON PIZZA QA 3.99 F"
+      },
+      {
+        "name": "SC QFC SAVINGS 2.50",
+        "price": null,
+        "meta": [],
+        "raw_line": "SC QFC SAVINGS 2.50"
+      },
+      {
+        "name": "JELLO PUDDING MIX 2,19 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "JELLO PUDDING MIX 2,19 F"
+      },
+      {
+        "name": "KRO VAN WAFERS 2.99 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "KRO VAN WAFERS 2.99 F"
+      },
+      {
+        "name": "NSTL CAN MLK 3.49 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "NSTL CAN MLK 3.49 F"
+      },
+      {
+        "name": "COOL WHIP TORPING 2.99 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "COOL WHIP TORPING 2.99 F"
+      },
+      {
+        "name": "KROQ TURTILLA 2.49 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "KROQ TURTILLA 2.49 F"
+      },
+      {
+        "name": "QFC CF LRG WHT AA 4.99 F",
+        "price": null,
+        "meta": [],
+        "raw_line": "QFC CF LRG WHT AA 4.99 F"
+      },
+      {
+        "name": "SC MasterChef Spend",
+        "price": null,
+        "meta": [],
+        "raw_line": "SC MasterChef Spend"
+      }
+    ]
+  },
+  "box_lines_used_for_items": [
+    "Quality Food Centers",
+    "esate et",
+    "1600 West Dravus",
+    "206-283-3600 oie.",
+    "Your cashier was CHEC 501",
+    "QFC ADVANTAGE CUSTOMER = *******2032",
+    "RED BARRON PIZZA QA 3.99 F",
+    "SC QFC SAVINGS 2.50",
+    "JELLO PUDDING MIX 2,19 F",
+    "KRO VAN WAFERS 2.99 F",
+    "NSTL CAN MLK 3.49 F",
+    "COOL WHIP TORPING 2.99 F",
+    "KROQ TURTILLA 2.49 F",
+    "QFC CF LRG WHT AA 4.99 F",
+    "SC MasterChef Spend",
+    "MR CHECKOUT BAG TAX 0.08",
+    "TAX 0.00",
+    "seex BALANCE = = 23. 84",
+    "Seattle WA 98119",
+    "VISA CREDIT Purchase",
+    "KHKKKKKHKEKKTB1G ~ H",
+    "REFH: 09528D TOTAL: 23,81",
+    "AID: A0000000031010",
+    "TC: AB3BCCE2374AD825"
+  ],
+  "items_debug": {
+    "header_anchor_hit": {
+      "idx": 4,
+      "line": "Your cashier was CHEC 501"
+    },
+    "first_itemlike_hit": {
+      "idx": 2,
+      "line": "1600 West Dravus"
+    },
+    "footer_hit": {
+      "idx": 15,
+      "line": "MR CHECKOUT BAG TAX 0.08"
+    },
+    "start_idx": 5,
+    "end_idx": 15,
+    "window": [
+      {
+        "line": "Quality Food Centers",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "esate et",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "1600 West Dravus",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "206-283-3600 oie.",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Your cashier was CHEC 501",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "QFC ADVANTAGE CUSTOMER = *******2032",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "RED BARRON PIZZA QA 3.99 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SC QFC SAVINGS 2.50",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "JELLO PUDDING MIX 2,19 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "KRO VAN WAFERS 2.99 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "NSTL CAN MLK 3.49 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "COOL WHIP TORPING 2.99 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "KROQ TURTILLA 2.49 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "QFC CF LRG WHT AA 4.99 F",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SC MasterChef Spend",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "MR CHECKOUT BAG TAX 0.08",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TAX 0.00",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "seex BALANCE = = 23. 84",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Seattle WA 98119",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "VISA CREDIT Purchase",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "KHKKKKKHKEKKTB1G ~ H",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "REFH: 09528D TOTAL: 23,81",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AID: A0000000031010",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TC: AB3BCCE2374AD825",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      }
+    ],
+    "sliced_lines": [
+      "QFC ADVANTAGE CUSTOMER = *******2032",
+      "RED BARRON PIZZA QA 3.99 F",
+      "SC QFC SAVINGS 2.50",
+      "JELLO PUDDING MIX 2,19 F",
+      "KRO VAN WAFERS 2.99 F",
+      "NSTL CAN MLK 3.49 F",
+      "COOL WHIP TORPING 2.99 F",
+      "KROQ TURTILLA 2.49 F",
+      "QFC CF LRG WHT AA 4.99 F",
+      "SC MasterChef Spend"
+    ]
+  },
+  "items_extracted": [
+    {
+      "name": "QFC ADVANTAGE CUSTOMER = *******2032",
+      "price": null,
+      "meta": [],
+      "raw_line": "QFC ADVANTAGE CUSTOMER = *******2032"
+    },
+    {
+      "name": "RED BARRON PIZZA QA 3.99 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "RED BARRON PIZZA QA 3.99 F"
+    },
+    {
+      "name": "SC QFC SAVINGS 2.50",
+      "price": null,
+      "meta": [],
+      "raw_line": "SC QFC SAVINGS 2.50"
+    },
+    {
+      "name": "JELLO PUDDING MIX 2,19 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "JELLO PUDDING MIX 2,19 F"
+    },
+    {
+      "name": "KRO VAN WAFERS 2.99 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "KRO VAN WAFERS 2.99 F"
+    },
+    {
+      "name": "NSTL CAN MLK 3.49 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "NSTL CAN MLK 3.49 F"
+    },
+    {
+      "name": "COOL WHIP TORPING 2.99 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "COOL WHIP TORPING 2.99 F"
+    },
+    {
+      "name": "KROQ TURTILLA 2.49 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "KROQ TURTILLA 2.49 F"
+    },
+    {
+      "name": "QFC CF LRG WHT AA 4.99 F",
+      "price": null,
+      "meta": [],
+      "raw_line": "QFC CF LRG WHT AA 4.99 F"
+    },
+    {
+      "name": "SC MasterChef Spend",
+      "price": null,
+      "meta": [],
+      "raw_line": "SC MasterChef Spend"
+    }
+  ]
+}

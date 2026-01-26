@@ -1,0 +1,1404 @@
+{
+  "variants": [
+    {
+      "variant": 0,
+      "name": "orig",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\17aa214d-e4f9-4f8a-8566-d1ef4f22c54b\\debug\\v0_orig.jpg",
+      "img_url": "/receipts/17aa214d-e4f9-4f8a-8566-d1ef4f22c54b/debug/v0_orig.jpg"
+    },
+    {
+      "variant": 1,
+      "name": "gray_clahe",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\17aa214d-e4f9-4f8a-8566-d1ef4f22c54b\\debug\\v1_gray_clahe.jpg",
+      "img_url": "/receipts/17aa214d-e4f9-4f8a-8566-d1ef4f22c54b/debug/v1_gray_clahe.jpg"
+    },
+    {
+      "variant": 2,
+      "name": "adaptive",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\17aa214d-e4f9-4f8a-8566-d1ef4f22c54b\\debug\\v2_adaptive.jpg",
+      "img_url": "/receipts/17aa214d-e4f9-4f8a-8566-d1ef4f22c54b/debug/v2_adaptive.jpg"
+    },
+    {
+      "variant": 3,
+      "name": "otsu",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\17aa214d-e4f9-4f8a-8566-d1ef4f22c54b\\debug\\v3_otsu.jpg",
+      "img_url": "/receipts/17aa214d-e4f9-4f8a-8566-d1ef4f22c54b/debug/v3_otsu.jpg"
+    },
+    {
+      "variant": 4,
+      "name": "sharp",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\17aa214d-e4f9-4f8a-8566-d1ef4f22c54b\\debug\\v4_sharp.jpg",
+      "img_url": "/receipts/17aa214d-e4f9-4f8a-8566-d1ef4f22c54b/debug/v4_sharp.jpg"
+    }
+  ],
+  "runs": [
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 4",
+      "score": 86.125,
+      "avg_conf": 78.125,
+      "text": "se,\nae,\n\nCOsIco\n\nSeattle #OT1\n\n440] 4th Ave South\nSeattle, WA 98134\n\nOrder Number:\n\n322\n2@1.99\n1184748 SLICE PEP 3.98 A\n1935245 20 OZ COKE 0.79 A\nTAX 0.50\nx%%% TOTAL Pee dt |\nXXXXXXXXXXAX2 1 41 H\n\nAID: A0000000980840 VERIFIED BY PIN\nSeat 234874 ApP#: 603597\nEFT/Deb1! t Resp: APPROVED\n\nTran ID#: 601000234874....\n\nAPPROVED - Purchase\nAMOUNT: $5.27\n\n01/10/2026 13:13 1 234 117 734\nEFT/Debi+ 5 97"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 4",
+      "score": 82.14084507042253,
+      "avg_conf": 74.14084507042253,
+      "text": "cosico\n\nSeattle #OT\n\n4401 4th Ave South\nSeattle, WA 98134\n\nOrder Number:\n\n322\n2@1.99\n1184748 SLICE PEP 3.98 A\n1936245 20 OZ COKE 0.79 A\nTAX 0.50\n\\ 9% TOTAL Mas rd Si\n\nBie pen om edespesemenumesinnennweasen se\n\nXXXXXXXXXXXK2 1 41 H\n\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Debit Resp: APPROVED\nTran ID#: 601000234874...\n\nAPPROVED - Purchase\nAMOUNT: $5.27\n01/10/2026 13:13 234 117 734"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 6",
+      "score": 78.42553191489361,
+      "avg_conf": 70.42553191489361,
+      "text": "oO |\nCosTec |\n==\" WHOLESALE\nSeattle #OT ‘i\n4401 4th Ave South |\nSeattle, WA 98134 )\nOrder Number: |\na At\nee ee ee Ai\n2@1.99 AF\n1184748 SLICE PEP 3.98 A RE\n1935245 20 OZ COKE 0.79 A =\nTAX 0.50 5\nx*x** TOTAL be areet onatiin NED (| #\nXXXXXXXXXXXK21 41 H |\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Deb1 t Resp: APPROVED Au\nTran ID#: 601000234874... 4\nLo\nAPPROVED - Purchase ‘\nAMOUNT: $5,27 se\n01/10/2026 13:13 1 234 117 734 th\n| EFT/Debit — 557"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 3 --psm 6",
+      "score": 78.42553191489361,
+      "avg_conf": 70.42553191489361,
+      "text": "oO |\nCosTec |\n==\" WHOLESALE\nSeattle #OT ‘i\n4401 4th Ave South |\nSeattle, WA 98134 )\nOrder Number: |\na At\nee ee ee Ai\n2@1.99 AF\n1184748 SLICE PEP 3.98 A RE\n1935245 20 OZ COKE 0.79 A =\nTAX 0.50 5\nx*x** TOTAL be areet onatiin NED (| #\nXXXXXXXXXXXK21 41 H |\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Deb1 t Resp: APPROVED Au\nTran ID#: 601000234874... 4\nLo\nAPPROVED - Purchase ‘\nAMOUNT: $5,27 se\n01/10/2026 13:13 1 234 117 734 th\n| EFT/Debit — 557"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 6",
+      "score": 77.82291666666667,
+      "avg_conf": 69.82291666666667,
+      "text": "oO |\nCosTe\n== WHOLESALE |\nSeattle #O1 ‘\n4401 4th Ave South |\n| Seattle, WA 98134 )\nOrder Number: |\n322 =\nPe ines ace Ar\nee ee ee ee A;\n2@1.99 AR\n1184748 SLICE PEP 3.98 A RE\n1935245 20 OZ COKE 0.79 A =\nTAX 0.50 5\nxx” TOTAL #\nXXXXXXXXXXKKZT 4 1 H |\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Debi t Resp: APPROVED Au\nTran ID#: 601000234874... is\nLo\nAPPROVED - Purchase *\nAMOUNT: $5.27 se\n01/10/2026 13:13 1 234 117 734 :\nEFT/Debi t : |"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 3 --psm 6",
+      "score": 77.82291666666667,
+      "avg_conf": 69.82291666666667,
+      "text": "oO |\nCosTe\n== WHOLESALE |\nSeattle #O1 ‘\n4401 4th Ave South |\n| Seattle, WA 98134 )\nOrder Number: |\n322 =\nPe ines ace Ar\nee ee ee ee A;\n2@1.99 AR\n1184748 SLICE PEP 3.98 A RE\n1935245 20 OZ COKE 0.79 A =\nTAX 0.50 5\nxx” TOTAL #\nXXXXXXXXXXKKZT 4 1 H |\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Debi t Resp: APPROVED Au\nTran ID#: 601000234874... is\nLo\nAPPROVED - Purchase *\nAMOUNT: $5.27 se\n01/10/2026 13:13 1 234 117 734 :\nEFT/Debi t : |"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 4",
+      "score": 77.23076923076923,
+      "avg_conf": 69.23076923076923,
+      "text": "cosico\n\n| pera ea Se\na\nSeattle #OT\n\n4401 4th Ave South\nSeattle, WA 98134\n\nOrder Number:\n\n322\n2@1.99\n1184748 SLICE PEP 3.98 A\n1935245 20 OZ COKE 0.79 A\nTAX 0.50\nx*** TOTAL Rema ate oe\nXXXXXXXXXXAXZ1 41 H\n\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Deb1 t Resp: APPROVED\n\nTran ID#: 601000234874....\n\nAPPROVED - Purchase\nAMOUNT: $5.27\n01/10/2026 13:13 1 234 117 734\n\nwa 2 of fs f fs\nOB Bewesseaequnenensenua"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 6",
+      "score": 73.20202020202021,
+      "avg_conf": 65.20202020202021,
+      "text": "| a\nCosrTreo\n=< WWHIOLESALE ,\nSeattle #OT ‘i\n4401 4th Ave South |\nSeattle, WA 98134 |\nOrder Number: |\n322 De\nST es neh mci Ar\nA ee ee Ai\n2@1.99 Ar\n1184748 SLICE PEP 3.98 A RE\n1935245 20 0Z COKE 0.79 A =\nTAX 0.50 5\n4 “xe TOTAL RES Pe #\nXXXXXXXXXXXKZ1 41 H |\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Debi t Resp: APPROVED | Au\nTran ID#: 601000234874... is\n5\nAPPROVED - Purchase Cy\nAMOUNT: $5.27 Se\n01/10/2026 13:13 1 234 117 734 mn\nEFT/Deb Ee een . ee"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 3 --psm 6",
+      "score": 73.20202020202021,
+      "avg_conf": 65.20202020202021,
+      "text": "| a\nCosrTreo\n=< WWHIOLESALE ,\nSeattle #OT ‘i\n4401 4th Ave South |\nSeattle, WA 98134 |\nOrder Number: |\n322 De\nST es neh mci Ar\nA ee ee Ai\n2@1.99 Ar\n1184748 SLICE PEP 3.98 A RE\n1935245 20 0Z COKE 0.79 A =\nTAX 0.50 5\n4 “xe TOTAL RES Pe #\nXXXXXXXXXXXKZ1 41 H |\nAID: A0000000980840 VERIFIED BY PIN\nSea# 234874 ApP#: 603597\nEFT/Debi t Resp: APPROVED | Au\nTran ID#: 601000234874... is\n5\nAPPROVED - Purchase Cy\nAMOUNT: $5.27 Se\n01/10/2026 13:13 1 234 117 734 mn\nEFT/Deb Ee een . ee"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 6",
+      "score": 70.94623655913979,
+      "avg_conf": 72.94623655913979,
+      "text": "oO |\n\nCosTc ,\n\n=—|WHOLESALE\n\nSeattle OT ¥\n\n440] 4th Ave South |\n\nSeattle, WA 98134 }\n\nOrder Number : |\n\n322 0;\n\nee oe Ar\n\n———e— A,\n\n2@1.99 AF\n\n1184748 SLICE PEP 3.98 A RE\n\n1935245 20 OZ COKE 0.79 A =\n\nTAX 0.50 5\n\nx*x** TOTAL pen DDE | #\n\nXXXXXXXXXXXX2Z1 4 1 H\nAID: A0000000980840 VERIFIED BY PIN\n\nSea# 2349874 ApP#: 603597\n\nEFT/Debi t Resp: APPROVED Au\n\nTran ID#: 601000234874... i\n\nLo\n\nAPPROVED - Purchase Ws\n\nAMOUNT: $5.27 Se\n\n01/10/2026 13:13 1 234 117 73¢ mt\nEFT/Debi + 5 97"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 3 --psm 6",
+      "score": 70.94623655913979,
+      "avg_conf": 72.94623655913979,
+      "text": "oO |\n\nCosTc ,\n\n=—|WHOLESALE\n\nSeattle OT ¥\n\n440] 4th Ave South |\n\nSeattle, WA 98134 }\n\nOrder Number : |\n\n322 0;\n\nee oe Ar\n\n———e— A,\n\n2@1.99 AF\n\n1184748 SLICE PEP 3.98 A RE\n\n1935245 20 OZ COKE 0.79 A =\n\nTAX 0.50 5\n\nx*x** TOTAL pen DDE | #\n\nXXXXXXXXXXXX2Z1 4 1 H\nAID: A0000000980840 VERIFIED BY PIN\n\nSea# 2349874 ApP#: 603597\n\nEFT/Debi t Resp: APPROVED Au\n\nTran ID#: 601000234874... i\n\nLo\n\nAPPROVED - Purchase Ws\n\nAMOUNT: $5.27 Se\n\n01/10/2026 13:13 1 234 117 73¢ mt\nEFT/Debi + 5 97"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 11",
+      "score": 68.1985294117647,
+      "avg_conf": 60.1985294117647,
+      "text": "Costco\n\neee\n\n#|\n\nSeattle #OT\n\n4401 4th Ave South\n\nSeattle, WA 98134\n\nOrder Number:\n\n322\n\nDe\n\nos Gees es ee ee ee ee ee ee ee ee ee ee ee\n\nAi\n\nmy\n\n2@1.99\n\nAF\n\n1184748 SLICE PEP\n\n3.98 A\n\nRE\n\n1935245 20 OZ COKE\n\n0.79 A\n\nTAX\n\n0.50\n\nxx** TOTAL\n\nSBaewe ee ew ae eee ee ee ee ee ee ee ee ee ee ee ee Pe oe ee ae ee ee oe ee ee ot oP an ee oF ae ae oe\n\nXXXXXXXXXKAKS | 41\n\nH\n\nAID:\n\n|\n\nA0000000980840 VERIFIED BY PIN\n\nseat 234874\n\nAprP#: 603597\n\nEFT/Debit\n\nResp: APPROVED\n\nNa\n\nAu\n\nTran ID#: 601000234874....\n\nDe\n\nLo\n\nAPPROVED - Purchase\n\nAp\n\nAMOUNT: $5.27\n\nse\n\nth\n\n01/10/2026 13:13 1 234 117 734\n\naa ~~. = = = oe eo ee & ce ae\n\nEFT/Deb{ t\n\n5 9°?"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 11",
+      "score": 67.93150684931507,
+      "avg_conf": 59.93150684931507,
+      "text": "ae,\n\nCosTco\n\nHt\n\nSeattle #OT\n\n4401 4th Ave South\n\nSeattle, WA 98134\n\nmes es GS SG ee\n\nOrder Number:\n\n322\n\nDe\n\nums Gems Ges ee es ee ee ee ee eee ee es ee ee ee ee ee\n\nA\n\nAr\n\n2@1.99\n\nAF\n\n1184748 SLICE PEP\n\n3.98 A\n\nRE\n\n1935245 20 OZ COKE\n\n0.79 A\n\nTAX\n\n0.50\n\nxx** TOTAL\n\nfans = ee ae = op 22 ee we eb ae ee Ge me OD oe We OP OF ae = fe fe we oF oe a ow ew aD er EP oe =e\n\nXXXXXXXXXKAX2 | 41\n\nH\n\nAID:\n\n|\n\nA0000000980840 VERIFIED BY PIN\n\nSeat 234874\n\nApp#: 603597\n\nEFT/Deb! t\n\nResp: APPROVED\n\nNa\n\nAu\n\nTran ID#: 601000234874....\n\nDe\n\nLo\n\nAPPROVED - Purchase\n\nAp\n\nAMOUNT: $5.27\n\nSse\n\nth\n\n01/10/2026 13:13 1 234 117 734\n\nas ™ 2 6 ap Gb C2 GP &D & ow op\n\nEFT/Debi t+\n\n97"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 4",
+      "score": 65.78048780487805,
+      "avg_conf": 57.78048780487805,
+      "text": "cosico\n\nSeattle #01\n4401 4th Ave South\n\nSeattle, WA 98134\nOrder Number:\n\nan” a=. os\nees es GS\n\n322\n2@1.99\n1184748 SLICE PEP 3.98 A\n1935245 20 OZ COKE 0.79 A\nTAX\n*xx*x* TOTAL\n\new ae ee Se eS ow a ee oe a ae ee SS es oe 8 We oP a ee ee ee ee ee Ge ee ae oe ee ee ee ee ee Ge oe\n\nXXXXXXXXXXXX21 41 H\n\nAID: A0000000980840 VERIFIED BY PIN\nSea#t 234874 ApP#: 603597\nEFT/Debi t Resp: APPROVED\n\nTran I[D#: 601000234874....\n\nAPPROVED - Purchase\nAMOUNT: $5,27\n01/10/2026 13:13 | 234 117 734\n\n<a a ee on mt me ae\nsa iit ee Le ek eee eee\n\nEFT/Deb{ t 5 97"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 11",
+      "score": 62.388429752066116,
+      "avg_conf": 58.388429752066116,
+      "text": "CosTeoo\n\nSeattle #OT1\n\nHI\n\n4401 4th Ave South\n\nSeattle, WA 98134\n\nee Cs SS\n\nOrder Number\n\n$22\n\nDe\n\nAr\n\nAF\n\nA.\n\n2@€1.99\n\n1184748 SLICE PEP\n\n3.98 A\n\nRE\n\n1935245 20 OZ COKE\n\n0.79 A\n\n0.50\n\n= ss es oe ee ee ee ee ee ee Ss Se ee ee ee ee ee ee ee ae et ee ee ee ee ee ee\n\nxx** TOTAL\n\nRone ee rd\n\nXXXXAXXXAKAAS | 41\n\n|\n\nAID\n\nA0000000980840 VERIFIED BY PIN\n\nseq# 234874\n\nAPP#: 603597\n\nEFT/Deb! t\n\nResp; APPROVED\n\nAu\n\nTran ID#: 601000234874\n\nDel\n\nNai\n\nLo\n\nAp\n\nAPPROVED - Purchase\n\nAMOUNT: $5.27\n\nSe\n\n01/10/2026 13:13 1 234.117 734\n\nth\n\nee ee ee ee SK & eS we =\n\n6 oe ee oe ee oe\n\nEFT/Debi+\n\n5.9"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 11",
+      "score": 61.578947368421055,
+      "avg_conf": 57.578947368421055,
+      "text": "VO\n\nCNIS\n\nSeat t le +O\n\nHI\n\n4401 4th Ave South\n\nSeattle, WA 98134\n\n——— eee eee\n\nOrder Number :\n\n322\n\nDe\n\nAt\n\nAF\n\nA.\n\n28 1.99.\n\n3.98 a\n\nRE\n\n1184748 SLICE PEP\n\n0.79 A\n\n1935245 20 OZ COKE\n\n50\n\nHHH TOTAL\n\nee ee ee 0 ee ee re ee re\n\nPca eee ae ©\n\nXXXXXXXXXKXX21 41\n\n|\n\nAID:\n\nf10000000980840_ VERIFIED By PIN\n\nSeat 234874.\n\nApp#: 603597\n\nEFT/Debit\n\nResp: APPROVED |\n\nNa\n\nAu\n\nTran Dt: 601000284874...\n\nDe\n\nLoi\n\nAPPROVED ~ Purchase\n\nAn\n\nAMOUNT: $5.27.\n\nSe\n\nth\n\n01/10/2026 13: 13 234 117 734\n\nEFT/Dehi+\n\n5 97"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 11",
+      "score": 59.0514705882353,
+      "avg_conf": 55.0514705882353,
+      "text": "Lo2ztc?\n\nSeattle #O1\n\n#|\n\n4401 4th Ave South\n\nSeattle, WA 98134\n\nee | eee\n\nOrder Number:\n\n322\n\nDe\n\nes Gey Ge ee ee es ee\n\nAr\n\nAF\n\nA\n\n2@€1.99\n\n3.98 A\n\nRE\n\n1184748 SLICE PEP\n\n0.79 A\n\n1935245 20 OZ COKE\n\nx*x** TOTAL\n\nA\n\nEy\n\nSee ae ee Se eS ow a Ge Ge Ge Met Ss es Ge SS 4 oP Sr oe ee me ee ee Ge ee ae oe ee es ee fer a oe oe\n\nXXXXXXXXAKAAS | FI\n\nAID:\n\nA0000000960840 VERIFIED BY PIN\n\nseq# 234874\n\nApr#: 603597\n\nEFT/Deb1 t\n\nResp; APPROVED\n\nNai\n\nAu\n\nTran ID#: 601000234874....\n\nDe\n\nLo\n\nAPPROVED - Purchase\n\nAp\n\nAMOUNT: $5.27\n\n$e\n\nth\n\n01/10/2026 13:13 1 234 117 734\n\nne ee a ee ee ee me ee ee &\n\niit ee Le ek eee eee\n\nEFT/Deb{ t\n\n& 9"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 4",
+      "score": 48.24074074074074,
+      "avg_conf": 44.24074074074074,
+      "text": "Seatt le “H#07\n4401 4th Ave South\n—- WA al\n\n“Order. Number:\n322\n281.99 | a\n1184748 SLICE PEP 8,98 A\n: 1938245, 20 OZ COKE 0.79 A\n| ‘AX | 0.50\n‘yx TOTAL ~*~\n\n~ OMOOOEKKIOIETAT. SS HO\n\n_ AID: f10000000980840_ VERIFIED By PIN\n. Seqt 234874. App#: 603597.\n\n; EFT/Debit Resp: APPROVED —\n\n: ial Dt: 601000234874...\n\nSPPROVED - Purchase\n\nAMOUNT: $5,27. -\n\n01/10/2026 13:13 1 234 117 734\nEFT/Deblt = (sti(tir\n\nnas de sag Om) Om Om bey mast ow on\n~~ ms mF oe wan tae we ty fae am TH nin we fe sap es et ten tp Bs ee we"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 6",
+      "score": 41.92,
+      "avg_conf": 47.92,
+      "text": "(GOSTED )\n| —=—wWwHo1msare | 7\nSeattle #01 a , \"\n4401 4th Ave South -\nSeattle, WA 98134 a |\nOrder Number: © '\n«822 — ;\nes eee Ay\nee A\n281.99 a ce Af\n-. 1184748 SLICE PEP = 3,98 A | RE\n1935245 20 OZ COKE 0.79 A =\nSee TOTAL #\n_ AID: 'A0000000980840 VERIFIED BY PIN — |\n. Seat 234874 = App#: 603597\n~EFT/Debit = Resp; APPROVED = Nu\n“Tran ID#: 6o1oo0zsde74.... = sss\nAPPROVED - Purchase cy\nAMOUNT: $5.27. | Tse\n01/10/2026 13:13 1 234 117 734 uf\n— EFT/Debit ttt CO"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 3 --psm 6",
+      "score": 41.92,
+      "avg_conf": 47.92,
+      "text": "(GOSTED )\n| —=—wWwHo1msare | 7\nSeattle #01 a , \"\n4401 4th Ave South -\nSeattle, WA 98134 a |\nOrder Number: © '\n«822 — ;\nes eee Ay\nee A\n281.99 a ce Af\n-. 1184748 SLICE PEP = 3,98 A | RE\n1935245 20 OZ COKE 0.79 A =\nSee TOTAL #\n_ AID: 'A0000000980840 VERIFIED BY PIN — |\n. Seat 234874 = App#: 603597\n~EFT/Debit = Resp; APPROVED = Nu\n“Tran ID#: 6o1oo0zsde74.... = sss\nAPPROVED - Purchase cy\nAMOUNT: $5.27. | Tse\n01/10/2026 13:13 1 234 117 734 uf\n— EFT/Debit ttt CO"
+    }
+  ],
+  "winner": {
+    "variant": 3,
+    "score": 86.125,
+    "config": "--oem 1 --psm 4"
+  },
+  "fused_text": "COsTco\nTILLED,\nkeh Peer Maite ee\nSeattle #OT\n4401 4th Ave South\nSeattle, WA 98134\nOrder Number:\n322\n2@1.99\n1184748 SLICE PEP 3.98 A\n1935245 20 OZ COKE 0.79 A\nTAX 0.50\nx%%% TOTAL Pee dt |\nXXXXXXXXXXXX2 1 41 H\nAID: A0000000980840 VERIFIED BY PIN\nSeq# 234874 App#: 603597\nEFT/Deb! t Resp: APPROVED\nTran ID#: 601000234874....\nAPPROVED - Purchase\nAMOUNT: $5,27\n01/10/2026 13:13 1 234 117 734\nEFT/Debi t+ 5 97",
+  "overlay_url": "/receipts/17aa214d-e4f9-4f8a-8566-d1ef4f22c54b/debug/overlay_fused_lines.jpg",
+  "box_fused_text": "COsTco\nTILLED,\nkeh Peer Maite ee\nSeattle #OT\n4401 4th Ave South\nSeattle, WA 98134\nOrder Number:\n322\n2@1.99\n1184748 SLICE PEP 3.98 A\n1935245 20 OZ COKE 0.79 A\nTAX 0.50\nx%%% TOTAL Pee dt |\nXXXXXXXXXXXX2 1 41 H\nAID: A0000000980840 VERIFIED BY PIN\nSeq# 234874 App#: 603597\nEFT/Deb! t Resp: APPROVED\nTran ID#: 601000234874....\nAPPROVED - Purchase\nAMOUNT: $5,27\n01/10/2026 13:13 1 234 117 734\nEFT/Debi t+ 5 97",
+  "box_fused_lines": [
+    "COsTco",
+    "TILLED,",
+    "keh Peer Maite ee",
+    "Seattle #OT",
+    "4401 4th Ave South",
+    "Seattle, WA 98134",
+    "Order Number:",
+    "322",
+    "2@1.99",
+    "1184748 SLICE PEP 3.98 A",
+    "1935245 20 OZ COKE 0.79 A",
+    "TAX 0.50",
+    "x%%% TOTAL Pee dt |",
+    "XXXXXXXXXXXX2 1 41 H",
+    "AID: A0000000980840 VERIFIED BY PIN",
+    "Seq# 234874 App#: 603597",
+    "EFT/Deb! t Resp: APPROVED",
+    "Tran ID#: 601000234874....",
+    "APPROVED - Purchase",
+    "AMOUNT: $5,27",
+    "01/10/2026 13:13 1 234 117 734",
+    "EFT/Debi t+ 5 97"
+  ],
+  "box_fuse_debug": [
+    {
+      "i": 0,
+      "bbox": {
+        "x": 791,
+        "y": 276,
+        "w": 1450,
+        "h": 342
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "COsTco",
+        "avg_conf": 74.0,
+        "score": 77.6
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "COsTco",
+          "avg_conf": 74.0,
+          "score": 77.6
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "COsTco",
+          "avg_conf": 74.0,
+          "score": 77.6
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "COsTco",
+          "avg_conf": 74.0,
+          "score": 77.6
+        }
+      ]
+    },
+    {
+      "i": 1,
+      "bbox": {
+        "x": 794,
+        "y": 529,
+        "w": 429,
+        "h": 37
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 7",
+        "text": "TILLED,",
+        "avg_conf": 30.0,
+        "score": 34.2
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 7",
+          "text": "TILLED,",
+          "avg_conf": 30.0,
+          "score": 34.2
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 3 --psm 7",
+          "text": "TILLED,",
+          "avg_conf": 30.0,
+          "score": 34.2
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 6",
+          "text": "TILLED,",
+          "avg_conf": 30.0,
+          "score": 34.2
+        }
+      ]
+    },
+    {
+      "i": 2,
+      "bbox": {
+        "x": 793,
+        "y": 564,
+        "w": 440,
+        "h": 35
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "keh Peer Maite ee",
+        "avg_conf": 19.5,
+        "score": 29.7
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "keh Peer Maite ee",
+          "avg_conf": 19.5,
+          "score": 29.7
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "keh Peer Maite ee",
+          "avg_conf": 19.5,
+          "score": 29.7
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "keh Peer Maite ee",
+          "avg_conf": 19.5,
+          "score": 29.7
+        }
+      ]
+    },
+    {
+      "i": 3,
+      "bbox": {
+        "x": 1068,
+        "y": 704,
+        "w": 857,
+        "h": 66
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "Seattle #OT",
+        "avg_conf": 77.0,
+        "score": 83.6
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "Seattle #OT",
+          "avg_conf": 77.0,
+          "score": 83.6
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "Seattle #OT",
+          "avg_conf": 77.0,
+          "score": 83.6
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Seattle #OT",
+          "avg_conf": 77.0,
+          "score": 83.6
+        }
+      ]
+    },
+    {
+      "i": 4,
+      "bbox": {
+        "x": 1065,
+        "y": 803,
+        "w": 845,
+        "h": 85
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "4401 4th Ave South",
+        "avg_conf": 95.75,
+        "score": 106.55
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "4401 4th Ave South",
+          "avg_conf": 95.75,
+          "score": 106.55
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "4401 4th Ave South",
+          "avg_conf": 95.75,
+          "score": 106.55
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "4401 4th Ave South",
+          "avg_conf": 95.75,
+          "score": 106.55
+        }
+      ]
+    },
+    {
+      "i": 5,
+      "bbox": {
+        "x": 1111,
+        "y": 902,
+        "w": 801,
+        "h": 83
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "Seattle, WA 98134",
+        "avg_conf": 95.33333333333333,
+        "score": 105.53333333333333
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "Seattle, WA 98134",
+          "avg_conf": 95.33333333333333,
+          "score": 105.53333333333333
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "Seattle, WA 98134",
+          "avg_conf": 95.33333333333333,
+          "score": 105.53333333333333
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Seattle, WA 98134",
+          "avg_conf": 95.33333333333333,
+          "score": 105.53333333333333
+        }
+      ]
+    },
+    {
+      "i": 6,
+      "bbox": {
+        "x": 1056,
+        "y": 1267,
+        "w": 1069,
+        "h": 130
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "Order Number:",
+        "avg_conf": 94.5,
+        "score": 102.3
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "Order Number:",
+          "avg_conf": 94.5,
+          "score": 102.3
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "Order Number:",
+          "avg_conf": 94.5,
+          "score": 102.3
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "Order Number:",
+          "avg_conf": 94.5,
+          "score": 102.3
+        }
+      ]
+    },
+    {
+      "i": 7,
+      "bbox": {
+        "x": 1393,
+        "y": 1439,
+        "w": 243,
+        "h": 121
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "322",
+        "avg_conf": 96.0,
+        "score": 97.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "322",
+          "avg_conf": 96.0,
+          "score": 97.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "322",
+          "avg_conf": 96.0,
+          "score": 97.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "322",
+          "avg_conf": 96.0,
+          "score": 97.8
+        }
+      ]
+    },
+    {
+      "i": 8,
+      "bbox": {
+        "x": 606,
+        "y": 1780,
+        "w": 401,
+        "h": 79
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "2@1.99",
+        "avg_conf": 87.0,
+        "score": 90.6
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "2@1.99",
+          "avg_conf": 87.0,
+          "score": 90.6
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "2@1.99",
+          "avg_conf": 87.0,
+          "score": 90.6
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "2@1.99",
+          "avg_conf": 87.0,
+          "score": 90.6
+        }
+      ]
+    },
+    {
+      "i": 9,
+      "bbox": {
+        "x": 812,
+        "y": 1874,
+        "w": 1631,
+        "h": 95
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "1184748 SLICE PEP 3.98 A",
+        "avg_conf": 95.8,
+        "score": 110.19999999999999
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "1184748 SLICE PEP 3.98 A",
+          "avg_conf": 95.8,
+          "score": 110.19999999999999
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "1184748 SLICE PEP 3.98 A",
+          "avg_conf": 95.8,
+          "score": 110.19999999999999
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "1184748 SLICE PEP 3.98 A",
+          "avg_conf": 95.8,
+          "score": 110.19999999999999
+        }
+      ]
+    },
+    {
+      "i": 10,
+      "bbox": {
+        "x": 808,
+        "y": 1990,
+        "w": 1645,
+        "h": 92
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "1935245 20 OZ COKE 0.79 A",
+        "avg_conf": 95.0,
+        "score": 110.0
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "1935245 20 OZ COKE 0.79 A",
+          "avg_conf": 95.0,
+          "score": 110.0
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "1935245 20 OZ COKE 0.79 A",
+          "avg_conf": 95.0,
+          "score": 110.0
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "1935245 20 OZ COKE 0.79 A",
+          "avg_conf": 95.0,
+          "score": 110.0
+        }
+      ]
+    },
+    {
+      "i": 11,
+      "bbox": {
+        "x": 951,
+        "y": 2106,
+        "w": 1397,
+        "h": 89
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "TAX 0.50",
+        "avg_conf": 95.5,
+        "score": 100.3
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "TAX 0.50",
+          "avg_conf": 95.5,
+          "score": 100.3
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "TAX 0.50",
+          "avg_conf": 95.5,
+          "score": 100.3
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "TAX 0.50",
+          "avg_conf": 95.5,
+          "score": 100.3
+        }
+      ]
+    },
+    {
+      "i": 12,
+      "bbox": {
+        "x": 677,
+        "y": 2218,
+        "w": 1735,
+        "h": 106
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "x%%% TOTAL Pee dt |",
+        "avg_conf": 47.6,
+        "score": 59.0
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "x%%% TOTAL Pee dt |",
+          "avg_conf": 47.6,
+          "score": 59.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "x%%% TOTAL Pee dt |",
+          "avg_conf": 47.6,
+          "score": 59.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "x%%% TOTAL Pee dt |",
+          "avg_conf": 47.6,
+          "score": 59.0
+        }
+      ]
+    },
+    {
+      "i": 13,
+      "bbox": {
+        "x": 519,
+        "y": 2454,
+        "w": 1417,
+        "h": 90
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "XXXXXXXXXXXX2 1 41 H",
+        "avg_conf": 67.0,
+        "score": 79.0
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "XXXXXXXXXXXX2 1 41 H",
+          "avg_conf": 67.0,
+          "score": 79.0
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "XXXXXXXXXXXX2 1 41 H",
+          "avg_conf": 67.0,
+          "score": 79.0
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "XXXXXXXXXXXX2 1 41 H",
+          "avg_conf": 67.0,
+          "score": 79.0
+        }
+      ]
+    },
+    {
+      "i": 14,
+      "bbox": {
+        "x": 515,
+        "y": 2572,
+        "w": 1977,
+        "h": 104
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "AID: A0000000980840 VERIFIED BY PIN",
+        "avg_conf": 91.6,
+        "score": 111.6
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "AID: A0000000980840 VERIFIED BY PIN",
+          "avg_conf": 91.6,
+          "score": 111.6
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "AID: A0000000980840 VERIFIED BY PIN",
+          "avg_conf": 91.6,
+          "score": 111.6
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "AID: A0000000980840 VERIFIED BY PIN",
+          "avg_conf": 91.6,
+          "score": 111.6
+        }
+      ]
+    },
+    {
+      "i": 15,
+      "bbox": {
+        "x": 510,
+        "y": 2693,
+        "w": 1593,
+        "h": 100
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "Seq# 234874 App#: 603597",
+        "avg_conf": 74.75,
+        "score": 89.15
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "Seq# 234874 App#: 603597",
+          "avg_conf": 74.75,
+          "score": 89.15
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "Seq# 234874 App#: 603597",
+          "avg_conf": 74.75,
+          "score": 89.15
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "Seq# 234874 App#: 603597",
+          "avg_conf": 74.75,
+          "score": 89.15
+        }
+      ]
+    },
+    {
+      "i": 16,
+      "bbox": {
+        "x": 503,
+        "y": 2811,
+        "w": 1497,
+        "h": 115
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "EFT/Deb! t Resp: APPROVED",
+        "avg_conf": 84.0,
+        "score": 99.0
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "EFT/Deb! t Resp: APPROVED",
+          "avg_conf": 84.0,
+          "score": 99.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "EFT/Deb! t Resp: APPROVED",
+          "avg_conf": 84.0,
+          "score": 99.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "EFT/Deb! t Resp: APPROVED",
+          "avg_conf": 84.0,
+          "score": 99.0
+        }
+      ]
+    },
+    {
+      "i": 17,
+      "bbox": {
+        "x": 501,
+        "y": 2943,
+        "w": 1379,
+        "h": 97
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "Tran ID#: 601000234874....",
+        "avg_conf": 90.0,
+        "score": 105.6
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "Tran ID#: 601000234874....",
+          "avg_conf": 90.0,
+          "score": 105.6
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "Tran ID#: 601000234874....",
+          "avg_conf": 90.0,
+          "score": 105.6
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "Tran ID#: 601000234874....",
+          "avg_conf": 90.0,
+          "score": 105.6
+        }
+      ]
+    },
+    {
+      "i": 18,
+      "bbox": {
+        "x": 451,
+        "y": 3335,
+        "w": 1062,
+        "h": 115
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "APPROVED - Purchase",
+        "avg_conf": 93.66666666666667,
+        "score": 105.06666666666668
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "APPROVED - Purchase",
+          "avg_conf": 93.66666666666667,
+          "score": 105.06666666666668
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "APPROVED - Purchase",
+          "avg_conf": 93.66666666666667,
+          "score": 105.06666666666668
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "APPROVED - Purchase",
+          "avg_conf": 93.66666666666667,
+          "score": 105.06666666666668
+        }
+      ]
+    },
+    {
+      "i": 19,
+      "bbox": {
+        "x": 444,
+        "y": 3470,
+        "w": 731,
+        "h": 111
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "AMOUNT: $5,27",
+        "avg_conf": 84.0,
+        "score": 91.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "AMOUNT: $5,27",
+          "avg_conf": 84.0,
+          "score": 91.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "AMOUNT: $5,27",
+          "avg_conf": 84.0,
+          "score": 91.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "AMOUNT: $5,27",
+          "avg_conf": 84.0,
+          "score": 91.8
+        }
+      ]
+    },
+    {
+      "i": 20,
+      "bbox": {
+        "x": 436,
+        "y": 3607,
+        "w": 1713,
+        "h": 144
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "01/10/2026 13:13 1 234 117 734",
+        "avg_conf": 91.33333333333333,
+        "score": 109.33333333333333
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "01/10/2026 13:13 1 234 117 734",
+          "avg_conf": 91.33333333333333,
+          "score": 109.33333333333333
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "01/10/2026 13:13 1 234 117 734",
+          "avg_conf": 91.33333333333333,
+          "score": 109.33333333333333
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "01/10/2026 13:13 1 234 117 734",
+          "avg_conf": 91.33333333333333,
+          "score": 109.33333333333333
+        }
+      ]
+    },
+    {
+      "i": 21,
+      "bbox": {
+        "x": 883,
+        "y": 3889,
+        "w": 1575,
+        "h": 143
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "EFT/Debi t+ 5 97",
+        "avg_conf": 61.5,
+        "score": 71.1
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "EFT/Debi t+ 5 97",
+          "avg_conf": 61.5,
+          "score": 71.1
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "EFT/Debi t+ 5 97",
+          "avg_conf": 61.5,
+          "score": 71.1
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "EFT/Debi t+ 5 97",
+          "avg_conf": 61.5,
+          "score": 71.1
+        }
+      ]
+    }
+  ],
+  "items_extracted": [
+    {
+      "name": "COsTco",
+      "price": null,
+      "meta": [],
+      "raw_line": "COsTco"
+    },
+    {
+      "name": "TILLED,",
+      "price": null,
+      "meta": [],
+      "raw_line": "TILLED,"
+    },
+    {
+      "name": "keh Peer Maite ee",
+      "price": null,
+      "meta": [],
+      "raw_line": "keh Peer Maite ee"
+    },
+    {
+      "name": "Seattle #OT",
+      "price": null,
+      "meta": [],
+      "raw_line": "Seattle #OT"
+    },
+    {
+      "name": "4401 4th Ave South",
+      "price": null,
+      "meta": [],
+      "raw_line": "4401 4th Ave South"
+    },
+    {
+      "name": "Seattle, WA",
+      "price": null,
+      "meta": [],
+      "raw_line": "Seattle, WA"
+    },
+    {
+      "name": "Order Number:",
+      "price": null,
+      "meta": [],
+      "raw_line": "Order Number:"
+    },
+    {
+      "name": "322",
+      "price": null,
+      "meta": [],
+      "raw_line": "322"
+    },
+    {
+      "name": "2@1.99",
+      "price": null,
+      "meta": [],
+      "raw_line": "2@1.99"
+    },
+    {
+      "name": "1184748 SLICE PEP 3.98 A",
+      "price": null,
+      "meta": [],
+      "raw_line": "1184748 SLICE PEP 3.98 A"
+    },
+    {
+      "name": "1935245",
+      "price": null,
+      "meta": [],
+      "raw_line": "1935245"
+    },
+    {
+      "name": "XXXXXXXXXXXX2 1 41 H",
+      "price": null,
+      "meta": [],
+      "raw_line": "XXXXXXXXXXXX2 1 41 H"
+    },
+    {
+      "name": "AID: A0000000980840 VERIFIED BY PIN",
+      "price": null,
+      "meta": [],
+      "raw_line": "AID: A0000000980840 VERIFIED BY PIN"
+    },
+    {
+      "name": "Seq# 234874 App#:",
+      "price": null,
+      "meta": [],
+      "raw_line": "Seq# 234874 App#:"
+    },
+    {
+      "name": "EFT/Deb! t Resp: APPROVED",
+      "price": null,
+      "meta": [],
+      "raw_line": "EFT/Deb! t Resp: APPROVED"
+    },
+    {
+      "name": "Tran ID#: 601000234874....",
+      "price": null,
+      "meta": [],
+      "raw_line": "Tran ID#: 601000234874...."
+    },
+    {
+      "name": "APPROVED - Purchase",
+      "price": null,
+      "meta": [],
+      "raw_line": "APPROVED - Purchase"
+    },
+    {
+      "name": "AMOUNT: $5,27",
+      "price": null,
+      "meta": [],
+      "raw_line": "AMOUNT: $5,27"
+    },
+    {
+      "name": "01/10/2026 13:13 1 234 117",
+      "price": null,
+      "meta": [],
+      "raw_line": "01/10/2026 13:13 1 234 117"
+    },
+    {
+      "name": "EFT/Debi t+ 5",
+      "price": null,
+      "meta": [],
+      "raw_line": "EFT/Debi t+ 5"
+    }
+  ],
+  "parsed": {
+    "merchant": "COsTco",
+    "total": null,
+    "items": [
+      {
+        "name": "COsTco",
+        "price": null,
+        "meta": [],
+        "raw_line": "COsTco"
+      },
+      {
+        "name": "TILLED,",
+        "price": null,
+        "meta": [],
+        "raw_line": "TILLED,"
+      },
+      {
+        "name": "keh Peer Maite ee",
+        "price": null,
+        "meta": [],
+        "raw_line": "keh Peer Maite ee"
+      },
+      {
+        "name": "Seattle #OT",
+        "price": null,
+        "meta": [],
+        "raw_line": "Seattle #OT"
+      },
+      {
+        "name": "4401 4th Ave South",
+        "price": null,
+        "meta": [],
+        "raw_line": "4401 4th Ave South"
+      },
+      {
+        "name": "Seattle, WA",
+        "price": null,
+        "meta": [],
+        "raw_line": "Seattle, WA"
+      },
+      {
+        "name": "Order Number:",
+        "price": null,
+        "meta": [],
+        "raw_line": "Order Number:"
+      },
+      {
+        "name": "322",
+        "price": null,
+        "meta": [],
+        "raw_line": "322"
+      },
+      {
+        "name": "2@1.99",
+        "price": null,
+        "meta": [],
+        "raw_line": "2@1.99"
+      },
+      {
+        "name": "1184748 SLICE PEP 3.98 A",
+        "price": null,
+        "meta": [],
+        "raw_line": "1184748 SLICE PEP 3.98 A"
+      },
+      {
+        "name": "1935245",
+        "price": null,
+        "meta": [],
+        "raw_line": "1935245"
+      },
+      {
+        "name": "XXXXXXXXXXXX2 1 41 H",
+        "price": null,
+        "meta": [],
+        "raw_line": "XXXXXXXXXXXX2 1 41 H"
+      },
+      {
+        "name": "AID: A0000000980840 VERIFIED BY PIN",
+        "price": null,
+        "meta": [],
+        "raw_line": "AID: A0000000980840 VERIFIED BY PIN"
+      },
+      {
+        "name": "Seq# 234874 App#:",
+        "price": null,
+        "meta": [],
+        "raw_line": "Seq# 234874 App#:"
+      },
+      {
+        "name": "EFT/Deb! t Resp: APPROVED",
+        "price": null,
+        "meta": [],
+        "raw_line": "EFT/Deb! t Resp: APPROVED"
+      },
+      {
+        "name": "Tran ID#: 601000234874....",
+        "price": null,
+        "meta": [],
+        "raw_line": "Tran ID#: 601000234874...."
+      },
+      {
+        "name": "APPROVED - Purchase",
+        "price": null,
+        "meta": [],
+        "raw_line": "APPROVED - Purchase"
+      },
+      {
+        "name": "AMOUNT: $5,27",
+        "price": null,
+        "meta": [],
+        "raw_line": "AMOUNT: $5,27"
+      },
+      {
+        "name": "01/10/2026 13:13 1 234 117",
+        "price": null,
+        "meta": [],
+        "raw_line": "01/10/2026 13:13 1 234 117"
+      },
+      {
+        "name": "EFT/Debi t+ 5",
+        "price": null,
+        "meta": [],
+        "raw_line": "EFT/Debi t+ 5"
+      }
+    ]
+  }
+}

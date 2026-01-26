@@ -1,0 +1,1508 @@
+{
+  "variants": [
+    {
+      "variant": 0,
+      "name": "orig",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\7b636dad-29a9-4f5d-8df3-228369b44463\\debug\\v0_orig.jpg",
+      "img_url": "/receipts/7b636dad-29a9-4f5d-8df3-228369b44463/debug/v0_orig.jpg"
+    },
+    {
+      "variant": 1,
+      "name": "gray_clahe",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\7b636dad-29a9-4f5d-8df3-228369b44463\\debug\\v1_gray_clahe.jpg",
+      "img_url": "/receipts/7b636dad-29a9-4f5d-8df3-228369b44463/debug/v1_gray_clahe.jpg"
+    },
+    {
+      "variant": 2,
+      "name": "adaptive",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\7b636dad-29a9-4f5d-8df3-228369b44463\\debug\\v2_adaptive.jpg",
+      "img_url": "/receipts/7b636dad-29a9-4f5d-8df3-228369b44463/debug/v2_adaptive.jpg"
+    },
+    {
+      "variant": 3,
+      "name": "otsu",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\7b636dad-29a9-4f5d-8df3-228369b44463\\debug\\v3_otsu.jpg",
+      "img_url": "/receipts/7b636dad-29a9-4f5d-8df3-228369b44463/debug/v3_otsu.jpg"
+    },
+    {
+      "variant": 4,
+      "name": "sharp",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\7b636dad-29a9-4f5d-8df3-228369b44463\\debug\\v4_sharp.jpg",
+      "img_url": "/receipts/7b636dad-29a9-4f5d-8df3-228369b44463/debug/v4_sharp.jpg"
+    }
+  ],
+  "runs": [
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 6",
+      "score": 104.91596638655462,
+      "avg_conf": 72.91596638655462,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-4296\nPAYMENT METHOD : #VISA\nDATE TIME » 1/6/2026 7.34:07 PM\nRECEIPT # » R209518704\nCASHIER ' BRAVO\nREGISTER # +: Reg@l4\nORANGE FRUITS SWISS ROLL 7.3702 5P\neR GROCERY (F) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.4/0Z 1\n** GROCERY (F) $ zZ.49\n| = STATE TAX ITEH\nF = FOODSTAHP ITEM\nSUB TOTAL $ 9,48\nOALES TAX $ 0.00\nTOTAL $ 9 48\nsae Se\nDateline > 1/6/2026 19:43:42\nCard Type > VISA\nAccount > 2141\nEntry Wode =: Contactless\nReceiptTotal : $9.49\nAuth Code \" 159988\nTransaction # : 245\nResponse » AUTH/TKT\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\nACCORDING TO CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 3 --psm 6",
+      "score": 104.91596638655462,
+      "avg_conf": 72.91596638655462,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-4296\nPAYMENT METHOD : #VISA\nDATE TIME » 1/6/2026 7.34:07 PM\nRECEIPT # » R209518704\nCASHIER ' BRAVO\nREGISTER # +: Reg@l4\nORANGE FRUITS SWISS ROLL 7.3702 5P\neR GROCERY (F) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.4/0Z 1\n** GROCERY (F) $ zZ.49\n| = STATE TAX ITEH\nF = FOODSTAHP ITEM\nSUB TOTAL $ 9,48\nOALES TAX $ 0.00\nTOTAL $ 9 48\nsae Se\nDateline > 1/6/2026 19:43:42\nCard Type > VISA\nAccount > 2141\nEntry Wode =: Contactless\nReceiptTotal : $9.49\nAuth Code \" 159988\nTransaction # : 245\nResponse » AUTH/TKT\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\nACCORDING TO CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 6",
+      "score": 102.99152542372882,
+      "avg_conf": 70.99152542372882,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME » 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3707 5P\nek GROCERY(F) $a?\nOY BULDAK CUP(CARBONARA) 2.4702 1\n#* GROCERY (F) ye ke\nT = STATE TAX ITEH\nF = FOODSTAHP ITEN\nSUB TOTAL 9\nSALES TAY ee\nTOTAL $ 9.48\n~ eee eg ae\nDateline : 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode =: ‘Contactless\nReceiptTotal : $9.49\nAuth Code : 159986\nTransaction ® : 245\nResponse » AUTH/TKY\n1 AGREE 10 PAY THE ABOVE roral ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT |\n(WERCHANT AGREEMENT IF CREDIT VOUCHER) |"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 3 --psm 6",
+      "score": 102.99152542372882,
+      "avg_conf": 70.99152542372882,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME » 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3707 5P\nek GROCERY(F) $a?\nOY BULDAK CUP(CARBONARA) 2.4702 1\n#* GROCERY (F) ye ke\nT = STATE TAX ITEH\nF = FOODSTAHP ITEN\nSUB TOTAL 9\nSALES TAY ee\nTOTAL $ 9.48\n~ eee eg ae\nDateline : 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode =: ‘Contactless\nReceiptTotal : $9.49\nAuth Code : 159986\nTransaction ® : 245\nResponse » AUTH/TKY\n1 AGREE 10 PAY THE ABOVE roral ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT |\n(WERCHANT AGREEMENT IF CREDIT VOUCHER) |"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 6",
+      "score": 101.98319327731092,
+      "avg_conf": 69.98319327731092,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER #  : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 5P\n#* GROCERY (F) we ok\nSY BULDAK CUP(CARBONARA) 2.4702 1\n#* GROCERY (F) pal ey\nl = STATE TAX ITEH\nF = FOODSTAHP ITEW\nSUB TOTAL $ 9.4\nDALES TAX $ a\nTOTAL $ 9.48\nSALE ts ee\nDateline > 1/6/2026 19:43:42\nCard Type : VISA\nAccount : 2141\nEntry Mode =: Contactless\nReceiptTotal : $9.48\nAuth Code > 159988\nTransaction ® : 245\nResponse » AUTH/TK]\n1 AGREE 10 PAY THE ABOVE TOTAL AMOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 3 --psm 6",
+      "score": 101.98319327731092,
+      "avg_conf": 69.98319327731092,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER #  : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 5P\n#* GROCERY (F) we ok\nSY BULDAK CUP(CARBONARA) 2.4702 1\n#* GROCERY (F) pal ey\nl = STATE TAX ITEH\nF = FOODSTAHP ITEW\nSUB TOTAL $ 9.4\nDALES TAX $ a\nTOTAL $ 9.48\nSALE ts ee\nDateline > 1/6/2026 19:43:42\nCard Type : VISA\nAccount : 2141\nEntry Mode =: Contactless\nReceiptTotal : $9.48\nAuth Code > 159988\nTransaction ® : 245\nResponse » AUTH/TK]\n1 AGREE 10 PAY THE ABOVE TOTAL AMOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 6",
+      "score": 100.4251968503937,
+      "avg_conf": 68.4251968503937,
+      "text": "(VA An ATO TT\nVY) MAR\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME * 1/6/2026 7:34:07 PH\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # ; Reg04\nORANGE FRUITS SWISS ROLL 7.370Z 5P\n** GROCERY (F) $ 6.99\nOY BULDAK CUP(CARBONARA) 2.4702 1\n#& GROCERY (F) $ 2,49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEN\nSUB TOTAL $ 9.48\nOALES TAX $ 0.00\nTOTAL d . 9,48\nSALE - eee\nDateline > 1/6/2026 19:43. 42\nCard Type > VISA\nAccount : 2141\nEntry Hode =: Contactless\nReceiptTotal : $9.49\nAuth Code : 169988\nTransaction & : 245\nResponse » AUTH/TKT\n1 AGREE TO PAY THE ABOVE TOTAL ANOUNT\nACCORDING lO CARD ISSUER AGREEHENT\n(HERCHANT AGREEMENT IF CREOYY VOUCHER)"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 3 --psm 6",
+      "score": 100.4251968503937,
+      "avg_conf": 68.4251968503937,
+      "text": "(VA An ATO TT\nVY) MAR\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME * 1/6/2026 7:34:07 PH\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # ; Reg04\nORANGE FRUITS SWISS ROLL 7.370Z 5P\n** GROCERY (F) $ 6.99\nOY BULDAK CUP(CARBONARA) 2.4702 1\n#& GROCERY (F) $ 2,49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEN\nSUB TOTAL $ 9.48\nOALES TAX $ 0.00\nTOTAL d . 9,48\nSALE - eee\nDateline > 1/6/2026 19:43. 42\nCard Type > VISA\nAccount : 2141\nEntry Hode =: Contactless\nReceiptTotal : $9.49\nAuth Code : 169988\nTransaction & : 245\nResponse » AUTH/TKT\n1 AGREE TO PAY THE ABOVE TOTAL ANOUNT\nACCORDING lO CARD ISSUER AGREEHENT\n(HERCHANT AGREEMENT IF CREOYY VOUCHER)"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 11",
+      "score": 94.60162601626017,
+      "avg_conf": 66.60162601626017,
+      "text": "J] MART\n\n1601 2nd Ave\n\nSEATTLE, WA 98109\n\n206-829-9296\n\nPAYMENT METHOD ; *VISA\n\nDATE TIME\n\n1/6/2026 7:34:07 PM\n\nRECEIPT #\n\nR209518704\n\nCASHIER\n\nBRAVO\n\n- on ote ow\n\nREGISTER ea\n\na\n\nOo\n\n-\n\n—\n\nae\n\nas\n\nad\n\n2 Oe 4.\n\n=\n\n<2\n\n—— wee Cm\n\nORANGE FRU\n\nS$ RO\n\n3/0\n\noe\n\n** GROCERY (F )\n\nBavg\n\nSY BULDAK CUP(CARBONARA) 2.4702 1\n\n** GROCERY (F)\n\n$\n\nZ\n\n49\n\nl= STATE TAX ITEH\n\nPs ee ITEM\n\n—\n\n9. 48\n\nDALES TAX\n\n0.00\n\nos\n\nTAL\n\n9.48\n\n= cee\n\n—\n\nSALE\n\nDateline\n\n1/6/2026 19:43:42\n\nCard Type\n\nVISA\n\nAccount\n\n2141\n\nEntry Wode\n\nContactless\n\nReceiptTotal\n\nAuth Code\n\n159988\n\nTransaction\n\n245\n\nResponse\n\nAUTH/TKT\n\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\n\nACCORDING 10 CARD ISSUER AGREEMENT\n\n(MERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 4",
+      "score": 94.07936507936508,
+      "avg_conf": 72.07936507936508,
+      "text": "7] MART\n\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\n\nPAYMENT METHOD ; *VISA\n\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # ; R209518704\nCASHIER ; BRAVO\nREGISTER # ; Regd4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n\n** GROCERY (F ) $ eho\nSY BULDAK CUP(CARBONARA) 2.4702 1\n\n*% GROCERY (F ) $ 2.49\n\nl= STATE TAX ITEH\nF = FOODSTAHP ITEN\n\n—_ <a “.\n\nSUB TOTAL $ 9.48\nDALES TAX $ 0,00\nTOTAL > 9.48\n\nSALE ii: Ce\n\nDateline > 1/6/2026 19:43:42\n\nCard Type : VISA\n\nAccount : 2141\n\nEntry Mode =: Contactless\n\nReceiptTotal : $9.48\n\nAuth Code > 159988\n\nTransaction ® : 245\n\nResponse » AUTH/TK]\n\n1 AGREE TO PAY THE ABOVE TOTAL ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(WERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 11",
+      "score": 93.65986394557824,
+      "avg_conf": 65.65986394557824,
+      "text": "7] MART\n\n1601 2nd Ave\n\nSEATTLE, WA 98109\n\n206-829-9296\n\nPAYMENT METHOD ; *VISA\n\nDATE TIME\n\n1/6/2026 7:34:07 PM\n\nRECEIPT #\n\nR209518704\n\nCASHIER\n\nBRAVO\n\n™ Cy ee ote we eT = =:\n\nREGISTER #\n\n2\n\nEe gE Sigg TEE Oo Fy OC\n\n—\n\nah\n\nea\n\nx A\n\naA MAID Dae 3.\n\n=\n\n7\n\noes\n\noy\n\nORANGE FRUITS SWISS ROLL 7.370\n\n*k GROCERY (F)\n\nBi, ou\n\nSY BULDAK CUP(CARBONARA) 2.470Z 1\n\n** GROCERY (F)\n\n$\n\n2.49\n\nI = STATE TAX ITEH\n\nF = FOODSTAHP ITEN\n\nao am ae\n\noo = aw we\n\n~\n\n- —\n\n9.48\n\nDALES TAX\n\n0.00\n\nbad <2 0 ae om\n\nTOTAL\n\n- = pone\n\n~~\n\nSALE\n\nDateline\n\n1/6/2026 19:43:42\n\nCard Type\n\nVISA\n\nAccount\n\n2141\n\nEntry Hode\n\nContactless\n\nReceipttotal\n\nAuth Code\n\n159988\n\nTransaction # :\n\n245\n\nResponse\n\nAUTH/TKT\n\n1 AGREE 10 PAY THE ABOUE TOTAL ANQUNT\n\nACCORDING 10 CARD ISSUER AGREEMENT\n\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 4",
+      "score": 90.30434782608695,
+      "avg_conf": 68.30434782608695,
+      "text": "YJ MART\n\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\n\nPAYMENT METHOD ; *VISA\n\nDATE TIME + 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3707 5\n\n#*k GROCERY (F ) $ 6.99\noY BULDAK CUP(CARBONARA) 2.4702 1\n\n** GROCERY (F ) $ 2.49\n\n| = STATE TAX ITEH\nF = FOODSTAHP ITEN\n\nle ee ld ee ee — a\n“ o — <o\n\n——\n\nSUB TOTAL $ 9.48\nDALES TAX $ 0,00\nTOTAL $ 9.48\n\nais Sen ake\nDateT ine > 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode =: Contactless\nReceiptTotal +: $9.48\nAuth Code : 169988\nTransaction # ; 245\nResponse : AUTH/TKT\n\n| AOREE TO PAY THE ABOVE TOTAL aNouNT\nACCORDING TO CARD ISSUER AGREEMENT\n(WERCHANT AGREEMENT IF CREDIT UOUCHER)"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 4",
+      "score": 90.02739726027397,
+      "avg_conf": 68.02739726027397,
+      "text": "(\"]| MART\n\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-4296\n\nPAYMENT METHOD : #*VISA\n\nDATE TIME » 1/6/2026 7.34:07 PM\nRECEIPT # ; R209518704\nCASHIER ' BRAVO\n\nREGISTER # : Regl4\n\neres . oe F bie oe\n~— cee 23 aw me coe\n4 owe tan ew we ce ee eT od\n\nORANGE FRUITS SWISS ROLL 7.3702 5P\n\n** GROCERY (F ) $ 6.99\nSY BULDAK CUP(CARBUNARA) 2.4/0Z 1\n** GROCERY (F ) $ Z,49\n\n| = STATE TAX ITEM\nF = FOODSTAMP ITEH\n\neel ee\n\nSUB TOTAL $ 9,48\nOALES TAX $ 0.00\nTOTAL $ 3.48\n\nsae ee\n\nDateline > 1/6/2026 19:43:42\n\nCard Type : VISA\n\nAccount > 2141\n\nEntry Wode =: Contactless\n\nReceiptTotal : $9.49\n\nAuth Code \" 159988\n\nTransaction # : 245\n\nResponse » AUTH/TKT\n\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\nACCORDING TO CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 11",
+      "score": 88.98290598290598,
+      "avg_conf": 70.98290598290598,
+      "text": "]/MART\n\n1601 2nd Ave\n\nSEATTLE, WA 98109\n\n206-629-4296\n\nPAYMENT METHOD : #*VISA\n\nDATE TIME\n\n1/6/2026 7.34:07 PM\n\nRECEIPT #\n\nR2095 18704\n\nCASHIER\n\nBRAVO\n\nene\n\nest\n\noad\n\ncw me cone\n\nORANGE\n\nROLL\n\n** GROCERY (F)\n\n6.99\n\nSY BULDAK CUP(CARBUNARA) 2.4/0Z 1\n\n** GROCERY (F )\n\n$\n\nZ,49\n\n| = STATE TAX ITEM\n\nF = FOODSTAMP ITEH\n\n_— ~\n\nSUB TOTAL\n\n9.48\n\nDALES TAX\n\n0.00\n\nT0\n\n_— — — we\n\nTal\n\n- _ _—\n\n—_\n\n3.48\n\nSALE\n\n6 me\n\nDateTime\n\n1/6/2026 19:43:42\n\nCard Type\n\nVISA\n\nAccount\n\n2141\n\nEntry Wode\n\nContactless\n\nRecaiptTotal\n\n$9.48\n\nAuth Code\n\n159986\n\nTransaction @ :\n\n245\n\nResponse\n\nAUTH/TKT\n\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\n\nACCORDING TO CARD ISSUER AGREEMENT\n\n(MERCHANT AGREEMENT IF CREDYy VOUCHER)"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 6",
+      "score": 87.76470588235294,
+      "avg_conf": 69.76470588235294,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME » 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3707 5P\n** GROCERY (F ) $ 6.99\noY BULDAK CUP(CARBONARA) 2.4707 1\n** GROCERY (F) $ 2.49\n| = STATE TAX ITEH\nF = FOODSTAHP ITEM\nOUB TOTAL $ 9.48\nDALES TAX $ 0,00\nTOTAL ¢ 9 48\n“Sale ee a= =o\nDateline > 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode =: Contactless\nReceiptTotal +: $9.48\nAuth Code : 169986\nTransaction # ; 245\nResponse » AUTH/TKT\nI AGREE TO PAY THE ABOVE TOTAL AMOUNT %\nACCORDING 10 CARD. ISSUER AGREEMENT Cie"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 3 --psm 6",
+      "score": 87.76470588235294,
+      "avg_conf": 69.76470588235294,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME » 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3707 5P\n** GROCERY (F ) $ 6.99\noY BULDAK CUP(CARBONARA) 2.4707 1\n** GROCERY (F) $ 2.49\n| = STATE TAX ITEH\nF = FOODSTAHP ITEM\nOUB TOTAL $ 9.48\nDALES TAX $ 0,00\nTOTAL ¢ 9 48\n“Sale ee a= =o\nDateline > 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode =: Contactless\nReceiptTotal +: $9.48\nAuth Code : 169986\nTransaction # ; 245\nResponse » AUTH/TKT\nI AGREE TO PAY THE ABOVE TOTAL AMOUNT %\nACCORDING 10 CARD. ISSUER AGREEMENT Cie"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 11",
+      "score": 84.2085308056872,
+      "avg_conf": 52.208530805687204,
+      "text": "MART\n\n1601 2nd Ave\n\nSEATTLE, WA 98109\n\n206-829-9296\n\nPAYMENT METHOD : *VISA\n\nDATE TIME\n\n1/6/2026 7:34:07 PM\n\nRECEIPT #\n\nR2095 18704\n\nCASHIER\n\nBRAVO\n\nREGISTER #\n\nReg04\n\nSe OY EE aE Rae EEF SOE ONE Wee ERS OO COS WE AE RD LFW Atk 0608 GES Ode Chem AAP EEE NFU meted WES RED OND Aan? OUR TR tENe Ben bau Od. Girt ee\n\nEO BL OTe EE LE DF aT le omy mak tate tnt ei OE Ae ED AD UD we ERs Ame ELE Or Ore Oe COE EER EY ES OPE Hed OR Erte One? Edy oe toe thee\n\nORANGE FRUITS SWISS ROLL 7.3702 5P\n\n** GROCERY(F)\n\n99\n\nSY BULDAK CUP(CARBONARA) 2.4702 1\n\n** GROCERY (F)\n\n2.49\n\nT = STATE TAX ITEH\n\nF = FOODSTAHP ITEN\n\n— am 40 we oe Oe om oe ww wer oe ae TT SR ote em a eee oe ne me me ee tee one ee ae ee ye ee\n\nSUB TOTAL\n\n9.48\n\nDALES TAX\n\n0.00\n\nTOTAL\n\n9.48\n\nPTT\n\nSALE\n\noe aw wwe\n\nDateline\n\n1/6/2026 19:43:42\n\nCard Type\n\nVISA\n\nAccount\n\n2141\n\nEntry Hode\n\nContactless\n\nReceiptTota)\n\n$9,468\n\nAuth Code\n\n169988\n\nTransaction & :\n\n245\n\nResponse\n\nAUTH/TKT\n\nT AGREE TO PAY THE ABOVE TOTAL ANOUNT\n\nACCORDING TO CARD ISSUER AGREEWENT\n\n(HERCHANT AGREEMENT IF CREDIY VOUCHER)"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 4",
+      "score": 83.82758620689656,
+      "avg_conf": 51.827586206896555,
+      "text": "MART\n\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\n\nPAYMENT METHOD : *VISA\n\nDATE TIME : 1/6/2026 7:34:07 PN\nRECEIPT # : R209518704\n\nCASHIER : BRAVO\n\nREGISTER # ; Regd4\n\nOE Te EE LA DF ET le oy mah Aan ant ee OE I ED AEE DOD we Bee 200k ESE DH ame ED Bhe OEP EY ED EPS Pe OOP Ores ame ety Wee Oe ee\nSe OY EE aE Rae EEF SOE ONE Wee ERS OO COS WE AE RD LFW Atk 0608 GES Ode Chem AAP EEE NFU meted WES RED OND Aan? OUR TR tENe Ben bau Od. Girt ee\n\nORANGE FRUITS SWISS ROLL 7.370Z 5P\n\n** GROCERY (F) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.4702 1\n*%* GROCERY (F) $ 2.49\n\nT = STATE TAX ITEH\nF = FOODSTAHP ITEN\n\n- a am Me we or ae on un ow a ae we oe oe\n> oF ww wer ww ae SST aR we Ore Oe me am ae we te oe ee we eee wey\no Cd\n\nSUB TOTAL $ 9.48\nOALES TAX $ 0.00\nTOTAL $ . 9.49\n\nSALE\n\nDateline > 1/6/2026 19:43. 42\n\nCard Type > VISA\n\nAccount : 2141\n\nEntry Hode =: Contactless\n\nReceiptTotal : $9.49\n\nAuth Code : 169988\n\nTransaction & : 245\n\nResponse > AUTH/TKT\n\n1 AGREE TO PAY THE ABOUE TOTAL ANOUNT\nACCORDING TO CARD ISSUER AGREEMENT\n(HERCHANT AGREENENT IF CREDIY VOUCHER)"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 11",
+      "score": 81.41666666666666,
+      "avg_conf": 63.416666666666664,
+      "text": "(\"]/ MART\n\n1601 2nd Ave\n\nSEATTLE, WA 98109\n\n206-829-9296\n\nPAYMENT METHOD ; *VISA\n\nDATE TIME\n\n1/6/2026 7:34:07 PM\n\nRECEIPT #\n\nR209518704\n\nCASHIER\n\nBRAVO\n\nREGISTER #\n\ni si Se, eae oss gino eg. sags ed las\n\noo\n\nan ee emt\n\nwr\n\nReg04\n\noes sree\n\nnme\n\nShih an hee ae\n\no\n\noe\n\nORANGE FRUITS SWISS ROLL 7\n\n«\n\n=\n\n*k GROCERY (F)\n\n6.99\n\noY BULDAK CUP(CARBONARA) 2.4702 1\n\n** GROCERY (F)\n\n2.49\n\n| = STATE TAX ITEH\n\nF = FOODSTAMP ITEN\n\nee ~~\n\n> =\n\n——\n\nOUB TOTAL\n\n9.48\n\nDALES TAX\n\n0,00\n\nTOTAL\n\n9.48\n\nCO OTD tee oo th in Maem ee\n\n— —~ =\n\nSALE\n\nDateTine\n\n1/6/2026 19:43:42\n\nCard Type\n\nVISA\n\nAccount\n\n2141\n\nEntry Mode\n\nContactless\n\nReceiptTotal\n\n$9,468\n\nAuth Code\n\n159988\n\nTransaction # :\n\n245\n\nResponse\n\nAUTH/TKT\n\nT ABREE TO PAY THE ABOVE TOTAL AMOUNT\n\nACCORDING TO CARD ISSUER AGREENENT.\n\n(WERCHANT AGREEMENT IF CREDIT UoUCHER"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 4",
+      "score": 76.42583732057416,
+      "avg_conf": 54.42583732057416,
+      "text": "7] MART\n\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\n\nPAYMENT METHOD ; *VISA\nDATE TIME * 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\n\nCASHIER : BRAVO\nREGISTER # : RegQ4\n\nTR UT OBE Th SS FO UA OP er Se en Gm em a eh i “we ER OD ws EIS aeee Lady O/fl ee mE) Uae Oued ink OER Cree ace Mayer ee oY tim\nSE ALY ED CE Beaty EE ER AE TED AD OE EOE OD AES MD UOT Ads and Ge AD lio AAO OE EF Kee Whe se —eew as) PoE 9) Lae Old. 7Rrt cco aD LORD Geet Gime\n\nORANGE FRUITS SWISS ROLL 7.3702 SP\n\n** GROCERY (F ) $ Bi, ou\nSY BULDAK CUP(CARBONARA) 2.470Z 1\n*% GROCERY (F ) $ 2.49\n\nI = STATE TAX ITEH\nF = FOODSTAHP ITEN\n\nao ee Me ee ee eo ee aw we ss:\n\n— eee\n\nSUB TOTAL a eS\n\nSALES TAX\nTOTAL 4\n\nSALE\n\nDatel ine > 1/6/2026 19:43:49\nCard Type : VISA\n\nAccount » 2141\n\nEntry Mode =: ‘Contactless\nReceiptTotal : $9.49\n\nAuth Code > 1599868\nTransaction # : 245\n\nResponse » AUTH/TKT\n\n| AGREE (0 PAY THE ABOVE TOTAL ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(WERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    }
+  ],
+  "winner": {
+    "variant": 3,
+    "score": 104.91596638655462,
+    "config": "--oem 1 --psm 6"
+  },
+  "fused_text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME =: 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER §— : BRAVO\nREGISTER # : RegQ4\nORANGE FRUITS SWISS ROLL 7.370Z 5P\n**k GROCERY (F) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.470Z 1\n** GROCERY (F) $ 2,49\nJ = STATE TAX ITEH\nF = FOODSTAHP ITEN\nSUB TOTAL $ 9.42\nSALES TAX $ 0.00\nTOTAL $ 9.49\nSALE\nDatel ine > 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode: Contactless\nReceiptTotal : $9.48\nAuth Code 159988\nTransaction & : 245\nResponse » AUTH/TKY\nT AGREE TO PAY THE ABOVE TOTAL ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(WERCHANT AGREEMENT IF CREDIT UoUCHER)",
+  "overlay_url": "/receipts/7b636dad-29a9-4f5d-8df3-228369b44463/debug/overlay_fused_lines.jpg",
+  "box_fused_text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME =: 1/6/2026 7:34:07 PM\nRECEIPT # * R209518704\nCASHIER §— : BRAVO\nREGISTER # : RegQ4\nORANGE FRUITS SWISS ROLL 7.370Z 5P\n**k GROCERY (F) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.470Z 1\n** GROCERY (F) $ 2,49\nJ = STATE TAX ITEH\nF = FOODSTAHP ITEN\nSUB TOTAL $ 9.42\nSALES TAX $ 0.00\nTOTAL $ 9.49\nSALE\nDatel ine > 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode: Contactless\nReceiptTotal : $9.48\nAuth Code 159988\nTransaction & : 245\nResponse » AUTH/TKY\nT AGREE TO PAY THE ABOVE TOTAL ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(WERCHANT AGREEMENT IF CREDIT UoUCHER)",
+  "box_fused_lines": [
+    "1601 2nd Ave",
+    "SEATTLE, WA 98109",
+    "206-829-9296",
+    "PAYMENT METHOD : *VISA",
+    "DATE TIME =: 1/6/2026 7:34:07 PM",
+    "RECEIPT # * R209518704",
+    "CASHIER §— : BRAVO",
+    "REGISTER # : RegQ4",
+    "ORANGE FRUITS SWISS ROLL 7.370Z 5P",
+    "**k GROCERY (F) $ 6.99",
+    "SY BULDAK CUP(CARBONARA) 2.470Z 1",
+    "** GROCERY (F) $ 2,49",
+    "J = STATE TAX ITEH",
+    "F = FOODSTAHP ITEN",
+    "SUB TOTAL $ 9.42",
+    "SALES TAX $ 0.00",
+    "TOTAL $ 9.49",
+    "SALE",
+    "Datel ine > 1/6/2026 19:43:42",
+    "Card Type : VISA",
+    "Account > 2141",
+    "Entry Mode: Contactless",
+    "ReceiptTotal : $9.48",
+    "Auth Code 159988",
+    "Transaction & : 245",
+    "Response » AUTH/TKY",
+    "T AGREE TO PAY THE ABOVE TOTAL ANOUNT",
+    "ACCORDING 10 CARD ISSUER AGREEMENT",
+    "(WERCHANT AGREEMENT IF CREDIT UoUCHER)"
+  ],
+  "box_fuse_debug": [
+    {
+      "i": 0,
+      "bbox": {
+        "x": 1352,
+        "y": 514,
+        "w": 477,
+        "h": 74
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "1601 2nd Ave",
+        "avg_conf": 96.0,
+        "score": 103.2
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "1601 2nd Ave",
+          "avg_conf": 96.0,
+          "score": 103.2
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "1601 2nd Ave",
+          "avg_conf": 96.0,
+          "score": 103.2
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "1601 2nd Ave",
+          "avg_conf": 96.0,
+          "score": 103.2
+        }
+      ]
+    },
+    {
+      "i": 1,
+      "bbox": {
+        "x": 1238,
+        "y": 613,
+        "w": 695,
+        "h": 81
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "SEATTLE, WA 98109",
+        "avg_conf": 95.66666666666667,
+        "score": 105.86666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "SEATTLE, WA 98109",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "SEATTLE, WA 98109",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "SEATTLE, WA 98109",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        }
+      ]
+    },
+    {
+      "i": 2,
+      "bbox": {
+        "x": 1338,
+        "y": 716,
+        "w": 488,
+        "h": 73
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "206-829-9296",
+        "avg_conf": 95.0,
+        "score": 102.2
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "206-829-9296",
+          "avg_conf": 95.0,
+          "score": 102.2
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "206-829-9296",
+          "avg_conf": 95.0,
+          "score": 102.2
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "206-829-9296",
+          "avg_conf": 95.0,
+          "score": 102.2
+        }
+      ]
+    },
+    {
+      "i": 3,
+      "bbox": {
+        "x": 589,
+        "y": 916,
+        "w": 901,
+        "h": 76
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "PAYMENT METHOD : *VISA",
+        "avg_conf": 88.75,
+        "score": 101.95
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "PAYMENT METHOD : *VISA",
+          "avg_conf": 88.75,
+          "score": 101.95
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "PAYMENT METHOD : *VISA",
+          "avg_conf": 88.75,
+          "score": 101.95
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "PAYMENT METHOD : *VISA",
+          "avg_conf": 88.75,
+          "score": 101.95
+        }
+      ]
+    },
+    {
+      "i": 4,
+      "bbox": {
+        "x": 590,
+        "y": 1019,
+        "w": 1488,
+        "h": 79
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 8",
+        "text": "DATE TIME =: 1/6/2026 7:34:07 PM",
+        "avg_conf": 86.66666666666667,
+        "score": 105.86666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 8",
+          "text": "DATE TIME =: 1/6/2026 7:34:07 PM",
+          "avg_conf": 86.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 13",
+          "text": "DATE TIME =: 1/6/2026 7:34:07 PM",
+          "avg_conf": 86.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "DATE TIME =: 1/6/2026 7:34:07 PM",
+          "avg_conf": 83.66666666666667,
+          "score": 102.86666666666667
+        }
+      ]
+    },
+    {
+      "i": 5,
+      "bbox": {
+        "x": 592,
+        "y": 1120,
+        "w": 1106,
+        "h": 70
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "RECEIPT # * R209518704",
+        "avg_conf": 82.5,
+        "score": 95.7
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "RECEIPT # * R209518704",
+          "avg_conf": 82.5,
+          "score": 95.7
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "RECEIPT # * R209518704",
+          "avg_conf": 82.5,
+          "score": 95.7
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "RECEIPT # * R209518704",
+          "avg_conf": 82.5,
+          "score": 95.7
+        }
+      ]
+    },
+    {
+      "i": 6,
+      "bbox": {
+        "x": 594,
+        "y": 1221,
+        "w": 892,
+        "h": 70
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 8",
+        "text": "CASHIER §— : BRAVO",
+        "avg_conf": 73.5,
+        "score": 84.3
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 8",
+          "text": "CASHIER §— : BRAVO",
+          "avg_conf": 73.5,
+          "score": 84.3
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 13",
+          "text": "CASHIER §— : BRAVO",
+          "avg_conf": 73.5,
+          "score": 84.3
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "CASHIER » BRAVO",
+          "avg_conf": 73.33333333333333,
+          "score": 82.33333333333333
+        }
+      ]
+    },
+    {
+      "i": 7,
+      "bbox": {
+        "x": 594,
+        "y": 1321,
+        "w": 894,
+        "h": 82
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "REGISTER # : RegQ4",
+        "avg_conf": 68.0,
+        "score": 78.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "REGISTER # : RegQ4",
+          "avg_conf": 68.0,
+          "score": 78.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "REGISTER # : RegQ4",
+          "avg_conf": 68.0,
+          "score": 78.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "REGISTER # : RegQ4",
+          "avg_conf": 68.0,
+          "score": 78.8
+        }
+      ]
+    },
+    {
+      "i": 8,
+      "bbox": {
+        "x": 589,
+        "y": 1522,
+        "w": 1399,
+        "h": 81
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 8",
+        "text": "ORANGE FRUITS SWISS ROLL 7.370Z 5P",
+        "avg_conf": 92.83333333333333,
+        "score": 112.83333333333333
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "ORANGE FRUITS SWISS ROLL 7.370Z 5P",
+          "avg_conf": 92.83333333333333,
+          "score": 112.83333333333333
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 13",
+          "text": "ORANGE FRUITS SWISS ROLL 7.370Z 5P",
+          "avg_conf": 92.83333333333333,
+          "score": 112.83333333333333
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 8",
+          "text": "ORANGE FRUITS SWISS ROLL 7.37027 5P",
+          "avg_conf": 91.5,
+          "score": 111.5
+        }
+      ]
+    },
+    {
+      "i": 9,
+      "bbox": {
+        "x": 665,
+        "y": 1624,
+        "w": 1668,
+        "h": 88
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "**k GROCERY (F) $ 6.99",
+        "avg_conf": 77.4,
+        "score": 90.60000000000001
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "**k GROCERY (F) $ 6.99",
+          "avg_conf": 77.4,
+          "score": 90.60000000000001
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "**k GROCERY (F) $ 6.99",
+          "avg_conf": 77.4,
+          "score": 90.60000000000001
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "**k GROCERY (F) $ 6.99",
+          "avg_conf": 77.4,
+          "score": 90.60000000000001
+        }
+      ]
+    },
+    {
+      "i": 10,
+      "bbox": {
+        "x": 582,
+        "y": 1724,
+        "w": 1352,
+        "h": 90
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 8",
+        "text": "SY BULDAK CUP(CARBONARA) 2.470Z 1",
+        "avg_conf": 89.2,
+        "score": 109.0
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 8",
+          "text": "SY BULDAK CUP(CARBONARA) 2.470Z 1",
+          "avg_conf": 89.2,
+          "score": 109.0
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 13",
+          "text": "SY BULDAK CUP(CARBONARA) 2.470Z 1",
+          "avg_conf": 89.2,
+          "score": 109.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "SY BULDAK CUP(CARBONARA) 2.4/0Z 1",
+          "avg_conf": 82.0,
+          "score": 101.8
+        }
+      ]
+    },
+    {
+      "i": 11,
+      "bbox": {
+        "x": 657,
+        "y": 1828,
+        "w": 1681,
+        "h": 95
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 7",
+        "text": "** GROCERY (F) $ 2,49",
+        "avg_conf": 79.2,
+        "score": 91.8
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 7",
+          "text": "** GROCERY (F) $ 2,49",
+          "avg_conf": 79.2,
+          "score": 91.8
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 3 --psm 7",
+          "text": "** GROCERY (F) $ 2,49",
+          "avg_conf": 79.2,
+          "score": 91.8
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 6",
+          "text": "** GROCERY (F) $ 2,49",
+          "avg_conf": 79.2,
+          "score": 91.8
+        }
+      ]
+    },
+    {
+      "i": 12,
+      "bbox": {
+        "x": 572,
+        "y": 2027,
+        "w": 543,
+        "h": 66
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 8",
+        "text": "J = STATE TAX ITEH",
+        "avg_conf": 89.2,
+        "score": 100.0
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 8",
+          "text": "J = STATE TAX ITEH",
+          "avg_conf": 89.2,
+          "score": 100.0
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 13",
+          "text": "J = STATE TAX ITEH",
+          "avg_conf": 89.2,
+          "score": 100.0
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "T = STATE TAX ITEH",
+          "avg_conf": 89.0,
+          "score": 99.8
+        }
+      ]
+    },
+    {
+      "i": 13,
+      "bbox": {
+        "x": 561,
+        "y": 2130,
+        "w": 551,
+        "h": 69
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 8",
+        "text": "F = FOODSTAHP ITEN",
+        "avg_conf": 91.0,
+        "score": 101.8
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 8",
+          "text": "F = FOODSTAHP ITEN",
+          "avg_conf": 91.0,
+          "score": 101.8
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 13",
+          "text": "F = FOODSTAHP ITEN",
+          "avg_conf": 91.0,
+          "score": 101.8
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "F = FOODSTAHP ITEN",
+          "avg_conf": 89.0,
+          "score": 99.8
+        }
+      ]
+    },
+    {
+      "i": 14,
+      "bbox": {
+        "x": 877,
+        "y": 2355,
+        "w": 1480,
+        "h": 126
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "SUB TOTAL $ 9.42",
+        "avg_conf": 83.5,
+        "score": 93.1
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "SUB TOTAL $ 9.42",
+          "avg_conf": 83.5,
+          "score": 93.1
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "SUB TOTAL $ 9.42",
+          "avg_conf": 83.5,
+          "score": 93.1
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 7",
+          "text": "SUB TOTAL $ 9.48",
+          "avg_conf": 77.75,
+          "score": 87.35
+        }
+      ]
+    },
+    {
+      "i": 15,
+      "bbox": {
+        "x": 868,
+        "y": 2464,
+        "w": 1496,
+        "h": 134
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 7",
+        "text": "SALES TAX $ 0.00",
+        "avg_conf": 92.0,
+        "score": 101.6
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 7",
+          "text": "SALES TAX $ 0.00",
+          "avg_conf": 92.0,
+          "score": 101.6
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 3 --psm 7",
+          "text": "SALES TAX $ 0.00",
+          "avg_conf": 92.0,
+          "score": 101.6
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "SALES TAX $ 0.00",
+          "avg_conf": 92.0,
+          "score": 101.6
+        }
+      ]
+    },
+    {
+      "i": 16,
+      "bbox": {
+        "x": 863,
+        "y": 2575,
+        "w": 1508,
+        "h": 143
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "TOTAL $ 9.49",
+        "avg_conf": 81.33333333333333,
+        "score": 88.53333333333333
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "TOTAL $ 9.49",
+          "avg_conf": 81.33333333333333,
+          "score": 88.53333333333333
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "TOTAL $ 9.49",
+          "avg_conf": 81.33333333333333,
+          "score": 88.53333333333333
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "TOTAL $ 9 48",
+          "avg_conf": 80.75,
+          "score": 87.95
+        }
+      ]
+    },
+    {
+      "i": 17,
+      "bbox": {
+        "x": 571,
+        "y": 2778,
+        "w": 1539,
+        "h": 69
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 6",
+        "text": "SALE",
+        "avg_conf": 96.0,
+        "score": 98.4
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "SALE",
+          "avg_conf": 96.0,
+          "score": 98.4
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 6",
+          "text": "SALE",
+          "avg_conf": 96.0,
+          "score": 98.4
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "SALE",
+          "avg_conf": 96.0,
+          "score": 98.4
+        }
+      ]
+    },
+    {
+      "i": 18,
+      "bbox": {
+        "x": 574,
+        "y": 2884,
+        "w": 1068,
+        "h": 101
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "Datel ine > 1/6/2026 19:43:42",
+        "avg_conf": 84.8,
+        "score": 102.19999999999999
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "Datel ine > 1/6/2026 19:43:42",
+          "avg_conf": 84.8,
+          "score": 102.19999999999999
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "Datel ine > 1/6/2026 19:43:42",
+          "avg_conf": 84.8,
+          "score": 102.19999999999999
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "Dateline > 1/6/2026 19:43:42",
+          "avg_conf": 85.25,
+          "score": 102.05
+        }
+      ]
+    },
+    {
+      "i": 19,
+      "bbox": {
+        "x": 579,
+        "y": 2987,
+        "w": 634,
+        "h": 77
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "Card Type : VISA",
+        "avg_conf": 85.75,
+        "score": 95.35
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "Card Type : VISA",
+          "avg_conf": 85.75,
+          "score": 95.35
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "Card Type : VISA",
+          "avg_conf": 85.75,
+          "score": 95.35
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "Card Type : VISA",
+          "avg_conf": 85.75,
+          "score": 95.35
+        }
+      ]
+    },
+    {
+      "i": 20,
+      "bbox": {
+        "x": 583,
+        "y": 3087,
+        "w": 626,
+        "h": 76
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "Account > 2141",
+        "avg_conf": 82.66666666666667,
+        "score": 91.06666666666668
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "Account > 2141",
+          "avg_conf": 82.66666666666667,
+          "score": 91.06666666666668
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "Account > 2141",
+          "avg_conf": 82.66666666666667,
+          "score": 91.06666666666668
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Account > 2141",
+          "avg_conf": 82.66666666666667,
+          "score": 91.06666666666668
+        }
+      ]
+    },
+    {
+      "i": 21,
+      "bbox": {
+        "x": 586,
+        "y": 3185,
+        "w": 860,
+        "h": 91
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 6",
+        "text": "Entry Mode: Contactless",
+        "avg_conf": 80.66666666666667,
+        "score": 94.46666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Entry Mode: Contactless",
+          "avg_conf": 80.66666666666667,
+          "score": 94.46666666666667
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "Entry Mode =: Contactless",
+          "avg_conf": 76.0,
+          "score": 91.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "Entry Wode =: Contactless",
+          "avg_conf": 74.0,
+          "score": 89.0
+        }
+      ]
+    },
+    {
+      "i": 22,
+      "bbox": {
+        "x": 592,
+        "y": 3281,
+        "w": 662,
+        "h": 82
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "ReceiptTotal : $9.48",
+        "avg_conf": 71.66666666666667,
+        "score": 83.66666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "ReceiptTotal : $9.48",
+          "avg_conf": 71.66666666666667,
+          "score": 83.66666666666667
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "ReceiptTotal : $9.48",
+          "avg_conf": 71.66666666666667,
+          "score": 83.66666666666667
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "ReceiptTotal : $9.48",
+          "avg_conf": 71.66666666666667,
+          "score": 83.66666666666667
+        }
+      ]
+    },
+    {
+      "i": 23,
+      "bbox": {
+        "x": 598,
+        "y": 3381,
+        "w": 691,
+        "h": 81
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "Auth Code 159988",
+        "avg_conf": 93.33333333333333,
+        "score": 102.93333333333332
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "Auth Code 159988",
+          "avg_conf": 93.33333333333333,
+          "score": 102.93333333333332
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "Auth Code 159988",
+          "avg_conf": 93.33333333333333,
+          "score": 102.93333333333332
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "Auth Code 159988",
+          "avg_conf": 93.33333333333333,
+          "score": 102.93333333333332
+        }
+      ]
+    },
+    {
+      "i": 24,
+      "bbox": {
+        "x": 601,
+        "y": 3474,
+        "w": 592,
+        "h": 85
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 8",
+        "text": "Transaction & : 245",
+        "avg_conf": 71.75,
+        "score": 83.15
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "Transaction & : 245",
+          "avg_conf": 71.75,
+          "score": 83.15
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 13",
+          "text": "Transaction & : 245",
+          "avg_conf": 71.75,
+          "score": 83.15
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 7",
+          "text": "Transaction # + 245",
+          "avg_conf": 70.75,
+          "score": 82.15
+        }
+      ]
+    },
+    {
+      "i": 25,
+      "bbox": {
+        "x": 600,
+        "y": 3579,
+        "w": 751,
+        "h": 93
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "Response » AUTH/TKY",
+        "avg_conf": 74.0,
+        "score": 85.4
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "Response » AUTH/TKY",
+          "avg_conf": 74.0,
+          "score": 85.4
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "Response » AUTH/TKY",
+          "avg_conf": 74.0,
+          "score": 85.4
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "Response » AUTH/TKY",
+          "avg_conf": 74.0,
+          "score": 85.4
+        }
+      ]
+    },
+    {
+      "i": 26,
+      "bbox": {
+        "x": 966,
+        "y": 3696,
+        "w": 1195,
+        "h": 123
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 6",
+        "text": "T AGREE TO PAY THE ABOVE TOTAL ANOUNT",
+        "avg_conf": 88.625,
+        "score": 108.625
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 6",
+          "text": "T AGREE TO PAY THE ABOVE TOTAL ANOUNT",
+          "avg_conf": 88.625,
+          "score": 108.625
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "] AGREE TO PAY THE ABOVE TOTAL AmouUNT",
+          "avg_conf": 80.125,
+          "score": 100.125
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "] AGREE TO PAY THE ABOVE TOTAL AmouUNT",
+          "avg_conf": 80.125,
+          "score": 100.125
+        }
+      ]
+    },
+    {
+      "i": 27,
+      "bbox": {
+        "x": 1010,
+        "y": 3804,
+        "w": 1103,
+        "h": 116
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 6",
+        "text": "ACCORDING 10 CARD ISSUER AGREEMENT",
+        "avg_conf": 94.0,
+        "score": 114.0
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "ACCORDING 10 CARD ISSUER AGREEMENT",
+          "avg_conf": 94.0,
+          "score": 114.0
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "ACCORDING 10 CARD ISSUER AGREEMENT",
+          "avg_conf": 93.2,
+          "score": 113.2
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "ACCORDING TO CARD ISSUER AGREEHENT",
+          "avg_conf": 92.0,
+          "score": 112.0
+        }
+      ]
+    },
+    {
+      "i": 28,
+      "bbox": {
+        "x": 953,
+        "y": 3910,
+        "w": 1222,
+        "h": 122
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 8",
+        "text": "(WERCHANT AGREEMENT IF CREDIT UoUCHER)",
+        "avg_conf": 78.8,
+        "score": 98.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 8",
+          "text": "(WERCHANT AGREEMENT IF CREDIT UoUCHER)",
+          "avg_conf": 78.8,
+          "score": 98.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 13",
+          "text": "(WERCHANT AGREEMENT IF CREDIT UoUCHER)",
+          "avg_conf": 78.8,
+          "score": 98.8
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "(MERCHANT AGREEMENT IF CREDIT VOUCHER)",
+          "avg_conf": 77.0,
+          "score": 97.0
+        }
+      ]
+    }
+  ],
+  "items_extracted": [
+    {
+      "name": "ORANGE FRUITS SWISS ROLL 7.370Z 5P",
+      "price": 6.99,
+      "meta": [
+        "GROCERY (F)",
+        "price_from: **k GROCERY (F) $ 6.99"
+      ],
+      "raw_line": "ORANGE FRUITS SWISS ROLL 7.370Z 5P"
+    },
+    {
+      "name": "SY BULDAK CUP(CARBONARA) 2.470Z",
+      "price": 2.49,
+      "meta": [
+        "GROCERY (F)",
+        "price_from: ** GROCERY (F) $ 2,49"
+      ],
+      "raw_line": "SY BULDAK CUP(CARBONARA) 2.470Z"
+    }
+  ],
+  "parsed": {
+    "merchant": "SEATTLE, WA 98109",
+    "total": 9.48,
+    "items": [
+      {
+        "name": "ORANGE FRUITS SWISS ROLL 7.370Z 5P",
+        "price": 6.99,
+        "meta": [
+          "GROCERY (F)",
+          "price_from: **k GROCERY (F) $ 6.99"
+        ],
+        "raw_line": "ORANGE FRUITS SWISS ROLL 7.370Z 5P"
+      },
+      {
+        "name": "SY BULDAK CUP(CARBONARA) 2.470Z",
+        "price": 2.49,
+        "meta": [
+          "GROCERY (F)",
+          "price_from: ** GROCERY (F) $ 2,49"
+        ],
+        "raw_line": "SY BULDAK CUP(CARBONARA) 2.470Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,226 @@
+{
+  "receipt_id": "bdfe54e1-335c-47ae-8d41-e8fb0aa927ab",
+  "parsed": {
+    "merchant": "( : fi Ny I ZALRS TT",
+    "purchase_date": "01/06/26",
+    "purchase_date_mmddyy": "01/06/26",
+    "total": 9.48,
+    "items": [
+      {
+        "name": "ORANGE FRUITS SWISS ROLL 7.3702 SP",
+        "price": 6.99,
+        "meta": [
+          "GROCERY (F)",
+          "price_from: xe GROCERY(F) $$ 6.99"
+        ],
+        "raw_line": "ORANGE FRUITS SWISS ROLL 7.3702 SP"
+      },
+      {
+        "name": "SV BULDAK CUP(CARBONARA) 2.4702",
+        "price": 2.49,
+        "meta": [
+          "GROCERY (F)",
+          "price_from: «x GROCERY(F) tee 7 49",
+          "price_adjusted:7.49->2.49 using total:9.48"
+        ],
+        "raw_line": "SV BULDAK CUP(CARBONARA) 2.4702"
+      }
+    ]
+  },
+  "box_lines_used_for_items": [
+    "( : fi Ny I ZALRS TT",
+    "1601 2nd Ave",
+    "SEATTLE, WA 98102",
+    "206-829-9296",
+    "PAYMENT METHOD ; #VISA",
+    "DATE TIME 3 1/6/2026 7:34:07 PH",
+    "RECEIPT # —s:-—«R209518704",
+    "CASHIER ; BRAVO",
+    "REGISTER # ; Regd4",
+    "ORANGE FRUITS SWISS ROLL 7.3702 SP",
+    "xe GROCERY(F) $$ 6.99",
+    "SV BULDAK CUP(CARBONARA) 2.4702 1",
+    "«x GROCERY(F) tee 7 49",
+    "{ = STATE TAX ITEM",
+    "F = FOODSTAHP ITEN",
+    "SUB TOTAL $ 948",
+    "SALES TAX $ 0,00",
+    "TOTAL $ 948",
+    "— eo eee",
+    "Dateline + 1/6/2026 19:43:42",
+    "Card Type =: VISA",
+    "Account = 241"
+  ],
+  "items_debug": {
+    "header_anchor_hit": {
+      "idx": 19,
+      "line": "Dateline + 1/6/2026 19:43:42"
+    },
+    "first_itemlike_hit": {
+      "idx": 1,
+      "line": "1601 2nd Ave"
+    },
+    "footer_hit": {
+      "idx": 20,
+      "line": "Card Type =: VISA"
+    },
+    "start_idx": 20,
+    "end_idx": 20,
+    "window": [
+      {
+        "line": "xe GROCERY(F) $$ 6.99",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SV BULDAK CUP(CARBONARA) 2.4702 1",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "«x GROCERY(F) tee 7 49",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "{ = STATE TAX ITEM",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": true,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "F = FOODSTAHP ITEN",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": true,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SUB TOTAL $ 948",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SALES TAX $ 0,00",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TOTAL $ 948",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "— eo eee",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Dateline + 1/6/2026 19:43:42",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Card Type =: VISA",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Account = 241",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      }
+    ],
+    "sliced_lines": []
+  },
+  "items_extracted": [
+    {
+      "name": "ORANGE FRUITS SWISS ROLL 7.3702 SP",
+      "price": 6.99,
+      "meta": [
+        "GROCERY (F)",
+        "price_from: xe GROCERY(F) $$ 6.99"
+      ],
+      "raw_line": "ORANGE FRUITS SWISS ROLL 7.3702 SP"
+    },
+    {
+      "name": "SV BULDAK CUP(CARBONARA) 2.4702",
+      "price": 2.49,
+      "meta": [
+        "GROCERY (F)",
+        "price_from: «x GROCERY(F) tee 7 49",
+        "price_adjusted:7.49->2.49 using total:9.48"
+      ],
+      "raw_line": "SV BULDAK CUP(CARBONARA) 2.4702"
+    }
+  ]
+}

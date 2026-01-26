@@ -1,0 +1,1551 @@
+{
+  "variants": [
+    {
+      "variant": 0,
+      "name": "orig",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\1c289204-0d93-4c9d-8056-2c015a172a42\\debug\\v0_orig.jpg",
+      "img_url": "/receipts/1c289204-0d93-4c9d-8056-2c015a172a42/debug/v0_orig.jpg"
+    },
+    {
+      "variant": 1,
+      "name": "gray_clahe",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\1c289204-0d93-4c9d-8056-2c015a172a42\\debug\\v1_gray_clahe.jpg",
+      "img_url": "/receipts/1c289204-0d93-4c9d-8056-2c015a172a42/debug/v1_gray_clahe.jpg"
+    },
+    {
+      "variant": 2,
+      "name": "adaptive",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\1c289204-0d93-4c9d-8056-2c015a172a42\\debug\\v2_adaptive.jpg",
+      "img_url": "/receipts/1c289204-0d93-4c9d-8056-2c015a172a42/debug/v2_adaptive.jpg"
+    },
+    {
+      "variant": 3,
+      "name": "otsu",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\1c289204-0d93-4c9d-8056-2c015a172a42\\debug\\v3_otsu.jpg",
+      "img_url": "/receipts/1c289204-0d93-4c9d-8056-2c015a172a42/debug/v3_otsu.jpg"
+    },
+    {
+      "variant": 4,
+      "name": "sharp",
+      "img_path": "C:\\Coding\\python\\webApp\\Receipts\\data\\receipts\\1c289204-0d93-4c9d-8056-2c015a172a42\\debug\\v4_sharp.jpg",
+      "img_url": "/receipts/1c289204-0d93-4c9d-8056-2c015a172a42/debug/v4_sharp.jpg"
+    }
+  ],
+  "runs": [
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 4",
+      "score": 91.93684210526315,
+      "avg_conf": 79.93684210526315,
+      "text": "Westlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR 65:52 T\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\n\nSubtotal : $5. 52\n\nNet Sales: $5 52\n\nTax: 10.55% $0.58\nTotal: $6.10\nSold Items: 1\n\nPaid:\n\nVISA *7616 $6.10\n\nChip Card:VISA CREDIT\nChip Card AID: A0000000031010\n\nRETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nKK RR RRR RRR COCO OOK eK\n\nEarn 5% back at Whole Foods r\nand an eligible Prime membership\nLearn more at amazon.com/wfimvyi¢"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 11",
+      "score": 91.81553398058253,
+      "avg_conf": 79.81553398058253,
+      "text": "ia\n\nLE FOODS\n\nMARKET\n\nWestlake WSL 206-621-9700\n\n2210 Westlake Ave\n\nSeattle, WA 98121\n\nHOT. BAR\n\n$5.52 T\n\nQty 0.46 1b @ $11.99/1b\n\nTare Weight 0.05 Ib\n\nSubtotal :\n\n$5.52\n\nNet Sales:\n\n$5.52\n\nTax:\n\n10.99%\n\n$0.58\n\nTotal :\n\n6.10\n\nSold Items:\n\n1\n\nPaid:\n\nVISA\n\n*/616\n\n$6.10\n\nChip Card:VISA CREDIT\n\nChip Card AID: A0000000031010\n\nRETURNS: All returns require proof\n\nof purchase. No returns on items\n\npurchased after 30 days.\n\nFor additional information\n\nplease visit wfm.com/returns.\n\nFOOOOOOOOOC OOOO IK Io ye\n\nFarn 5% back at Whole Fo\n\ns\n\nods Market\n\nwit\n\nrime Visa\n\nand an eligible Prime membership\n\nLearn more at amazon. com/wf\n\nKKK\n\nit~ er"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 6",
+      "score": 84.37272727272727,
+      "avg_conf": 72.37272727272727,
+      "text": "MARKET\nWestlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR 65:52 T\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 |b\nSubtotal : $5. 52\nNet Sales: $5 52\nTax: 10.55% $0.58\nTotal : $6.10\nSold Items: 1\nPaid:\nVISA x/616 $6.10\nChip Card: VISA CREDIT ,\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nFor additional information i\nplease visit wfm.com/returns. 1\nOOOO COO COCO IO IO IOI i ye ae\nEarn 5% back at Whole Foods ,\nwith Prime Visa ‘arkgy\nand an eligible Prime membership\nLearn more at amazon .COm/wfmvisa\nIORI OID a ue"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 3 --psm 6",
+      "score": 84.37272727272727,
+      "avg_conf": 72.37272727272727,
+      "text": "MARKET\nWestlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR 65:52 T\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 |b\nSubtotal : $5. 52\nNet Sales: $5 52\nTax: 10.55% $0.58\nTotal : $6.10\nSold Items: 1\nPaid:\nVISA x/616 $6.10\nChip Card: VISA CREDIT ,\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nFor additional information i\nplease visit wfm.com/returns. 1\nOOOO COO COCO IO IO IOI i ye ae\nEarn 5% back at Whole Foods ,\nwith Prime Visa ‘arkgy\nand an eligible Prime membership\nLearn more at amazon .COm/wfmvisa\nIORI OID a ue"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 4",
+      "score": 83.6923076923077,
+      "avg_conf": 71.6923076923077,
+      "text": "Westlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $5.92]\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\n\nSubtotal : $5.52\n\nNet Sales: $5 52\n\nTax: 10-95% $0.58\nTotal: $6.10\nSold Items: 1\n\nPaid:\n\nVISA *7616 $6.10\n\nChip Card:VISA CREDIT\nChip Card AID:A0000000031010\n\nRETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nKKK RK KKK KK RE KR EK KR ERK RIK KK\n\nEarn 5% back at Whole Foods Market\nwith Prime Visa :\n\nand an eligible Prime membership\n\nLearn more at amazon.Ccom/wfmnyisa\n\nJOC OCC OIC OOOO ICO i\nee ape pM Lk Pe eae eee LN NEC Oe eee"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 4",
+      "score": 81.12295081967213,
+      "avg_conf": 69.12295081967213,
+      "text": "Westlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR 65:92 1:\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\n\nSubtotal : $5.52\n\nNet Sales: $5.52\n\nTax: 10.55% $0.58\nTotal: $6.10\nSold Items: 1\n\nPaid:\n\nVISA x 7616 $6.10\n\nChip Card:VISA CREDIT\nChip Card AID: A0000000031010\n\nRETURNS: All returns require proof\nof purchase. No returns on jtems\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nKOO COCO CKO GUO OO IOI 9 ye\n\nFarn 5% back at Whole Foods Market\nwith Prime Visa\n\nand an eligible Prime membership\n\nLearn more at amazon.Ccom/wfmyisa\n\nJOO OC OOO OOOO OOOO IOC I I KR\nara ee ere ee ee ee Se teow Va oe) col me My ON) Se"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 6",
+      "score": 80.92248062015504,
+      "avg_conf": 68.92248062015504,
+      "text": "fa\nCKWES AY WT\" W7LaLaAraywsz\nWHOLE FOODS\nMARKET\nWestlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $5.52 7\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\nSubtotal : $5.52\nNet Sales: $5752\nTax: 10.55% $0.58\nTotal : $6.10\nSold Items: 1\nPaid:\nVISA x 7616 $6.10\nChip Card:VISA CREDIT\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on jtems\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nKKK KKK KK KKK KEK EK EK IOI OK KIO Ke\nEarn 9% back at Whole Foods Market\nwith Prime Visa\nand an eligible Prime membership\nLearn more at amazon.Ccom/wfmyisa\nJOCK OOOO COO OOOO IORI Kx\nara ee ere ee ee ee Se teow Va oe) col me My ON) Se"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 3 --psm 6",
+      "score": 80.92248062015504,
+      "avg_conf": 68.92248062015504,
+      "text": "fa\nCKWES AY WT\" W7LaLaAraywsz\nWHOLE FOODS\nMARKET\nWestlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $5.52 7\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\nSubtotal : $5.52\nNet Sales: $5752\nTax: 10.55% $0.58\nTotal : $6.10\nSold Items: 1\nPaid:\nVISA x 7616 $6.10\nChip Card:VISA CREDIT\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on jtems\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nKKK KKK KK KKK KEK EK EK IOI OK KIO Ke\nEarn 9% back at Whole Foods Market\nwith Prime Visa\nand an eligible Prime membership\nLearn more at amazon.Ccom/wfmyisa\nJOCK OOOO COO OOOO IORI Kx\nara ee ere ee ee ee Se teow Va oe) col me My ON) Se"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 6",
+      "score": 79.89763779527559,
+      "avg_conf": 67.89763779527559,
+      "text": "ARKET\nWestlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $5.02 1\nOty0.46 1b @ $11.99/lb\nTare Weight 0.05 Ib\nSubtotal : $5.52\nNet Sales: $5752\nTax: 10.95% $0.58\nTotal : $6.10\nSold Items: 1\nPaid:\nVISA */616 $6.10\nChip Card: VISA CREDIT :\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on items\n| purchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\n| KKK RK KKK KK RE KR EK KR ERK RIK KK |\nEarn 5% back at Whole Foods Market\nwith Prime Visa :\nand an eligible Prime membership\n: Learn more at amazon.com/wfnyisa  __ |\nJOO OCR COCR OOOO A |\n; : ee inde ph Le eh ec ee LN AS ee eee"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 3 --psm 6",
+      "score": 79.89763779527559,
+      "avg_conf": 67.89763779527559,
+      "text": "ARKET\nWestlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $5.02 1\nOty0.46 1b @ $11.99/lb\nTare Weight 0.05 Ib\nSubtotal : $5.52\nNet Sales: $5752\nTax: 10.95% $0.58\nTotal : $6.10\nSold Items: 1\nPaid:\nVISA */616 $6.10\nChip Card: VISA CREDIT :\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on items\n| purchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\n| KKK RK KKK KK RE KR EK KR ERK RIK KK |\nEarn 5% back at Whole Foods Market\nwith Prime Visa :\nand an eligible Prime membership\n: Learn more at amazon.com/wfnyisa  __ |\nJOO OCR COCR OOOO A |\n; : ee inde ph Le eh ec ee LN AS ee eee"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 4",
+      "score": 78.35537190082644,
+      "avg_conf": 66.35537190082644,
+      "text": "Westiake WSl 206-521-9700\n2210 Westlake Ave\nSeattle, WA 938121\nHOT BAR $9.52 7\nQty 9.46 th @ $11.99/ 1b\nTare Weight O.05 |b\n\nSubtotal : $5.52\n\nNet Sales: $5.52\n\nTax: 10.55% $0 50\nTotal: $6.10\nSold Items: 1\n\nPald:\n\nVISA «7616 $6.10\n\nCras Card: VESA CREDIT\nChip Card AID: A0090000031010\n\nKETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nror additional information\nplease visit wfm.coni/returns.\nJOC GG ICICCOO OOOO OOO IK\n\nEarn 5% back at \"hole Foods Market\nwith Prime Visa\n\nand an eligible Prime membership\n\nLearn more at amazon.com/wfmyisa\n\nKOK ICO RIOR RIK IK RIOR KICK\nrr ar rrr art a ar ar ee Fo Oe ee Wt) Gel OT Yel oY"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 11",
+      "score": 77.5374149659864,
+      "avg_conf": 65.5374149659864,
+      "text": "i\n\n-\n\niy\n\nve: te\n\nMARKET\n\nWestlake WSl\n\n206-621-9700\n\n2210 Westlake Ave\n\nSeattle, WA 98121\n\nHOT BAR\n\n“O\n\npO.\n\n52\n\nQty 0.4\n\n0\n\n]\n\nt\n\nb @\n\ntr 4 4\n\nSOE wf\n\n99/1\n\nTare Weight 0.05 Ib\n\nSubtotal:\n\n$9.\n\n92\n\nNet Sales:\n\nI\n\n$9.\n\nTax:\n\n10°. 55%\n\n$0.\n\n96\n\nTotal:\n\n$6.\n\n10\n\nSold Items:\n\n1\n\nPaid:\n\nVISA\n\nx 7616\n\n$6.\n\n10\n\nChip Card:VISA CREDIT\n\nChip Card AID: A0000000031010\n\nRETURNS: All returns require proof\n\nof purchase. No returns on jtems\n\npurchased after 30 days.\n\nFor additional Information\n\nplease visit wfm.com/returns.\n\nKKK KKK KK KKK KEK EK EK IOI OK KIO Ke\n\nEarn 5% back at \"hole Foods Market\n\nwith\n\nrime Visa\n\nand an eligible Prime membership\n\nLearn more at amazon.Ccom/wfmyisa\n\nKAR\n\nFORO ROKK OOO K RICK AK Kw\n\nft\n\naed eee ee ne Po, ee owen VA | el me Ys ol) Wl Pm, 4 cell a |"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 6",
+      "score": 77.27118644067797,
+      "avg_conf": 65.27118644067797,
+      "text": "—w\nWHOLE FOODS\nMARKET\nwWestiake WSl 206-621-9700\n2710 Westlake Ave\nSeattle, WA 938121\nHOT BAR $9.92 |\nWty 9.46 Th @ $11,997 ib\nTare Weight O.05 |b\nSubtotal: $9.92\nNet Sales: $5.52\nTax: 10.55% $0 58\nTotal: $6.10\nSold Items: 1\nPald:\nVISA «7616 $6.10\nCritee Card: ViSa CREDIT\nChip Card ATD:AGQ00009031010\nKETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nror additional information\nplease visit wfm.con/returns.\nJOC GG ICICCOO OOOO OOO IK\nEarn 3% back at Whole Foods Market\nwith Prime Visa\nand an eligible Prime membership\nLearn more at amazon.com/wfmyisa\nKKKKKKKKKKEKR KKK KKKKAKKKKKKK KKK\nrr ar rrr art a ar ar ee Fo Oe ee Wt) Gel OT Yel oY"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 3 --psm 6",
+      "score": 77.27118644067797,
+      "avg_conf": 65.27118644067797,
+      "text": "—w\nWHOLE FOODS\nMARKET\nwWestiake WSl 206-621-9700\n2710 Westlake Ave\nSeattle, WA 938121\nHOT BAR $9.92 |\nWty 9.46 Th @ $11,997 ib\nTare Weight O.05 |b\nSubtotal: $9.92\nNet Sales: $5.52\nTax: 10.55% $0 58\nTotal: $6.10\nSold Items: 1\nPald:\nVISA «7616 $6.10\nCritee Card: ViSa CREDIT\nChip Card ATD:AGQ00009031010\nKETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nror additional information\nplease visit wfm.con/returns.\nJOC GG ICICCOO OOOO OOO IK\nEarn 3% back at Whole Foods Market\nwith Prime Visa\nand an eligible Prime membership\nLearn more at amazon.com/wfmyisa\nKKKKKKKKKKEKR KKK KKKKAKKKKKKK KKK\nrr ar rrr art a ar ar ee Fo Oe ee Wt) Gel OT Yel oY"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 11",
+      "score": 76.58646616541354,
+      "avg_conf": 64.58646616541354,
+      "text": "ype\n\ny\n\nta\n\nSe ois\n\npe\n\n~~ fs! £\n\nral\n\nRET\n\nWestlake WSL 206-621-9700\n\n2210 Westlake Ave\n\nSeattle, WA 98121\n\nHOT BAR\n\n$5.92 |\n\nQty 0.46 1b @ $11.99/1b\n\nTare Weight 0.05 Ib\n\nSubtotal :\n\n$9.02\n\nNet Sales:\n\n$5.52\n\nTax:\n\n10.99%\n\n$0.58\n\nTotal:\n\n$6.10\n\nSold Items:\n\n1\n\nPaid:\n\nVISA\n\nx/616\n\n$6.10\n\nChip Card:VISA CREDIT\n\nChip Card AID:A0000000031010\n\nRETURNS: All returns require proof\n\nof purchase. No returns on items\n\npurchased after 30 days.\n\nFor additional information\n\nplease visit wfm.com/returns.\n\nFOI OOO OOOO OOOO OOOO OIE I ok\n\nEarn 5% back at Whole Foo\n\nwith Prime Visa\n\nds Market\n\nand an eligible Prime membership\n\nLearn more at amazon .con/w inv iad\n\nRKKREK\n\nJO ICK OKI OO AO RIKKI ye ke\n\niy rct ie PA L m ee Le ak Vi ol Ga ree ol a"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 11",
+      "score": 75.1076923076923,
+      "avg_conf": 63.10769230769231,
+      "text": "rg\n\nW\n\nE:\n\nes\n\nUS\n\n-\n\nARKE\n\n-\n\nWestiake WSI. 206-621-9700\n\n2710 Westlake Ave\n\nSeattle, WA 93121\n\nHOT BAR\n\n$9\n\n2\n\nWty 9.46 Th @ $11,997 ib\n\nTare Weight O.05 |b\n\nSubtotal:\n\n$9\n\n2\n\nNet Sales:\n\n$9\n\nJZ\n\nPC)\n\nTax:\n\n10.\n\nIA\n\n$U\n\nels\n\nTotal:\n\n$6\n\n.10\n\nSold Items:\n\n1\n\nPald:\n\nVISA\n\nx Job\n\n10\n\n$6\n\nChi\n\n‘\n\nCard: VISA CREDIT\n\nChip Card AID: A00000090031010\n\nRETURNS: All returns require roof\n\nof purchase. No returns on items\n\npurchased after 30 days.\n\nror additional information\n\nplease visit wfm.coni/returns.\n\nJORIOISOUGOCKCIO OGIO OO IO Ok\n\nEarn 5% back at \"hole Foods Market\n\nwith Prime Visa\n\nand an eligible Prime membership\n\nLearn more at amazon.com/wfmyisa\n\ncreme rh tr rf rw al\n\nKKKKEKKKKKKKKKEKKKEKKK KKK\n\n| wah V2 mb ) Gaal tn Ys ok ced Gant and"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 11",
+      "score": 47.91240875912409,
+      "avg_conf": 45.91240875912409,
+      "text": "xy\n\n@\n\nSorte\n\nB.\n\nPeter\n\n“Westlake WSL 206- 621- 9700\n\n9910: Westlake. ‘Ave\n\nSeattle; WAL 98121\n\nHOT BAR”\n\n8. 52. 1\n\n_oty 0. 46 1b @ $i. 99/10\n\nTare, Aetane. 0.05° Tb.\n\n- Subtotal :\n\n“$5: 52\n\n~Net: Sales:,\n\n9.52\n\nTax:.\n\n40. 55K\n\n$0. 58\n\n“Total:\n\n2 AO: 10\n\nSold Items:\n\n1\n\nPaid:\n\n“VISA.\n\n7616\n\n$6. 10.\n\nChip: ¢ Card: VISA. CREDIT\n\nsee\n\nChip, Card AID: doo0000081010\n\n~ RETURNS: ALL TetuehS | require _proot\n\nOf ‘purchase. ‘No returns on. items\n\npurchased. after 30: days.\n\nFor additional’ information\n\n“please visit wim. coni/returns ,\n\nXIII III IARI\n\nBarn 5g back. at Whole. Foo\n\nds. Market\n\n‘with Prime Visa\"\n\nand. an eligible: Prinie membership”\n\n_ Learn’ more at amazon. Com/winvi sa\n\nre e 2@kAsk\n\nIOI IIOP II III ICR\n\nPu UTA OPA Ere ewe RE OTA TSO oe ren eee’sy"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 6",
+      "score": 39.33505154639175,
+      "avg_conf": 31.335051546391753,
+      "text": "| WHOLE FOODS |\nfe ee MARKET of.\n| Westlake WSL 206-621-9700\nPe 2240 Westlake Ave\noo pee Seattle, WA9812D\na eh RHOT BARS eee GO RO2 TT ae ok\nfs Oty 0.46 Th@ $11.98/1b\nPoe Tare Weight 0.05 Tb 6 en\nOo Poo esas Subtotal: ee i GO. 92 0p\nOP eels es Net Salesi. ve ccke 0 $B 52°\nlo re ee Tay oe BOR G0 SB eee\nOL Total ee S610 ep\nPees Sold-Items: oe ee De\n2B Dee Pal de c8 00 ey ee ea ep\nfe MISA Oe 7616 $610\nfee we es Chip: Card: VISA CREDIT. ye Op\nPore os Chip Card AID:AQ000000031010\nPes RETURNS: All returns-require proof. ib\n|.) of purchase. No returns on items 7\n| For’additional information 9\noe de please visit wfm.com/returns. 9.\nISIC SOCIO FOREGO IR |\n|... Earn 5% back at Whole Foods Market - fk\nwith Prime Visa |\n| -and.an eligible Prine membership) st\n|. Learn’ tiore at antazon.com/winvisa\n{ RICK IKK KIRKE KIRA RK RIK RRR RR ee |\n: ny rar ae OS Pn FEE bod WA ot Y eel oO eed Oe Pee el co oe a"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 3 --psm 6",
+      "score": 39.33505154639175,
+      "avg_conf": 31.335051546391753,
+      "text": "| WHOLE FOODS |\nfe ee MARKET of.\n| Westlake WSL 206-621-9700\nPe 2240 Westlake Ave\noo pee Seattle, WA9812D\na eh RHOT BARS eee GO RO2 TT ae ok\nfs Oty 0.46 Th@ $11.98/1b\nPoe Tare Weight 0.05 Tb 6 en\nOo Poo esas Subtotal: ee i GO. 92 0p\nOP eels es Net Salesi. ve ccke 0 $B 52°\nlo re ee Tay oe BOR G0 SB eee\nOL Total ee S610 ep\nPees Sold-Items: oe ee De\n2B Dee Pal de c8 00 ey ee ea ep\nfe MISA Oe 7616 $610\nfee we es Chip: Card: VISA CREDIT. ye Op\nPore os Chip Card AID:AQ000000031010\nPes RETURNS: All returns-require proof. ib\n|.) of purchase. No returns on items 7\n| For’additional information 9\noe de please visit wfm.com/returns. 9.\nISIC SOCIO FOREGO IR |\n|... Earn 5% back at Whole Foods Market - fk\nwith Prime Visa |\n| -and.an eligible Prine membership) st\n|. Learn’ tiore at antazon.com/winvisa\n{ RICK IKK KIRKE KIRA RK RIK RRR RR ee |\n: ny rar ae OS Pn FEE bod WA ot Y eel oO eed Oe Pee el co oe a"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 4",
+      "score": 35.351190476190474,
+      "avg_conf": 37.351190476190474,
+      "text": "“Westlake WSL: 206- 621- 9700\nSmee ieettne 277 2210: Westlake. ‘Ave - iene\non POR Seattle; WAL 98121 oe\noq SHOT: BAR” ©. 52. T.\ns Oty-0. 46 1b: @ $tt. 99/1b re eee\n» Tare Weight 0.05: Ibe eee ae\nSOs ee ‘Subtotal : oe\n[oe oe Nete Sales:, ee hee\nee “40. 55% $0.58 ep\nnee ape 2g Pa 2g “Total : Cops. 8: 10. eee]\nSeer ET ae ee Sold Ttens: es oe era\nLe ays me oe pre\n\n. oh NOK ot 7616 $6. ae\n\n: “Chip: Card: VISA. CREDIT Sg beoi oP\n\n: A Chip Card AND: BMnOONODNS |\nEIEIO IOI III III IE ,\n\n~ RETURNS: AL returned require root\nOf ‘purchase. ‘No returns on. items\npurchased after 30'days.\nFor: additional” information\n“please visit: wm. coni/returns , ieee\nRIOR ETI III Loged\n\nBarn By back. at Whole Foods. M a\n, ine: ‘with Prime Visa” arket ye\nand an eligible Prine menbership’\n_ Learn more at amazon. Com/wenvi sa"
+    }
+  ],
+  "winner": {
+    "variant": 1,
+    "score": 91.93684210526315,
+    "config": "--oem 1 --psm 4"
+  },
+  "fused_text": "Westlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $9.92 7\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\nSubtotal : $5.52\nNet Sales: $5.52\nTax: 10.55% $0.58\nTotal: $6.10\nSold Items: 1\nPaid:\nVISA x/616 $6.10\nChip Card:VISA CREDIT\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nFOO ROOK RIK\nEarn 5% back at Whole Foods Marvat\nand an eligible Prime membership\nLearn more at amazon.com/wfmyi¢",
+  "overlay_url": "/receipts/1c289204-0d93-4c9d-8056-2c015a172a42/debug/overlay_fused_lines.jpg",
+  "box_fused_text": "Westlake WSL 206-621-9700\n2210 Westlake Ave\nSeattle, WA 98121\nHOT BAR $9.92 7\nQty 0.46 lb @ $11.99/1b\nTare Weight 0.05 Ib\nSubtotal : $5.52\nNet Sales: $5.52\nTax: 10.55% $0.58\nTotal: $6.10\nSold Items: 1\nPaid:\nVISA x/616 $6.10\nChip Card:VISA CREDIT\nChip Card AID: A0000000031010\nRETURNS: All returns require proof\nof purchase. No returns on items\npurchased after 30 days.\nFor additional information\nplease visit wfm.com/returns.\nFOO ROOK RIK\nEarn 5% back at Whole Foods Marvat\nand an eligible Prime membership\nLearn more at amazon.com/wfmyi¢",
+  "box_fused_lines": [
+    "Westlake WSL 206-621-9700",
+    "2210 Westlake Ave",
+    "Seattle, WA 98121",
+    "HOT BAR $9.92 7",
+    "Qty 0.46 lb @ $11.99/1b",
+    "Tare Weight 0.05 Ib",
+    "Subtotal : $5.52",
+    "Net Sales: $5.52",
+    "Tax: 10.55% $0.58",
+    "Total: $6.10",
+    "Sold Items: 1",
+    "Paid:",
+    "VISA x/616 $6.10",
+    "Chip Card:VISA CREDIT",
+    "Chip Card AID: A0000000031010",
+    "RETURNS: All returns require proof",
+    "of purchase. No returns on items",
+    "purchased after 30 days.",
+    "For additional information",
+    "please visit wfm.com/returns.",
+    "FOO ROOK RIK",
+    "Earn 5% back at Whole Foods Marvat",
+    "and an eligible Prime membership",
+    "Learn more at amazon.com/wfmyi¢"
+  ],
+  "box_fuse_debug": [
+    {
+      "i": 0,
+      "bbox": {
+        "x": 797,
+        "y": 1262,
+        "w": 1176,
+        "h": 74
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 8",
+        "text": "Westlake WSL 206-621-9700",
+        "avg_conf": 95.0,
+        "score": 110.0
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 8",
+          "text": "Westlake WSL 206-621-9700",
+          "avg_conf": 95.0,
+          "score": 110.0
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 13",
+          "text": "Westlake WSL 206-621-9700",
+          "avg_conf": 95.0,
+          "score": 110.0
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 8",
+          "text": "Westlake WSL 206-621-9700",
+          "avg_conf": 94.66666666666667,
+          "score": 109.66666666666667
+        }
+      ]
+    },
+    {
+      "i": 1,
+      "bbox": {
+        "x": 987,
+        "y": 1358,
+        "w": 796,
+        "h": 70
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "2210 Westlake Ave",
+        "avg_conf": 95.66666666666667,
+        "score": 105.86666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "2210 Westlake Ave",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "2210 Westlake Ave",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "2210 Westlake Ave",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        }
+      ]
+    },
+    {
+      "i": 2,
+      "bbox": {
+        "x": 988,
+        "y": 1448,
+        "w": 792,
+        "h": 82
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "Seattle, WA 98121",
+        "avg_conf": 95.66666666666667,
+        "score": 105.86666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "Seattle, WA 98121",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "Seattle, WA 98121",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Seattle, WA 98121",
+          "avg_conf": 95.66666666666667,
+          "score": 105.86666666666667
+        }
+      ]
+    },
+    {
+      "i": 3,
+      "bbox": {
+        "x": 428,
+        "y": 1537,
+        "w": 1868,
+        "h": 79
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "HOT BAR $9.92 7",
+        "avg_conf": 89.5,
+        "score": 98.5
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "HOT BAR $9.92 7",
+          "avg_conf": 89.5,
+          "score": 98.5
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "HOT BAR $9.92 7",
+          "avg_conf": 89.5,
+          "score": 98.5
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "HOT BAR $9.92 7",
+          "avg_conf": 89.5,
+          "score": 98.5
+        }
+      ]
+    },
+    {
+      "i": 4,
+      "bbox": {
+        "x": 524,
+        "y": 1633,
+        "w": 1068,
+        "h": 83
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "Qty 0.46 lb @ $11.99/1b",
+        "avg_conf": 88.0,
+        "score": 101.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "Qty 0.46 lb @ $11.99/1b",
+          "avg_conf": 88.0,
+          "score": 101.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "Qty 0.46 lb @ $11.99/1b",
+          "avg_conf": 88.0,
+          "score": 101.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Qty 0.46 lb @ $11.99/1b",
+          "avg_conf": 88.0,
+          "score": 101.8
+        }
+      ]
+    },
+    {
+      "i": 5,
+      "bbox": {
+        "x": 525,
+        "y": 1730,
+        "w": 879,
+        "h": 81
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "Tare Weight 0.05 Ib",
+        "avg_conf": 95.5,
+        "score": 106.9
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "Tare Weight 0.05 Ib",
+          "avg_conf": 95.5,
+          "score": 106.9
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "Tare Weight 0.05 Ib",
+          "avg_conf": 95.5,
+          "score": 106.9
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "Tare Weight 0.05 Ib",
+          "avg_conf": 95.5,
+          "score": 106.9
+        }
+      ]
+    },
+    {
+      "i": 6,
+      "bbox": {
+        "x": 896,
+        "y": 1817,
+        "w": 1311,
+        "h": 90
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "Subtotal : $5.52",
+        "avg_conf": 87.33333333333333,
+        "score": 96.93333333333332
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "Subtotal : $5.52",
+          "avg_conf": 87.33333333333333,
+          "score": 96.93333333333332
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "Subtotal : $5.52",
+          "avg_conf": 87.33333333333333,
+          "score": 96.93333333333332
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "Subtotal : $5.52",
+          "avg_conf": 87.33333333333333,
+          "score": 96.93333333333332
+        }
+      ]
+    },
+    {
+      "i": 7,
+      "bbox": {
+        "x": 897,
+        "y": 1910,
+        "w": 1310,
+        "h": 78
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 7",
+        "text": "Net Sales: $5.52",
+        "avg_conf": 79.66666666666667,
+        "score": 89.26666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 7",
+          "text": "Net Sales: $5.52",
+          "avg_conf": 79.66666666666667,
+          "score": 89.26666666666667
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 3 --psm 7",
+          "text": "Net Sales: $5.52",
+          "avg_conf": 79.66666666666667,
+          "score": 89.26666666666667
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 6",
+          "text": "Net Sales: $5.52",
+          "avg_conf": 79.66666666666667,
+          "score": 89.26666666666667
+        }
+      ]
+    },
+    {
+      "i": 8,
+      "bbox": {
+        "x": 900,
+        "y": 2002,
+        "w": 1306,
+        "h": 78
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "Tax: 10.55% $0.58",
+        "avg_conf": 87.33333333333333,
+        "score": 97.53333333333333
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "Tax: 10.55% $0.58",
+          "avg_conf": 87.33333333333333,
+          "score": 97.53333333333333
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "Tax: 10.55% $0.58",
+          "avg_conf": 87.33333333333333,
+          "score": 97.53333333333333
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "Tax: 10.55% $0.58",
+          "avg_conf": 87.33333333333333,
+          "score": 97.53333333333333
+        }
+      ]
+    },
+    {
+      "i": 9,
+      "bbox": {
+        "x": 1088,
+        "y": 2094,
+        "w": 1122,
+        "h": 79
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "Total: $6.10",
+        "avg_conf": 84.0,
+        "score": 91.2
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "Total: $6.10",
+          "avg_conf": 84.0,
+          "score": 91.2
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "Total: $6.10",
+          "avg_conf": 84.0,
+          "score": 91.2
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "Total: $6.10",
+          "avg_conf": 84.0,
+          "score": 91.2
+        }
+      ]
+    },
+    {
+      "i": 10,
+      "bbox": {
+        "x": 1088,
+        "y": 2190,
+        "w": 1118,
+        "h": 70
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "Sold Items: 1",
+        "avg_conf": 95.66666666666667,
+        "score": 103.46666666666667
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "Sold Items: 1",
+          "avg_conf": 95.66666666666667,
+          "score": 103.46666666666667
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "Sold Items: 1",
+          "avg_conf": 95.66666666666667,
+          "score": 103.46666666666667
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "Sold Items: 1",
+          "avg_conf": 95.66666666666667,
+          "score": 103.46666666666667
+        }
+      ]
+    },
+    {
+      "i": 11,
+      "bbox": {
+        "x": 900,
+        "y": 2283,
+        "w": 212,
+        "h": 69
+      },
+      "chosen": {
+        "variant": 2,
+        "variant_name": "adaptive",
+        "config": "--oem 1 --psm 8",
+        "text": "Paid:",
+        "avg_conf": 96.0,
+        "score": 99.0
+      },
+      "top_candidates": [
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 8",
+          "text": "Paid:",
+          "avg_conf": 96.0,
+          "score": 99.0
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 13",
+          "text": "Paid:",
+          "avg_conf": 96.0,
+          "score": 99.0
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 8",
+          "text": "Paid:",
+          "avg_conf": 96.0,
+          "score": 99.0
+        }
+      ]
+    },
+    {
+      "i": 12,
+      "bbox": {
+        "x": 900,
+        "y": 2375,
+        "w": 1309,
+        "h": 81
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "VISA x/616 $6.10",
+        "avg_conf": 92.0,
+        "score": 101.6
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "VISA x/616 $6.10",
+          "avg_conf": 92.0,
+          "score": 101.6
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "VISA x/616 $6.10",
+          "avg_conf": 92.0,
+          "score": 101.6
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "VISA x/616 $6.10",
+          "avg_conf": 92.0,
+          "score": 101.6
+        }
+      ]
+    },
+    {
+      "i": 13,
+      "bbox": {
+        "x": 992,
+        "y": 2469,
+        "w": 977,
+        "h": 81
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 8",
+        "text": "Chip Card:VISA CREDIT",
+        "avg_conf": 91.33333333333333,
+        "score": 103.93333333333332
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 8",
+          "text": "Chip Card:VISA CREDIT",
+          "avg_conf": 91.33333333333333,
+          "score": 103.93333333333332
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 13",
+          "text": "Chip Card:VISA CREDIT",
+          "avg_conf": 91.33333333333333,
+          "score": 103.93333333333332
+        },
+        {
+          "variant": 2,
+          "variant_name": "adaptive",
+          "config": "--oem 1 --psm 7",
+          "text": "Chip: Card: VISA CREDIT",
+          "avg_conf": 82.75,
+          "score": 96.55
+        }
+      ]
+    },
+    {
+      "i": 14,
+      "bbox": {
+        "x": 992,
+        "y": 2565,
+        "w": 1315,
+        "h": 73
+      },
+      "chosen": {
+        "variant": 4,
+        "variant_name": "sharp",
+        "config": "--oem 1 --psm 7",
+        "text": "Chip Card AID: A0000000031010",
+        "avg_conf": 82.0,
+        "score": 99.4
+      },
+      "top_candidates": [
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 7",
+          "text": "Chip Card AID: A0000000031010",
+          "avg_conf": 82.0,
+          "score": 99.4
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 3 --psm 7",
+          "text": "Chip Card AID: A0000000031010",
+          "avg_conf": 82.0,
+          "score": 99.4
+        },
+        {
+          "variant": 4,
+          "variant_name": "sharp",
+          "config": "--oem 1 --psm 6",
+          "text": "Chip Card AID: A0000000031010",
+          "avg_conf": 82.0,
+          "score": 99.4
+        }
+      ]
+    },
+    {
+      "i": 15,
+      "bbox": {
+        "x": 632,
+        "y": 2820,
+        "w": 1574,
+        "h": 99
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 7",
+        "text": "RETURNS: All returns require proof",
+        "avg_conf": 95.8,
+        "score": 115.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "RETURNS: All returns require proof",
+          "avg_conf": 95.8,
+          "score": 115.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "RETURNS: All returns require proof",
+          "avg_conf": 95.8,
+          "score": 115.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "RETURNS: All returns require proof",
+          "avg_conf": 95.8,
+          "score": 115.8
+        }
+      ]
+    },
+    {
+      "i": 16,
+      "bbox": {
+        "x": 680,
+        "y": 2908,
+        "w": 1482,
+        "h": 96
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 8",
+        "text": "of purchase. No returns on items",
+        "avg_conf": 95.83333333333333,
+        "score": 115.03333333333333
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 8",
+          "text": "of purchase. No returns on items",
+          "avg_conf": 95.83333333333333,
+          "score": 115.03333333333333
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 13",
+          "text": "of purchase. No returns on items",
+          "avg_conf": 95.83333333333333,
+          "score": 115.03333333333333
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 8",
+          "text": "of purchase. No returns on items",
+          "avg_conf": 95.5,
+          "score": 114.7
+        }
+      ]
+    },
+    {
+      "i": 17,
+      "bbox": {
+        "x": 912,
+        "y": 2998,
+        "w": 1093,
+        "h": 98
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 8",
+        "text": "purchased after 30 days.",
+        "avg_conf": 95.75,
+        "score": 110.15
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 8",
+          "text": "purchased after 30 days.",
+          "avg_conf": 95.75,
+          "score": 110.15
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 13",
+          "text": "purchased after 30 days.",
+          "avg_conf": 95.75,
+          "score": 110.15
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "purchased after 30 days.",
+          "avg_conf": 95.5,
+          "score": 109.9
+        }
+      ]
+    },
+    {
+      "i": 18,
+      "bbox": {
+        "x": 866,
+        "y": 3088,
+        "w": 1201,
+        "h": 96
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "For additional information",
+        "avg_conf": 95.33333333333333,
+        "score": 110.93333333333332
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "For additional information",
+          "avg_conf": 95.33333333333333,
+          "score": 110.93333333333332
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "For additional information",
+          "avg_conf": 95.33333333333333,
+          "score": 110.93333333333332
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "For additional information",
+          "avg_conf": 95.33333333333333,
+          "score": 110.93333333333332
+        }
+      ]
+    },
+    {
+      "i": 19,
+      "bbox": {
+        "x": 772,
+        "y": 3178,
+        "w": 1327,
+        "h": 96
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "please visit wfm.com/returns.",
+        "avg_conf": 93.0,
+        "score": 110.4
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "please visit wfm.com/returns.",
+          "avg_conf": 93.0,
+          "score": 110.4
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "please visit wfm.com/returns.",
+          "avg_conf": 93.0,
+          "score": 110.4
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "please visit wfm.com/returns.",
+          "avg_conf": 93.0,
+          "score": 110.4
+        }
+      ]
+    },
+    {
+      "i": 20,
+      "bbox": {
+        "x": 773,
+        "y": 3287,
+        "w": 1326,
+        "h": 65
+      },
+      "chosen": {
+        "variant": 3,
+        "variant_name": "otsu",
+        "config": "--oem 1 --psm 8",
+        "text": "FOO ROOK RIK",
+        "avg_conf": 40.0,
+        "score": 47.2
+      },
+      "top_candidates": [
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 8",
+          "text": "FOO ROOK RIK",
+          "avg_conf": 40.0,
+          "score": 47.2
+        },
+        {
+          "variant": 3,
+          "variant_name": "otsu",
+          "config": "--oem 1 --psm 13",
+          "text": "FOO ROOK RIK",
+          "avg_conf": 40.0,
+          "score": 47.2
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "KKK KK KKK KKK KEK EK EKO OK KOK & &",
+          "avg_conf": 24.454545454545453,
+          "score": 44.45454545454545
+        }
+      ]
+    },
+    {
+      "i": 21,
+      "bbox": {
+        "x": 675,
+        "y": 3452,
+        "w": 1729,
+        "h": 98
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 7",
+        "text": "Earn 5% back at Whole Foods Marvat",
+        "avg_conf": 89.42857142857143,
+        "score": 109.42857142857143
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "Earn 5% back at Whole Foods Marvat",
+          "avg_conf": 89.42857142857143,
+          "score": 109.42857142857143
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 3 --psm 7",
+          "text": "Earn 5% back at Whole Foods Marvat",
+          "avg_conf": 89.42857142857143,
+          "score": 109.42857142857143
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 6",
+          "text": "Earn 5% back at Whole Foods Marvat",
+          "avg_conf": 89.42857142857143,
+          "score": 109.42857142857143
+        }
+      ]
+    },
+    {
+      "i": 22,
+      "bbox": {
+        "x": 722,
+        "y": 3636,
+        "w": 1503,
+        "h": 113
+      },
+      "chosen": {
+        "variant": 0,
+        "variant_name": "orig",
+        "config": "--oem 1 --psm 6",
+        "text": "and an eligible Prime membership",
+        "avg_conf": 95.6,
+        "score": 114.8
+      },
+      "top_candidates": [
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 6",
+          "text": "and an eligible Prime membership",
+          "avg_conf": 95.6,
+          "score": 114.8
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 1 --psm 7",
+          "text": "and an eligible Prime membership",
+          "avg_conf": 95.2,
+          "score": 114.4
+        },
+        {
+          "variant": 0,
+          "variant_name": "orig",
+          "config": "--oem 3 --psm 7",
+          "text": "and an eligible Prime membership",
+          "avg_conf": 95.2,
+          "score": 114.4
+        }
+      ]
+    },
+    {
+      "i": 23,
+      "bbox": {
+        "x": 722,
+        "y": 3734,
+        "w": 1430,
+        "h": 94
+      },
+      "chosen": {
+        "variant": 1,
+        "variant_name": "gray_clahe",
+        "config": "--oem 1 --psm 8",
+        "text": "Learn more at amazon.com/wfmyi¢",
+        "avg_conf": 84.5,
+        "score": 103.1
+      },
+      "top_candidates": [
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 8",
+          "text": "Learn more at amazon.com/wfmyi¢",
+          "avg_conf": 84.5,
+          "score": 103.1
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 13",
+          "text": "Learn more at amazon.com/wfmyi¢",
+          "avg_conf": 84.5,
+          "score": 103.1
+        },
+        {
+          "variant": 1,
+          "variant_name": "gray_clahe",
+          "config": "--oem 1 --psm 7",
+          "text": "Learn more at amazon.com/wfinvigs",
+          "avg_conf": 79.75,
+          "score": 99.55
+        }
+      ]
+    }
+  ],
+  "items_extracted": [
+    {
+      "name": "Westlake WSL 206-621-9700",
+      "price": null,
+      "meta": [],
+      "raw_line": "Westlake WSL 206-621-9700"
+    },
+    {
+      "name": "2210 Westlake Ave",
+      "price": null,
+      "meta": [],
+      "raw_line": "2210 Westlake Ave"
+    },
+    {
+      "name": "Seattle, WA",
+      "price": null,
+      "meta": [],
+      "raw_line": "Seattle, WA"
+    },
+    {
+      "name": "HOT BAR $9.92",
+      "price": null,
+      "meta": [],
+      "raw_line": "HOT BAR $9.92"
+    },
+    {
+      "name": "Qty",
+      "price": null,
+      "meta": [],
+      "raw_line": "Qty"
+    },
+    {
+      "name": "Tare Weight 0.05 Ib",
+      "price": null,
+      "meta": [],
+      "raw_line": "Tare Weight 0.05 Ib"
+    }
+  ],
+  "parsed": {
+    "merchant": "2210 Westlake Ave",
+    "purchase_date": null,
+    "purchase_date_mmddyy": null,
+    "total": 6.1,
+    "items": [
+      {
+        "name": "Westlake WSL 206-621-9700",
+        "price": null,
+        "meta": [],
+        "raw_line": "Westlake WSL 206-621-9700"
+      },
+      {
+        "name": "2210 Westlake Ave",
+        "price": null,
+        "meta": [],
+        "raw_line": "2210 Westlake Ave"
+      },
+      {
+        "name": "Seattle, WA",
+        "price": null,
+        "meta": [],
+        "raw_line": "Seattle, WA"
+      },
+      {
+        "name": "HOT BAR $9.92",
+        "price": null,
+        "meta": [],
+        "raw_line": "HOT BAR $9.92"
+      },
+      {
+        "name": "Qty",
+        "price": null,
+        "meta": [],
+        "raw_line": "Qty"
+      },
+      {
+        "name": "Tare Weight 0.05 Ib",
+        "price": null,
+        "meta": [],
+        "raw_line": "Tare Weight 0.05 Ib"
+      }
+    ],
+    "items_debug": {
+      "header_anchor_hit": null,
+      "first_itemlike_hit": {
+        "idx": 0,
+        "line": "Westlake WSL 206-621-9700"
+      },
+      "footer_hit": {
+        "idx": 6,
+        "line": "Subtotal : $5.52"
+      },
+      "start_idx": 0,
+      "end_idx": 6,
+      "window": [
+        {
+          "line": "Westlake WSL 206-621-9700",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "2210 Westlake Ave",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Seattle, WA 98121",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "HOT BAR $9.92 7",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Qty 0.46 lb @ $11.99/1b",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Tare Weight 0.05 Ib",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Subtotal : $5.52",
+          "looks_like_item": true,
+          "is_totalish": true,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": true,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Net Sales: $5.52",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Tax: 10.55% $0.58",
+          "looks_like_item": true,
+          "is_totalish": true,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": true,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Total: $6.10",
+          "looks_like_item": true,
+          "is_totalish": true,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": true,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Sold Items: 1",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Paid:",
+          "looks_like_item": false,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": true,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "VISA x/616 $6.10",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Chip Card:VISA CREDIT",
+          "looks_like_item": false,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": true,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "Chip Card AID: A0000000031010",
+          "looks_like_item": true,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": true,
+          "money_at_end": true,
+          "qty_at_price": false,
+          "money_only": false
+        },
+        {
+          "line": "RETURNS: All returns require proof",
+          "looks_like_item": false,
+          "is_totalish": false,
+          "is_separator": false,
+          "is_legend": false,
+          "is_footer_marker": false,
+          "money_at_end": false,
+          "qty_at_price": false,
+          "money_only": false
+        }
+      ],
+      "sliced_lines": [
+        "Westlake WSL 206-621-9700",
+        "2210 Westlake Ave",
+        "Seattle, WA 98121",
+        "HOT BAR $9.92 7",
+        "Qty 0.46 lb @ $11.99/1b",
+        "Tare Weight 0.05 Ib"
+      ]
+    },
+    "box_lines_used_for_items": [
+      "Westlake WSL 206-621-9700",
+      "2210 Westlake Ave",
+      "Seattle, WA 98121",
+      "HOT BAR $9.92 7",
+      "Qty 0.46 lb @ $11.99/1b",
+      "Tare Weight 0.05 Ib",
+      "Subtotal : $5.52",
+      "Net Sales: $5.52",
+      "Tax: 10.55% $0.58",
+      "Total: $6.10",
+      "Sold Items: 1",
+      "Paid:",
+      "VISA x/616 $6.10",
+      "Chip Card:VISA CREDIT",
+      "Chip Card AID: A0000000031010",
+      "RETURNS: All returns require proof",
+      "of purchase. No returns on items",
+      "purchased after 30 days.",
+      "For additional information",
+      "please visit wfm.com/returns.",
+      "FOO ROOK RIK",
+      "Earn 5% back at Whole Foods Marvat",
+      "and an eligible Prime membership",
+      "Learn more at amazon.com/wfmyi¢"
+    ]
+  }
+}

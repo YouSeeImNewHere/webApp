@@ -1,0 +1,183 @@
+{
+  "variants": [
+    {
+      "variant": 0,
+      "name": "orig",
+      "img_path": "data\\receipts\\debug\\e8667adf-0b09-4cae-b746-6617276a75a5\\v0_orig.jpg",
+      "img_url": "/receipts/e8667adf-0b09-4cae-b746-6617276a75a5/debug/v0_orig.jpg"
+    },
+    {
+      "variant": 1,
+      "name": "gray_clahe",
+      "img_path": "data\\receipts\\debug\\e8667adf-0b09-4cae-b746-6617276a75a5\\v1_gray_clahe.jpg",
+      "img_url": "/receipts/e8667adf-0b09-4cae-b746-6617276a75a5/debug/v1_gray_clahe.jpg"
+    },
+    {
+      "variant": 2,
+      "name": "adaptive",
+      "img_path": "data\\receipts\\debug\\e8667adf-0b09-4cae-b746-6617276a75a5\\v2_adaptive.jpg",
+      "img_url": "/receipts/e8667adf-0b09-4cae-b746-6617276a75a5/debug/v2_adaptive.jpg"
+    },
+    {
+      "variant": 3,
+      "name": "otsu",
+      "img_path": "data\\receipts\\debug\\e8667adf-0b09-4cae-b746-6617276a75a5\\v3_otsu.jpg",
+      "img_url": "/receipts/e8667adf-0b09-4cae-b746-6617276a75a5/debug/v3_otsu.jpg"
+    },
+    {
+      "variant": 4,
+      "name": "sharp",
+      "img_path": "data\\receipts\\debug\\e8667adf-0b09-4cae-b746-6617276a75a5\\v4_sharp.jpg",
+      "img_url": "/receipts/e8667adf-0b09-4cae-b746-6617276a75a5/debug/v4_sharp.jpg"
+    }
+  ],
+  "runs": [
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 6",
+      "score": 154.33275862068967,
+      "avg_conf": 71.66379310344827,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 5P\n+x GROCERY (F) ee ek\nSY BULDAK CUP(CARBONARA) 2.47072 1\n*#* GROCERY (F) peal eae\nT = STATE TAX ITEH\nF = FOODSTAHP ITEW\nSUB TOTAL $ 9.48\nDALES TAX $ 0.00\nTOTAL $ 9.48\nSOLE ie: Wen\nDateline > 1/6/2026 19:43:42\nCard Type > VISA\nAccount : 2141\nEntry Wade =: Contactless\nReceiptTotal : $9.49\nAuth Code > 159988\nTransaction \u00ae : 245\nResponse \u00bb AUTH/TK]\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 3 --psm 6",
+      "score": 154.33275862068967,
+      "avg_conf": 71.66379310344827,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME \u00bb 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 5P\n+x GROCERY (F) ee ek\nSY BULDAK CUP(CARBONARA) 2.47072 1\n*#* GROCERY (F) peal eae\nT = STATE TAX ITEH\nF = FOODSTAHP ITEW\nSUB TOTAL $ 9.48\nDALES TAX $ 0.00\nTOTAL $ 9.48\nSOLE ie: Wen\nDateline > 1/6/2026 19:43:42\nCard Type > VISA\nAccount : 2141\nEntry Wade =: Contactless\nReceiptTotal : $9.49\nAuth Code > 159988\nTransaction \u00ae : 245\nResponse \u00bb AUTH/TK]\n1 AGREE TO PAY THE ABOVE TOTAL AMOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 4",
+      "score": 154.27767281105992,
+      "avg_conf": 71.38836405529953,
+      "text": "J] MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # ; R209518704\nCASHIER ; BRAVO\nREGISTER # ; Regd4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n** GROCERY (F ) $ P= he\nSY BULDAK CUP(CARBONARA) 2.4702 1\n*% GROCERY (F ) $ 2.49\nl = STATE TAX ITEH\nF = FOODSTAHP ITEN\n\u2014_ <a \u201c.\nSUB TOTAL > 9.48\nOALES TAX $ 0,00\nTOTAL > 9.48\nSALE \u2014\nDateline > 1/6/2026 19:43:42\nCard Type > VISA\nAccount : 2141\nEntry Wade =: Contactless\nReceiptTotal : $9.49\nAuth Code > 159988\nTransaction \u00ae : 245\nResponse \u00bb AUTH/TK]\n1 AGREE 10 PAY THE ABOVE TOTAL ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(WERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 6",
+      "score": 154.24092592592592,
+      "avg_conf": 71.20462962962962,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME + 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER ; BRAVO\nREGISTER # : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 5P\n** GROCERY (F) > 6.99\noY BULDAK CUP(CARBONARA) 2.4702 1\n*% GROCERY (F) $ 2.49\n| = STATE TAX ITEH\nF = FOODSTANP ITEN\nSUB TOTAL 9\nSALES TAX . a\n\u201cSALE eect\nDateline: 1/6/2026 19:43:42 ews\nCard Type : VISA\nAccount 2141\nEntry Mode =: Contactless\nReceiptiotal +: $9.48\nAuth Code \u2014-:_: 189988\nTransaction # ; 245\nResponse \u00bb AUTH/TKT\nT ADREE TO PAY THE ABOVE TOTAL ANouNt \u00a5\noe ACCORDING 10 CARD ISSUER Ace \u2014 |"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 3 --psm 6",
+      "score": 154.24092592592592,
+      "avg_conf": 71.20462962962962,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME + 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER ; BRAVO\nREGISTER # : Reg04\nORANGE FRUITS SWISS ROLL 7.3702 5P\n** GROCERY (F) > 6.99\noY BULDAK CUP(CARBONARA) 2.4702 1\n*% GROCERY (F) $ 2.49\n| = STATE TAX ITEH\nF = FOODSTANP ITEN\nSUB TOTAL 9\nSALES TAX . a\n\u201cSALE eect\nDateline: 1/6/2026 19:43:42 ews\nCard Type : VISA\nAccount 2141\nEntry Mode =: Contactless\nReceiptiotal +: $9.48\nAuth Code \u2014-:_: 189988\nTransaction # ; 245\nResponse \u00bb AUTH/TKT\nT ADREE TO PAY THE ABOVE TOTAL ANouNt \u00a5\noe ACCORDING 10 CARD ISSUER Ace \u2014 |"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 6",
+      "score": 153.77540229885057,
+      "avg_conf": 68.87701149425287,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME > 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER ; BRAVO\nREGISTER # ; Regd4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n+ GROCERY (F) $809\noY BULDAK CUP(CARBONARA) 2.4702 1\n*#* GROCERY (F) ps ga\n[ = STATE TAX ITEM\nF = FOODSTAHP ITEM\nSUB TOTAL Ss)\nSALES TAX ve\nTOTAL $ 9.48\n\u201c ie ee We a ee\nDateline > 1/6/2026 19:43:49\nCard Type : VISA\nAccount \u00bb 2141\nEntry Mode =: - Contactless\nReceiptTotal : 9,49\nAuth Code > 189988\nTransaction # : 245\nResponse \u00bb AUTH/TKT\n1 AGREE 10 pay THE ABOVE TOTAL RNOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER) :"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 3 --psm 6",
+      "score": 153.77540229885057,
+      "avg_conf": 68.87701149425287,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME > 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER ; BRAVO\nREGISTER # ; Regd4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n+ GROCERY (F) $809\noY BULDAK CUP(CARBONARA) 2.4702 1\n*#* GROCERY (F) ps ga\n[ = STATE TAX ITEM\nF = FOODSTAHP ITEM\nSUB TOTAL Ss)\nSALES TAX ve\nTOTAL $ 9.48\n\u201c ie ee We a ee\nDateline > 1/6/2026 19:43:49\nCard Type : VISA\nAccount \u00bb 2141\nEntry Mode =: - Contactless\nReceiptTotal : 9,49\nAuth Code > 189988\nTransaction # : 245\nResponse \u00bb AUTH/TKT\n1 AGREE 10 pay THE ABOVE TOTAL RNOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER) :"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 4",
+      "score": 153.58780917280916,
+      "avg_conf": 67.93904586404587,
+      "text": "J] MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # : RegQ4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n** GROCERY(F) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.4702 1\n4* GROCERY (F) $ 2.49\n[= STATE TAX ITEH\nF = FOODSTAHP ITEN\nae mm ee M8 ee ee oe oe aw we ss:\nio 0 6m ew we ot\noo ww we a\nSALE\nDateline > 1/6/2026 19:43:49\nCard Type : VISA\nAccount \u00bb 2141\nEntry Mode =: - Contactless\nReceiptTotal : 9,49\nAuth Code : 159988\nTransaction # : 245\nResponse \u00bb AUTH/TKT\n1 AGREE 10 PAY THE ABOUE TOTAL ANQUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)\n- &\na chee oc. a\nOALES TAX $ 0.00\nTOTAL \u00a2$\n9.48\n= ~~ w \u00ab5 \u00ab\na = ae we oe"
+    },
+    {
+      "variant": 4,
+      "config": "--oem 1 --psm 11",
+      "score": 153.46127362055933,
+      "avg_conf": 67.30636810279668,
+      "text": "J] MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME\n1/6/2026 7:34:07 PM\nRECEIPT #\nR209518704\nCASHIER\nBRAVO\nTS 68 ern we re b eo\nREGISTER #\nes one ie\nPEPE GET SG FFE EG EO PRO\na\nin\n# fa\nnO RAD Diem o.\n=\n9\ncee\nE a on cht b \u2018=\nORANGE FRUITS SWISS ROLL 7.370\n*k GROCERY (F )\n6.99\nSY BULDAK CUP(CARBONARA) 2.470Z 1\n** GROCERY (F)\n$\n2.49\n[= STATE TAX ITEH\nF = FOODSTAHP ITEN\njo am ae\n2c = aw we\n~~ ae\n9.48\nDALES TAX\n0.00\ncd oa <2 ap \u2014\nTOTAL\n&\n- os is\n=\nSALE\nDateline\n1/6/2026 19:43:42\nCard Type\nVISA\nAccount\n2141\nEntry Hode\nContactless\nReceipttotal\n$9.48\nAuth Code\n159988\nTransaction # :\n245\nResponse\nAUTH/TKT\n1 AGREE 10 PAY THE ABOUE TOTAL ANQUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT IF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 4",
+      "score": 151.90630882762463,
+      "avg_conf": 59.53154413812308,
+      "text": "YJ MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # : R209518704\nCASHIER ; BRAVO\nST OL Te Oe PL Sh der) ee OR at ee ee le a tee Aan oe wee os \u00a9\nSY EE OE REY EE OR A Fe ERE CE COE OD GUS MED LOU Atk A088 CLG Smee Klee AO AO ERD net Whe UES REE aak) BER Cin) spe Meum Laren Chet\nORANGE FRUITS SWISS ROLL 7.3707 oP\n~ 6F Ce OD Uy om oy\n7 on ee Ce aie\n** GROCERY (F ) $ 6.99\noY BULDAK CUP(CARBONARA) 2.4702 1\n*% GROCERY (F ) $ 2.49\n= STATE TAX ITEH\nF = FOODSTAMP ITEN\n\u2014\u2014 ee ee os a ae te \u201cee ee or ee ae ee We ot we <e e o\n. i\n\u2014\u2014 ow eo\nSUB TOTAL Me ey.\nSALES TAX ey\nTOTAL \u00a2 9 48\n\u201cSALE an = me on - tit, Poe:\nDateline > 1/6/2026 19:43:42\nCard Type : VISA\nAccount > 2141\nEntry Mode =: Contactless\nReceiptTotal +: $9.49\nAuth Code : 169988\nTransaction \u00ae : 245\nResponse \u00bb AUTH/TKT\nI AGREE 10 PAY THE ABOVE TOTAL AMOUNT\n, ACCORDING 10 CARD ISSUER AGREEWENT =\n\u2014_CWERCHANT ROREENENT 1 CREUIT YoucHER)"
+    },
+    {
+      "variant": 1,
+      "config": "--oem 1 --psm 11",
+      "score": 93.55650769995032,
+      "avg_conf": 67.78253849975162,
+      "text": "YJ MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME\n1/6/2026 7:34:07 PM\nRECEIPT #\nR209518704\nCASHIER\nBRAVO\nSY EE OE REY EE OR A Fe ERE CE COE OD GUS MED LOU Atk A088 CLG Smee Klee AO AO ERD net Whe UES REE aak) BER Cin) spe Meum Laren Chet\nREGISTER #\n~ oad od ae ae en ae tome\nao\nbie\n~\n7 on ee Ce aie\nome iy om oe\nURANGE FRUITS SW\nI\n*k GROCERY (F)\n6.99\noY BULDAK CUP(CARBONARA) 2.4702 1\n*% GROCERY (F )\n2.49\n= SPATE TAX ITEM\nF = FOODSTAMP ITEN\n\u201c\u2014\u2014 ee ee os ee ae te -\nnn - =\n> =\n\u2014 -\nSUB TOTAL\n9.48\nDALES TAX\n0,00\nTOTAL\n9.48\n0 OP OTe tive eo o thin oe ow on me\nhaem cate eT ee ee\n\u2014. \u2014~ =\n\u201cBALE\nDateline\nCard Type\nVISA\n1/6/2026 19:43:42\nAccount\n2141\nEntry Mode\nContactless\nReceiptTotal\n$948\nAuth Code\n159988\nTransaction # :\n245\nResponse\nAUTH/TKT\nT ABREE 10 PAY THE ppovE TOTAL AMOUNT\nACCORDING TO CARD ISSUER AGREEMENT\n%"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 6",
+      "score": 93.48619047619047,
+      "avg_conf": 67.43095238095238,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME : 1/6/2026 7:34:07 PH\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n** GROCERY (F) $ 6.99\nOY BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F) $ 2.49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEM\nSUB TOTAL 9g\nSALES TAX 500\nDetaling =: 1/6/2026 19:43:47 7\nCord Type : VISA\nRecount > 2141\nEntry Mode =: Contactless\nRecaiptTotal : $9 49\nfuth Code : 169966\nTransaction @ ; 245\nResponse =| AUTH/TKT\nTRBREE TO PAY THE ABOVE TOTAL aaount 1\n| : ACEORD ING TO CARD ISSUER senecveue 7 oe\nfet aaneevcu OF creszr vouoces ieee |"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 3 --psm 6",
+      "score": 93.48619047619047,
+      "avg_conf": 67.43095238095238,
+      "text": "1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : *VISA\nDATE TIME : 1/6/2026 7:34:07 PH\nRECEIPT # : R209518704\nCASHIER : BRAVO\nREGISTER # : Regd4\nORANGE FRUITS SWISS ROLL 7.3702 5P\n** GROCERY (F) $ 6.99\nOY BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F) $ 2.49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEM\nSUB TOTAL 9g\nSALES TAX 500\nDetaling =: 1/6/2026 19:43:47 7\nCord Type : VISA\nRecount > 2141\nEntry Mode =: Contactless\nRecaiptTotal : $9 49\nfuth Code : 169966\nTransaction @ ; 245\nResponse =| AUTH/TKT\nTRBREE TO PAY THE ABOVE TOTAL aaount 1\n| : ACEORD ING TO CARD ISSUER senecveue 7 oe\nfet aaneevcu OF creszr vouoces ieee |"
+    },
+    {
+      "variant": 0,
+      "config": "--oem 1 --psm 11",
+      "score": 93.40143229166667,
+      "avg_conf": 67.00716145833334,
+      "text": "J] MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD ; *VISA\nDATE TIME\n1/6/2026 7:34:07 PM\nRECEIPT #\nR209518704\nCASHIER\nBRAVO\neS 6 ote ow\nREGISTER ea\n~\no~\n\u00b0\n-\n\u2014\nue\nes\nod\na2 Oe 4.\n\u00ab\n<2\nORANGE FRU\nS$ RO\n3710\n** GROCERY (F )\nese,\nSY BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F )\n$\nZ\n49\nl = STATE TAX ITEH\nF > ae ITEM\n\u2014\n9. 48\nDALES TAX\n0.00\n~\nTAL\n9.48\n=. =\na\nSALE\nDateline\n1/6/2026 19:43:42\nCard Type\nVISA\nAccount\n2141\nEntry Wode\nContactless\nReceiptTotal\nAuth Code\n159988\nTransaction\n245\nResponse\nAUTH/TKT\n1 AGREE 10 PAY THE ABOVE TOTAL ANOUNT\nACCORDING 10 CARD ISSUER AGREEMENT\n(MERCHANT AGREEMENT JF CREDIT VOUCHER)"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 11",
+      "score": 92.9434333360252,
+      "avg_conf": 64.71716668012598,
+      "text": "7] MART\n601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD\nAVISA\nDATE TIME\n1/6/2026 7:34:07 PM\nRECEIPT #\nR2095 18704\nCASHIER\nBRAVO\nREGISTER #\nReg04\nom tm ne coe an ww ea nee me bene (aa(ne@inilans Ua cl cea tines Ge ase oe 1 wee meee ED aml BRR we ot ee ee oe\nFt ee ee\nom fade an. coe\nORANGE FRUITS SWISS ROLL /. 13102 6p\n*k GROCERY (F )\n6.99\nSY BULDAK CUP (CARBONARA )\n4702 1\n** GROCERY (F)\n2.49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEW\n_ -_\u2014\n- -\n\u2014 ws\nSUB TOTAL\n9.48\nDALES TAX\n0.00\nTOTAL\n9.48\n\u201cwwe wee ee 7 2 ow oe om\nST er em eee ee a\n\u2014- \u2014~ oe\n\u201cSALe\netal ine\nCard Type\nVISA\n1/6/2026 19:43:42\nAccount\n2141\nEntry Wode\nContactless\nRecetptTotal\n$9,468\nfuth Code\n169968\nTransaction \u00a2\n245\nResponse\nAUTH/TKT\nT ABREE TO PAY THE ABOVE T\nQTAL AMOUNT\neeantiNe\nTO CARD ISSUER AGREEMENE,\nPx\nHT QAREENENT Tf CREBIT"
+    },
+    {
+      "variant": 3,
+      "config": "--oem 1 --psm 4",
+      "score": 91.15095637509431,
+      "avg_conf": 55.75478187547152,
+      "text": "7] MART\n1601 2nd Ave\nSEATTLE, WA 98109\n206-829-9296\nPAYMENT METHOD : #VISA\nDATE TIME : 1/6/2026 7:34:07 PM\nRECEIPT # ; R209518704\nCASHIER ; BRAVO\nREGISTER # ' Reg04\nom tm ne coe an ww ea nee me bene (aa(ne@inilans Ua cl cea tines Ge ase oe 1 wee meee ED aml BRR we ot ee ee oe\nORANGE FRUITS SWISS ROLL /. 13102 6p\nFt ee ee\n** GROCERY (F ) $ 6.99\nSY BULDAK CUP(CARBONARA) 2.4702 1\n** GROCERY (F ) $ 2.49\nT = STATE TAX ITEH\nF = FOODSTAHP ITEW\n~\nA te oe me ee ow ew soe, CO wm mee eee ome ~ F\nOe ee tk\n\u2014 a ee\nSUB TOTAL $ OA\nSALES TAX SON\newe we ee\nvm ewe we\n= - or ae am\nCatal ine > 1/6/2026 19:49:42\nCord Type : VISA\nAccount : 2141\nEntry Mode =: Contactless\nReceiptTotal : $9 49\nfuth Code : 169966\nTransaction \u00a9: 245\nRespongs > AUTH/TKT\nT ABREE TO Pay THE ABOVE fOTAL AMOUNT\nACCORDING TO CARD ISSUER AGREEMENT, kuz.\n& \u2014\u2014-\u2014\u00abCWERRHAWT eancEMENT IF creerT voyenchs Seema:"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 6",
+      "score": 74.42324675324676,
+      "avg_conf": 26.28290043290043,
+      "text": "| MART |\noP SEATTLE, WAP9B}O9: SP a\n906282992960\nce Pe QAGHTERES cg BRAVO\n| ORANGE FRUITS \u201cSHTSS ROLL 7:3702 SPP\nYOR GROGERV(F) gg g9\nSY BULDAK CUP(CARBONARA) 2.4702 1\nmoo (fe REGROCERY(F) eG RAG Pee\n| it tode Contactos\nfF Mlesponse muti\nfF ACORDING'TO chr TSSUER AgmecHEYT ="
+    },
+    {
+      "variant": 2,
+      "config": "--oem 3 --psm 6",
+      "score": 74.42324675324676,
+      "avg_conf": 26.28290043290043,
+      "text": "| MART |\noP SEATTLE, WAP9B}O9: SP a\n906282992960\nce Pe QAGHTERES cg BRAVO\n| ORANGE FRUITS \u201cSHTSS ROLL 7:3702 SPP\nYOR GROGERV(F) gg g9\nSY BULDAK CUP(CARBONARA) 2.4702 1\nmoo (fe REGROCERY(F) eG RAG Pee\n| it tode Contactos\nfF Mlesponse muti\nfF ACORDING'TO chr TSSUER AgmecHEYT ="
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 11",
+      "score": 26.376929241393526,
+      "avg_conf": 31.884646206967634,
+      "text": "AMSA\n(2\nLN\n4601. ond Wes,\n- SEATTLE, Wa 6100\n~ 206: 829- 1826\n- PAM ver ? \u201cAISA\nDATE TIME\n1476/2026 4: 1 34: 07\nRECEIPT +\n: 209518704.\n~~ CASHIER:\n+ BRAVO\n\u201cREGISTER . ro\n+ Regd4.-\nch, bese a P ghee Ae ene te ke ae en ee, a nee ee\noe een ee rao eas noes pert wh aol as bce i em want oes eenscoscermow ess a sorties cen ancomearons ache\nant a7 naire eae snaey meaner\nORANGE FRUITS SWISS: ROLL ic 3702. SP\n\u201c\u00ae& GROCERY (F) =:\n28 99\n\u201cot \u2018BULDAK: CUP caRBONARA) 2. A702 t\nae FGROCERY(E) =\n2 49\nTe = STATE TH Teh\nFa = FOODSTAMP TTEN |\nwine rceca-~s- ei eeantreneen tec ve\nSUB oral\n9.48\n- SALES TAK\n0.00\n~ TOTAL\nQa\na On ee ee ee we ae te ae\n9.48\n\u201cSALE\nOo ae we\n\u2014_DateTine\u2019\n: eran 18 48 82\nCard 1ype\n: VISA\n_ Account. -\n2a\n\u201cEntry: ode -\nTastes\nHasetota\n18, AB\n- Auth: \u2018Coda\n+ 189988 |\n| Transeotan \u00a5 \u00a5\n245\n-Rosponsa\nas \u201cuti\na nek: 10. PAY THE ABOVE. Tora Aoi A\nACCORDING 1 10: CARD: -TSSUER: \u201cAGREEMENT\n- (RCH \u201cAQREENENT TR CREOIT: VoUeHER)"
+    },
+    {
+      "variant": 2,
+      "config": "--oem 1 --psm 4",
+      "score": 15.323850020946796,
+      "avg_conf": 26.619250104733975,
+      "text": "1601 1 2nd Wes,\n- SEATTLE, WAS 6100\n~ 206: 829- 1826\n- PAM MeO : WISN SB mo ck hee |\n- RECEIPT ' :R2O3618704 mgt oes\n~~ CASHIER: + BRAVO\n~ REGISTER. ro + Regd4\noo esi CSAs el wre ae Sa le lacey eeu pcmearminr cess wm onsikw iow on arsuaianc acSecatae we ows te 3\nigor ag mick aeay: acim marimanas armani mes hat edmaaiacirs trode: ack ahaaisas oa\nORANGE FRUTTS SWISS. ROLL ic 3702. SP ae. Pea\n7 BLOM cuPCCaRBONNRA) 2.4700 |\n\u201cF GROCERY(R) Oe Sa a\n1 = STATE Tak\u2019 Teh\nj ~ Fs FOODSTAMP ITEN\nhae eae ee cane meee lneee, * =\nwine rceca-~s- Shgreceentehtitt tee\n\u2014 weer we: -\nLs = nn, eee owe eo as 2 \u00e9 \u00ab 2 me\nSpee ER oe = Fw. wn a oe\n\u2014_DateTine\u2019 Baa 19 48 82 a\nCard 1ype : VISA ss : :\n_ Account. - a\n\u201cEntry: ede ating\n\u201c\u201cecetotTana 18, AB\n- Auth: Code + 189988 |\n| Transeotan \u00a5 \u00a5 245\n-Rosponsa a: \u201cuti Pe Ee Sh\n: ur nek: TO. PAY: THE ABOVE. Tora rie A a\nSus 7 ae\n--, AOCORDING TO-coRD-tsSUER AdnegHENT =\nme 2 aeioa AQREENENT IF CREOIT VOUCiIgR)"
+    }
+  ],
+  "winner": {
+    "variant": 0,
+    "score": 154.33275862068967,
+    "config": "--oem 1 --psm 6"
+  },
+  "overlay_url": "/receipts/e8667adf-0b09-4cae-b746-6617276a75a5/debug/overlay_lines.jpg",
+  "items_extracted": []
+}

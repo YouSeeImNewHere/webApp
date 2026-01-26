@@ -1,0 +1,2716 @@
+{
+  "<ec.48.43107.28f4f496@i-093b2cb1ca1aed5a8.mta2vrest.sd.prd.sparkpost>": {
+    "subject": "Attention needed: Activate your new debit card soon",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Sat, 27 Dec 2025 03:16:18 +0000",
+    "imap_id": "176",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:10:37.814452+00:00"
+  },
+  "<yqceyz3pn7h4qkzvxgpknw@notifications.google.com>": {
+    "subject": "Security alert",
+    "sender": "Google <no-reply@accounts.google.com>",
+    "date": "Sat, 27 Dec 2025 14:49:10 GMT",
+    "imap_id": "177",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:10:38.089961+00:00"
+  },
+  "<0100019b62647974-84fd29ae-3d82-46f1-96ad-454a63a369b5-000000@email.amazonses.com>": {
+    "subject": "Transaction Alert",
+    "sender": "Discover Card <discover@services.discover.com>",
+    "date": "Sun, 28 Dec 2025 00:38:30 +0000",
+    "imap_id": "178",
+    "matched": false,
+    "matched_rule": "",
+    "note": "no_rule_matched",
+    "processed_at": "2026-01-25T19:11:08.095183+00:00"
+  },
+  "<a5.96.42732.ede21596@hpnplmomiw07>": {
+    "subject": "Here's your weekly account snapshot",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sun, 28 Dec 2025 06:21:34 -0700",
+    "imap_id": "179",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:08.301812+00:00"
+  },
+  "<10.bc.44897.8ffa2596@i-052407b4cdf7ba651.mta2vrest.sd.prd.sparkpost>": {
+    "subject": "Your AutoPay payment is scheduled for January 2, 2026",
+    "sender": "\"Capital One | Savor\" <capitalone@notification.capitalone.com>",
+    "date": "Mon, 29 Dec 2025 16:44:40 +0000",
+    "imap_id": "527",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:08.524777+00:00"
+  },
+  "<f3.f9.23856.856e2596@i-0e4dea8a5c606fea8.mta6vrest.sd.prd.sparkpost>": {
+    "subject": "See your latest review from CreditWise",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Mon, 29 Dec 2025 20:36:40 +0000",
+    "imap_id": "528",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:08.722964+00:00"
+  },
+  "<52.2c.65298.47523596@hpnplmomiw06>": {
+    "subject": "Confirming Your Paperless Enrollment",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Mon, 29 Dec 2025 18:05:56 -0700",
+    "imap_id": "529",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:09.006605+00:00"
+  },
+  "<f9870c69-5f61-4c92-9053-13ae71f906c7@atl1s07mta2080.xt.local>": {
+    "subject": "Jared, make paying your bill quick and easy",
+    "sender": "\"American Express\" <americanexpress@member.americanexpress.com>",
+    "date": "Mon, 29 Dec 2025 22:17:52 -0600",
+    "imap_id": "530",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:09.265660+00:00"
+  },
+  "<1288.1322526805.202512301905120427993.0159256504@email.americanexpress.com>": {
+    "subject": "The APY on your High Yield Savings Account has changed",
+    "sender": "\"American Express\" <AmericanExpress@email.americanexpress.com>",
+    "date": "30 Dec 2025 19:05:12 +0000",
+    "imap_id": "531",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:09.462533+00:00"
+  },
+  "<4d6b0449-5f4f-441e-bcb2-a8513e42c7cd@atl1s07mta3229.xt.local>": {
+    "subject": "Congrats! We\u2019re pleased to present an offer for an additional line of credit.",
+    "sender": "\"Capital One\" <donotreply@cardmessage.capitalone.com>",
+    "date": "Tue, 30 Dec 2025 17:22:19 -0600",
+    "imap_id": "532",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:09.707078+00:00"
+  },
+  "<3a8b5a7b-ef80-4de4-9118-5d9c843e2221@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 30 Dec 2025 20:58:11 -0600",
+    "imap_id": "533",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:11.013112+00:00",
+    "extracted": {
+      "cost": 25.0,
+      "merchant": "SQ *FREE PLAY ARCADE -",
+      "date": "12/30/25"
+    }
+  },
+  "<3cf14a60-4b97-4f2a-9d67-c5a5c35530e0@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 30 Dec 2025 21:39:08 -0600",
+    "imap_id": "534",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:11.564266+00:00",
+    "extracted": {
+      "cost": 9.74,
+      "date": "12/30/25"
+    }
+  },
+  "<995363ad-b30b-470b-8c33-a518f64a513c@iad4s12mta39.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 31 Dec 2025 23:51:55 -0600",
+    "imap_id": "535",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:12.171749+00:00",
+    "extracted": {
+      "cost": 200.0,
+      "date": "12/31/25"
+    }
+  },
+  "<c0fd2250-0c51-4901-917b-9f284d1c88b0@atl1s07mta3228.xt.local>": {
+    "subject": "*** Confirmation requested, Jared Trevino: We need updated income\r\n information to consider you for a credit line increase",
+    "sender": "\"Capital One\" <donotreply@cardmessage.capitalone.com>",
+    "date": "Thu, 01 Jan 2026 11:34:04 -0600",
+    "imap_id": "536",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:12.527893+00:00"
+  },
+  "<07c21697-c32a-4f55-a153-0ed6f0a1a989@iad4s12mta840.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 01 Jan 2026 11:40:58 -0600",
+    "imap_id": "537",
+    "matched": false,
+    "matched_rule": "",
+    "note": "no_rule_matched_declined_detected",
+    "processed_at": "2026-01-25T19:11:13.050189+00:00"
+  },
+  "<0.1.a.e57.1dc7bf8ee070102.0@omptrans.card-e.em.discover.com>": {
+    "subject": "\u2709\ufe0f Please review: Activate now to unlock your Cashback Bonus\u00ae",
+    "sender": "Discover <discover@card-e.em.discover.com>",
+    "date": "Fri, 2 Jan 2026 15:03:18 +0000",
+    "imap_id": "538",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:13.371337+00:00"
+  },
+  "<98.22.17130.a25e7596@i-092a34752009ae680.mta6vrest.sd.prd.sparkpost>": {
+    "subject": "Your payment of $20.44 is scheduled for Jan 2, 2026",
+    "sender": "\"Capital One | Savor\" <capitalone@notification.capitalone.com>",
+    "date": "Fri, 02 Jan 2026 15:32:58 +0000",
+    "imap_id": "539",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:13.607100+00:00"
+  },
+  "<0100019b7f5783d4-c98785a7-86b3-49c2-9d12-d524d7188d36-000000@email.amazonses.com>": {
+    "subject": "Your Scheduled Payment",
+    "sender": "Discover Card <discover@services.discover.com>",
+    "date": "Fri, 2 Jan 2026 15:33:20 +0000",
+    "imap_id": "540",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:13.878183+00:00"
+  },
+  "<60.d7.00325.f5ac9596@hpgplmomiw06>": {
+    "subject": "Important Notice: Your January 2026 Statement",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sat, 03 Jan 2026 19:03:11 -0700",
+    "imap_id": "541",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:14.200508+00:00"
+  },
+  "<0100019b95410aa5-7109e841-3ab0-4abe-bd1a-dead92043555-000000@email.amazonses.com>": {
+    "subject": "You have a new statement online",
+    "sender": "Discover Card <discover@services.discover.com>",
+    "date": "Tue, 6 Jan 2026 21:40:26 +0000",
+    "imap_id": "542",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:14.477784+00:00"
+  },
+  "<f28ed80e-8d36-4174-8ddb-62cbc6ecd7fe@atl1s07mta3228.xt.local>": {
+    "subject": "Hey Jared, there's $100 with your name on it",
+    "sender": "\"Capital One\" <donotreply@cardmessage.capitalone.com>",
+    "date": "Tue, 06 Jan 2026 16:29:17 -0600",
+    "imap_id": "543",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:14.971368+00:00"
+  },
+  "<04.74.31980.cd27e596@i-09ba5a1d0b56cd796.mta2vrest.sd.prd.sparkpost>": {
+    "subject": "Your latest bank statement is ready",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Wed, 07 Jan 2026 14:51:08 +0000",
+    "imap_id": "544",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:15.231435+00:00"
+  },
+  "<24.27.32902.4efce596@i-0c61d218973dfed4f.mta2vrest.sd.prd.sparkpost>": {
+    "subject": "Jared, a lender reported a new account",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Wed, 07 Jan 2026 21:28:04 +0000",
+    "imap_id": "545",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:15.511319+00:00"
+  },
+  "<ba.10.19142.924af596@i-0960891294fa5ba3d.mta6vrest.sd.prd.sparkpost>": {
+    "subject": "Jared, your total credit limit increased",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Thu, 08 Jan 2026 12:33:45 +0000",
+    "imap_id": "546",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:15.728383+00:00"
+  },
+  "<ff313e85-d477-46d1-9448-fcdefd161934@atl1s07mta2080.xt.local>": {
+    "subject": "Jared, your new Amex Offers are inside!",
+    "sender": "\"Amex Offers from American Express\"\r\n <americanexpress@member.americanexpress.com>",
+    "date": "Thu, 08 Jan 2026 14:07:03 -0600",
+    "imap_id": "547",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:15.939862+00:00"
+  },
+  "<69.80.42732.63f10696@hpnplmomiw07>": {
+    "subject": "You\u2019re enrolled in the $300 lululemon Credit",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Thu, 08 Jan 2026 14:18:46 -0700",
+    "imap_id": "548",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:16.162587+00:00"
+  },
+  "<2d7945c2-e66a-4b31-b855-0c19f3ab4a98@iad4s12mta41.xt.local>": {
+    "subject": "We Verified Your Debit Card Fraud Claim",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 15:18:54 -0600",
+    "imap_id": "549",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:16.505619+00:00"
+  },
+  "<32b2441b-fd8a-445a-9338-18e2301b9a2a@iad4s12mta41.xt.local>": {
+    "subject": "We Verified Your Debit Card Fraud Claim",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 15:19:05 -0600",
+    "imap_id": "550",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:16.746287+00:00"
+  },
+  "<1e.bc.09701.9cff0696@i-09ed3d3f17b3588b5.mta6vrest.sd.prd.sparkpost>": {
+    "subject": "Jared, a credit account reached $0",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Fri, 09 Jan 2026 13:16:57 +0000",
+    "imap_id": "551",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-25T19:11:17.019192+00:00"
+  },
+  "<44811543-cdfe-4fe6-8f2d-5a989aa5ac12@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 11:53:59 -0600",
+    "imap_id": "552",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:17.502978+00:00",
+    "extracted": {
+      "cost": 200.0,
+      "date": "01/18/26"
+    }
+  },
+  "<1593266128.94984893.1768759143405@jlppaceccwls20.onefiserv.net>": {
+    "subject": "Confirmed: Your payment to Siniah Hemingway is complete",
+    "sender": "Navy Federal Credit Union <noreply@mail.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 09:59:03 -0800 (PST)",
+    "imap_id": "553",
+    "matched": true,
+    "matched_rule": "navy federal zelle",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:18.964296+00:00",
+    "extracted": {
+      "cost": 200.0,
+      "merchant": "Siniah Hemingway",
+      "date": "January 18, 2026"
+    }
+  },
+  "<0eb463b2-d2cc-4d7a-854b-493e1afa24af@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 14:44:54 -0600",
+    "imap_id": "554",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:20.597996+00:00",
+    "extracted": {
+      "cost": 44.03,
+      "merchant": "MARKET GRILL",
+      "date": "01/18/26"
+    }
+  },
+  "<db465caf-8331-4404-9ef9-0f8c300a76a4@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 17:08:34 -0600",
+    "imap_id": "555",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:21.509572+00:00",
+    "extracted": {
+      "cost": 4.96,
+      "date": "01/18/26"
+    }
+  },
+  "<5493aa19-c170-4a62-b48f-9a1b729bd1e8@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 17:08:35 -0600",
+    "imap_id": "556",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:22.921216+00:00",
+    "extracted": {
+      "cost": 4.96,
+      "merchant": "DAISO - REDMOND TOWN CE",
+      "date": "01/18/26"
+    }
+  },
+  "<fbe45417-8a31-4108-9fdd-2969266efaf3@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 17:23:54 -0600",
+    "imap_id": "557",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:23.623017+00:00",
+    "extracted": {
+      "cost": 23.15,
+      "date": "01/18/26"
+    }
+  },
+  "<e64d9160-cec1-42be-ba86-c62ba701c214@iad4s12mta43.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 17:23:57 -0600",
+    "imap_id": "558",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:25.708039+00:00",
+    "extracted": {
+      "cost": 23.15,
+      "merchant": "Brick & Mortar Books",
+      "date": "01/18/26"
+    }
+  },
+  "<79d3b865-9b8d-47e4-ba84-785b24f79283@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 17:44:04 -0600",
+    "imap_id": "559",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:27.315606+00:00",
+    "extracted": {
+      "cost": 8.81,
+      "merchant": "BATH & BODY WORKS 3805",
+      "date": "01/18/26"
+    }
+  },
+  "<368fbf44-727a-4c00-9d91-dd1b00581f2e@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 17:44:05 -0600",
+    "imap_id": "560",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:28.035128+00:00",
+    "extracted": {
+      "cost": 8.81,
+      "date": "01/18/26"
+    }
+  },
+  "<8b1b172a-f1a0-4686-86a5-d2487da261e2@iad4s12mta39.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 20:30:02 -0600",
+    "imap_id": "561",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:29.586131+00:00",
+    "extracted": {
+      "cost": 10.48,
+      "merchant": "H MART",
+      "date": "01/18/26"
+    }
+  },
+  "<75.38.39002.7fef2796@i-092a34752009ae680.mta6vrest.sd.prd.sparkpost>": {
+    "subject": "$12.77--Debit Card Purchase - Sher Partners",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Fri, 23 Jan 2026 04:54:15 +0000",
+    "imap_id": "562",
+    "matched": true,
+    "matched_rule": "capital one debit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:30.872535+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "merchant": "Sher Partners",
+      "date": "January 22, 2026"
+    }
+  },
+  "<c56bb83c-2ff2-4ecc-ae51-43e00ce13e69@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 23 Jan 2026 13:20:13 -0600",
+    "imap_id": "563",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:32.485629+00:00",
+    "extracted": {
+      "cost": 10.49,
+      "merchant": "BANGOR NSB COMMI 2604 OHI",
+      "date": "01/23/26"
+    }
+  },
+  "<8ac26062-3feb-463c-b9c4-880ad1824f13@iad4s12mta840.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 23 Jan 2026 18:13:55 -0600",
+    "imap_id": "564",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:33.032776+00:00",
+    "extracted": {
+      "cost": 19.7,
+      "date": "01/23/26"
+    }
+  },
+  "<7bef15d0-024a-4fcd-86d8-c58b8ea2a7f2@iad4s12mta840.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 23 Jan 2026 18:13:58 -0600",
+    "imap_id": "565",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:34.648381+00:00",
+    "extracted": {
+      "cost": 19.7,
+      "merchant": "WSFERRIES-BREMERTON",
+      "date": "01/23/26"
+    }
+  },
+  "<4611d719-fd9a-4d9b-b65f-4fdc42a68b6e@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 24 Jan 2026 14:57:35 -0600",
+    "imap_id": "566",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:35.557580+00:00",
+    "extracted": {
+      "cost": 32.0,
+      "date": "01/24/26"
+    }
+  },
+  "<b4.cb.65298.e38c1596@hpnplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sun, 28 Dec 2025 17:15:58 -0700",
+    "imap_id": "642",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:39.114433+00:00",
+    "extracted": {
+      "merchant": "WALMART PLUS MONTHLY",
+      "cost": 14.02,
+      "date": "Dec 28, 2025"
+    }
+  },
+  "<5a5a5a95-e046-40c7-a538-db32c58a06db@iad4s12mta39.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 29 Dec 2025 16:02:32 -0600",
+    "imap_id": "645",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:40.131613+00:00",
+    "extracted": {
+      "cost": 37.0,
+      "date": "12/29/25"
+    }
+  },
+  "<22116568.62159057.1767045854166@jlppaceccwls20.onefiserv.net>": {
+    "subject": "Confirmed: Your payment to Siniah Hemingway is complete",
+    "sender": "Navy Federal Credit Union <noreply@mail.navyfederal.org>",
+    "date": "Mon, 29 Dec 2025 14:04:14 -0800 (PST)",
+    "imap_id": "646",
+    "matched": true,
+    "matched_rule": "navy federal zelle",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:41.947975+00:00",
+    "extracted": {
+      "cost": 37.0,
+      "merchant": "Siniah Hemingway",
+      "date": "December 29, 2025"
+    }
+  },
+  "<48c3dd3c-9c90-46cb-858b-54f350672187@iad4s12mta840.xt.local>": {
+    "subject": "Deposit Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 30 Dec 2025 02:37:10 -0600",
+    "imap_id": "649",
+    "matched": true,
+    "matched_rule": "navy deposit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:43.933300+00:00",
+    "extracted": {
+      "cost": 3015.7,
+      "date": "12/29/25"
+    }
+  },
+  "<f9a9d99f-3cd9-46dd-a26d-ca3a177bde02@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 30 Dec 2025 20:37:12 -0600",
+    "imap_id": "652",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:46.090998+00:00",
+    "extracted": {
+      "cost": 20.55,
+      "merchant": "SQ *FREE PLAY ARCADE -",
+      "date": "12/30/25"
+    }
+  },
+  "<aad524ee-047a-4437-a894-294c5e98f959@iad4s12mta844.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 30 Dec 2025 20:58:07 -0600",
+    "imap_id": "653",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:46.677847+00:00",
+    "extracted": {
+      "cost": 25.0,
+      "date": "12/30/25"
+    }
+  },
+  "<517cc1a0-8921-4aa1-b3d2-67f466499f91@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 30 Dec 2025 21:39:13 -0600",
+    "imap_id": "656",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:49.010153+00:00",
+    "extracted": {
+      "cost": 9.74,
+      "merchant": "SQ *FREE PLAY ARCADE -",
+      "date": "12/30/25"
+    }
+  },
+  "<0e3cf1eb-9c84-478e-977a-7c29e3a73147@iad4s12mta39.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 01 Jan 2026 00:03:56 -0600",
+    "imap_id": "658",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:50.785445+00:00",
+    "extracted": {
+      "cost": 2.15,
+      "merchant": "APPLE.COM/BILL",
+      "date": "01/01/26"
+    }
+  },
+  "<cb05160c-b6b9-4f57-b552-2b83d56576d1@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 01 Jan 2026 00:23:56 -0600",
+    "imap_id": "659",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:51.260310+00:00",
+    "extracted": {
+      "cost": 200.0,
+      "date": "12/31/25"
+    }
+  },
+  "<c18f5f43-06d4-4087-9169-e2dc5e85e899@iad4s12mta37.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 01 Jan 2026 00:38:02 -0600",
+    "imap_id": "660",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:52.171562+00:00",
+    "extracted": {
+      "cost": 2.15,
+      "date": "01/01/26"
+    }
+  },
+  "<0782249b-fc12-40ab-b0cf-766717038456@iad4s12mta39.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 01 Jan 2026 02:19:05 -0600",
+    "imap_id": "661",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:54.404516+00:00",
+    "extracted": {
+      "cost": 63.92,
+      "merchant": "USAA INSURANCE PAYMENT",
+      "date": "01/01/26"
+    }
+  },
+  "<bc08158e-cbfb-4139-8c2a-7c083746d7bf@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 01 Jan 2026 07:02:10 -0600",
+    "imap_id": "662",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:56.093449+00:00",
+    "extracted": {
+      "cost": 301.0,
+      "merchant": "4338 - 50120 PLAT PARK",
+      "date": "01/01/26"
+    }
+  },
+  "<f7d3f658-f932-4192-876a-8d064bc3d9d1@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 01:38:46 -0600",
+    "imap_id": "665",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:57.629137+00:00",
+    "extracted": {
+      "cost": 21.28,
+      "date": "01/02/26"
+    }
+  },
+  "<b87840ee-8474-4ca8-aa3a-c1fda28c3459@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 01:38:49 -0600",
+    "imap_id": "666",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:11:59.078873+00:00",
+    "extracted": {
+      "cost": 21.28,
+      "merchant": "OPENAI *CHATGPT SUBSCR",
+      "date": "01/02/26"
+    }
+  },
+  "<0e.91.42732.8a4e7596@hpnplmomiw07>": {
+    "subject": "We processed your payment",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Fri, 02 Jan 2026 08:30:48 -0700",
+    "imap_id": "668",
+    "matched": true,
+    "matched_rule": "amex payment",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:00.519338+00:00",
+    "extracted": {
+      "cost": 2335.43,
+      "date": "Jan 2, 2026"
+    }
+  },
+  "<11db51c1-d3f2-4a23-b389-bb73cee666dd@iad4s12mta41.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 09:33:55 -0600",
+    "imap_id": "671",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:01.619200+00:00",
+    "extracted": {
+      "cost": 899.88,
+      "date": "01/02/26"
+    }
+  },
+  "<3e.a5.65298.0b5e7596@hpnplmomiw06>": {
+    "subject": "We've received your payment",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Fri, 02 Jan 2026 08:35:12 -0700",
+    "imap_id": "672",
+    "matched": true,
+    "matched_rule": "amex payment",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:02.825243+00:00",
+    "extracted": {
+      "cost": 3002.2,
+      "date": "Jan 2, 2026"
+    }
+  },
+  "<6d.11.42732.9d5e7596@hpnplmomiw07>": {
+    "subject": "We've received your payment",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Fri, 02 Jan 2026 08:35:53 -0700",
+    "imap_id": "673",
+    "matched": true,
+    "matched_rule": "amex payment",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:04.799984+00:00",
+    "extracted": {
+      "cost": 363.37,
+      "date": "Jan 2, 2026"
+    }
+  },
+  "<e83e1ea9-647f-453f-9fde-2646c06e541a@iad4s12mta39.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 09:45:08 -0600",
+    "imap_id": "674",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:05.318365+00:00",
+    "extracted": {
+      "cost": 3.0,
+      "date": "01/02/26"
+    }
+  },
+  "<937d5626-0ed3-4524-8d18-d20f80d12eda@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 09:45:10 -0600",
+    "imap_id": "675",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:06.783502+00:00",
+    "extracted": {
+      "cost": 3.0,
+      "merchant": "365 MARKET  888 432-329",
+      "date": "01/02/26"
+    }
+  },
+  "<0a60d086-177e-4943-ac22-adfc00134306@iad4s12mta39.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 14:43:28 -0600",
+    "imap_id": "676",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:09.437132+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "date": "01/02/26"
+    }
+  },
+  "<4b3437ad-b4b2-4bdd-919b-55c0539ffb0b@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 02 Jan 2026 14:43:30 -0600",
+    "imap_id": "677",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:11.414945+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "merchant": "WSDOT GOODTOGO TNB",
+      "date": "01/02/26"
+    }
+  },
+  "<0100019b84086488-92ad1a1d-a2e6-442c-8661-2df0216a61e4-000000@email.amazonses.com>": {
+    "subject": "We've received your payment",
+    "sender": "Discover Card <discover@services.discover.com>",
+    "date": "Sat, 3 Jan 2026 13:25:01 +0000",
+    "imap_id": "678",
+    "matched": true,
+    "matched_rule": "discover payment",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:13.035381+00:00",
+    "extracted": {
+      "cost": 29.99,
+      "date": "January 02, 2026"
+    }
+  },
+  "<d4.31.00029.ee2a9596@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sat, 03 Jan 2026 16:14:54 -0700",
+    "imap_id": "679",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:14.603634+00:00",
+    "extracted": {
+      "merchant": "SHAKE SHACK",
+      "cost": 5.4,
+      "date": "Jan 3, 2026"
+    }
+  },
+  "<35.c8.63795.860b9596@i-09caff742c827f397.mta2vrest.sd.prd.sparkpost>": {
+    "subject": "We've received your payment",
+    "sender": "\"Capital One | Savor\" <capitalone@notification.capitalone.com>",
+    "date": "Sun, 04 Jan 2026 00:12:24 +0000",
+    "imap_id": "680",
+    "matched": true,
+    "matched_rule": "capital one payment",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:16.199257+00:00",
+    "extracted": {
+      "cost": 20.44,
+      "date": "January 2, 2026"
+    }
+  },
+  "<b8.31.65298.e17b9596@hpnplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sat, 03 Jan 2026 17:41:02 -0700",
+    "imap_id": "681",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:17.781904+00:00",
+    "extracted": {
+      "merchant": "THE CHEESECAKE FACTORY",
+      "cost": 44.56,
+      "date": "Jan 3, 2026"
+    }
+  },
+  "<12270292-af42-49d6-a251-89ddc29c0ce0@iad4s12mta39.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 04 Jan 2026 15:36:46 -0600",
+    "imap_id": "683",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:18.678342+00:00",
+    "extracted": {
+      "cost": 6.35,
+      "date": "01/04/26"
+    }
+  },
+  "<ca8b73da-cb9b-489e-9ecf-0ce1fc458298@iad4s12mta39.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 04 Jan 2026 15:36:48 -0600",
+    "imap_id": "684",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:20.086982+00:00",
+    "extracted": {
+      "cost": 6.35,
+      "merchant": "SQ *INDI CHOCOLATE LLC",
+      "date": "01/04/26"
+    }
+  },
+  "<20.bc.42732.50f2b596@hpnplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sun, 04 Jan 2026 20:24:53 -0700",
+    "imap_id": "685",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:21.586334+00:00",
+    "extracted": {
+      "merchant": "MOLLY MOONS WATERFRONT",
+      "cost": 12.11,
+      "date": "Jan 4, 2026"
+    }
+  },
+  "<9d.98.00029.2a5bb596@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Mon, 05 Jan 2026 05:59:14 -0700",
+    "imap_id": "686",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:23.278171+00:00",
+    "extracted": {
+      "merchant": "LADYBUG ESPRESSO",
+      "cost": 9.83,
+      "date": "Jan 5, 2026"
+    }
+  },
+  "<c95ae22e-153d-4dd8-87a7-76a91328eda2@iad4s12mta43.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 07:04:47 -0600",
+    "imap_id": "687",
+    "matched": true,
+    "matched_rule": "navy credit hold",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:24.660552+00:00",
+    "extracted": {
+      "merchant": "ARCO#82611KMGH LLC",
+      "date": "01/05/26"
+    }
+  },
+  "<f77a03ed-810c-4f04-8de0-b817dd76e142@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 08:30:48 -0600",
+    "imap_id": "688",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:25.295741+00:00",
+    "extracted": {
+      "cost": 1.5,
+      "date": "01/05/26"
+    }
+  },
+  "<6942ff29-3e0a-491a-b1f0-8959cc94fe3f@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 08:30:50 -0600",
+    "imap_id": "689",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:27.430277+00:00",
+    "extracted": {
+      "cost": 1.5,
+      "merchant": "365 MARKET  888 432-329",
+      "date": "01/05/26"
+    }
+  },
+  "<c135d14a-c5b4-4706-8bc3-ea4b7e5c8b4e@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 13:05:04 -0600",
+    "imap_id": "690",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:29.504960+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/05/26"
+    }
+  },
+  "<b33c6f2e-938c-416c-908d-f8c16a8632d3@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 13:05:03 -0600",
+    "imap_id": "691",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:30.275483+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/05/26"
+    }
+  },
+  "<faa7f03f-b0b1-4ba4-920f-a23e67686624@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 17:24:31 -0600",
+    "imap_id": "692",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:30.870690+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "date": "01/05/26"
+    }
+  },
+  "<f79f182d-7bc1-4900-90b9-5afbae468c64@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 05 Jan 2026 17:24:33 -0600",
+    "imap_id": "693",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:32.175794+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "merchant": "WSDOT GOODTOGO TNB",
+      "date": "01/05/26"
+    }
+  },
+  "<abceb367-6d37-4429-85d6-bbedff7c7a88@iad4s12mta39.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 02:10:14 -0600",
+    "imap_id": "694",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:32.897165+00:00",
+    "extracted": {
+      "cost": 102.81,
+      "date": "01/05/26"
+    }
+  },
+  "<7f3745bb-15ad-463f-87e7-1b4e672455fb@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 02:10:14 -0600",
+    "imap_id": "695",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:34.131322+00:00",
+    "extracted": {
+      "cost": 2335.43,
+      "date": "01/05/26"
+    }
+  },
+  "<3b4f9712-e59f-4591-a65a-a5978f771024@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 03:08:37 -0600",
+    "imap_id": "696",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:34.847072+00:00",
+    "extracted": {
+      "cost": 363.37,
+      "date": "01/05/26"
+    }
+  },
+  "<033e6852-2bc3-43db-b96e-11777ab41672@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 03:08:37 -0600",
+    "imap_id": "697",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:35.516057+00:00",
+    "extracted": {
+      "cost": 29.99,
+      "date": "01/05/26"
+    }
+  },
+  "<fe63334e-7183-4d50-aac5-5fc702b90456@iad4s12mta41.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 03:08:37 -0600",
+    "imap_id": "698",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:36.070477+00:00",
+    "extracted": {
+      "cost": 3002.2,
+      "date": "01/05/26"
+    }
+  },
+  "<082ebe09-3b0f-4d54-af07-96686a1c6ba2@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 13:10:34 -0600",
+    "imap_id": "699",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:37.492404+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/06/26"
+    }
+  },
+  "<071a9db4-b6f3-4bca-aa0e-0d35af92558f@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 13:10:31 -0600",
+    "imap_id": "700",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:37.931269+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/06/26"
+    }
+  },
+  "<04.c0.00029.c5c8d596@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Tue, 06 Jan 2026 15:27:40 -0700",
+    "imap_id": "702",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:39.593807+00:00",
+    "extracted": {
+      "merchant": "S P",
+      "cost": 12.77,
+      "date": "Jan 6, 2026"
+    }
+  },
+  "<6a8169e3-6582-4dcb-8f21-54dd8654e3ac@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 21:34:04 -0600",
+    "imap_id": "704",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:41.719043+00:00",
+    "extracted": {
+      "cost": 9.48,
+      "date": "01/06/26"
+    }
+  },
+  "<d02dc6f9-9811-4b04-ad0f-24596f1e2cf6@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 06 Jan 2026 21:34:05 -0600",
+    "imap_id": "705",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:44.845525+00:00",
+    "extracted": {
+      "cost": 9.48,
+      "merchant": "H MART",
+      "date": "01/06/26"
+    }
+  },
+  "<7d67be8e-25c3-4906-bd2a-f37ed33364ec@iad4s12mta37.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 07 Jan 2026 04:12:57 -0600",
+    "imap_id": "706",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:46.822256+00:00",
+    "extracted": {
+      "cost": 0.99,
+      "date": "01/07/26"
+    }
+  },
+  "<1404ee0b-1296-4a2d-8006-16264d6a1539@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 07 Jan 2026 04:13:02 -0600",
+    "imap_id": "707",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:49.681092+00:00",
+    "extracted": {
+      "cost": 0.99,
+      "merchant": "APPLE.COM/BILL",
+      "date": "01/07/26"
+    }
+  },
+  "<ea.76.00029.c656e596@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Wed, 07 Jan 2026 06:53:48 -0700",
+    "imap_id": "708",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:50.897007+00:00",
+    "extracted": {
+      "merchant": "ORCA ONLINEMOBILE APP",
+      "cost": 50.0,
+      "date": "Jan 7, 2026"
+    }
+  },
+  "<0dd201cd-71c2-4489-a731-011264b3341f@iad4s12mta41.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 07 Jan 2026 13:06:28 -0600",
+    "imap_id": "710",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:52.351420+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/07/26"
+    }
+  },
+  "<eff04e12-3924-40b7-9490-d46d55cefff7@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 07 Jan 2026 13:06:30 -0600",
+    "imap_id": "711",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:53.520273+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/07/26"
+    }
+  },
+  "<55e0af39-0022-43da-a874-4bd2ac67d1c6@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 07 Jan 2026 15:14:56 -0600",
+    "imap_id": "712",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:55.204681+00:00",
+    "extracted": {
+      "cost": 19.7,
+      "date": "01/07/26"
+    }
+  },
+  "<ee7c2879-7076-4f3a-b95b-53ed154f0e62@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 07 Jan 2026 15:14:57 -0600",
+    "imap_id": "713",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:12:57.816185+00:00",
+    "extracted": {
+      "cost": 19.7,
+      "merchant": "WSFERRIES-BREMERTON",
+      "date": "01/07/26"
+    }
+  },
+  "<7ce2c323-0632-42bd-bc7b-e5d802d427c8@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 07:56:37 -0600",
+    "imap_id": "716",
+    "matched": true,
+    "matched_rule": "navy credit hold",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:00.350637+00:00",
+    "extracted": {
+      "merchant": "NEX FUEL 110405",
+      "date": "01/08/26"
+    }
+  },
+  "<2c4add0c-ba95-40db-bb71-6cc4f3d2ef84@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 09:33:04 -0600",
+    "imap_id": "717",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:02.028396+00:00",
+    "extracted": {
+      "cost": 2.0,
+      "date": "01/08/26"
+    }
+  },
+  "<82dbf6b8-f5e4-4cc1-8c16-af94fa2097b5@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 09:33:06 -0600",
+    "imap_id": "718",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:04.804133+00:00",
+    "extracted": {
+      "cost": 2.0,
+      "merchant": "365 MARKET  888 432-329",
+      "date": "01/08/26"
+    }
+  },
+  "<0eb2937a-792b-4424-ab8d-59976011397d@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 13:01:12 -0600",
+    "imap_id": "719",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:05.772438+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/08/26"
+    }
+  },
+  "<734f9a4c-253a-4d49-b676-6068efdd1de4@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 08 Jan 2026 13:01:14 -0600",
+    "imap_id": "720",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:07.462379+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/08/26"
+    }
+  },
+  "<8c.de.00325.5e980696@hpgplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Thu, 08 Jan 2026 21:53:57 -0700",
+    "imap_id": "725",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:09.616123+00:00",
+    "extracted": {
+      "merchant": "TRIPLE DOOR",
+      "cost": 22.62,
+      "date": "Jan 8, 2026"
+    }
+  },
+  "<83.ae.65298.58351696@hpnplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Fri, 09 Jan 2026 12:14:13 -0700",
+    "imap_id": "727",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:11.110031+00:00",
+    "extracted": {
+      "merchant": "CHIPOTLE",
+      "cost": 13.98,
+      "date": "Jan 9, 2026"
+    }
+  },
+  "<35d036bf-e0e6-4c26-9f0a-cddad19c1641@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 09 Jan 2026 18:53:18 -0600",
+    "imap_id": "728",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:12.364175+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "merchant": "WSDOT GOODTOGO TNB",
+      "date": "01/09/26"
+    }
+  },
+  "<d16b70a2-96aa-4cdc-9c42-8d1094b9abf5@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 09 Jan 2026 18:53:17 -0600",
+    "imap_id": "729",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:12.844398+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "date": "01/09/26"
+    }
+  },
+  "<8ae87c03-57ce-45bd-a01a-bf7e249bfd11@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 09 Jan 2026 22:46:56 -0600",
+    "imap_id": "730",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:14.740729+00:00",
+    "extracted": {
+      "cost": 13.24,
+      "merchant": "SQ *WORLD OF WHIMM",
+      "date": "01/09/26"
+    }
+  },
+  "<4b.4f.42732.08cd1696@hpnplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Fri, 09 Jan 2026 21:58:40 -0700",
+    "imap_id": "731",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:15.960591+00:00",
+    "extracted": {
+      "merchant": "XING FU TANG",
+      "cost": 8.89,
+      "date": "Jan 9, 2026"
+    }
+  },
+  "<a77967a5-e2af-4a0f-9fe9-746a90f45c35@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 09 Jan 2026 23:34:43 -0600",
+    "imap_id": "732",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:16.391309+00:00",
+    "extracted": {
+      "cost": 13.24,
+      "date": "01/09/26"
+    }
+  },
+  "<603ffd32-f796-4d67-bc2e-3f2b7071bbbf@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 15:13:46 -0600",
+    "imap_id": "733",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:18.021684+00:00",
+    "extracted": {
+      "cost": 5.27,
+      "date": "01/10/26"
+    }
+  },
+  "<65de36ab-16b9-47b8-90cd-6dce0e3875b9@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 15:13:49 -0600",
+    "imap_id": "734",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:20.501642+00:00",
+    "extracted": {
+      "cost": 5.27,
+      "merchant": "COSTCO WHSE #0001",
+      "date": "01/10/26"
+    }
+  },
+  "<45311fe2-31b4-46d1-be36-45ebf9bebafc@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 16:59:26 -0600",
+    "imap_id": "735",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:22.071606+00:00",
+    "extracted": {
+      "cost": 127.87,
+      "date": "01/10/26"
+    }
+  },
+  "<9e7a9507-9a03-4384-bc94-a1e11f709837@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 16:59:26 -0600",
+    "imap_id": "736",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:24.485808+00:00",
+    "extracted": {
+      "cost": 127.87,
+      "merchant": "JIFFY LUBE #2077",
+      "date": "01/10/26"
+    }
+  },
+  "<b85e5758-5210-4afb-8fc1-0c40a420cab9@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 17:31:28 -0600",
+    "imap_id": "737",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:25.645889+00:00",
+    "extracted": {
+      "cost": 45.08,
+      "merchant": "AUTOZONE #4121",
+      "date": "01/10/26"
+    }
+  },
+  "<5db4f496-695c-45c6-a46e-87b4275a5c68@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 18:05:13 -0600",
+    "imap_id": "738",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:27.437585+00:00",
+    "extracted": {
+      "cost": 45.15,
+      "date": "01/10/26"
+    }
+  },
+  "<01fac16e-1bff-41c7-99d1-65343cb50143@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 18:05:16 -0600",
+    "imap_id": "739",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:29.898064+00:00",
+    "extracted": {
+      "cost": 45.15,
+      "merchant": "SQ *SEATTLE PINBALL MU",
+      "date": "01/10/26"
+    }
+  },
+  "<ff9ffd0a-fd78-4c64-a914-0e00aedd111a@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 19:50:44 -0600",
+    "imap_id": "740",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:31.755248+00:00",
+    "extracted": {
+      "cost": 165.38,
+      "date": "01/10/26"
+    }
+  },
+  "<950ba758-5484-4f9e-94a4-859fcbb87f33@iad4s12mta39.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 19:50:46 -0600",
+    "imap_id": "741",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:34.565096+00:00",
+    "extracted": {
+      "cost": 165.38,
+      "merchant": "SQ *JIAN HE HANG COMPA",
+      "date": "01/10/26"
+    }
+  },
+  "<e2.c6.00029.d4013696@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sat, 10 Jan 2026 19:51:57 -0700",
+    "imap_id": "742",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:35.911661+00:00",
+    "extracted": {
+      "merchant": "ALADDIN GYRO RESTAURANT",
+      "cost": 25.06,
+      "date": "Jan 10, 2026"
+    }
+  },
+  "<2e97f320-a97b-4722-b1e1-149638f25afe@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 23:25:17 -0600",
+    "imap_id": "743",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:37.499259+00:00",
+    "extracted": {
+      "cost": 5.4,
+      "date": "01/11/26"
+    }
+  },
+  "<dff92ebf-9faa-4fda-8997-603b05e1f540@iad4s12mta37.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 10 Jan 2026 23:25:21 -0600",
+    "imap_id": "744",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:39.734248+00:00",
+    "extracted": {
+      "cost": 5.4,
+      "merchant": "STEAMGAMES.COM 42595229",
+      "date": "01/11/26"
+    }
+  },
+  "<01.65.00325.36734696@hpgplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sun, 11 Jan 2026 16:50:59 -0700",
+    "imap_id": "745",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:40.881030+00:00",
+    "extracted": {
+      "merchant": "UBER",
+      "cost": 11.01,
+      "date": "Jan 11, 2026"
+    }
+  },
+  "<c4c4f392-4144-4e4b-8021-5ca55f200bdf@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 11 Jan 2026 18:55:54 -0600",
+    "imap_id": "746",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:42.037646+00:00",
+    "extracted": {
+      "cost": 27.72,
+      "merchant": "TARGET T-2786",
+      "date": "01/11/26"
+    }
+  },
+  "<b72a3178-ac65-4b03-a44a-38ef963b8319@iad4s12mta844.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 12 Jan 2026 13:00:12 -0600",
+    "imap_id": "747",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:43.933260+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/12/26"
+    }
+  },
+  "<d9f06082-048b-48dd-aace-6437cbf99837@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 12 Jan 2026 13:00:13 -0600",
+    "imap_id": "748",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:46.301758+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/12/26"
+    }
+  },
+  "<274afde0-cfcf-4b16-9b6e-3aed97e0e054@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 12 Jan 2026 16:16:09 -0600",
+    "imap_id": "749",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:47.896228+00:00",
+    "extracted": {
+      "cost": 1.5,
+      "date": "01/12/26"
+    }
+  },
+  "<64c74604-1e40-4cc6-b231-65db1bb7eac4@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 12 Jan 2026 16:16:12 -0600",
+    "imap_id": "750",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:50.553910+00:00",
+    "extracted": {
+      "cost": 1.5,
+      "merchant": "Nyx*NEXCOM",
+      "date": "01/12/26"
+    }
+  },
+  "<5a.c1.38641.b81a5696@hpnplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Mon, 12 Jan 2026 18:36:11 -0700",
+    "imap_id": "751",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:51.789628+00:00",
+    "extracted": {
+      "merchant": "S P",
+      "cost": 12.77,
+      "date": "Jan 12, 2026"
+    }
+  },
+  "<2d00b5a4-16dc-4834-b769-258601b1d6ba@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 12 Jan 2026 22:34:53 -0600",
+    "imap_id": "752",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:52.824740+00:00",
+    "extracted": {
+      "cost": 11.01,
+      "merchant": "H MART",
+      "date": "01/12/26"
+    }
+  },
+  "<057bb95c-abea-412d-acf3-dd447a9dbf52@iad4s12mta43.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 13 Jan 2026 11:37:35 -0600",
+    "imap_id": "753",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:54.059796+00:00",
+    "extracted": {
+      "cost": 1.5,
+      "merchant": "Nyx*NEXCOM",
+      "date": "01/13/26"
+    }
+  },
+  "<4c16ba98-41df-4b1e-a601-18b744927632@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 13 Jan 2026 11:37:34 -0600",
+    "imap_id": "754",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:54.512969+00:00",
+    "extracted": {
+      "cost": 1.5,
+      "date": "01/13/26"
+    }
+  },
+  "<d16ac700-f7a0-4ecb-90bf-4e4b1491a445@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 13 Jan 2026 13:02:52 -0600",
+    "imap_id": "755",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:55.236694+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/13/26"
+    }
+  },
+  "<881d60f1-6465-422c-993b-0095636a2095@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 13 Jan 2026 13:02:52 -0600",
+    "imap_id": "756",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:56.461136+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/13/26"
+    }
+  },
+  "<69.e6.00029.7cae6696@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Tue, 13 Jan 2026 18:00:55 -0700",
+    "imap_id": "757",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:57.512228+00:00",
+    "extracted": {
+      "merchant": "ORCA ONLINEMOBILE APP",
+      "cost": 50.0,
+      "date": "Jan 13, 2026"
+    }
+  },
+  "<9e.39.00029.384f6696@hpgplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Tue, 13 Jan 2026 18:42:27 -0700",
+    "imap_id": "758",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:58.709138+00:00",
+    "extracted": {
+      "merchant": "S P",
+      "cost": 12.77,
+      "date": "Jan 13, 2026"
+    }
+  },
+  "<0a40fe11-b39c-4d62-b76b-46c966c20ecc@iad4s12mta41.xt.local>": {
+    "subject": "Deposit Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 02:00:35 -0600",
+    "imap_id": "759",
+    "matched": true,
+    "matched_rule": "navy deposit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:13:59.853544+00:00",
+    "extracted": {
+      "cost": 3106.17,
+      "date": "01/13/26"
+    }
+  },
+  "<245d0011-ce8a-485a-9df0-230099120480@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 13:12:30 -0600",
+    "imap_id": "760",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:01.063445+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/14/26"
+    }
+  },
+  "<d777fd5f-9536-4f89-91e7-b9ca42bba837@iad4s12mta838.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 13:12:28 -0600",
+    "imap_id": "761",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:01.516063+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/14/26"
+    }
+  },
+  "<5c24b2b4-9e45-4b60-9f61-2139b724cf6c@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 15:37:32 -0600",
+    "imap_id": "762",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:03.350337+00:00",
+    "extracted": {
+      "cost": 3.25,
+      "date": "01/14/26"
+    }
+  },
+  "<bf00c6a9-7ea7-4e53-95d9-0e326ced4b75@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 15:37:34 -0600",
+    "imap_id": "763",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:05.544264+00:00",
+    "extracted": {
+      "cost": 3.25,
+      "merchant": "365 MARKET  888 432-329",
+      "date": "01/14/26"
+    }
+  },
+  "<941d47c0-8c16-44ef-b30a-41e7f7e53068@iad4s12mta37.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 17:06:39 -0600",
+    "imap_id": "764",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:07.237509+00:00",
+    "extracted": {
+      "cost": 4.25,
+      "date": "01/14/26"
+    }
+  },
+  "<0e0ec473-4494-4c19-bef6-bfa0e639e8d7@iad4s12mta39.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 17:06:41 -0600",
+    "imap_id": "765",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:09.672459+00:00",
+    "extracted": {
+      "cost": 4.25,
+      "merchant": "365 MARKET  888 432-329",
+      "date": "01/14/26"
+    }
+  },
+  "<5ab8e8f9-9bb4-4786-89bb-3b2dfb6c5a84@iad4s12mta840.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 20:57:17 -0600",
+    "imap_id": "766",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:11.355809+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "date": "01/14/26"
+    }
+  },
+  "<dacf365d-bb01-4c27-a3be-db197dd3c011@iad4s12mta37.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 14 Jan 2026 20:57:19 -0600",
+    "imap_id": "767",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:14.290181+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "merchant": "Sher Partners",
+      "date": "01/14/26"
+    }
+  },
+  "<f9a72eff-c6b2-42a3-b294-7838cb883885@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 15 Jan 2026 13:01:56 -0600",
+    "imap_id": "768",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:15.176266+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/15/26"
+    }
+  },
+  "<c5d2235f-a69e-4a90-aed7-e4c616b55e12@iad4s12mta37.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 15 Jan 2026 13:01:57 -0600",
+    "imap_id": "769",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:16.545495+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/15/26"
+    }
+  },
+  "<a3050f1a-a041-4b4e-94e6-3c27be4dff55@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 15 Jan 2026 17:51:06 -0600",
+    "imap_id": "770",
+    "matched": true,
+    "matched_rule": "navy credit hold",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:17.603171+00:00",
+    "extracted": {
+      "merchant": "NEX FUEL 110405",
+      "date": "01/15/26"
+    }
+  },
+  "<43d7f7ad-dcf5-4518-8610-cf064143f07c@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 15 Jan 2026 19:10:03 -0600",
+    "imap_id": "771",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:18.427623+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "date": "01/15/26"
+    }
+  },
+  "<cc6cac7b-831c-46a7-ae50-d17e6b02b38d@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 15 Jan 2026 19:10:04 -0600",
+    "imap_id": "772",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:19.531093+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "merchant": "Sher Partners",
+      "date": "01/15/26"
+    }
+  },
+  "<b3.91.12090.94d99696@hpnplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Thu, 15 Jan 2026 19:07:05 -0700",
+    "imap_id": "773",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:20.727054+00:00",
+    "extracted": {
+      "merchant": "COOKIES COUNTRY CHICKEN PIONEER SQUA",
+      "cost": 37.14,
+      "date": "Jan 15, 2026"
+    }
+  },
+  "<ad.3a.12090.ef3b9696@hpnplmomiw07>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Thu, 15 Jan 2026 20:43:58 -0700",
+    "imap_id": "774",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:21.980343+00:00",
+    "extracted": {
+      "merchant": "PANDA YOGURT",
+      "cost": 13.51,
+      "date": "Jan 15, 2026"
+    }
+  },
+  "<f98db7ed-5813-482e-ac3d-e56eb9709f1d@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 16 Jan 2026 07:10:19 -0600",
+    "imap_id": "775",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:23.113871+00:00",
+    "extracted": {
+      "cost": 9.04,
+      "merchant": "Sher Partners",
+      "date": "01/16/26"
+    }
+  },
+  "<de54d3e9-b72f-43d9-90c9-f0a879697bf3@iad4s12mta37.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 16 Jan 2026 07:10:18 -0600",
+    "imap_id": "776",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:23.563473+00:00",
+    "extracted": {
+      "cost": 9.04,
+      "date": "01/16/26"
+    }
+  },
+  "<93.13.19697.5de8a696@hpnplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Fri, 16 Jan 2026 12:17:41 -0700",
+    "imap_id": "777",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:24.649038+00:00",
+    "extracted": {
+      "merchant": "CHIPOTLE",
+      "cost": 14.31,
+      "date": "Jan 16, 2026"
+    }
+  },
+  "<99740a36-b225-4e3a-a314-ba6d8228cf88@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 16 Jan 2026 20:01:35 -0600",
+    "imap_id": "778",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:26.655207+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "date": "01/16/26"
+    }
+  },
+  "<e6fa32c9-a457-4311-b8b0-bc83c0c117d6@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 16 Jan 2026 20:01:36 -0600",
+    "imap_id": "779",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:29.182889+00:00",
+    "extracted": {
+      "cost": 5.5,
+      "merchant": "WSDOT GOODTOGO TNB",
+      "date": "01/16/26"
+    }
+  },
+  "<a38abdb3-fa3e-4112-b580-649c694e3461@iad4s12mta840.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 16 Jan 2026 20:42:37 -0600",
+    "imap_id": "780",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:30.427896+00:00",
+    "extracted": {
+      "cost": 22.58,
+      "merchant": "PANDA EXPRESS",
+      "date": "01/16/26"
+    }
+  },
+  "<7ee674a1-f130-40b1-b765-2e1b63b1c42f@iad4s12mta43.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 16 Jan 2026 23:03:27 -0600",
+    "imap_id": "781",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:31.626597+00:00",
+    "extracted": {
+      "cost": 30.0,
+      "merchant": "HARBORSIDECOMMONSGARAG",
+      "date": "01/17/26"
+    }
+  },
+  "<c0612ebd-d494-43c9-86cc-10337ec0353f@iad4s12mta838.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 00:52:06 -0600",
+    "imap_id": "782",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:32.081193+00:00",
+    "extracted": {
+      "cost": 30.0,
+      "date": "01/17/26"
+    }
+  },
+  "<8633cd58-9041-4935-8229-c40d66c85c0e@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 01:21:15 -0600",
+    "imap_id": "783",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:33.290046+00:00",
+    "extracted": {
+      "cost": 64.94,
+      "merchant": "STEAMGAMES.COM 42595229",
+      "date": "01/17/26"
+    }
+  },
+  "<ac26e1fe-565b-46b3-825a-3ef2d42bacb4@iad4s12mta842.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 02:33:22 -0600",
+    "imap_id": "784",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:33.896758+00:00",
+    "extracted": {
+      "cost": 64.94,
+      "date": "01/17/26"
+    }
+  },
+  "<bf91e405-796f-4834-a8c7-d55ec45fd099@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 13:00:23 -0600",
+    "imap_id": "785",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:35.023751+00:00",
+    "extracted": {
+      "cost": 33.12,
+      "merchant": "SQ *SHAKE SHACK",
+      "date": "01/17/26"
+    }
+  },
+  "<bec26453-a3cd-4a39-9e3a-7327d1b61926@iad4s12mta37.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 18:44:03 -0600",
+    "imap_id": "786",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:36.212668+00:00",
+    "extracted": {
+      "cost": 44.38,
+      "merchant": "H MART - BALLARD",
+      "date": "01/17/26"
+    }
+  },
+  "<79bfff0e-8266-4184-a08e-8d7c83675a4b@iad4s12mta41.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 22:10:44 -0600",
+    "imap_id": "787",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:37.739927+00:00",
+    "extracted": {
+      "cost": 5.79,
+      "date": "01/17/26"
+    }
+  },
+  "<aa91e5cd-e0ea-4a6e-9d7a-bc32c18db5ba@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 17 Jan 2026 22:10:45 -0600",
+    "imap_id": "788",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:40.251330+00:00",
+    "extracted": {
+      "cost": 5.79,
+      "merchant": "TST* WATERFRONT MARKET",
+      "date": "01/17/26"
+    }
+  },
+  "<da954a43-18ae-46b9-90cc-51387e1ab490@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 18 Jan 2026 20:30:01 -0600",
+    "imap_id": "799",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:42.866662+00:00",
+    "extracted": {
+      "cost": 10.48,
+      "date": "01/18/26"
+    }
+  },
+  "<3a2c8cd0-ef68-42d3-abe7-00485c7a9929@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 19 Jan 2026 17:56:42 -0600",
+    "imap_id": "800",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:43.915960+00:00",
+    "extracted": {
+      "cost": 11.61,
+      "merchant": "SQ *FAINTING GOAT CREA",
+      "date": "01/19/26"
+    }
+  },
+  "<d1656547-fa01-4135-a8ce-55161c37136a@iad4s12mta41.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 19 Jan 2026 17:56:42 -0600",
+    "imap_id": "801",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:44.356154+00:00",
+    "extracted": {
+      "cost": 11.61,
+      "date": "01/19/26"
+    }
+  },
+  "<ec80d517-3927-43b4-acea-7e0629030890@iad4s12mta840.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 19 Jan 2026 18:31:21 -0600",
+    "imap_id": "802",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:46.086424+00:00",
+    "extracted": {
+      "cost": 11.67,
+      "date": "01/19/26"
+    }
+  },
+  "<e7658af1-bfd2-4a8f-bb64-e3b81fb02e40@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Mon, 19 Jan 2026 18:31:22 -0600",
+    "imap_id": "803",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:48.442040+00:00",
+    "extracted": {
+      "cost": 11.67,
+      "merchant": "TARGET T-2786",
+      "date": "01/19/26"
+    }
+  },
+  "<905fa84b-23e5-4fb6-9ed7-068fb6d1cdbf@iad4s12mta838.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 20 Jan 2026 13:00:56 -0600",
+    "imap_id": "804",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:50.204424+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/20/26"
+    }
+  },
+  "<78e9fdba-ce54-44e6-b4e9-3628379b3c48@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 20 Jan 2026 13:01:00 -0600",
+    "imap_id": "805",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:52.752098+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/20/26"
+    }
+  },
+  "<d1055610-27aa-4f72-a268-8135de0c2c9d@iad4s12mta840.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 20 Jan 2026 18:12:07 -0600",
+    "imap_id": "806",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:54.620553+00:00",
+    "extracted": {
+      "cost": 50.0,
+      "date": "01/20/26"
+    }
+  },
+  "<ab856e63-6118-40f8-af2f-0b9769625bc0@iad4s12mta43.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 20 Jan 2026 18:12:10 -0600",
+    "imap_id": "807",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:56.973246+00:00",
+    "extracted": {
+      "cost": 50.0,
+      "merchant": "ORC*00NWDVH REGIONAL 4",
+      "date": "01/20/26"
+    }
+  },
+  "<0321b599-042c-4cee-b7ef-a5ea2b08d72a@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 20 Jan 2026 21:49:11 -0600",
+    "imap_id": "808",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:58.322051+00:00",
+    "extracted": {
+      "cost": 31.59,
+      "merchant": "TARGET T-2786",
+      "date": "01/20/26"
+    }
+  },
+  "<0f259919-8dea-4660-b8e0-c2cc887a1d7a@iad4s12mta844.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Tue, 20 Jan 2026 23:25:50 -0600",
+    "imap_id": "809",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:59.393123+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "merchant": "Sher Partners",
+      "date": "01/21/26"
+    }
+  },
+  "<d1d2a441-45df-4736-b4f6-ae03e864b5be@iad4s12mta43.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 21 Jan 2026 02:24:00 -0600",
+    "imap_id": "810",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:14:59.842053+00:00",
+    "extracted": {
+      "cost": 12.77,
+      "date": "01/21/26"
+    }
+  },
+  "<b46c4493-30d8-421e-b033-434d7140d3bf@iad4s12mta35.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 21 Jan 2026 13:00:32 -0600",
+    "imap_id": "811",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:00.721819+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/21/26"
+    }
+  },
+  "<f71c280a-722a-40bb-b84c-4402482e29e8@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 21 Jan 2026 13:00:32 -0600",
+    "imap_id": "812",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:01.846117+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/21/26"
+    }
+  },
+  "<a3849fb4-0e20-4a0d-a091-0c7f3c7fdeec@iad4s12mta840.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 21 Jan 2026 16:03:35 -0600",
+    "imap_id": "813",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:03.349064+00:00",
+    "extracted": {
+      "cost": 5.0,
+      "date": "01/21/26"
+    }
+  },
+  "<ac97f0d7-c156-438b-aac4-297b13394bf4@iad4s12mta35.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Wed, 21 Jan 2026 16:03:38 -0600",
+    "imap_id": "814",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:05.746199+00:00",
+    "extracted": {
+      "cost": 5.0,
+      "merchant": "365 MARKET  888 432-329",
+      "date": "01/21/26"
+    }
+  },
+  "<cd.45.12090.44d22796@hpnplmomiw07>": {
+    "subject": "We've received your payment",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Thu, 22 Jan 2026 06:59:32 -0700",
+    "imap_id": "815",
+    "matched": true,
+    "matched_rule": "amex payment",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:06.941191+00:00",
+    "extracted": {
+      "cost": 320.27,
+      "date": "Jan 22, 2026"
+    }
+  },
+  "<f0d7f3cd-ffc1-40a1-8038-e9b8a4af8c9a@iad4s12mta842.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 22 Jan 2026 09:23:31 -0600",
+    "imap_id": "816",
+    "matched": true,
+    "matched_rule": "navy credit hold",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:08.008061+00:00",
+    "extracted": {
+      "merchant": "NEX FUEL 110405",
+      "date": "01/22/26"
+    }
+  },
+  "<3e1710e3-29bd-4add-bf08-9d3db814e5fb@iad4s12mta840.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 22 Jan 2026 13:02:42 -0600",
+    "imap_id": "817",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:08.636316+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "date": "01/22/26"
+    }
+  },
+  "<1da53cba-5634-4c0b-87e6-be47b2c45991@iad4s12mta838.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Thu, 22 Jan 2026 13:02:43 -0600",
+    "imap_id": "818",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:09.821988+00:00",
+    "extracted": {
+      "cost": 7.25,
+      "merchant": "N68436 TRIDENT INN GALL",
+      "date": "01/22/26"
+    }
+  },
+  "<0d44082f-e6b1-4fdb-83ae-4c327359920c@iad4s12mta846.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Fri, 23 Jan 2026 13:20:12 -0600",
+    "imap_id": "821",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:10.757267+00:00",
+    "extracted": {
+      "cost": 10.49,
+      "date": "01/23/26"
+    }
+  },
+  "<99cdc0c1-617d-4093-b039-2502edc6f8cd@iad4s12mta846.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 24 Jan 2026 14:57:37 -0600",
+    "imap_id": "825",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:13.979633+00:00",
+    "extracted": {
+      "cost": 32.0,
+      "merchant": "BURKEMUSEUM",
+      "date": "01/24/26"
+    }
+  },
+  "<11b3ee51-9e12-4037-9759-7df27c33e1ec@iad4s12mta41.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 24 Jan 2026 21:22:11 -0600",
+    "imap_id": "826",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:15.698403+00:00",
+    "extracted": {
+      "cost": 21.64,
+      "date": "01/24/26"
+    }
+  },
+  "<0eabfceb-b5f7-49e7-a90d-6f5e3d918758@iad4s12mta37.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sat, 24 Jan 2026 21:22:14 -0600",
+    "imap_id": "827",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-25T19:15:18.126372+00:00",
+    "extracted": {
+      "cost": 21.64,
+      "merchant": "STEAMGAMES.COM 42595229",
+      "date": "01/24/26"
+    }
+  },
+  "<1bc2775a-2d09-468d-85f6-a16a2237950c@iad4s12mta838.xt.local>": {
+    "subject": "Withdrawal Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 25 Jan 2026 14:03:25 -0600",
+    "imap_id": "567",
+    "matched": true,
+    "matched_rule": "navy withdrawal",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-26T01:49:44.258277+00:00",
+    "extracted": {
+      "cost": 5.4,
+      "date": "01/25/26"
+    }
+  },
+  "<0c28d8e5-d66e-4911-bdef-160fab18b6f7@iad4s12mta41.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 25 Jan 2026 14:03:27 -0600",
+    "imap_id": "568",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-26T01:49:47.148144+00:00",
+    "extracted": {
+      "cost": 5.4,
+      "merchant": "APPLE.COM/BILL",
+      "date": "01/25/26"
+    }
+  },
+  "<16.31.24459.701a6796@hpnplmomiw06>": {
+    "subject": "Large Purchase Approved",
+    "sender": "\"American Express\" <AmericanExpress@welcome.americanexpress.com>",
+    "date": "Sun, 25 Jan 2026 16:02:31 -0700",
+    "imap_id": "569",
+    "matched": true,
+    "matched_rule": "american express",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-26T01:49:49.446466+00:00",
+    "extracted": {
+      "merchant": "PANDA EXPRESS",
+      "cost": 22.54,
+      "date": "Jan 25, 2026"
+    }
+  },
+  "<ce.a1.23173.f17c6796@i-0f13f1d3b3e8d942d.mta2vrest.sd.prd.sparkpost>": {
+    "subject": "Urgent notice: Your current debit card will stop working on March 5,\r\n 2026",
+    "sender": "\"Capital One\" <capitalone@notification.capitalone.com>",
+    "date": "Mon, 26 Jan 2026 01:45:03 +0000",
+    "imap_id": "571",
+    "matched": false,
+    "matched_rule": "",
+    "note": "subject_not_matched",
+    "processed_at": "2026-01-26T01:49:52.195448+00:00"
+  },
+  "<b899b239-c3f3-4ca7-a11a-54492b06f603@iad4s12mta840.xt.local>": {
+    "subject": "Transaction Notification",
+    "sender": "\"Navy Federal Credit Union\" <notice@email.navyfederal.org>",
+    "date": "Sun, 25 Jan 2026 19:07:28 -0600",
+    "imap_id": "570",
+    "matched": true,
+    "matched_rule": "navy credit",
+    "note": "inserted_transactions_test",
+    "processed_at": "2026-01-26T03:24:12.278052+00:00",
+    "extracted": {
+      "cost": 45.59,
+      "merchant": "WAL-MART #2516",
+      "time": "08:07 PM",
+      "date": "01/25/26",
+      "account_id": 6
+    }
+  }
+}

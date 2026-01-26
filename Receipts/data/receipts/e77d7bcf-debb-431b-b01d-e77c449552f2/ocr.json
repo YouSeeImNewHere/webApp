@@ -1,0 +1,332 @@
+{
+  "receipt_id": "e77d7bcf-debb-431b-b01d-e77c449552f2",
+  "parsed": {
+    "merchant": "COsTco",
+    "purchase_date": "01/10/26",
+    "purchase_date_mmddyy": "01/10/26",
+    "total": 5.27,
+    "address": {
+      "store_name": "COsTco",
+      "street": "4401 4th Ave South",
+      "city": "Seattle",
+      "state": "WA",
+      "zip": "98134",
+      "website": null
+    },
+    "items": [
+      {
+        "name": "SLICE PEP 3.98 A",
+        "price": 3.98,
+        "meta": [
+          "price_from: 1184748 SLICE PEP 3.98 A"
+        ],
+        "raw_line": "SLICE PEP 3.98 A"
+      },
+      {
+        "name": "20 OZ COKE 0.79 A",
+        "price": 0.79,
+        "meta": [
+          "price_from: 1935245 20 OZ COKE 0.79 A"
+        ],
+        "raw_line": "20 OZ COKE 0.79 A"
+      }
+    ]
+  },
+  "box_lines_used_for_items": [
+    "COsTco",
+    "TILLED,",
+    "keh Peer Maite ee",
+    "Seattle #01",
+    "4401 4th Ave South",
+    "Seattle, WA 98134",
+    "Order Number:",
+    "322",
+    "2@1.99",
+    "1184748 SLICE PEP 3.98 A",
+    "1935245 20 OZ COKE 0.79 A",
+    "TAX 0.50",
+    "xxx” TOTAL °° ERE ee",
+    "XXXXXXXXXXXX2191 =H",
+    "AID: A0000000980840 VERIFIED BY PIN",
+    "Seq# 234874 App#: 603597",
+    "EFT/Deb! t Resp: APPROVED",
+    "Tran ID#: 601000234874....",
+    "APPROVED - Purchase",
+    "AMOUNT: $5,27",
+    "01/10/2026 13:13 1 234 117 734",
+    "EFT/Debi t+ 5 97"
+  ],
+  "items_debug": {
+    "header_anchor_hit": {
+      "idx": 6,
+      "line": "Order Number:"
+    },
+    "first_itemlike_hit": {
+      "idx": 3,
+      "line": "Seattle #01"
+    },
+    "footer_hit": {
+      "idx": 11,
+      "line": "TAX 0.50"
+    },
+    "start_idx": 7,
+    "end_idx": 11,
+    "window": [
+      {
+        "line": "COsTco",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TILLED,",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "keh Peer Maite ee",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Seattle #01",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "4401 4th Ave South",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Seattle, WA 98134",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Order Number:",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "322",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "2@1.99",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": true,
+        "money_only": false
+      },
+      {
+        "line": "1184748 SLICE PEP 3.98 A",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "1935245 20 OZ COKE 0.79 A",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TAX 0.50",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "xxx” TOTAL °° ERE ee",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "XXXXXXXXXXXX2191 =H",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AID: A0000000980840 VERIFIED BY PIN",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Seq# 234874 App#: 603597",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "EFT/Deb! t Resp: APPROVED",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Tran ID#: 601000234874....",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "APPROVED - Purchase",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "AMOUNT: $5,27",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "01/10/2026 13:13 1 234 117 734",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      }
+    ],
+    "sliced_lines": [
+      "322",
+      "2@1.99",
+      "1184748 SLICE PEP 3.98 A",
+      "1935245 20 OZ COKE 0.79 A"
+    ]
+  },
+  "items_extracted": [
+    {
+      "name": "SLICE PEP 3.98 A",
+      "price": 3.98,
+      "meta": [
+        "price_from: 1184748 SLICE PEP 3.98 A"
+      ],
+      "raw_line": "SLICE PEP 3.98 A"
+    },
+    {
+      "name": "20 OZ COKE 0.79 A",
+      "price": 0.79,
+      "meta": [
+        "price_from: 1935245 20 OZ COKE 0.79 A"
+      ],
+      "raw_line": "20 OZ COKE 0.79 A"
+    }
+  ]
+}

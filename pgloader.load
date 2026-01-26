@@ -1,0 +1,10 @@
+LOAD DATABASE
+  FROM sqlite:///data/finance.db
+  INTO pgsql://neondb_owner:endpoint=ep-late-flower-ahf6js0b;npg_7YFBtqckeO9H@ep-late-flower-ahf6js0b.c-3.us-east-1.aws.neon.tech:5432/finance?sslmode=allow
+
+WITH include drop, create tables, create indexes, reset sequences
+
+CAST
+  column accounts.credit_limit to text,
+  column transactions.amount to text,
+  column transactions_test.amount to text;

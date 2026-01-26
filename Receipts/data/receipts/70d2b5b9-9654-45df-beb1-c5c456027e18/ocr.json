@@ -1,0 +1,308 @@
+{
+  "receipt_id": "70d2b5b9-9654-45df-beb1-c5c456027e18",
+  "parsed": {
+    "merchant": "SALES",
+    "purchase_date": "01/18/26",
+    "purchase_date_mmddyy": "01/18/26",
+    "total": 4.96,
+    "address": {
+      "street": "7330 164th Avenue",
+      "city": "Redmond",
+      "state": "WA",
+      "zip": "9805",
+      "website": "www.daisous,com",
+      "store_name": "DAISO"
+    },
+    "items": [
+      {
+        "name": "Frosted gl",
+        "price": 2.29,
+        "meta": [
+          "price_from: 4968988075990 Frosted gl 2.29"
+        ],
+        "raw_line": "Frosted gl"
+      },
+      {
+        "name": "Frosted glass atomize",
+        "price": null,
+        "meta": [],
+        "raw_line": "Frosted glass atomize"
+      },
+      {
+        "name": "OPP Tape - Thick Type",
+        "price": 2.23,
+        "meta": [
+          "price_from: 4550480381831 OPP Tape - 2,23"
+        ],
+        "raw_line": "OPP Tape - | OPP Tape - Thick Type"
+      }
+    ]
+  },
+  "box_lines_used_for_items": [
+    "DAISOA",
+    "Redinond Town Center",
+    "7330 164th Avenue",
+    "Redmond, WA 9805?",
+    "www.daisous,com",
+    "07265 002 062227 01/18/26 15:08",
+    "Cashier # xxxxxxx1111",
+    "SALES",
+    "4968988075990 Frosted gl 2.29",
+    "Frosted glass atomize",
+    "4550480381831 OPP Tape - 2,23",
+    "OPP Tape - Thick Type",
+    "SUBTOTAL $4.50",
+    "Tax $0.46",
+    "TOTAL $4 96",
+    "Transaction Record SALE",
+    "XXXXXXXXXXXK214] VISA 4,96",
+    "TERM: 07265 002 ¢ ."
+  ],
+  "items_debug": {
+    "header_anchor_hit": {
+      "idx": 6,
+      "line": "Cashier # xxxxxxx1111"
+    },
+    "first_itemlike_hit": {
+      "idx": 2,
+      "line": "7330 164th Avenue"
+    },
+    "footer_hit": {
+      "idx": 12,
+      "line": "SUBTOTAL $4.50"
+    },
+    "start_idx": 7,
+    "end_idx": 12,
+    "window": [
+      {
+        "line": "DAISOA",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Redinond Town Center",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "7330 164th Avenue",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Redmond, WA 9805?",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "www.daisous,com",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "07265 002 062227 01/18/26 15:08",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Cashier # xxxxxxx1111",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SALES",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "4968988075990 Frosted gl 2.29",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Frosted glass atomize",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "4550480381831 OPP Tape - 2,23",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "OPP Tape - Thick Type",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "SUBTOTAL $4.50",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Tax $0.46",
+        "looks_like_item": true,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TOTAL $4 96",
+        "looks_like_item": false,
+        "is_totalish": true,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": true,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "Transaction Record SALE",
+        "looks_like_item": false,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "XXXXXXXXXXXK214] VISA 4,96",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": true,
+        "qty_at_price": false,
+        "money_only": false
+      },
+      {
+        "line": "TERM: 07265 002 ¢ .",
+        "looks_like_item": true,
+        "is_totalish": false,
+        "is_separator": false,
+        "is_legend": false,
+        "is_footer_marker": false,
+        "money_at_end": false,
+        "qty_at_price": false,
+        "money_only": false
+      }
+    ],
+    "sliced_lines": [
+      "SALES",
+      "4968988075990 Frosted gl 2.29",
+      "Frosted glass atomize",
+      "4550480381831 OPP Tape - 2,23",
+      "OPP Tape - Thick Type"
+    ]
+  },
+  "items_extracted": [
+    {
+      "name": "Frosted gl",
+      "price": 2.29,
+      "meta": [
+        "price_from: 4968988075990 Frosted gl 2.29"
+      ],
+      "raw_line": "Frosted gl"
+    },
+    {
+      "name": "Frosted glass atomize",
+      "price": null,
+      "meta": [],
+      "raw_line": "Frosted glass atomize"
+    },
+    {
+      "name": "OPP Tape - Thick Type",
+      "price": 2.23,
+      "meta": [
+        "price_from: 4550480381831 OPP Tape - 2,23"
+      ],
+      "raw_line": "OPP Tape - | OPP Tape - Thick Type"
+    }
+  ]
+}
