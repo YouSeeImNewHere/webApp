@@ -1,28 +1,31 @@
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-import sqlite3
-from datetime import datetime, timedelta
-import re
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import date
 import calendar
-import datetime as dt
-
-from emails.transactionHandler import DB_PATH
-from recurring import get_ignored_merchants_preview
-import inspect  # add near your imports
-
-from fastapi import HTTPException
+import inspect
+import json
 import os
+import re
+import sqlite3
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from emails.transactionHandler import DB_PATH
+from recurring import _amount_bucket, _norm_merchant, get_ignored_merchants_preview
 from Receipts.receipts import router as receipts_router
+import datetime as dt
+import json as _json
+from typing import Any as _Any, Dict as _Dict
+
+MAX_TRANSFER_WINDOW_DAYS = 10
+PAYCHECK_MERCHANT = "SALARY REGULAR INCOME FROM DFAS"
+PAYCHECK_AMOUNT_FOR_DAY = {
+    1: 1700.00,  # payday on the 1st (deposit date may be prior workday)
+    15: 1400.00,  # payday on the 15th
+}
 
 app = FastAPI()
 app.include_router(receipts_router)  # ✅ THIS is what makes /receipts/* exist
-
-# =============================================================================
-# Notifications (used for email parse failures)
-# =============================================================================
 
 def _ensure_notifications_table():
     conn = sqlite3.connect(DB_PATH)
@@ -47,15 +50,12 @@ def _ensure_notifications_table():
     conn.commit()
     conn.close()
 
-# --- ADD: model + endpoint to push notifications from the UI ---
-
 class NotificationPush(BaseModel):
     kind: str = "credit_usage"
     dedupe_key: str
     subject: str
     sender: str = "System"
     body: str = ""
-
 
 @app.post("/notifications/push")
 def push_notification(payload: NotificationPush):
@@ -89,7 +89,6 @@ def push_notification(payload: NotificationPush):
     finally:
         conn.close()
 
-
 def _to_local_display(ts_iso: str) -> str:
     try:
         # Stored as UTC ISO; display in server local time (your box).
@@ -98,7 +97,6 @@ def _to_local_display(ts_iso: str) -> str:
         return dt_local.strftime("%a %m/%d/%Y %I:%M %p")
     except Exception:
         return ts_iso
-
 
 @app.get("/notifications")
 def list_notifications(limit: int = 200):
@@ -132,7 +130,6 @@ def list_notifications(limit: int = 200):
         )
     return {"items": items}
 
-
 @app.get("/notifications/unread-count")
 def unread_count():
     _ensure_notifications_table()
@@ -148,7 +145,6 @@ def unread_count():
     (n,) = cur.fetchone()
     conn.close()
     return {"unread": int(n)}
-
 
 @app.get("/notifications/{notif_id}")
 def get_notification(notif_id: int):
@@ -180,7 +176,6 @@ def get_notification(notif_id: int):
         "dismissed": bool(dismissed),
     }
 
-
 @app.post("/notifications/{notif_id}/read")
 def mark_notification_read(notif_id: int):
     _ensure_notifications_table()
@@ -190,7 +185,6 @@ def mark_notification_read(notif_id: int):
     conn.commit()
     conn.close()
     return {"ok": True}
-
 
 @app.post("/notifications/{notif_id}/dismiss")
 def dismiss_notification(notif_id: int):
@@ -202,7 +196,6 @@ def dismiss_notification(notif_id: int):
     conn.close()
     return {"ok": True}
 
-
 @app.post("/notifications/mark-all-read")
 def mark_all_notifications_read():
     _ensure_notifications_table()
@@ -212,7 +205,6 @@ def mark_all_notifications_read():
     conn.commit()
     conn.close()
     return {"ok": True}
-
 
 @app.post("/notifications/clear-read")
 def clear_read_notifications():
@@ -224,8 +216,6 @@ def clear_read_notifications():
     conn.commit()
     conn.close()
     return {"ok": True}
-
-
 
 def get_category_from_db(tx_ids):
     if not tx_ids:
@@ -252,14 +242,11 @@ def get_category_from_db(tx_ids):
 
     return row[0] if row else None
 
-
 def _last_day_of_month(y: int, m: int) -> int:
     return calendar.monthrange(y, m)[1]
 
-
 def _is_weekend(d: date) -> bool:
     return d.weekday() >= 5  # 5=Sat, 6=Sun
-
 
 def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
     # weekday: Mon=0..Sun=6
@@ -268,13 +255,11 @@ def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
         d += timedelta(days=1)
     return d + timedelta(days=7 * (n - 1))
 
-
 def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
     d = date(year, month, _last_day_of_month(year, month))
     while d.weekday() != weekday:
         d -= timedelta(days=1)
     return d
-
 
 def _observed(d: date) -> date:
     # Federal holiday observed rules: if Sat -> Fri, if Sun -> Mon
@@ -283,7 +268,6 @@ def _observed(d: date) -> date:
     if d.weekday() == 6:  # Sunday
         return d + timedelta(days=1)
     return d
-
 
 def _us_federal_holidays_observed(year: int) -> set[date]:
     # Core federal holidays (observed)
@@ -306,12 +290,10 @@ def _us_federal_holidays_observed(year: int) -> set[date]:
 
     return holidays
 
-
 def _previous_workday(d: date, holiday_set: set[date]) -> date:
     while _is_weekend(d) or d in holiday_set:
         d -= timedelta(days=1)
     return d
-
 
 def _paycheck_dates_for_month(year: int, month: int) -> list[date]:
     """
@@ -349,13 +331,11 @@ def _paycheck_dates_for_month(year: int, month: int) -> list[date]:
 
     return sorted(set(paydays))
 
-
 def _account_label(conn, account_id: int) -> str:
     r = conn.execute("SELECT institution, name FROM accounts WHERE id=?", (account_id,)).fetchone()
     if not r:
         return f"Account {account_id}"
     return f"{r[0]} — {r[1]}"
-
 
 def _dateiso_expr(raw: str) -> str:
     # returns a SQL expression that converts mm/dd/yy or mm/dd/yyyy to YYYY-MM-DD
@@ -372,7 +352,6 @@ def _dateiso_expr(raw: str) -> str:
       ELSE NULL
     END
     """
-
 
 def _find_transfer_peer_account(conn, tx_id: str, window_days: int = 10):
     """
@@ -434,12 +413,6 @@ def _find_transfer_peer_account(conn, tx_id: str, window_days: int = 10):
 
     return int(peer["peer_account_id"]) if peer else None
 
-
-# =============================================================================
-# App + Static Frontend
-# =============================================================================
-
-
 from LESCalc import (
     LESInputs as _LESInputs,
     W4Settings as _W4Settings,
@@ -447,7 +420,6 @@ from LESCalc import (
     get_bah as _get_bah,
     generate_les_right_side as _gen_les,
 )
-
 
 class LESProfileModel(BaseModel):
     paygrade: str
@@ -485,19 +457,16 @@ class LESProfileModel(BaseModel):
 
     fica_include_special_pays: bool = False
 
-
 class LESPaychecksRequest(BaseModel):
     year: int
     month: int
     profile: LESProfileModel
-
 
 def _adjust_prev_business_day(d: date) -> date:
     # If weekend, roll back to Friday
     while d.weekday() >= 5:
         d -= timedelta(days=1)
     return d
-
 
 @app.post("/les/paychecks")
 def les_paychecks(req: LESPaychecksRequest):
@@ -784,33 +753,23 @@ def les_paychecks(req: LESPaychecksRequest):
 
     return {"events": events, "breakdown": breakdown}
 
-
 @app.get("/__ping")
 def ping():
     return {"ok": True, "file": __file__}
 
-
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 @app.get("/")
 def home():
     return FileResponse("static/home.html")
 
-
 @app.get("/settings")
 def settings_page():
     return FileResponse("static/settings.html")
 
-
 @app.get("/account")
 def account_page():
     return FileResponse("static/account.html")
-
-
-# =============================================================================
-# DB Helpers
-# =============================================================================
 
 def query_db(sql, params=()):
     conn = sqlite3.connect(DB_PATH)
@@ -818,7 +777,6 @@ def query_db(sql, params=()):
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
-
 
 def with_db_cursor():
     """
@@ -829,14 +787,8 @@ def with_db_cursor():
     conn.row_factory = sqlite3.Row
     return conn, conn.cursor()
 
-
-# =============================================================================
-# Date Parsing Helpers
-# =============================================================================
-
 def parse_iso(d: str):
     return datetime.strptime(d, "%Y-%m-%d").date()
-
 
 def parse_posted_date(s: str):
     if not s:
@@ -846,12 +798,6 @@ def parse_posted_date(s: str):
         return None
     return datetime.strptime(s, "%m/%d/%y").date()
 
-
-# =============================================================================
-# Balance / Series Helpers (Net Worth, Savings, Investments, Accounts)
-# =============================================================================
-
-
 def parse_db_date(s):
     if not s:
         return None
@@ -859,7 +805,6 @@ def parse_db_date(s):
     if s == "unknown":
         return None
     return datetime.strptime(s, "%m/%d/%y").date()
-
 
 def apply_transaction(current_totals, account_id, amount, account_type):
     t = (account_type or "other").lower()
@@ -874,7 +819,6 @@ def apply_transaction(current_totals, account_id, amount, account_type):
 
     current_totals[account_id] = current_totals.get(account_id, 0.0) + delta
 
-
 def load_starting_balances(cur):
     cur.execute("""
       SELECT account_id, SUM(Start) AS total_start
@@ -883,11 +827,9 @@ def load_starting_balances(cur):
     """)
     return {int(r["account_id"]): float(r["total_start"] or 0) for r in cur.fetchall()}
 
-
 def load_account_type_map(cur):
     cur.execute("SELECT id, LOWER(accountType) AS t FROM accounts")
     return {int(r["id"]): (r["t"] or "other") for r in cur.fetchall()}
-
 
 def load_transactions(cur):
     cur.execute("""
@@ -931,7 +873,6 @@ def load_transactions(cur):
     tx.sort(key=lambda t: t["date"])
     return tx
 
-
 def build_series(start_date, end_date, starting, transactions, value_fn):
     """
     Rolls balances forward, then emits day-by-day values using value_fn(current_totals).
@@ -960,7 +901,6 @@ def build_series(start_date, end_date, starting, transactions, value_fn):
 
     return results
 
-
 def _table_exists(cur, name: str) -> bool:
     row = cur.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -968,11 +908,9 @@ def _table_exists(cur, name: str) -> bool:
     ).fetchone()
     return row is not None
 
-
 def _column_exists(cur, table: str, col: str) -> bool:
     rows = cur.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r["name"] == col for r in rows)
-
 
 def latest_rates_map(cur):
     """
@@ -1000,30 +938,20 @@ def latest_rates_map(cur):
             pass
     return out
 
-
 from recurring import get_recurring  # new file you created
-
-# -----------------------------
-# Transfer peer detection (best-effort)
-# -----------------------------
-MAX_TRANSFER_WINDOW_DAYS = 10  # allow weekends/holidays lag
-
 
 def _round_cents(x: float) -> int:
     return int(round(float(x) * 100))
 
-
 def _is_transfer_like(cat: str) -> bool:
     c = (cat or "").strip().lower()
     return c in ("transfer", "card payment")
-
 
 def _parse_iso_date(s: str):
     try:
         return dt.date.fromisoformat(s)
     except Exception:
         return None
-
 
 def _business_days_between(a: dt.date, b: dt.date) -> int:
     if a > b:
@@ -1035,7 +963,6 @@ def _business_days_between(a: dt.date, b: dt.date) -> int:
         if cur.weekday() < 5:
             days += 1
     return days
-
 
 def attach_transfer_peers(rows: list[dict], conn: sqlite3.Connection) -> list[dict]:
     """Adds rows[i]['transfer_peer'] = 'Institution — Name' when a matching opposite-side transfer is found.
@@ -1113,7 +1040,6 @@ def attach_transfer_peers(rows: list[dict], conn: sqlite3.Connection) -> list[di
 
     return rows
 
-
 def build_transfer_display(tx_list, conn):
     """
     Given a list of tx (from recurring pattern),
@@ -1154,7 +1080,6 @@ def build_transfer_display(tx_list, conn):
         return f"From {acct_name} to {peer}"
     else:
         return f"From {peer} to {acct_name}"
-
 
 @app.get("/recurring")
 def recurring(min_occ: int = 3, include_stale: bool = False):
@@ -1204,11 +1129,6 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
         conn.close()
 
     return groups
-
-
-# =============================================================================
-# Series Endpoints (Net Worth / Savings / Investments)
-# =============================================================================
 
 @app.get("/net-worth")
 def net_worth(start: str, end: str):
@@ -1271,7 +1191,6 @@ def net_worth(start: str, end: str):
 
     return results
 
-
 @app.get("/savings")
 def savings(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -1290,7 +1209,6 @@ def savings(start: str, end: str):
 
     return build_series(start_date, end_date, starting, transactions, value_fn=savings_only)
 
-
 @app.get("/investments")
 def investments(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -1308,11 +1226,6 @@ def investments(start: str, end: str):
         return sum(bal for aid, bal in totals.items() if acct_types.get(aid) == "investment")
 
     return build_series(start_date, end_date, starting, transactions, value_fn=investments_only)
-
-
-# =============================================================================
-# Transactions Feeds (Recent / Per-Account)
-# =============================================================================
 
 @app.get("/transactions")
 def transactions(limit: int = 15):
@@ -1360,7 +1273,6 @@ def transactions(limit: int = 15):
         attach_transfer_peers(rows, conn)
     return rows
 
-
 @app.get("/account-transactions")
 def account_transactions(account_id: int, limit: int = 200):
     sql = """
@@ -1393,11 +1305,6 @@ def account_transactions(account_id: int, limit: int = 200):
 
     return query_db(sql, (account_id, limit))
 
-
-# =============================================================================
-# Bank Totals Sidebar
-# =============================================================================
-
 def _to_float_or_zero(v):
     if v is None:
         return 0.0
@@ -1419,7 +1326,6 @@ def _to_float_or_zero(v):
         return float(v)
     except (TypeError, ValueError):
         return 0.0
-
 
 @app.get("/bank-totals")
 def bank_totals():
@@ -1481,17 +1387,11 @@ def bank_totals():
         for k, lst in by_type.items()
     }
 
-
-# =============================================================================
-# Categories + Rules
-# =============================================================================
-
 class RuleCreate(BaseModel):
     category: str
     keywords: List[str] = []  # e.g. ["chick fil a", "chick-fil-a"]
     regex: Optional[str] = None  # advanced override
     apply_now: bool = True
-
 
 def build_pattern_from_keywords(keywords: List[str]) -> str:
     cleaned = [k.strip() for k in keywords if k and k.strip()]
@@ -1499,7 +1399,6 @@ def build_pattern_from_keywords(keywords: List[str]) -> str:
         raise ValueError("No keywords provided")
     alts = "|".join(re.escape(k) for k in cleaned)
     return alts
-
 
 def apply_rule_to_existing(cur, category: str, pattern: str, flags: str):
     # SQLite has no REGEXP by default; apply in Python.
@@ -1526,7 +1425,6 @@ def apply_rule_to_existing(cur, category: str, pattern: str, flags: str):
 
     return len(matched_ids)
 
-
 @app.get("/categories")
 def list_categories():
     conn, cur = with_db_cursor()
@@ -1546,7 +1444,6 @@ def list_categories():
 
     conn.close()
     return [r["category"] for r in rows]
-
 
 @app.post("/category-rules")
 def create_category_rule(payload: RuleCreate):
@@ -1580,28 +1477,23 @@ def create_category_rule(payload: RuleCreate):
 
     return {"ok": True, "pattern": pattern, "applied": applied}
 
-
 class RuleUpdate(BaseModel):
     category: str
     reapply_existing: bool = False
 
-
 class RuleActiveUpdate(BaseModel):
     is_active: bool
-
 
 class RuleTestBody(BaseModel):
     pattern: str
     flags: str = "i"
     limit: int = 50
 
-
 def _compile_rule(pattern: str, flags: str):
     re_flags = 0
     if flags and "i" in flags:
         re_flags |= re.IGNORECASE
     return re.compile(pattern, re_flags)
-
 
 def _recent_merchants(cur, limit: int = 50):
     # Distinct recent merchants (with counts) so test results are useful.
@@ -1630,7 +1522,6 @@ def _recent_merchants(cur, limit: int = 50):
 
     return [{"merchant": r["merchant"], "count": int(r["c"] or 0)} for r in rows]
 
-
 def _rule_match_count(cur, rx: re.Pattern):
     # Count ALL transactions whose merchant matches this rule.
     rows = cur.execute(
@@ -1641,7 +1532,6 @@ def _rule_match_count(cur, rx: re.Pattern):
         if rx.search(r["merchant"] or ""):
             c += 1
     return c
-
 
 def _apply_rule_override(cur, category: str, rx: re.Pattern):
     # Re-apply to existing transactions.
@@ -1676,7 +1566,6 @@ def _apply_rule_override(cur, category: str, rx: re.Pattern):
         )
 
     return len(matched_ids)
-
 
 @app.get("/category-rules/list")
 def list_category_rules(include_inactive: int = 0, with_counts: int = 0):
@@ -1721,7 +1610,6 @@ def list_category_rules(include_inactive: int = 0, with_counts: int = 0):
 
     conn.close()
     return rules
-
 
 @app.post("/category-rules/{rule_id}")
 def update_category_rule(rule_id: int, payload: RuleUpdate):
@@ -1768,7 +1656,6 @@ def update_category_rule(rule_id: int, payload: RuleUpdate):
     conn.close()
     return {"ok": True, "applied": applied, "match_count": match_count}
 
-
 @app.post("/category-rules/{rule_id}/active")
 def set_rule_active(rule_id: int, payload: RuleActiveUpdate):
     conn, cur = with_db_cursor()
@@ -1781,7 +1668,6 @@ def set_rule_active(rule_id: int, payload: RuleActiveUpdate):
     conn.close()
     return {"ok": True, "id": int(rule_id), "is_active": bool(payload.is_active)}
 
-
 @app.delete("/category-rules/{rule_id}")
 def delete_rule(rule_id: int):
     conn, cur = with_db_cursor()
@@ -1789,7 +1675,6 @@ def delete_rule(rule_id: int):
     conn.commit()
     conn.close()
     return {"ok": True, "deleted": int(rule_id)}
-
 
 @app.post("/category-rules/test")
 def test_rule(body: RuleTestBody):
@@ -1815,8 +1700,6 @@ def test_rule(body: RuleTestBody):
         )
 
     return {"ok": True, "tested": tested}
-
-
 
 @app.get("/category-totals-month")
 def category_totals_month():
@@ -1871,7 +1754,6 @@ date(
             for r in rows
         ]
     }
-
 
 @app.get("/unassigned")
 def get_unassigned(limit: int = 25, mode: str = "freq"):
@@ -1969,7 +1851,6 @@ LIMIT ?
     conn.close()
     return [dict(r) for r in rows]
 
-
 @app.get("/category-trend")
 def category_trend(category: str, period: str = "1m"):
     conn, cur = with_db_cursor()
@@ -2034,7 +1915,6 @@ def category_trend(category: str, period: str = "1m"):
 
     return {"category": category, "period": period, "series": daily}
 
-
 @app.get("/category-transactions")
 def category_transactions(category: str, start: str, end: str, limit: int = 500):
     sql = """
@@ -2094,8 +1974,6 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
     """
     return query_db(sql, (category, start, end, limit))
 
-
-
 @app.get("/category-totals-lifetime")
 def category_totals_lifetime():
     conn, cur = with_db_cursor()
@@ -2119,11 +1997,6 @@ def category_totals_lifetime():
         for r in rows
     ]
 
-
-# =============================================================================
-# Account Details + Account Series
-# =============================================================================
-
 @app.get("/account/{account_id}")
 def account_info(account_id: int):
     sql = """
@@ -2133,7 +2006,6 @@ def account_info(account_id: int):
     """
     rows = query_db(sql, (account_id,))
     return rows[0] if rows else {"error": "Account not found"}
-
 
 @app.get("/account-series")
 def account_series(account_id: int, start: str, end: str):
@@ -2222,7 +2094,6 @@ def account_series(account_id: int, start: str, end: str):
         day += timedelta(days=1)
 
     return results
-
 
 @app.get("/account-transactions-range")
 def account_transactions_range(account_id: int, start: str, end: str, limit: int = 500):
@@ -2503,7 +2374,6 @@ def account_transactions_range(account_id: int, start: str, end: str, limit: int
         "transactions": tx
     }
 
-
 @app.get("/transactions-all")
 def transactions_all(limit: int = 10000, offset: int = 0):
     sql = """
@@ -2551,12 +2421,6 @@ def transactions_all(limit: int = 10000, offset: int = 0):
 
     return rows
 
-
-# TEST METHODS ------------------------------------------------------------------------------------------
-
-from fastapi import Query
-
-
 @app.get("/transactions-test")
 def transactions_test(limit: int = Query(200, ge=1, le=10000), offset: int = Query(0, ge=0)):
     sql = f"""
@@ -2582,19 +2446,13 @@ def transactions_test(limit: int = Query(200, ge=1, le=10000), offset: int = Que
     """
     return query_db(sql, (limit, offset))
 
-
-from fastapi.responses import FileResponse
-
-
 @app.get("/transactions-test-page")
 def transactions_test_page():
     return FileResponse("static/transactions_test_account.html")
 
-
 @app.get("/transactions-test-account")
 def transactions_test_account_page():
     return FileResponse("static/transactions_test_account.html")
-
 
 @app.get("/transactions-test-range")
 def transactions_test_range(account_id: int, start: str, end: str, limit: int = 500):
@@ -2735,7 +2593,6 @@ def transactions_test_range(account_id: int, start: str, end: str, limit: int = 
         "transactions": tx
     }
 
-
 @app.get("/transactions-test-series")
 def transactions_test_series(account_id: int, start: str, end: str):
     conn, cur = with_db_cursor()
@@ -2813,7 +2670,6 @@ def transactions_test_series(account_id: int, start: str, end: str):
 
     return results
 
-
 @app.get("/recurring/ignore")
 def get_recurring_ignores():
     conn, cur = with_db_cursor()
@@ -2821,7 +2677,6 @@ def get_recurring_ignores():
     categories = [r[0] for r in cur.execute("SELECT category FROM recurring_ignore_categories")]
     conn.close()
     return {"merchants": merchants, "categories": categories}
-
 
 @app.post("/recurring/ignore/merchant")
 def ignore_merchant(name: str):
@@ -2834,7 +2689,6 @@ def ignore_merchant(name: str):
     conn.close()
     return {"ok": True}
 
-
 @app.post("/recurring/ignore/category")
 def ignore_category(name: str):
     conn, cur = with_db_cursor()
@@ -2845,7 +2699,6 @@ def ignore_category(name: str):
     conn.commit()
     conn.close()
     return {"ok": True}
-
 
 @app.get("/spending")
 def spending(start: str, end: str):
@@ -2902,7 +2755,6 @@ def spending(start: str, end: str):
 
     return results
 
-
 @app.get("/spending-debug")
 def spending_debug(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -2957,7 +2809,6 @@ def spending_debug(start: str, end: str):
 
     return out
 
-
 @app.get("/category-totals-range")
 def category_totals_range(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -3006,10 +2857,6 @@ def category_totals_range(start: str, end: str):
         for r in rows
     ]
 
-
-from recurring import _norm_merchant, _amount_bucket  # matches your recurring.py helpers
-
-
 @app.post("/recurring/ignore/pattern")
 def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
     m_norm = _norm_merchant(merchant).upper()
@@ -3026,7 +2873,6 @@ def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
     conn.commit()
     conn.close()
     return {"ok": True}
-
 
 @app.post("/recurring/override-cadence")
 def override_cadence(merchant: str, amount: float, cadence: str, account_id: int = -1):
@@ -3052,7 +2898,6 @@ def override_cadence(merchant: str, amount: float, cadence: str, account_id: int
     conn.close()
     return {"ok": True}
 
-
 @app.post("/recurring/merchant-alias")
 def set_merchant_alias(alias: str, canonical: str):
     a = _norm_merchant(alias).upper()
@@ -3070,7 +2915,6 @@ def set_merchant_alias(alias: str, canonical: str):
     conn.close()
     return {"ok": True}
 
-
 @app.post("/recurring/merchant-alias/delete")
 def delete_merchant_alias(alias: str):
     a = _norm_merchant(alias).upper()
@@ -3080,7 +2924,6 @@ def delete_merchant_alias(alias: str):
     conn.close()
     return {"ok": True}
 
-
 @app.post("/recurring/unignore/merchant")
 def unignore_merchant(name: str):
     conn, cur = with_db_cursor()
@@ -3089,15 +2932,9 @@ def unignore_merchant(name: str):
     conn.close()
     return {"ok": True}
 
-
 @app.get("/recurring/ignored-preview")
 def recurring_ignored_preview(min_occ: int = 3, include_stale: bool = False):
     return get_ignored_merchants_preview(min_occ=min_occ, include_stale=include_stale)
-
-
-# =========================
-# Recurring Calendar
-# =========================
 
 def _interest_cycle_window(year: int, month: int, post_day: int | None):
     """
@@ -3120,7 +2957,6 @@ def _interest_cycle_window(year: int, month: int, post_day: int | None):
     end_excl = post_date + timedelta(days=1)
     return start, end_excl, post_date
 
-
 def _interest_post_date(year: int, month: int, post_day: int | None) -> date:
     last_day = calendar.monthrange(year, month)[1]
 
@@ -3131,14 +2967,12 @@ def _interest_post_date(year: int, month: int, post_day: int | None) -> date:
     day = min(int(post_day), last_day)
     return date(year, month, day)
 
-
 def _add_months(d: date, months: int) -> date:
     # month-safe add: keeps "day of month" as close as possible
     y = d.year + (d.month - 1 + months) // 12
     m = (d.month - 1 + months) % 12 + 1
     day = min(d.day, _last_day_of_month(y, m))
     return date(y, m, day)
-
 
 def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: int, month_start: date, month_end: date):
     """
@@ -3187,25 +3021,6 @@ def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: in
     # irregular/unknown => no projections
     return out
 
-
-# -----------------------------
-# Hard-coded paycheck amounts
-# -----------------------------
-PAYCHECK_MERCHANT = "SALARY REGULAR INCOME FROM DFAS"
-
-# Set these to whatever is correct for you
-PAYCHECK_AMOUNT_FOR_DAY = {
-    1: 1700.00,  # payday on the 1st (deposit date may be prior workday)
-    15: 1400.00,  # payday on the 15th
-}
-
-
-# Optional: if you ever want different values in specific months:
-# PAYCHECK_AMOUNT_BY_YYYYMM = {
-#     "2026-01": {1: 1700.00, 15: 1400.00},
-# }
-
-
 def _find_paycheck_amount(groups) -> float:
     """
     Pull the real paycheck amount from recurring detection.
@@ -3229,7 +3044,6 @@ def _find_paycheck_amount(groups) -> float:
 
     amounts.sort()
     return amounts[len(amounts) // 2]
-
 
 @app.get("/recurring/calendar")
 def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
@@ -3407,7 +3221,6 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
         "events": events,
     }
 
-
 def _month_range(year: int, month: int):
     start = date(year, month, 1)
     if month == 12:
@@ -3415,7 +3228,6 @@ def _month_range(year: int, month: int):
     else:
         end = date(year, month + 1, 1)
     return start, end  # [start, end)
-
 
 def _get_rate_rows(cur, account_id: int):
     # return sorted effective-dated APRs
@@ -3433,7 +3245,6 @@ def _get_rate_rows(cur, account_id: int):
             pass
     return out
 
-
 def _apr_for_day(rate_rows, d: date) -> float:
     # rate_rows sorted asc by effective_date
     apr = 0.0
@@ -3443,7 +3254,6 @@ def _apr_for_day(rate_rows, d: date) -> float:
         else:
             break
     return apr
-
 
 def _estimate_interest_for_account_month(cur, account_id: int, year: int, month: int) -> float:
     """
@@ -3555,11 +3365,6 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
 
     return float(total_interest)
 
-
-# =============================================================================
-# Unknown merchant (for reconciliation cards)
-# =============================================================================
-
 @app.get("/unknown-merchant-total-month")
 def unknown_merchant_total_month():
     conn, cur = with_db_cursor()
@@ -3617,7 +3422,6 @@ def unknown_merchant_total_month():
     conn.close()
     return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
 
-
 @app.get("/unknown-merchant-total-range")
 def unknown_merchant_total_range(start: str, end: str):
     conn, cur = with_db_cursor()
@@ -3667,7 +3471,6 @@ def unknown_merchant_total_range(start: str, end: str):
     conn.close()
     return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
 
-
 def latest_rates_map(cur):
     """
     Returns { account_id: rate } where rate is the most recent
@@ -3686,7 +3489,6 @@ def latest_rates_map(cur):
     """).fetchall()
 
     return {int(r["account_id"]): float(r["apr"]) for r in rows if r["apr"] is not None}
-
 
 @app.get("/bank-info")
 def bank_info():
@@ -3794,22 +3596,16 @@ def bank_info():
         "credit_cards": cards_out
     }
 
-
 @app.post("/bank-info/refresh")
 def bank_info_refresh():
     # placeholder for now
     return {"ok": True}
-
-
-from pydantic import BaseModel
-
 
 class RateUpsert(BaseModel):
     account_id: int
     rate_percent: float  # user enters 3.54 (percent)
     effective_date: str | None = None  # "YYYY-MM-DD" (optional)
     note: str | None = None
-
 
 @app.post("/interest-rate")
 def set_interest_rate(payload: RateUpsert):
@@ -3852,7 +3648,6 @@ def set_interest_rate(payload: RateUpsert):
     conn.close()
 
     return {"ok": True, "account_id": int(payload.account_id), "effective_date": eff, "rate_percent": rate_percent}
-
 
 @app.get("/month-budget")
 def month_budget(min_occ: int = 3, include_stale: bool = False):
@@ -3968,7 +3763,6 @@ def month_budget(min_occ: int = 3, include_stale: bool = False):
         "safe_to_spend": round(safe_to_spend, 2),
     }
 
-
 @app.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
     """Return *all* columns for a single transaction, plus account metadata."""
@@ -3995,7 +3789,6 @@ def transaction_detail(tx_id: str):
 
     return {"ok": True, "transaction": dict(row)}
 
-
 @app.post("/transactions/{tx_id}/attach-receipt/{receipt_id}")
 def attach_receipt(tx_id: str, receipt_id: str):
     con = sqlite3.connect(DB_PATH)
@@ -4021,7 +3814,6 @@ def attach_receipt(tx_id: str, receipt_id: str):
     con.close()
     return {"ok": True}
 
-
 @app.get("/receipts-page")
 def receipts_page():
     return FileResponse(os.path.join("static", "receipts.html"))
@@ -4042,15 +3834,6 @@ def list_receipts_for_tx(tx_id: str):
 
     con.close()
     return {"tx_id": tx_id, "receipts": [dict(r) for r in rows]}
-
-# =============================================================================
-# UI Layout Persistence
-# =============================================================================
-
-import json
-from typing import Any, Dict
-from pydantic import BaseModel
-from fastapi import HTTPException
 
 def _ensure_ui_layout_table():
     # uses the same DB_PATH + connection style as everything else
@@ -4111,14 +3894,6 @@ def save_ui_layout(body: SaveLayoutBody):
         conn.close()
 
     return {"key": body.key, "layout": body.layout}
-
-
-# =============================================================================
-# LES Profile Persistence (DB-backed so it syncs across devices)
-# =============================================================================
-
-import json as _json
-from typing import Any as _Any, Dict as _Dict
 
 def _ensure_les_profile_table():
     conn = sqlite3.connect(DB_PATH)
@@ -4181,10 +3956,6 @@ def save_les_profile(body: SaveLESProfileBody):
         conn.close()
 
     return {"key": body.key, "profile": body.profile}
-
-from pydantic import BaseModel
-from fastapi import HTTPException
-import sqlite3, json
 
 class SavingsGoalIn(BaseModel):
     mode: str  # "percent" | "amount"

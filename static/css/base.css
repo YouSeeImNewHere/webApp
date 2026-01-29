@@ -4048,3 +4048,62 @@ body{
   align-items: center;
   gap: 8px;
 }
+
+/* =============================================================================
+   TOP BAR — Desktop vs Mobile (override duplicates)
+   Put this at the VERY BOTTOM of base.css
+   ============================================================================= */
+
+/* Desktop: full-width bar, inner lane matches page width */
+@media (min-width: 901px){
+  .top-bar{
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 1100;
+    height: var(--topbar-h, 62px);
+    background: var(--panel, #fff);
+    border-bottom: 1px solid var(--border, rgba(0,0,0,0.12));
+    box-shadow: 0 10px 26px rgba(0,0,0,0.06);
+    border-radius: 0 !important;
+    padding: 0 !important;          /* cancel pill padding */
+  }
+
+  .top-bar-inner{
+    width: min(1200px, calc(100% - 32px)); /* align with page container */
+    margin: 0 auto;
+    height: 100%;
+
+    display: grid;
+    grid-template-columns: 44px 1fr auto;  /* auto so right buttons fit */
+    align-items: center;
+    gap: 8px;
+
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 6px 16px !important;
+    overflow: visible !important;
+    position: relative;
+  }
+
+  .top-bar-right{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* title centered to the viewport, not “between buttons” */
+  .top-title{
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - 200px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    text-align: center;
+  }
+}
+

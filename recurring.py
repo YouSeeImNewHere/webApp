@@ -1,11 +1,14 @@
-# recurring.py
+# recurring_pg.py
 import re
-import sqlite3
 from collections import defaultdict, Counter
-from datetime import datetime
+from datetime import datetime, date
+from typing import Optional, Dict, Any, List, Tuple
 
-from emails.transactionHandler import DB_PATH
+from db import query_db  # your Postgres helper
 
+# -----------------------------
+# Helpers (same behavior as sqlite version)
+# -----------------------------
 
 def _cadence_days(cadence: str):
     return {
@@ -14,30 +17,6 @@ def _cadence_days(cadence: str):
         "monthly": 30,
         "quarterly": 90,
     }.get(cadence)
-
-
-def _max_date_in_db(cur):
-    # Uses the same date field you use for recurring detection
-    r = cur.execute("""
-        SELECT MAX(
-          CASE
-            WHEN COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
-                          NULLIF(TRIM(postedDate),'unknown')) IS NULL THEN NULL
-            ELSE COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
-                          NULLIF(TRIM(postedDate),'unknown'))
-          END
-        ) AS max_d
-        FROM transactions
-    """).fetchone()
-
-    max_d = (r[0] if r else None)
-    if not max_d or max_d == "unknown":
-        return None
-    try:
-        return _parse_mmddyy(max_d)
-    except Exception:
-        return None
-
 
 
 def _norm_merchant(s: str) -> str:
@@ -59,7 +38,6 @@ def _norm_merchant(s: str) -> str:
     s = re.sub(r"[\*\-_/]", " ", s)
 
     # Remove trailing state/city tokens (best-effort)
-    # examples: "SEATTLE WA", "XX PA", "TROY MI"
     s = re.sub(r"\b[A-Z]{2}\s+[A-Z]{2}\b$", "", s)  # "SEATTLE WA"
     s = re.sub(r"\bXX\s+[A-Z]{2}\b$", "", s)        # "XX PA"
     s = re.sub(r"\b[A-Z]{2}\b$", "", s)             # trailing "WA"
@@ -71,9 +49,31 @@ def _norm_merchant(s: str) -> str:
     return s
 
 
-def _parse_mmddyy(s: str):
-    # your DB commonly stores mm/dd/yy
-    return datetime.strptime(s, "%m/%d/%y").date()
+def _parse_date_raw(x: Optional[str]) -> Optional[date]:
+    """
+    Robust parse:
+      - MM/DD/YY
+      - MM/DD/YYYY
+      - YYYY-MM-DD
+    Returns date or None.
+    """
+    if x is None:
+        return None
+    s = str(x).strip()
+    if not s or s.lower() == "unknown":
+        return None
+
+    try:
+        if len(s) == 8:   # MM/DD/YY
+            return datetime.strptime(s, "%m/%d/%y").date()
+        if len(s) == 10 and "/" in s:  # MM/DD/YYYY
+            return datetime.strptime(s, "%m/%d/%Y").date()
+        if len(s) == 10 and "-" in s:  # YYYY-MM-DD
+            return datetime.fromisoformat(s).date()
+    except Exception:
+        return None
+
+    return None
 
 
 def _cadence_label_robust(deltas):
@@ -89,24 +89,21 @@ def _cadence_label_robust(deltas):
     if not ds:
         return "unknown"
 
-    med = ds[len(ds)//2]
+    med = ds[len(ds) // 2]
 
-    def within(x, lo, hi):
-        return lo <= x <= hi
+    def within(v, lo, hi):
+        return lo <= v <= hi
 
-    # Count how many deltas match each cadence window
     weekly = sum(1 for d in ds if within(d, 6, 8))
     biweekly = sum(1 for d in ds if within(d, 13, 16))
-    monthly = sum(1 for d in ds if within(d, 27, 35))  # widen a bit
+    monthly = sum(1 for d in ds if within(d, 27, 35))
     quarterly = sum(1 for d in ds if within(d, 85, 95))
 
     n = len(ds)
 
-    # Also count "missed one cycle" gaps (about 2x)
-    monthly_missed = sum(1 for d in ds if within(d, 54, 70))      # ~2 months
-    biweekly_missed = sum(1 for d in ds if within(d, 26, 33))     # ~4 weeks
+    monthly_missed = sum(1 for d in ds if within(d, 54, 70))   # ~2 months
+    biweekly_missed = sum(1 for d in ds if within(d, 26, 33))  # ~4 weeks
 
-    # Majority vote with missed-cycle support
     if weekly >= max(2, n // 2 + 1):
         return "weekly"
     if biweekly + biweekly_missed >= max(2, n // 2 + 1) and (biweekly >= 1):
@@ -116,11 +113,14 @@ def _cadence_label_robust(deltas):
     if quarterly >= max(2, n // 2 + 1):
         return "quarterly"
 
-    # Fallback: median-based
-    if within(med, 6, 8): return "weekly"
-    if within(med, 13, 16): return "biweekly"
-    if within(med, 27, 35): return "monthly"
-    if within(med, 85, 95): return "quarterly"
+    if within(med, 6, 8):
+        return "weekly"
+    if within(med, 13, 16):
+        return "biweekly"
+    if within(med, 27, 35):
+        return "monthly"
+    if within(med, 85, 95):
+        return "quarterly"
     return "irregular"
 
 
@@ -132,203 +132,226 @@ def _to_float(x):
     s = str(x).strip().lower()
     if not s or s == "unknown":
         return None
-    # allow "$1,234.56"
     s = s.replace("$", "").replace(",", "")
     try:
         return float(s)
-    except:
+    except Exception:
         return None
 
 
 def _amount_bucket(a: float) -> float:
     a = abs(a)
     if a < 5:
-        return round(a, 2)       # tiny stuff keep exact
+        return round(a, 2)
     if a < 50:
-        return round(a / 1.0)    # $1 buckets
+        return round(a / 1.0)
     if a < 500:
-        return round(a / 5.0) * 5  # $5 buckets
-    return round(a / 25.0) * 25    # big payments: $25 buckets
+        return round(a / 5.0) * 5
+    return round(a / 25.0) * 25
 
+
+def _max_date_in_db() -> Optional[date]:
+    """
+    Postgres version of _max_date_in_db:
+    Uses the same date field used for recurring detection:
+      COALESCE(purchaseDate, postedDate) (after trimming/unknown handling)
+
+    We normalize via SQL (to_date) then MAX().
+    """
+    rows = query_db(
+        """
+        WITH base AS (
+          SELECT
+            COALESCE(
+              NULLIF(TRIM(purchaseDate),'unknown'),
+              NULLIF(TRIM(postedDate),'unknown')
+            ) AS raw_date
+          FROM transactions
+        ),
+        norm AS (
+          SELECT
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 AND position('/' in raw_date)>0 THEN to_date(raw_date, 'MM/DD/YYYY')
+              WHEN length(raw_date)=10 AND position('-' in raw_date)>0 THEN raw_date::date
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT MAX(d) AS max_d
+        FROM norm
+        """
+    )
+    if not rows:
+        return None
+    md = rows[0].get("max_d")
+    if md is None:
+        return None
+    return md if isinstance(md, date) else _parse_date_raw(str(md))
+
+
+# =============================================================================
+# Main API (Postgres)
+# =============================================================================
 
 def get_recurring(min_occ: int = 3, include_stale: bool = False):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
+    # 1) Load ignore lists + aliases + overrides (all Postgres)
     ignored_merchants = {
-        r[0].upper()
-        for r in cur.execute("SELECT merchant FROM recurring_ignore_merchants")
+        (r["merchant"] or "").upper().strip()
+        for r in query_db("SELECT merchant FROM recurring_ignore_merchants")
     }
 
-    # Merchant alias map (merge merchants)
-    alias_map = {}
-    for r in cur.execute("SELECT alias, canonical FROM merchant_aliases").fetchall():
-        a = (r[0] or "").upper().strip()
-        c = (r[1] or "").upper().strip()
+    alias_map: Dict[str, str] = {}
+    for r in query_db("SELECT alias, canonical FROM merchant_aliases"):
+        a = (r.get("alias") or "").upper().strip()
+        c = (r.get("canonical") or "").upper().strip()
         if a and c:
             alias_map[a] = c
 
-
     ignored_categories = {
-        r[0].upper()
-        for r in cur.execute("SELECT category FROM recurring_ignore_categories")
+        (r["category"] or "").upper().strip()
+        for r in query_db("SELECT category FROM recurring_ignore_categories")
     }
 
     ignored_patterns = set()
-    for r in cur.execute("""
+    for r in query_db(
+        """
         SELECT merchant_norm, amount_bucket, sign, account_id
         FROM recurring_ignore_patterns
-    """).fetchall():
+        """
+    ):
         ignored_patterns.add((
-            (r[0] or "").upper(),
-            float(r[1]),
-            int(r[2]),
-            int(r[3]),
+            (r.get("merchant_norm") or "").upper(),
+            float(r.get("amount_bucket") or 0.0),
+            int(r.get("sign") or 0),
+            int(r.get("account_id") or -1),
         ))
 
-    cadence_overrides = {}
-    for r in cur.execute("""
+    cadence_overrides: Dict[Tuple[str, float, int, int], str] = {}
+    for r in query_db(
+        """
         SELECT merchant_norm, amount_bucket, sign, account_id, cadence
         FROM recurring_cadence_overrides
-    """).fetchall():
+        """
+    ):
         cadence_overrides[(
-            (r[0] or "").upper(),
-            float(r[1]),
-            int(r[2]),
-            int(r[3]),
-        )] = (r[4] or "").lower().strip()
+            (r.get("merchant_norm") or "").upper(),
+            float(r.get("amount_bucket") or 0.0),
+            int(r.get("sign") or 0),
+            int(r.get("account_id") or -1),
+        )] = (r.get("cadence") or "").lower().strip()
 
-    # Use postedDate, fallback purchaseDate
-    rows = cur.execute("""
-      SELECT
-        id,
-        account_id,
-        merchant,
-        amount,
-        category,
-COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
-         NULLIF(TRIM(postedDate),'unknown')) AS d
-      FROM transactions
-      WHERE d IS NOT NULL
-        AND d != 'unknown'
-        AND merchant IS NOT NULL
-        AND TRIM(merchant) != ''
-        AND amount IS NOT NULL
-        AND TRIM(amount) != ''
-        AND TRIM(amount) != 'unknown'
-    """).fetchall()
+    # 2) Pull transactions (same filter semantics as sqlite version)
+    tx_rows = query_db(
+        """
+        SELECT
+          id,
+          account_id,
+          merchant,
+          amount,
+          category,
+          COALESCE(
+            NULLIF(TRIM(purchaseDate),'unknown'),
+            NULLIF(TRIM(postedDate),'unknown')
+          ) AS d
+        FROM transactions
+        WHERE COALESCE(
+            NULLIF(TRIM(purchaseDate),'unknown'),
+            NULLIF(TRIM(postedDate),'unknown')
+          ) IS NOT NULL
+          AND merchant IS NOT NULL
+          AND TRIM(merchant) <> ''
+          AND amount IS NOT NULL
+        """
+    )
 
-    as_of = _max_date_in_db(cur)
-    conn.close()
+    as_of = _max_date_in_db()
 
     groups = defaultdict(list)
 
-    for r in rows:
-        merchant = r["merchant"]
-        amt = _to_float(r["amount"])
+    for r in tx_rows:
+        merchant_raw = r.get("merchant") or ""
+        amt = _to_float(r.get("amount"))
         if amt is None:
             continue
 
-        d = r["d"]
-        # only handle mm/dd/yy here for now
-        try:
-            dt = _parse_mmddyy(d)
-        except Exception:
+        dt = _parse_date_raw(r.get("d"))
+        if dt is None:
             continue
 
-        merchant_raw = r["merchant"]
         merchant_norm = _norm_merchant(merchant_raw)
-
-        # Apply merchant alias (merge)
         merchant_norm = alias_map.get(merchant_norm, merchant_norm)
 
-        category = (r["category"] or "").upper().strip()
+        category = (r.get("category") or "").upper().strip()
 
         if merchant_norm in ignored_merchants:
             continue
-
         if category and category in ignored_categories:
             continue
 
-        bucket = _amount_bucket(amt)
-        sign = 1 if amt >= 0 else -1
+        bucket = _amount_bucket(float(amt))
+        sign = 1 if float(amt) >= 0 else -1
         key = (merchant_norm, bucket, sign)
 
-        # pattern-level ignore (account-specific or global)
-        aid = int(r["account_id"] or -1)
+        aid = int(r.get("account_id") or -1)
         k_exact = (merchant_norm.upper(), float(bucket), int(sign), aid)
         k_all = (merchant_norm.upper(), float(bucket), int(sign), -1)
-
         if k_exact in ignored_patterns or k_all in ignored_patterns:
             continue
 
         groups[key].append({
-            "id": r["id"],
+            "id": r.get("id"),
             "date": dt,
             "amount": float(amt),
             "merchant": merchant_raw,
-            "account_id": int(aid),
-            "category": r["category"] or "",
+            "account_id": aid,
+            "category": r.get("category") or "",
         })
 
+    # 3) Build patterns
     out = []
     for (m_norm, amt_bucket, sign), items in groups.items():
-        if len(items) < min_occ:
+        if len(items) < int(min_occ):
             continue
 
         items.sort(key=lambda x: x["date"])
         dates = [x["date"] for x in items]
-
-        deltas = [(dates[i] - dates[i-1]).days for i in range(1, len(dates))]
+        deltas = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
         cadence = _cadence_label_robust(deltas)
 
-        # cadence override (account-specific or global)
-        # pick a representative account_id for override matching:
-        # - if all tx are same account_id, use it; otherwise use -1
         acct_ids = {int(it.get("account_id") or -1) for it in items}
-        override_aid = acct_ids.pop() if len(acct_ids) == 1 else -1
+        override_aid = next(iter(acct_ids)) if len(acct_ids) == 1 else -1
 
-        ok_exact = (m_norm.upper(), float(amt_bucket), int(sign), override_aid)
+        ok_exact = (m_norm.upper(), float(amt_bucket), int(sign), int(override_aid))
         ok_all = (m_norm.upper(), float(amt_bucket), int(sign), -1)
-
         if ok_exact in cadence_overrides:
             cadence = cadence_overrides[ok_exact]
         elif ok_all in cadence_overrides:
             cadence = cadence_overrides[ok_all]
 
-        # choose cadence length from observed gaps when possible
         avg_gap = int(round(sum(deltas) / len(deltas))) if deltas else None
-
-        # default cycle days
         cycle_days = avg_gap or {
             "weekly": 7,
             "biweekly": 14,
-            "monthly": 31,  # better than 30
-            "quarterly": 92,  # better than 90
+            "monthly": 31,
+            "quarterly": 92,
         }.get(cadence)
 
         ref = as_of or dates[-1]
         days_since = (ref - dates[-1]).days
 
-        # looseness knobs
-        cycles_allowed = 3  # <-- was 2
-        grace_days = 14  # <-- extra slack
+        cycles_allowed = 3
+        grace_days = 14
 
         active = True
         if cadence in ("unknown", "irregular") or cycle_days is None:
-            # don't drop it; just mark inactive by default unless it has many occurrences
-            active = (len(items) >= 6)  # optional heuristic
+            active = (len(items) >= 6)
         else:
             if days_since > (cycles_allowed * cycle_days + grace_days):
                 active = False
 
-        # dominant gap (mode-ish)
-        if deltas:
-            common_gap = Counter(deltas).most_common(1)[0][0]
-        else:
-            common_gap = None
-
+        common_gap = Counter(deltas).most_common(1)[0][0] if deltas else None
         kind = "paycheck" if sign > 0 and cadence in ("weekly", "biweekly") else "recurring"
 
         tx_list = [{
@@ -357,16 +380,14 @@ COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
             "tx": tx_list,
         })
 
-    # show strongest signals first
     out.sort(key=lambda x: (
-        not x.get("active", True),  # active first
+        not x.get("active", True),
         x["cadence"] not in ("monthly", "biweekly", "weekly", "quarterly"),
         -x["occurrences"],
-        abs(x["amount"])
+        abs(x["amount"]),
     ))
 
-    # Group patterns by merchant
-    # Group patterns by merchant
+    # 4) Group patterns by merchant (same as sqlite)
     by_merchant = defaultdict(list)
     for p in out:
         by_merchant[p["merchant_norm"]].append(p)
@@ -380,7 +401,7 @@ COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
             not x.get("active", True),
             x["cadence"] not in ("monthly", "biweekly", "weekly", "quarterly"),
             -x["occurrences"],
-            abs(x["amount"])
+            abs(x["amount"]),
         ))
 
         grouped.append({
@@ -390,12 +411,8 @@ COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
             "patterns": patterns,
         })
 
-    grouped.sort(key=lambda g: (
-        not g.get("active", True),
-        g["merchant"],
-    ))
+    grouped.sort(key=lambda g: (not g.get("active", True), g["merchant"]))
 
-    # If not including stale, hide inactive patterns and groups
     if not include_stale:
         filtered = []
         for g in grouped:
@@ -410,144 +427,137 @@ COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
 
     return grouped
 
+
 def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False):
     """
     Returns recurring groups ONLY for merchants currently ignored.
-    These are the items you would have seen if you weren't ignoring the merchant.
+    (Same as sqlite behavior.)
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
     ignored_merchants = {
-        (r[0] or "").upper().strip()
-        for r in cur.execute("SELECT merchant FROM recurring_ignore_merchants").fetchall()
+        (r["merchant"] or "").upper().strip()
+        for r in query_db("SELECT merchant FROM recurring_ignore_merchants")
     }
 
     ignored_categories = {
-        (r[0] or "").upper().strip()
-        for r in cur.execute("SELECT category FROM recurring_ignore_categories").fetchall()
+        (r["category"] or "").upper().strip()
+        for r in query_db("SELECT category FROM recurring_ignore_categories")
     }
 
-    # Load pattern ignores + cadence overrides (keep them respected)
     ignored_patterns = set()
-    for r in cur.execute("""
+    for r in query_db(
+        """
         SELECT merchant_norm, amount_bucket, sign, account_id
         FROM recurring_ignore_patterns
-    """).fetchall():
+        """
+    ):
         ignored_patterns.add((
-            (r[0] or "").upper(),
-            float(r[1]),
-            int(r[2]),
-            int(r[3]),
+            (r.get("merchant_norm") or "").upper(),
+            float(r.get("amount_bucket") or 0.0),
+            int(r.get("sign") or 0),
+            int(r.get("account_id") or -1),
         ))
 
-    cadence_overrides = {}
-    for r in cur.execute("""
+    cadence_overrides: Dict[Tuple[str, float, int, int], str] = {}
+    for r in query_db(
+        """
         SELECT merchant_norm, amount_bucket, sign, account_id, cadence
         FROM recurring_cadence_overrides
-    """).fetchall():
+        """
+    ):
         cadence_overrides[(
-            (r[0] or "").upper(),
-            float(r[1]),
-            int(r[2]),
-            int(r[3]),
-        )] = (r[4] or "").lower().strip()
+            (r.get("merchant_norm") or "").upper(),
+            float(r.get("amount_bucket") or 0.0),
+            int(r.get("sign") or 0),
+            int(r.get("account_id") or -1),
+        )] = (r.get("cadence") or "").lower().strip()
 
-    # Pull tx rows (same as get_recurring)
-    rows = cur.execute("""
-      SELECT
-        id,
-        account_id,
-        merchant,
-        amount,
-        category,
-        COALESCE(NULLIF(TRIM(purchaseDate),'unknown'),
-                 NULLIF(TRIM(postedDate),'unknown')) AS d
+    tx_rows = query_db(
+        """
+        SELECT
+          id,
+          account_id,
+          merchant,
+          amount,
+          category,
+          COALESCE(
+            NULLIF(TRIM(purchaseDate),'unknown'),
+            NULLIF(TRIM(postedDate),'unknown')
+          ) AS d
+        FROM transactions
+        WHERE COALESCE(
+            NULLIF(TRIM(purchaseDate),'unknown'),
+            NULLIF(TRIM(postedDate),'unknown')
+          ) IS NOT NULL
+          AND merchant IS NOT NULL
+          AND TRIM(merchant) <> ''
+          AND amount IS NOT NULL
+        """
+    )
 
-      FROM transactions
-      WHERE d IS NOT NULL
-        AND d != 'unknown'
-        AND merchant IS NOT NULL
-        AND TRIM(merchant) != ''
-        AND amount IS NOT NULL
-        AND TRIM(amount) != ''
-        AND TRIM(amount) != 'unknown'
-    """).fetchall()
-
-    as_of = _max_date_in_db(cur)
-    conn.close()
-
-    # Build groups ONLY for merchants that are ignored
+    as_of = _max_date_in_db()
     groups = defaultdict(list)
 
-    for r in rows:
-        amt = _to_float(r["amount"])
+    for r in tx_rows:
+        amt = _to_float(r.get("amount"))
         if amt is None:
             continue
 
-        try:
-            dt = _parse_mmddyy(r["d"])
-        except Exception:
+        dt = _parse_date_raw(r.get("d"))
+        if dt is None:
             continue
 
-        merchant_raw = r["merchant"]
+        merchant_raw = r.get("merchant") or ""
         merchant_norm = _norm_merchant(merchant_raw)
-        category = (r["category"] or "").upper().strip()
+        category = (r.get("category") or "").upper().strip()
 
-        # ✅ Only show merchants currently ignored
+        # Only show merchants currently ignored
         if merchant_norm not in ignored_merchants:
             continue
 
-        # still respect category ignores
         if category and category in ignored_categories:
             continue
 
-        bucket = _amount_bucket(amt)
-        sign = 1 if amt >= 0 else -1
+        bucket = _amount_bucket(float(amt))
+        sign = 1 if float(amt) >= 0 else -1
         key = (merchant_norm, bucket, sign)
 
-        # still respect pattern-level ignore
-        aid = int(r["account_id"] or -1)
+        aid = int(r.get("account_id") or -1)
         k_exact = (merchant_norm.upper(), float(bucket), int(sign), aid)
         k_all = (merchant_norm.upper(), float(bucket), int(sign), -1)
         if k_exact in ignored_patterns or k_all in ignored_patterns:
             continue
 
         groups[key].append({
-            "id": r["id"],
+            "id": r.get("id"),
             "date": dt,
             "amount": float(amt),
             "merchant": merchant_raw,
-            "account_id": r["account_id"],
-            "category": r["category"] or "",
+            "account_id": aid,
+            "category": r.get("category") or "",
         })
 
     out = []
     for (m_norm, amt_bucket, sign), items in groups.items():
-        if len(items) < min_occ:
+        if len(items) < int(min_occ):
             continue
 
         items.sort(key=lambda x: x["date"])
         dates = [x["date"] for x in items]
-
-        deltas = [(dates[i] - dates[i-1]).days for i in range(1, len(dates))]
+        deltas = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
         cadence = _cadence_label_robust(deltas)
 
         acct_ids = {int(it.get("account_id") or -1) for it in items}
-        override_aid = acct_ids.pop() if len(acct_ids) == 1 else -1
+        override_aid = next(iter(acct_ids)) if len(acct_ids) == 1 else -1
 
-        ok_exact = (m_norm.upper(), float(amt_bucket), int(sign), override_aid)
-        ok_all   = (m_norm.upper(), float(amt_bucket), int(sign), -1)
+        ok_exact = (m_norm.upper(), float(amt_bucket), int(sign), int(override_aid))
+        ok_all = (m_norm.upper(), float(amt_bucket), int(sign), -1)
         if ok_exact in cadence_overrides:
             cadence = cadence_overrides[ok_exact]
         elif ok_all in cadence_overrides:
             cadence = cadence_overrides[ok_all]
 
         avg_gap = int(round(sum(deltas) / len(deltas))) if deltas else None
-        cycle_days = avg_gap or {
-            "weekly": 7, "biweekly": 14, "monthly": 31, "quarterly": 92,
-        }.get(cadence)
+        cycle_days = avg_gap or {"weekly": 7, "biweekly": 14, "monthly": 31, "quarterly": 92}.get(cadence)
 
         ref = as_of or dates[-1]
         days_since = (ref - dates[-1]).days

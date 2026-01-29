@@ -11,58 +11,44 @@ from datetime import datetime, timezone
 import re
 import requests
 
-import sqlite3
-from emails.transactionHandler import DB_PATH
+from db import with_db_cursor, query_db, open_pool, close_pool
 
 # -----------------------------
 # Notifications (failed email parse)
 # -----------------------------
 def ensure_notifications_table():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS notifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL,
-            dedupe_key TEXT NOT NULL UNIQUE,
-            subject TEXT,
-            sender TEXT,
-            body TEXT,
-            created_at TEXT NOT NULL,
-            is_read INTEGER NOT NULL DEFAULT 0,
-            dismissed INTEGER NOT NULL DEFAULT 0
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                dedupe_key TEXT UNIQUE NOT NULL,
+                subject TEXT,
+                sender TEXT,
+                body TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                dismissed BOOLEAN NOT NULL DEFAULT FALSE
+            );
+            """
         )
-        """
-    )
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_dismissed ON notifications(dismissed)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)")
-    conn.commit()
-    conn.close()
-
+        conn.commit()
 
 def log_parse_failure(dedupe_key: str, subject: str, sender: str, body: str):
     """Insert one notification per email Message-ID (deduped by dedupe_key)."""
     try:
         ensure_notifications_table()
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO notifications (kind, dedupe_key, subject, sender, body, created_at, is_read, dismissed)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0)
-            """,
-            (
-                "email_parse_failure",
-                dedupe_key,
-                subject,
-                sender,
-                body,
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                INSERT INTO notifications (kind, dedupe_key, subject, sender, body)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (dedupe_key) DO NOTHING
+                """,
+                ("email_parse_failure", dedupe_key, subject, sender, body),
+            )
+            conn.commit()
     except Exception as e:
         print("Failed to log parse failure notification:", e)
 
@@ -182,6 +168,9 @@ def extract_fields(rule_name: str, m) -> dict:
 
 load_dotenv()
 
+# For standalone scripts (not FastAPI startup)
+open_pool()
+
 # -----------------------------
 # Pushover (phone notifications)
 # -----------------------------
@@ -245,7 +234,7 @@ def card_label_from_account_id(account_id: int | None) -> str:
     if not account_id:
         return ""
 
-    # These constants already exist in email_handlers.py (imported via `from emails.email_handlers import *`)
+    # These constants already exist in email_handlers.py (imported via `from emails.email_handlers_pg import *`)
     # :contentReference[oaicite:2]{index=2}
     mapping = {
         NAVY_DEBIT_ID: "Debit",
@@ -267,15 +256,15 @@ def get_bank_and_card_from_db(account_id: int | None) -> tuple[str, str]:
         return ("", "")
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT institution, name FROM accounts WHERE id = ?", (int(account_id),))
-        row = cur.fetchone()
-        conn.close()
-        if not row:
+        rows = query_db(
+            "SELECT institution, name FROM accounts WHERE id = %s LIMIT 1",
+            (int(account_id),),
+        )
+        if not rows:
             return ("", "")
-        bank, card = row[0] or "", row[1] or ""
-        return (str(bank).strip(), str(card).strip())
+        bank = (rows[0].get("institution") or "").strip()
+        card = (rows[0].get("name") or "").strip()
+        return (bank, card)
     except Exception as e:
         print("Account lookup failed:", e)
         return ("", "")
@@ -839,6 +828,8 @@ def test():
 
     mail.logout()
 
-
 if __name__ == "__main__":
-    test()
+    try:
+        test()
+    finally:
+        close_pool()

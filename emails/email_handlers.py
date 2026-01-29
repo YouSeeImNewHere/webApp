@@ -1,7 +1,11 @@
-# email_handlers.py
-from transactionHandler import *
-from datetime import datetime
+# email_handlers.py (Postgres)
 
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+from db import query_db
+from transactionHandler import *  # provides makeKey/checkKey/find_matching_key/insert_transaction/etc.
 
 # =============================================================================
 # Shared helper (ONE place to change print/labels/insert behavior)
@@ -18,13 +22,11 @@ DISCOVER_IT_ID = 7
 BCP_ACCOUNT_NUMBER = "51007"
 PLAT_ACCOUNT_NUMBER = "72008"
 
-import sqlite3
-from datetime import datetime, timedelta
-from transactionHandler import DB_PATH  # already used in your project
 
 def _parse_money_to_float(cost: str) -> float:
     # "$1,234.56" -> 1234.56
     return float(cost.replace("$", "").replace(",", ""))
+
 
 def find_existing_tx_key_by_amount_time_near_date(
     cost: str,
@@ -32,7 +34,7 @@ def find_existing_tx_key_by_amount_time_near_date(
     time_str: str,
     *,
     account_id: int,
-    use_test_table: bool = False
+    use_test_table: bool = False,
 ) -> str | None:
     table = "transactions_test" if use_test_table else "transactions"
     amt = _parse_money_to_float(cost)
@@ -40,51 +42,42 @@ def find_existing_tx_key_by_amount_time_near_date(
     base = datetime.strptime(date_mmddyy, "%m/%d/%y").date()
     candidates = [(base + timedelta(days=d)).strftime("%m/%d/%y") for d in (-1, 0, 1)]
 
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
-        # try with time match first
-        cur.execute(
-            f"""
-            SELECT id
-            FROM {table}
-            WHERE account_id = ?
-              AND abs(amount - ?) < 0.005
-              AND purchaseDate IN (?,?,?)
-              AND time = ?
-            LIMIT 1
-            """,
-            (account_id, amt, *candidates, time_str)
-        )
-        row = cur.fetchone()
-        if row:
-            return row[0]
+    # try with time match first
+    rows = query_db(
+        f"""
+        SELECT id
+        FROM {table}
+        WHERE account_id = %s
+          AND abs(amount - %s) < 0.005
+          AND purchasedate = ANY(%s)
+          AND time = %s
+        LIMIT 1
+        """,
+        (int(account_id), float(amt), candidates, str(time_str)),
+    )
+    if rows:
+        return rows[0]["id"]
 
-        # fallback: match without time (in case one email lacks time / formats differ)
-        cur.execute(
-            f"""
-            SELECT id
-            FROM {table}
-            WHERE account_id = ?
-              AND abs(amount - ?) < 0.005
-              AND purchaseDate IN (?,?,?)
-            LIMIT 1
-            """,
-            (account_id, amt, *candidates)
-        )
-        row = cur.fetchone()
-        return row[0] if row else None
+    # fallback: match without time
+    rows = query_db(
+        f"""
+        SELECT id
+        FROM {table}
+        WHERE account_id = %s
+          AND abs(amount - %s) < 0.005
+          AND purchasedate = ANY(%s)
+        LIMIT 1
+        """,
+        (int(account_id), float(amt), candidates),
+    )
+    return rows[0]["id"] if rows else None
 
 
 def transaction_exists(key: str, *, use_test_table: bool = False) -> bool:
     table = "transactions_test" if use_test_table else "transactions"
+    rows = query_db(f"SELECT 1 FROM {table} WHERE id = %s LIMIT 1", (str(key),))
+    return bool(rows)
 
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            f"SELECT 1 FROM {table} WHERE id = ? LIMIT 1",
-            (key,)
-        )
-        return cur.fetchone() is not None
 
 def finalize_transaction(
     mail,
@@ -122,9 +115,22 @@ def finalize_transaction(
     mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
 
     # ---- insert ----
-    insert_transaction(key, bank, card, accountType, cost, where, date, time, source, use_test_table=use_test_table)
+    insert_transaction(
+        key,
+        bank,
+        card,
+        accountType,
+        cost,
+        where,
+        date,
+        time,
+        source,
+        use_test_table=use_test_table,
+    )
 
-
+# =============================================================================
+# Handlers (unchanged below)
+# =============================================================================
 # =============================================================================
 # Handlers
 # =============================================================================
@@ -224,7 +230,7 @@ def navyFedCreditHold(mail, msg_id_str, match, timeEmail, use_test_table: bool =
     where = match.group(1)
     time = match.group(2)
     date = match.group(3)
-    cost = "unknown"
+    cost = ""
 
     key = makeKey(cost, date, account_id=NAVY_CASHREWARDS_ID)
 

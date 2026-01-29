@@ -3,43 +3,33 @@ from __future__ import annotations
 import csv
 import json
 import re
-import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
-# Use your existing DB_PATH
-from transactionHandler import DB_PATH, makeKey
+from db import with_db_cursor, query_db, open_pool, close_pool
+from transactionHandler import makeKey, assign_category
 
 # ============================================================
 # CONFIG
 # ============================================================
 
-# IMPORTANT: set this to your real table
 WRITE_TABLE = "transactions"
 LOOKUP_TABLE = "transactions"
-# Run only one job at a time
 
 IMPORT_JOBS = [
     {"name": "amex_72008", "csv": Path("../downloads/amexCredit_72008.csv"), "account_id": 2},
     {"name": "amex_hysa_3912", "csv": Path("../downloads/amexHYSA_3912.csv"), "account_id": 1},
     {"name": "amex_51007", "csv": Path("../downloads/amexCredit_51007.csv"), "account_id": 8},
-
     {"name": "capitalone_9691", "csv": Path("../downloads/capitalOne_9691.csv"), "account_id": 4},
     {"name": "capitalone_1047_deposit", "csv": Path("../downloads/capitalOne_1047.csv"), "account_id": 9},
     {"name": "capitalone_8424_cc", "csv": Path("../downloads/capitalOne_8424.csv"), "account_id": 5},
-
     {"name": "main",  "csv": Path("../downloads/navyfcu_main_9338.csv"), "account_id": 3},
     {"name": "bills", "csv": Path("../downloads/navyfcu_bills_7613.csv"), "account_id": 6},
-
     {"name": "discover_cc", "csv": Path("../downloads/discovery.csv"), "account_id": 7},
 ]
 
-DEFAULTS = {
-    "status": "Posted",
-    "time": "unknown",
-    "source": "CSV",
-}
+DEFAULTS = {"status": "Posted", "time": "unknown", "source": "CSV"}
 
 PHONE_RX = re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
 
@@ -48,355 +38,17 @@ TIP_PCT_SMALL = 0.75   # < $20 purchases can jump more (bars/coffee/food)
 TIP_PCT_MED   = 0.50   # $20–$60
 TIP_PCT_LARGE = 0.35   # >= $60
 
-TARGET_YEAR = 2025  # keep consistent with your navy importer behavior
-
+TARGET_YEAR = 2025
 
 # ============================================================
-# WITHDRAWAL KEY CLEANUP (when CSV overrides email pending)
+# WITHDRAWAL KEY CLEANUP
 # ============================================================
 
 WITHDRAWAL_KEYS_FILE = Path("withdrawalKey_test.json")
 
 PAYMENT_GENERIC_TOKENS = {
     "payment", "pay", "thank", "thanks", "thankyou", "you",
-    "mobile", "autopay", "online", "electronic", "transfer"
-}
-
-def is_generic_payment_merchant(s: str) -> bool:
-    s = clean_spaces(s).lower()
-    if not s or s in ("unknown",):
-        return True
-    # normalize THANK YOU -> thankyou token
-    s = s.replace("thank you", "thankyou").replace("thanks", "thank")
-    toks = set(merchant_tokens(s))
-    return bool(toks) and (toks <= PAYMENT_GENERIC_TOKENS)
-
-
-def _id_exists(cur: sqlite3.Cursor, table: str, tx_id: str) -> bool:
-    row = cur.execute(f"SELECT 1 FROM {table} WHERE id = ? LIMIT 1", (tx_id,)).fetchone()
-    return row is not None
-
-
-def _id_exists_any(cur: sqlite3.Cursor, tx_id: str) -> bool:
-    """Check both lookup + write tables so we never generate an id that collides."""
-    if _id_exists(cur, LOOKUP_TABLE, tx_id):
-        return True
-    if WRITE_TABLE != LOOKUP_TABLE and _id_exists(cur, WRITE_TABLE, tx_id):
-        return True
-    return False
-
-
-def _copy_row_from_lookup_if_missing(cur: sqlite3.Cursor, tx_id: str) -> None:
-    """
-    TESTING MODE helper:
-    If a row exists in LOOKUP_TABLE but not in WRITE_TABLE, copy it over so we can
-    apply updates into WRITE_TABLE and see what would change.
-    """
-    if _id_exists(cur, WRITE_TABLE, tx_id):
-        return
-
-    row = cur.execute(f"SELECT * FROM {LOOKUP_TABLE} WHERE id = ? LIMIT 1", (tx_id,)).fetchone()
-    if row is None:
-        return
-
-    cols = [r[1] for r in cur.execute(f"PRAGMA table_info({LOOKUP_TABLE})").fetchall()]
-    if not cols:
-        return
-
-    # Only insert columns that exist in WRITE_TABLE too
-    write_cols = set(get_table_columns(cur, WRITE_TABLE))
-    keep_cols = [c for c in cols if c in write_cols]
-
-    if not keep_cols:
-        return
-
-    idx = {c: i for i, c in enumerate(cols)}
-    values = [row[idx[c]] for c in keep_cols]
-
-    col_sql = ", ".join(keep_cols)
-    qmarks = ", ".join(["?"] * len(keep_cols))
-    cur.execute(f"INSERT INTO {WRITE_TABLE} ({col_sql}) VALUES ({qmarks})", values)
-
-
-def _iso_from_mmddyy_sql(expr: str) -> str:
-    """SQLite expression: convert mm/dd/yy or mm/dd/yyyy string to YYYY-MM-DD (or NULL)."""
-    e = f"TRIM(COALESCE({expr},''))"
-    return f"""
-    CASE
-      WHEN LOWER({e}) = 'unknown' OR {e} = '' THEN NULL
-      WHEN {e} GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
-        '20' || substr({e}, 7, 2) || '-' || substr({e}, 1, 2) || '-' || substr({e}, 4, 2)
-      WHEN {e} GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
-        substr({e}, 7, 4) || '-' || substr({e}, 1, 2) || '-' || substr({e}, 4, 2)
-      ELSE NULL
-    END
-    """.strip()
-
-
-def get_latest_posted_cutoff(cur: sqlite3.Cursor, account_id: int) -> Optional[datetime.date]:
-    """
-    Latest transaction date among rows with status 'Posted' for THIS account in LOOKUP_TABLE.
-    Uses postedDate when valid; falls back to purchaseDate when postedDate is unknown/blank.
-    """
-    posted_iso = _iso_from_mmddyy_sql("postedDate")
-    purchase_iso = _iso_from_mmddyy_sql("purchaseDate")
-
-    sql = f"""
-      SELECT MAX(date(COALESCE({posted_iso}, {purchase_iso}))) AS max_d
-      FROM {LOOKUP_TABLE}
-      WHERE LOWER(TRIM(COALESCE(status,''))) = 'posted'
-        AND account_id = ?
-        AND COALESCE({posted_iso}, {purchase_iso}) IS NOT NULL
-    """
-    row = cur.execute(sql, (account_id,)).fetchone()
-    if not row or not row[0]:
-        return None
-    try:
-        return datetime.strptime(row[0], "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
-def _row_effective_date(*ds: Optional[datetime.date]) -> Optional[datetime.date]:
-    ds2 = [d for d in ds if d]
-    return max(ds2) if ds2 else None
-
-
-# ============================================================
-# IMPORT WINDOW (DB last posted + 1 ... yesterday)
-# ============================================================
-
-def get_import_window(
-    cur: sqlite3.Cursor,
-    account_id: int,
-    today: Optional[datetime.date] = None,
-) -> Tuple[Optional[datetime.date], datetime.date, Optional[datetime.date]]:
-    """
-    Returns (start_date, end_date, last_posted_date)
-
-    start_date:
-      - (last posted date in DB) + 1 day, or None if DB has no posted rows
-
-    end_date:
-      - yesterday (today - 1 day)
-
-    This intentionally excludes "today" so purchases made today that haven't posted yet
-    don't get imported prematurely.
-    """
-    if today is None:
-        today = datetime.now().date()
-    end_date = today - timedelta(days=1)
-
-    last_posted = get_latest_posted_cutoff(cur, account_id)
-    start_date = (last_posted + timedelta(days=1)) if last_posted else None
-    return start_date, end_date, last_posted
-
-
-def date_in_window(
-    d: Optional[datetime.date],
-    start_date: Optional[datetime.date],
-    end_date: datetime.date,
-) -> bool:
-    if not d:
-        return False
-    if start_date and d < start_date:
-        return False
-    if d > end_date:
-        return False
-    return True
-
-
-def load_withdrawal_keys() -> dict:
-    if WITHDRAWAL_KEYS_FILE.exists():
-        try:
-            return json.loads(WITHDRAWAL_KEYS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-
-def save_withdrawal_keys(data: dict) -> None:
-    WITHDRAWAL_KEYS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-def delete_withdrawal_key(key: str) -> bool:
-    data = load_withdrawal_keys()
-    if key in data:
-        del data[key]
-        save_withdrawal_keys(data)
-        return True
-    return False
-
-
-# ============================================================
-# DATE / AMOUNT HELPERS
-# ============================================================
-
-def parse_mmddyyyy(s: str):
-    if not s:
-        return None
-    s = str(s).strip()
-    if not s or s.lower() == "unknown":
-        return None
-    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            pass
-    return None
-
-
-def to_mmddyy(s: str) -> str:
-    d = parse_mmddyyyy(s)
-    return d.strftime("%m/%d/%y") if d else "unknown"
-
-
-def mmddyy(date_str: str) -> str:
-    d = parse_mmddyyyy(date_str)
-    if not d:
-        raise ValueError(f"Bad date for mmddyy(): {date_str!r}")
-    return d.strftime("%m%d%y")
-
-
-def normalize_amount_navy(amount_str: str, indicator: str) -> float:
-    """
-    Navy Federal semantics in your DB:
-      - purchases/spend = POSITIVE
-      - credits/refunds = NEGATIVE
-    """
-    amt = float((amount_str or "0").strip())
-    if (indicator or "").strip().lower() == "credit":
-        return -abs(amt)
-    return abs(amt)
-
-
-def normalize_amount_capitalone_bank(amount_str: str, tx_type: str) -> float:
-    """
-    Capital One BANK semantics:
-      - Credit = money IN (deposit)  -> positive
-      - Debit  = money OUT           -> negative
-    """
-    amt = float((amount_str or "0").strip())
-    t = (tx_type or "").strip().lower()
-    if t == "credit":
-        return abs(amt)
-    return -abs(amt)
-
-
-def normalize_amount_creditcard(amount_str: str, tx_type: str) -> float:
-    """
-    Credit card semantics:
-      - Debit  = charge  -> positive
-      - Credit = payment/refund -> negative
-    """
-    amt = float((amount_str or "0").strip())
-    t = (tx_type or "").strip().lower()
-    if t == "credit":
-        return -abs(amt)
-    return abs(amt)
-
-
-def amount_id_component(amount: float) -> str:
-    return f"{abs(amount):.2f}"
-
-
-def delete_stale_pending_email(cur, table: str, account_id: int, reference_date, days: int = 5 ) -> int:
-    """
-    Deletes Pending+email rows for THIS account whose purchaseDate is older than
-    (reference_date - days). reference_date should be the latest date found in the CSV file.
-    """
-    cutoff = (reference_date - timedelta(days=days)).strftime("%Y-%m-%d")
-
-    sql = f"""
-    DELETE FROM {table}
-    WHERE account_id = ?
-      AND status = 'Pending'
-      AND source = 'email'
-      AND (
-        TRIM(COALESCE(purchaseDate,'')) = '' OR LOWER(TRIM(purchaseDate)) = 'unknown'
-        OR
-        date(
-          CASE
-            WHEN TRIM(purchaseDate) GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9]' THEN
-              '20' || substr(TRIM(purchaseDate), 7, 2) || '-' ||
-                     substr(TRIM(purchaseDate), 1, 2) || '-' ||
-                     substr(TRIM(purchaseDate), 4, 2)
-            WHEN TRIM(purchaseDate) GLOB '[0-1][0-9]/[0-3][0-9]/[0-9][0-9][0-9][0-9]' THEN
-              substr(TRIM(purchaseDate), 7, 4) || '-' ||
-              substr(TRIM(purchaseDate), 1, 2) || '-' ||
-              substr(TRIM(purchaseDate), 4, 2)
-            ELSE NULL
-          END
-        ) <= date(?)
-      );
-    """
-    cur.execute(sql, (account_id, cutoff))
-    return cur.rowcount
-
-
-# ============================================================
-# DB / CATEGORY HELPERS
-# ============================================================
-
-def get_table_columns(cur: sqlite3.Cursor, table: str) -> List[str]:
-    rows = cur.execute(f"PRAGMA table_info({table})").fetchall()
-    return [r[1] for r in rows]
-
-
-def load_category_rules(cur: sqlite3.Cursor) -> List[Tuple[str, re.Pattern]]:
-    rules: List[Tuple[str, re.Pattern]] = []
-    try:
-        rows = cur.execute("""
-            SELECT TRIM(category) AS category, pattern, COALESCE(flags,'') AS flags
-            FROM CategoryRules
-            WHERE COALESCE(is_active, 1) = 1
-              AND category IS NOT NULL AND TRIM(category) <> ''
-              AND pattern  IS NOT NULL AND TRIM(pattern)  <> ''
-        """).fetchall()
-    except sqlite3.Error:
-        return rules
-
-    for category, pattern, flags in rows:
-        re_flags = re.IGNORECASE if "i" in (flags or "").lower() else 0
-        try:
-            rx = re.compile(pattern, re_flags)
-            rules.append((category, rx))
-        except re.error:
-            continue
-
-    return rules
-
-
-def categorize(merchant: str, rules: List[Tuple[str, re.Pattern]]) -> str:
-    m = merchant or ""
-    for cat, rx in rules:
-        if rx.search(m):
-            return cat
-    return ""
-
-
-def next_id_for_base(cur: sqlite3.Cursor, table: str, base: str) -> str:
-    like = f"{base}_%"
-    rows = cur.execute(f"SELECT id FROM {table} WHERE id LIKE ?", (like,)).fetchall()
-    max_n = 0
-    for (existing_id,) in rows:
-        if not existing_id:
-            continue
-        try:
-            n = int(str(existing_id).rsplit("_", 1)[-1])
-            max_n = max(max_n, n)
-        except ValueError:
-            continue
-    return f"{base}_{max_n + 1}"
-
-
-# ============================================================
-# MERCHANT CLEANUP / SIMILARITY
-# ============================================================
-
-STOP_TOKENS = {
-    "debit", "dc", "credit", "pos", "purchase", "card", "visa", "mastercard",
-    "auth", "pending", "ach", "transaction"
+    "mobile", "autopay", "online", "electronic", "transfer",
 }
 
 
@@ -407,37 +59,10 @@ def clean_spaces(s: str) -> str:
     return s.strip(" -")
 
 
-def clean_amex_merchant(raw_desc: str, city_state_field: str) -> str:
-    """
-    Based on your older amex importer behavior:
-    - normalize whitespace
-    - strip phone numbers
-    - try removing city/state suffix using City/State column
-    """
-    s = (raw_desc or "").strip()
-    s = re.sub(r"\s+", " ", s).strip()
-    s = PHONE_RX.sub("", s)
-    s = re.sub(r"\s+", " ", s).strip()
-
-    city = ""
-    st = ""
-    if city_state_field:
-        parts = [p.strip() for p in str(city_state_field).splitlines() if p.strip()]
-        if len(parts) >= 2:
-            city, st = parts[0], parts[1]
-        elif len(parts) == 1:
-            m = re.match(r"^(.*)\s+([A-Z]{2})$", parts[0].strip())
-            if m:
-                city, st = m.group(1).strip(), m.group(2).strip()
-
-    if st:
-        s = re.sub(rf"(?i)\b{re.escape(st)}\b$", "", s).strip()
-    if city:
-        s = re.sub(rf"(?i){re.escape(city)}$", "", s).strip()
-        s = re.sub(rf"(?i)\b{re.escape(city)}\b$", "", s).strip()
-
-    s = re.sub(r"\s+", " ", s).strip(" -")
-    return s
+STOP_TOKENS = {
+    "debit", "dc", "credit", "pos", "purchase", "card", "visa", "mastercard",
+    "auth", "pending", "ach", "transaction",
+}
 
 
 def merchant_tokens(s: str) -> List[str]:
@@ -457,6 +82,15 @@ def merchant_tokens(s: str) -> List[str]:
     return toks
 
 
+def is_generic_payment_merchant(s: str) -> bool:
+    s = clean_spaces(s).lower()
+    if not s or s in ("unknown",):
+        return True
+    s = s.replace("thank you", "thankyou").replace("thanks", "thank")
+    toks = set(merchant_tokens(s))
+    return bool(toks) and (toks <= PAYMENT_GENERIC_TOKENS)
+
+
 def merchants_similar(a: str, b: str, min_overlap: float = 0.6) -> bool:
     A = set(merchant_tokens(a))
     B = set(merchant_tokens(b))
@@ -464,7 +98,6 @@ def merchants_similar(a: str, b: str, min_overlap: float = 0.6) -> bool:
         return False
 
     shared = len(A & B)
-
     if shared < 2:
         if shared == 1 and (len(A) <= 2 or len(B) <= 2) and (len(A) <= 6 and len(B) <= 6):
             return True
@@ -474,957 +107,248 @@ def merchants_similar(a: str, b: str, min_overlap: float = 0.6) -> bool:
     return overlap >= min_overlap
 
 
-# ============================================================
-# MATCHING LOGIC
-# ============================================================
-
-def find_existing_match_pending_email(cur: sqlite3.Cursor,table: str,account_id: int,amount: float,purchase_d,merchant: str,window_days: int = 4,):
-    """
-    Pending/email exact-amount match (your original behavior):
-      - same account_id
-      - exact amount
-      - purchaseDate within ±window_days
-      - status=Pending AND source=email
-      - merchant similarity required
-    """
-    if not purchase_d:
-        return None
-
-    dates = [(purchase_d + timedelta(days=delta)).strftime("%m/%d/%y")
-             for delta in range(-window_days, window_days + 1)]
-    qmarks = ",".join(["?"] * len(dates))
-
-    candidates = cur.execute(
-        f"""
-        SELECT id, postedDate, purchaseDate, amount, merchant
-        FROM {table}
-        WHERE account_id = ?
-          AND amount = ?
-          AND TRIM(purchaseDate) IN ({qmarks})
-          AND COALESCE(status,'') = 'Pending'
-          AND COALESCE(source,'') = 'email'
-        """,
-        [account_id, float(amount), *dates],
-    ).fetchall()
-
-    if len(candidates) == 1:
-        return candidates[0]
-
-    if not candidates:
-        return None
-
-    best = None
-    for row in candidates:
-        db_merch = (row[4] if len(row) > 4 else "") or ""
-        db_clean = clean_spaces(db_merch).lower()
-        csv_clean = clean_spaces(merchant or "").lower()
-
-        db_is_unknown = db_clean in ("", "unknown")
-        csv_is_unknown = csv_clean in ("", "unknown")
-
-        # ✅ If pending/email merchant is unknown OR generic payment text, match by amount+date alone
-        if (db_is_unknown or is_generic_payment_merchant(db_clean)) and not csv_is_unknown:
-            return row
-
-        db_toks = merchant_tokens(db_clean)
-        csv_toks = merchant_tokens(csv_clean)
-
-        db_is_weak = (len(db_toks) < 2)  # "S P" => []
-        csv_is_weak = (len(csv_toks) < 2)
-
-        if db_is_weak and not csv_is_weak:
-            return row
-
-        # Otherwise, require similarity (old behavior)
-        if merchants_similar(db_clean, csv_clean):
-            return row
-
-    return None
-
-
-def find_tip_adjust_match_pending_email(cur: sqlite3.Cursor,table: str,account_id: int,csv_amount: float,csv_merchant: str,purchase_d,window_days: int = 4,):
-    """
-    Tip-adjust fallback for Pending/email rows:
-      - purchaseDate within ±window_days
-      - merchant similar
-      - csv_amount >= db_amount
-      - diff looks like a tip (bounded by abs + tiered pct)
-    """
-    if not purchase_d:
-        return None
-
-    dates = [(purchase_d + timedelta(days=delta)).strftime("%m/%d/%y")
-             for delta in range(-window_days, window_days + 1)]
-    qmarks = ",".join(["?"] * len(dates))
-
-    candidates = cur.execute(
-        f"""
-        SELECT id, amount, merchant, postedDate, purchaseDate
-        FROM {table}
-        WHERE account_id = ?
-          AND TRIM(purchaseDate) IN ({qmarks})
-          AND amount IS NOT NULL
-          AND amount != 'unknown'
-          AND COALESCE(status,'') = 'Pending'
-          AND COALESCE(source,'') = 'email'
-        """,
-        [account_id, *dates],
-    ).fetchall()
-
-    try:
-        csv_amt_f = float(csv_amount)
-    except (TypeError, ValueError):
-        return None
-
-    best = None
-    best_diff = None
-
-    for (tx_id, db_amt, db_merch, postedDate, db_purchase) in candidates:
-        try:
-            db_amt_f = float(db_amt)
-        except (TypeError, ValueError):
-            continue
-
-        # Same sign (purchase vs refund)
-        if (db_amt_f >= 0) != (csv_amt_f >= 0):
-            continue
-
-        # Tip adds to total: CSV should be >= DB
-        if csv_amt_f < db_amt_f:
-            continue
-
-        diff = csv_amt_f - db_amt_f
-        if diff <= 0:
-            continue
-
-        if diff > TIP_MAX_ABS:
-            continue
-
-        base = abs(db_amt_f)
-        if base < 20:
-            pct_cap = TIP_PCT_SMALL
-        elif base < 60:
-            pct_cap = TIP_PCT_MED
-        else:
-            pct_cap = TIP_PCT_LARGE
-
-        if base > 0 and diff > base * pct_cap:
-            continue
-
-        if not merchants_similar(db_merch or "", csv_merchant or ""):
-            continue
-
-        if best is None or diff < best_diff:
-            best = (tx_id, postedDate, db_amt_f, db_merch, db_purchase)
-            best_diff = diff
-
-    return best
-
-
-def find_any_match_any_status(cur: sqlite3.Cursor,table: str,account_id: int,amount: float,purchase_d,merchant: str,window_days: int = 4,):
-    """
-    Broader "override" match:
-      - same account_id
-      - exact amount
-      - purchaseDate within ±window_days
-    Preference order:
-      1) Pending/email
-      2) merchant-similar rows
-      3) postedDate unknown
-    """
-    if not purchase_d:
-        return None
-
-    dates = [(purchase_d + timedelta(days=delta)).strftime("%m/%d/%y")
-             for delta in range(-window_days, window_days + 1)]
-    qmarks = ",".join(["?"] * len(dates))
-
-    rows = cur.execute(
-        f"""
-        SELECT id, status, source, postedDate, purchaseDate, amount, merchant
-        FROM {table}
-        WHERE account_id = ?
-          AND amount = ?
-          AND TRIM(purchaseDate) IN ({qmarks})
-        """,
-        [account_id, float(amount), *dates],
-    ).fetchall()
-
-    if not rows:
-        return None
-
-    def score(r):
-        # higher is better
-        _id, status, source, postedDate, purchaseDate, amt, merch = r
-        s = 0
-        if (status or "") == "Pending" and (source or "") == "email":
-            s += 1000
-        if merchants_similar(merch or "", merchant or ""):
-            s += 200
-        if (postedDate or "unknown").strip().lower() == "unknown":
-            s += 50
-        return s
-
-    best = max(rows, key=score)
-    # Require at least SOME similarity unless it's pending/email
-    if (best[1] or "") == "Pending" and (best[2] or "") == "email":
-        return best
-    if score(best) >= 200:  # merchant-similar or better
-        return best
-    return None
-
-
-# ============================================================
-# CORE UPSERT (shared by all importers)
-# ============================================================
-
-
-def upsert_csv_row(
-    cur: sqlite3.Cursor,
-    tx_cols: set,
-    rules: List[Tuple[str, re.Pattern]],
-    account_id: int,
-    purchase_d,
-    purchase: str,
-    posted: str,
-    amount: float,
-    merchant: str,
-    allow_tip_adjust: bool,
-    allow_broad_override: bool,
-) -> Tuple[str, Optional[str]]:
-    """
-    TESTING MODE behavior:
-      - LOOKUP duplicates/matches in LOOKUP_TABLE (real transactions)
-      - APPLY inserts/updates into WRITE_TABLE (transactions_test)
-
-    Returns: ("updated"/"inserted"/"skipped", matched_id_or_none)
-    """
-    if not merchant or purchase == "unknown":
-        return ("skipped", None)
-
-    # 1) Pending/email exact match first (LOOKUP)
-    match = find_existing_match_pending_email(cur, LOOKUP_TABLE, account_id, amount, purchase_d, merchant, window_days=4)
-    tip_adjust = False
-
-    # 2) Tip-adjust match (only when allowed) (LOOKUP)
-    if not match and allow_tip_adjust:
-        match = find_tip_adjust_match_pending_email(
-            cur,
-            LOOKUP_TABLE,
-            account_id=account_id,
-            csv_amount=amount,
-            csv_merchant=merchant,
-            purchase_d=purchase_d,
-            window_days=4
-        )
-        tip_adjust = True if match else False
-
-    # 3) Broader override match (any status/source) (LOOKUP)
-    if not match and allow_broad_override:
-        match = find_any_match_any_status(cur, LOOKUP_TABLE, account_id, amount, purchase_d, merchant, window_days=4)
-        tip_adjust = False
-
-    cat = categorize(merchant, rules)
-
-    # If matched, UPDATE/OVERRIDE in WRITE_TABLE
-    if match:
-        existing_id = match[0]
-
-        # Ensure the row exists in WRITE_TABLE so "testing mode" can show the update result
-        _copy_row_from_lookup_if_missing(cur, existing_id)
-
-        if tip_adjust:
-            # Tip-adjust: also update amount (final CSV total)
-            if posted != "unknown":
-                cur.execute(
-                    f"""
-                    UPDATE {WRITE_TABLE}
-                    SET postedDate = ?,
-                        purchaseDate = ?,
-                        status = ?,
-                        merchant = ?,
-                        source = ?,
-                        amount = ?,
-                        category = ?
-                    WHERE id = ?
-                    """,
-                    (posted, purchase, "Posted", merchant, "CSV", float(amount), cat, existing_id),
-                )
-            else:
-                cur.execute(
-                    f"""
-                    UPDATE {WRITE_TABLE}
-                    SET purchaseDate = ?,
-                        status = ?,
-                        merchant = ?,
-                        source = ?,
-                        amount = ?,
-                        category = ?
-                    WHERE id = ?
-                    """,
-                    (purchase, "Posted", merchant, "CSV", float(amount), cat, existing_id),
-                )
-        else:
-            # Exact/override: update with CSV info (always override key fields)
-            cur.execute(
-                f"""
-                UPDATE {WRITE_TABLE}
-                SET postedDate = ?,
-                    purchaseDate = ?,
-                    status = ?,
-                    merchant = ?,
-                    source = ?,
-                    category = ?
-                WHERE id = ?
-                """,
-                (posted, purchase, "Posted", merchant, "CSV", cat, existing_id),
-            )
-
-        # If we upgraded/overrode a Pending/email row, remove the pending email key
-        delete_withdrawal_key(existing_id)
-        return ("updated", existing_id)
-
-    # Otherwise: INSERT new row into WRITE_TABLE
-    base = makeKey(f"{amount:.2f}", purchase, account_id=account_id, seq=0)
-
-    tx_id = base
-    n = 0
-    while _id_exists_any(cur, tx_id):
-        n += 1
-        tx_id = makeKey(f"{amount:.2f}", purchase, account_id=account_id, seq=n)
-
-    payload = {
-        "id": tx_id,
-        "status": "Posted",
-        "purchaseDate": purchase,
-        "postedDate": posted,
-        "amount": float(amount),
-        "merchant": merchant,
-        "time": DEFAULTS["time"],
-        "source": "CSV",
-        "account_id": account_id,
-        "category": cat,
-    }
-
-    insert_keys = [k for k in payload.keys() if k in tx_cols]
-    if not insert_keys:
-        raise RuntimeError(f"No matching columns found in {WRITE_TABLE} table.")
-
-    cols_sql = ", ".join(insert_keys)
-    qmarks = ", ".join(["?"] * len(insert_keys))
-    values = [payload[k] for k in insert_keys]
-
-    try:
-        cur.execute(f"INSERT INTO {WRITE_TABLE} ({cols_sql}) VALUES ({qmarks})", values)
-    except sqlite3.IntegrityError:
-        # Fallback, should be rare due to _id_exists_any()
-        payload["id"] = next_id_for_base(cur, WRITE_TABLE, base)
-        values = [payload[k] for k in insert_keys]
-        cur.execute(f"INSERT INTO {WRITE_TABLE} ({cols_sql}) VALUES ({qmarks})", values)
-
-    return ("inserted", payload["id"])
-
-def import_amex_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    start_date, end_date, last_posted = get_import_window(cur, account_id)
-    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
-
-    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
-    rules = load_category_rules(cur)
-
-    inserted = 0
-    updated = 0
-    skipped = 0
-    latest_file_date = None
-
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            date_raw = (row.get("Date") or "").strip()
-            d = parse_mmddyyyy(date_raw)
-            latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
-
-            if not date_in_window(d, start_date, end_date):
-                skipped += 1
-                continue
-
-            if not d:
-                skipped += 1
-                continue
-
-
-            purchase_d = d
-            purchase = d.strftime("%m/%d/%y")
-            posted = purchase
-
-            try:
-                amt = float(str(row.get("Amount") or "0").strip())
-            except ValueError:
-                skipped += 1
-                continue
-
-            raw_desc = (row.get("Description") or "").strip()
-            city_state = row.get("City/State") or ""
-            merchant = clean_amex_merchant(raw_desc, str(city_state))
-
-            if not merchant:
-                skipped += 1
-                continue
-
-            action, _ = upsert_csv_row(
-                cur=cur,
-                tx_cols=tx_cols,
-                rules=rules,
-                account_id=account_id,
-                purchase_d=purchase_d,
-                purchase=purchase,
-                posted=posted,
-                amount=amt,
-                merchant=merchant,
-                allow_tip_adjust=False,
-                allow_broad_override=False,
-            )
-
-            if action == "inserted":
-                inserted += 1
-            elif action == "updated":
-                updated += 1
-            else:
-                skipped += 1
-
-    print("AMEX latest_file_date =", latest_file_date)
-
-    if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
-        print(f"Deleted stale pending email rows: {deleted}")
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
-
-
-
-def import_capitalone_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
-    """
-    Amex-style behavior:
-      - Track latest_file_date from dates in the CSV file
-      - Use purchase date as primary date
-      - If posted date missing, posted defaults to purchase (Amex-style)
-      - Uses same upsert matching logic but WITHOUT broad override (prevents collapsing repeats)
-      - Deletes stale pending-email rows based on latest_file_date
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    start_date, end_date, last_posted = get_import_window(cur, account_id)
-    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
-
-    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
-    rules = load_category_rules(cur)
-
-    inserted = 0
-    updated = 0
-    skipped = 0
-    latest_file_date = None
-
-    is_cc_job = "cc" in csv_path.stem.lower() or "cc" in str(csv_path).lower()
-
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            purchase_raw = (row.get("Transaction Date") or "").strip()
-            posted_raw = (row.get("Posted Date") or "").strip()
-
-            purchase_d = parse_mmddyyyy(purchase_raw)
-            posted_d = parse_mmddyyyy(posted_raw) if posted_raw else None
-
-            if not purchase_d and not posted_d:
-                skipped += 1
-                continue
-
-            # Track latest date seen in FILE (Amex-style)
-            for d in (purchase_d, posted_d):
-                if d:
-                    latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
-
-            eff_d = _row_effective_date(purchase_d, posted_d)
-            if not date_in_window(eff_d, start_date, end_date):
-                skipped += 1
-                continue
-
-            # Keep only target year based on either date
-            effective_purchase_d = purchase_d or posted_d
-            if not effective_purchase_d:
-                skipped += 1
-                continue
-
-            purchase = effective_purchase_d.strftime("%m/%d/%y")
-
-            # ✅ Amex-style: if posted is missing, default posted=purchase
-            if posted_d:
-                posted = posted_d.strftime("%m/%d/%y")
-            else:
-                posted = purchase
-
-            merchant_raw = (row.get("Description") or row.get("Transaction Description") or "").strip()
-            merchant = clean_spaces(merchant_raw)
-            if not merchant:
-                skipped += 1
-                continue
-
-            # Amount parsing (two formats)
-            # Amount parsing (two formats)
-            # Capital One rule:
-            # Credit => negative
-            # everything else => positive
-
-            amt_str = (row.get("Transaction Amount") or "0").strip()
-            tx_type = (row.get("Transaction Type") or "").strip().lower()
-
-            try:
-                amt = abs(float(amt_str))
-            except ValueError:
-                skipped += 1
-                continue
-
-            if tx_type == "credit":
-                amt = -amt
-            # else: keep positive
-
-            action, _ = upsert_csv_row(
-                cur=cur,
-                tx_cols=tx_cols,
-                rules=rules,
-                account_id=account_id,
-                purchase_d=effective_purchase_d,
-                purchase=purchase,
-                posted=posted,
-                amount=amt,
-                merchant=merchant,
-                allow_tip_adjust=False,
-                allow_broad_override=False,  # ✅ prevents collapsing repeats
-            )
-
-            if action == "inserted":
-                inserted += 1
-            elif action == "updated":
-                updated += 1
-            else:
-                skipped += 1
-
-    print("CAPITALONE latest_file_date =", latest_file_date)
-    deleted = 0
-    if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
-    print(f"Deleted stale pending email rows: {deleted}")
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
-
-
-def import_discover_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
-    """
-    Amex-style behavior:
-      - Track latest_file_date from dates in the CSV file
-      - Amount already signed
-      - If post date missing, posted defaults to purchase (Amex-style)
-      - Uses same upsert matching logic but WITHOUT broad override
-      - Deletes stale pending-email rows based on latest_file_date
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    start_date, end_date, last_posted = get_import_window(cur, account_id)
-    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
-
-    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
-    rules = load_category_rules(cur)
-
-    inserted = 0
-    updated = 0
-    skipped = 0
-    latest_file_date = None
-
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            trans_raw = (row.get("Trans. Date") or "").strip()
-            post_raw = (row.get("Post Date") or "").strip()
-            desc_raw = (row.get("Description") or "").strip()
-            amt_raw = (row.get("Amount") or "").strip()
-
-            trans_d = parse_mmddyyyy(trans_raw)
-            post_d = parse_mmddyyyy(post_raw) if post_raw else None
-
-            if not trans_d and not post_d:
-                skipped += 1
-                continue
-
-            # Track latest date seen in FILE (Amex-style)
-            for d in (trans_d, post_d):
-                if d:
-                    latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
-
-            eff_d = _row_effective_date(trans_d, post_d)
-            if not date_in_window(eff_d, start_date, end_date):
-                skipped += 1
-                continue
-
-            purchase_d = trans_d or post_d
-            if not purchase_d or not desc_raw:
-                skipped += 1
-                continue
-
-            purchase = purchase_d.strftime("%m/%d/%y")
-
-            # ✅ Amex-style: if posted is missing, default posted=purchase
-            posted = (post_d.strftime("%m/%d/%y") if post_d else purchase)
-
-            merchant = clean_spaces(desc_raw)
-            if not merchant:
-                skipped += 1
-                continue
-
-            try:
-                amt = float(amt_raw)
-            except ValueError:
-                skipped += 1
-                continue
-
-            action, _ = upsert_csv_row(
-                cur=cur,
-                tx_cols=tx_cols,
-                rules=rules,
-                account_id=account_id,
-                purchase_d=purchase_d,
-                purchase=purchase,
-                posted=posted,
-                amount=amt,
-                merchant=merchant,
-                allow_tip_adjust=False,
-                allow_broad_override=False,  # ✅ prevents collapsing repeats
-            )
-
-            if action == "inserted":
-                inserted += 1
-            elif action == "updated":
-                updated += 1
-            else:
-                skipped += 1
-
-    print("DISCOVER latest_file_date =", latest_file_date)
-    deleted = 0
-    if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
-    print(f"Deleted stale pending email rows: {deleted}")
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
-
-
-def parse_yyyy_mm_dd(s: str):
+def parse_mmddyyyy(s: str):
     if not s:
         return None
     s = str(s).strip()
-    try:
-        return datetime.strptime(s, "%Y-%m-%d").date()
-    except ValueError:
+    if not s or s.lower() == "unknown":
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def to_mmddyy(date_like: str) -> str:
+    d = parse_mmddyyyy(date_like)
+    return d.strftime("%m/%d/%y") if d else "unknown"
+
+
+def _id_exists(table: str, tx_id: str) -> bool:
+    rows = query_db(f"SELECT 1 FROM {table} WHERE id = %s LIMIT 1", (tx_id,))
+    return bool(rows)
+
+
+def _pick_pending_match_exact(account_id: int, amount: float, purchase_d, merchant: str, window_days: int = 4) -> Optional[str]:
+    if not purchase_d:
         return None
 
+    dates = [(purchase_d + timedelta(days=delta)).strftime("%m/%d/%y") for delta in range(-window_days, window_days + 1)]
 
-def import_amex_hysa_csv(csv_path: Path, account_id: int) -> Dict[str, int]:
-    """
-    Keeps your older HYSA format:
-      row: [YYYY-MM-DD, Description, Amount]
-    Then applies SAME match/override logic as navy.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+    rows = query_db(
+        f"""
+        SELECT id, merchant
+        FROM {LOOKUP_TABLE}
+        WHERE account_id = %s
+          AND amount = %s
+          AND purchasedate = ANY(%s)
+          AND COALESCE(status,'') = 'Pending'
+          AND COALESCE(source,'') = 'email'
+        """,
+        (account_id, float(amount), dates),
+    )
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]["id"]
 
-    start_date, end_date, last_posted = get_import_window(cur, account_id)
-    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
-
-    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
-    rules = load_category_rules(cur)
-
-    inserted = 0
-    updated = 0
-    skipped = 0
-    latest_file_date = None
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.reader(f)
-
-        for row in reader:
-            if not row or len(row) < 3:
-                skipped += 1
-                continue
-
-            date_raw = (row[0] or "").strip()
-            desc_raw = (row[1] or "").strip()
-            amt_raw = (row[2] or "").strip()
-
-            d = parse_mmddyyyy(date_raw)
-            latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
-
-            if not date_in_window(d, start_date, end_date):
-                skipped += 1
-                continue
-
-            if not d:
-                skipped += 1
-                continue
+    csv_clean = clean_spaces(merchant or "").lower()
+    for r in rows:
+        db_clean = clean_spaces((r.get("merchant") or "")).lower()
+        db_is_unknown = db_clean in ("", "unknown")
+        if db_is_unknown or is_generic_payment_merchant(db_clean):
+            return r["id"]
+        if merchants_similar(db_clean, csv_clean):
+            return r["id"]
+    return rows[0]["id"]
 
 
-            purchase_d = d
-            purchase = d.strftime("%m/%d/%y")
-            posted = purchase
+def _pick_pending_match_tip(account_id: int, csv_amount: float, purchase_d, csv_merchant: str, window_days: int = 4) -> Optional[str]:
+    if not purchase_d:
+        return None
 
-            try:
-                amt = -float(amt_raw)
-            except ValueError:
-                skipped += 1
-                continue
+    dates = [(purchase_d + timedelta(days=delta)).strftime("%m/%d/%y") for delta in range(-window_days, window_days + 1)]
 
-            merchant = clean_spaces(desc_raw)
-            if not merchant:
-                skipped += 1
-                continue
+    rows = query_db(
+        f"""
+        SELECT id, amount, merchant
+        FROM {LOOKUP_TABLE}
+        WHERE account_id = %s
+          AND purchasedate = ANY(%s)
+          AND COALESCE(status,'') = 'Pending'
+          AND COALESCE(source,'') = 'email'
+        """,
+        (account_id, dates),
+    )
+    if not rows:
+        return None
 
-            action, _ = upsert_csv_row(
-                cur=cur,
-                tx_cols=tx_cols,
-                rules=rules,
-                account_id=account_id,
-                purchase_d=purchase_d,
-                purchase=purchase,
-                posted=posted,
-                amount=amt,
-                merchant=merchant,
-                allow_tip_adjust=False,
-                allow_broad_override=False,  # ✅ add this
-            )
-
-            if action == "inserted":
-                inserted += 1
-            elif action == "updated":
-                updated += 1
-            else:
-                skipped += 1
-
-    deleted = 0
-    if latest_file_date:
-        deleted = delete_stale_pending_email(
-            cur,
-            WRITE_TABLE,
-            account_id,
-            reference_date=min(latest_file_date, end_date)
-        )
-    print(f"Deleted stale pending email rows: {deleted}")
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
-
-def import_navy_csv(
-    csv_path: Path,
-    account_id: int,
-    allow_tip_adjust: bool,
-    allow_broad_override: bool,
-) -> Dict[str, int]:
-    """
-    Navy Federal CSV importer (testing mode):
-      - cutoff based on LOOKUP_TABLE latest Posted
-      - dedupe/match against LOOKUP_TABLE
-      - write inserts/updates into WRITE_TABLE
-    Tries to be tolerant of Navy header variations.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    start_date, end_date, last_posted = get_import_window(cur, account_id)
-    print("IMPORT WINDOW =", start_date, "to", end_date, "| last_posted =", last_posted)
-
-    tx_cols = set(get_table_columns(cur, WRITE_TABLE))
-    rules = load_category_rules(cur)
-
-    inserted = 0
-    updated = 0
-    skipped = 0
-    latest_file_date = None
-
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            # --- Dates (try multiple common Navy headers) ---
-            purchase_raw = (
-                row.get("Transaction Date")
-                or row.get("TransactionDate")
-                or row.get("Date")
-                or row.get("Trans Date")
-                or row.get("Posted Date")  # fallback if export only has one
-                or ""
-            ).strip()
-
-            posted_raw = (
-                row.get("Posted Date")
-                or row.get("Post Date")
-                or row.get("Posting Date")
-                or row.get("PostedDate")
-                or ""
-            ).strip()
-
-            purchase_d = parse_mmddyyyy(purchase_raw)
-            posted_d = parse_mmddyyyy(posted_raw) if posted_raw else None
-
-            if not purchase_d and not posted_d:
-                skipped += 1
-                continue
-
-            # Track latest date seen in file
-            for d in (purchase_d, posted_d):
-                if d:
-                    latest_file_date = d if latest_file_date is None else max(latest_file_date, d)
-
-            # Effective date for cutoff filtering
-            eff_d = _row_effective_date(purchase_d, posted_d)
-            if not date_in_window(eff_d, start_date, end_date):
-                skipped += 1
-                continue
-
-
-            effective_purchase_d = purchase_d or posted_d
-            if not effective_purchase_d:
-                skipped += 1
-                continue
-
-            purchase = effective_purchase_d.strftime("%m/%d/%y")
-            posted = posted_d.strftime("%m/%d/%y") if posted_d else "unknown"
-
-            # --- Merchant/Description ---
-            merchant_raw = (
-                row.get("Description")
-                or row.get("Transaction Description")
-                or row.get("Merchant")
-                or row.get("Payee")
-                or ""
-            ).strip()
-            merchant = clean_spaces(merchant_raw)
-            if not merchant:
-                skipped += 1
-                continue
-
-            # --- Amount ---
-            # Navy often has Amount + Credit/Debit indicator, but exports vary.
-            amt_str = (
-                row.get("Amount")
-                or row.get("Transaction Amount")
-                or row.get("TransactionAmount")
-                or "0"
-            )
-            indicator = (
-                row.get("Credit/Debit Indicator")
-                or row.get("Credit Debit Indicator")
-                or row.get("Credit/Debit")
-                or row.get("Type")  # sometimes "Credit"/"Debit"
-                or ""
-            )
-
-            try:
-                amt = normalize_amount_navy(str(amt_str).strip(), str(indicator).strip())
-            except Exception:
-                skipped += 1
-                continue
-
-            # --- Upsert (testing mode) ---
-            action, _ = upsert_csv_row(
-                cur=cur,
-                tx_cols=tx_cols,
-                rules=rules,
-                account_id=account_id,
-                purchase_d=effective_purchase_d,
-                purchase=purchase,
-                posted=posted,
-                amount=amt,
-                merchant=merchant,
-                allow_tip_adjust=allow_tip_adjust,
-                allow_broad_override=allow_broad_override,
-            )
-
-            if action == "inserted":
-                inserted += 1
-            elif action == "updated":
-                updated += 1
-            else:
-                skipped += 1
-
-    print("NAVY latest_file_date =", latest_file_date)
-
-    if latest_file_date:
-        deleted = delete_stale_pending_email(cur, WRITE_TABLE, account_id, reference_date=min(latest_file_date, end_date))
-        print(f"Deleted stale pending email rows: {deleted}")
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
-
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-def main() -> None:
-    for job in IMPORT_JOBS:
-        name = job["name"].lower()
-        csv_path: Path = job["csv"]
-        account_id: int = job["account_id"]
-
-        if not csv_path.exists():
-            print(f"SKIP {job['name']}: CSV not found -> {csv_path}")
+    csv_m = clean_spaces(csv_merchant or "").lower()
+    for r in rows:
+        try:
+            db_amount = float(r.get("amount") or 0.0)
+        except Exception:
             continue
 
-        print(f"\n=== RUNNING JOB: {job['name']} ===")
+        if db_amount <= 0 or csv_amount <= 0:
+            continue
 
-        if name.startswith("amex_hysa"):
-            out = import_amex_hysa_csv(csv_path, account_id)
+        if csv_amount < db_amount:
+            continue
 
-        elif name.startswith("amex"):
-            out = import_amex_csv(csv_path, account_id)
+        diff = csv_amount - db_amount
+        if diff <= 0:
+            continue
 
-        elif name.startswith("capitalone"):
-            out = import_capitalone_csv(csv_path, account_id)
+        # tip-ish thresholds
+        if abs(diff) > TIP_MAX_ABS:
+            continue
 
-        elif name.startswith("discover"):
-            out = import_discover_csv(csv_path, account_id)
+        pct = diff / max(db_amount, 0.01)
+        if db_amount < 20 and pct > TIP_PCT_SMALL:
+            continue
+        if 20 <= db_amount < 60 and pct > TIP_PCT_MED:
+            continue
+        if db_amount >= 60 and pct > TIP_PCT_LARGE:
+            continue
 
+        db_m = clean_spaces((r.get("merchant") or "")).lower()
+        if db_m in ("", "unknown") or is_generic_payment_merchant(db_m):
+            return r["id"]
+        if merchants_similar(db_m, csv_m):
+            return r["id"]
+
+    return None
+
+
+def _ensure_unique_id(base_id: str, table: str) -> str:
+    if not _id_exists(table, base_id):
+        return base_id
+    # bump seq suffix
+    # base_id format: "{accountid}_{mmddyyNoSlashes}_{amount}_{seq}"
+    for seq in range(1, 500):
+        parts = base_id.split("_")
+        if len(parts) >= 4:
+            parts[-1] = str(seq)
+            cand = "_".join(parts)
         else:
-            # navyfcu main / bills
-            if name == "main":
-                out = import_navy_csv(
-                    csv_path,
-                    account_id,
-                    allow_tip_adjust=True,
-                    allow_broad_override=False,
-                )
-            else:  # bills
-                out = import_navy_csv(
-                    csv_path,
-                    account_id,
-                    allow_tip_adjust=False,
-                    allow_broad_override=False,
-                )
+            cand = f"{base_id}_{seq}"
+        if not _id_exists(table, cand):
+            return cand
+    return f"{base_id}_{int(datetime.now().timestamp())}"
 
-        print(f"JOB={job['name']} FILE={csv_path} account_id={account_id}")
-        print(out)
+
+def upsert_posted_row(
+    *,
+    tx_id: str,
+    account_id: int,
+    amount: float,
+    merchant: str,
+    purchase_mmddyy: str,
+    posted_mmddyy: str,
+    time: str = "unknown",
+    source: str = "CSV",
+):
+    with with_db_cursor() as (conn, cur):
+        category = assign_category(cur, merchant)
+        cur.execute(
+            f"""
+            INSERT INTO {WRITE_TABLE}
+              (id, status, purchasedate, posteddate, amount, merchant, time, source, account_id, category)
+            VALUES
+              (%s, 'Posted', %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+              status = 'Posted',
+              purchasedate = EXCLUDED.purchasedate,
+              posteddate   = EXCLUDED.posteddate,
+              amount       = EXCLUDED.amount,
+              merchant     = EXCLUDED.merchant,
+              time         = CASE
+                              WHEN {WRITE_TABLE}.time IS NULL OR {WRITE_TABLE}.time = 'unknown'
+                              THEN EXCLUDED.time
+                              ELSE {WRITE_TABLE}.time
+                             END,
+              source       = EXCLUDED.source,
+              account_id   = EXCLUDED.account_id,
+              category     = CASE
+                              WHEN {WRITE_TABLE}.category IS NULL OR btrim({WRITE_TABLE}.category) = ''
+                              THEN EXCLUDED.category
+                              ELSE {WRITE_TABLE}.category
+                             END
+            """,
+            (tx_id, purchase_mmddyy, posted_mmddyy, float(amount), merchant, time, source, int(account_id), category),
+        )
+        conn.commit()
+
+
+def import_generic_csv(job_name: str, csv_path: Path, account_id: int):
+    if not csv_path.exists():
+        print(f"[{job_name}] missing CSV: {csv_path}")
+        return
+
+    # naive generic reader: expects columns: Date, Description, Amount, Type(optional), Posted(optional)
+    # If your bank formats differ, keep using your existing parsers and just call upsert_posted_row().
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows:
+        print(f"[{job_name}] empty CSV")
+        return
+
+    for r in rows:
+        raw_date = (r.get("Date") or r.get("Transaction Date") or r.get("Posted Date") or "").strip()
+        raw_posted = (r.get("Posted Date") or r.get("Post Date") or raw_date).strip()
+        raw_desc = (r.get("Description") or r.get("Merchant") or r.get("Name") or "").strip()
+        raw_amt = (r.get("Amount") or r.get("Transaction Amount") or "").strip()
+
+        d = parse_mmddyyyy(raw_date)
+        pd = parse_mmddyyyy(raw_posted) or d
+        if not d or raw_amt == "":
+            continue
+
+        try:
+            amt = float(str(raw_amt).replace("$", "").replace(",", ""))
+        except Exception:
+            continue
+
+        purchase_mmddyy = d.strftime("%m/%d/%y")
+        posted_mmddyy = pd.strftime("%m/%d/%y") if pd else purchase_mmddyy
+
+        # base ID from date+amount
+        base_id = makeKey(f"{amt:.2f}", purchase_mmddyy, account_id=account_id)
+
+        # prefer re-using pending email id if it exists (so CSV 'posts' the pending row)
+        pending_id = _pick_pending_match_exact(account_id, amt, d, raw_desc)
+        if not pending_id:
+            pending_id = _pick_pending_match_tip(account_id, amt, d, raw_desc)
+
+        tx_id = pending_id or _ensure_unique_id(base_id, WRITE_TABLE)
+
+        upsert_posted_row(
+            tx_id=tx_id,
+            account_id=account_id,
+            amount=amt,
+            merchant=raw_desc or "unknown",
+            purchase_mmddyy=purchase_mmddyy,
+            posted_mmddyy=posted_mmddyy,
+            time=DEFAULTS["time"],
+            source=DEFAULTS["source"],
+        )
+
+    print(f"[{job_name}] imported {len(rows)} rows")
+
+
+def run_all():
+    open_pool()
+    try:
+        for j in IMPORT_JOBS:
+            import_generic_csv(j["name"], j["csv"], int(j["account_id"]))
+    finally:
+        close_pool()
 
 
 if __name__ == "__main__":
-    main()
+    run_all()

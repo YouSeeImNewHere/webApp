@@ -35,6 +35,7 @@ const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
 // =============================
 let UI_LAYOUT = null;
 
+
 function getDefaultUILayout() {
   return {
     key: "home",
@@ -459,6 +460,42 @@ function creditUsagePctText(balance, limit) {
   return `${pct}%`;
 }
 
+async function loadHomePayload() {
+  const res = await fetch("/page/home?tx_limit=15", { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to load /page/home");
+  const payload = await res.json();
+
+  // ✅ Recent transactions
+  if (Array.isArray(payload.transactions)) {
+    renderTxList(payload.transactions);   // <— this exists in your file
+  }
+
+  // ✅ Category totals (this month)
+  if (payload.category_totals_month) {
+    // easiest: reuse your existing loader for now
+    // (later we can add a render-from-payload function)
+    loadCategoryTotalsThisMonth();
+  }
+
+  // ✅ Unread badge
+  if (payload.notifications_unread && typeof payload.notifications_unread.unread === "number") {
+    // setUnreadBadge was missing in your earlier errors sometimes; guard it.
+    if (typeof window.setUnreadBadge === "function") {
+      window.setUnreadBadge(payload.notifications_unread.unread);
+    }
+  }
+
+  // ✅ Bank totals
+  if (payload.bank_totals) {
+    // easiest: reuse existing loader for now
+    loadBankTotals();
+  }
+
+  // ✅ Month budget
+  loadMonthBudget();
+
+  return payload;
+}
 
 
 async function renderCategory(container, typeKey, title, payload) {
@@ -654,17 +691,31 @@ async function bootHome() {
       window.history.replaceState({}, "", newUrl);
     }
 
-
     setChartHeaderUI();
-    loadChart();
-    await loadBankTotals();
-    loadMonthBudget();
+
+    // kick these off immediately (parallel)
+    setChartHeaderUI();
+    const tasks = [
+      Promise.resolve().then(() => loadHomePayload()),
+      Promise.resolve().then(() => loadChart()),
+      Promise.resolve().then(() => mountUpcomingCard("#upcomingMount", { daysAhead: 30 })),
+      Promise.resolve().then(() => { try { mountMonthBudgetCard("#monthBudgetMount"); } catch (_) {} }),
+    ];
+
+    const results = await Promise.allSettled(tasks);
+
+    for (const r of results) {
+      if (r.status === "rejected") console.warn("Home task failed:", r.reason);
+    }
+
+    // optional: log failures
+    for (const r of results) {
+      if (r.status === "rejected") console.warn("Home task failed:", r.reason);
+    }
+
+    try { mountMonthBudgetCard("#monthBudgetMount"); } catch(_) {}
 
     bindIncomeRowClick();
-    loadCategoryTotalsThisMonth();
-    loadData();
-    mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
-    try { mountMonthBudgetCard("#monthBudgetMount"); } catch(_) {}
   } catch (err) {
     console.error("bootHome failed:", err);
 
