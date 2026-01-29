@@ -223,6 +223,20 @@ async function loadCategoryTransactions(category) {
   if (!res.ok) throw new Error("tx failed");
 
   const data = await res.json();
+  // Build running total starting at 0, in chronological order inside the selected range
+  const asc = [...data].sort((a, b) => {
+    const da = String(a.dateISO || "");
+    const db = String(b.dateISO || "");
+    if (da !== db) return da.localeCompare(db);
+    return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
+
+  let running = 0;
+  const runningById = new Map();
+  for (const r of asc) {
+    running += Number(r.amount || 0);
+    runningById.set(String(r.id ?? ""), running);
+  }
 
 
   if (!Array.isArray(data) || data.length === 0) {
@@ -264,7 +278,11 @@ async function loadCategoryTransactions(category) {
         <div class="tx-sub">${sub}</div>
         <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
       </div>
-      <div class="tx-amt">${money(row.amount)}</div>
+      <div class="tx-right">
+  <div class="tx-amt">${money(row.amount)}</div>
+  <div class="tx-bal">${money(runningById.get(String(row.id ?? "")) ?? 0)}</div>
+</div>
+
     `;
 
     list.appendChild(wrap);

@@ -4267,3 +4267,17 @@ body.page-recurring .merge-btn{
   color: var(--accent-contrast) !important;
   border-color: var(--accent) !important;
 }
+.tx-right{
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.tx-bal{
+  font-size: 11px;
+  font-weight: 750;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}

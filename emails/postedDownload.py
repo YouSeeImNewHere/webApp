@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from db import with_db_cursor, query_db, open_pool, close_pool
-from transactionHandler import makeKey, assign_category
+from .transactionHandler import makeKey, assign_category
+
 
 # ============================================================
 # CONFIG
