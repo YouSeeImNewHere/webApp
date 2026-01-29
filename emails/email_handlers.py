@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from db import query_db
-from transactionHandler import *  # provides makeKey/checkKey/find_matching_key/insert_transaction/etc.
+from .transactionHandler import *  # provides makeKey/checkKey/find_matching_key/insert_transaction/etc.
 
 # =============================================================================
 # Shared helper (ONE place to change print/labels/insert behavior)

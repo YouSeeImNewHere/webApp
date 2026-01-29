@@ -4198,3 +4198,72 @@ body.settings-page{
   background: var(--card, #111827);
   color: var(--text, #e9eef7);
 }
+/* ============================
+   TOP BAR — HARD FIXED
+   ============================ */
+
+.top-bar{
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+
+  height: var(--topbar-h, 56px);
+  z-index: 10000;
+
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+
+  display: flex;
+  align-items: center;
+}
+/* =========================================================
+   RECURRING — FINAL THEME OVERRIDE (fix white cards)
+   Put at VERY BOTTOM of base.css
+   ========================================================= */
+
+body.page-recurring .rec-card{
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+body.page-recurring .rec-head{
+  background: var(--card-2) !important; /* subtle header band */
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+body.page-recurring .rec-body{
+  background: var(--card) !important;
+  border-top: 1px solid var(--border) !important;
+}
+
+body.page-recurring .rec-item{
+  background: transparent !important;
+  color: var(--text) !important;
+}
+
+body.page-recurring .rec-item + .rec-item{
+  border-top: 1px solid var(--border) !important;
+}
+
+body.page-recurring .rec-meta,
+body.page-recurring .rec-merchant-sub{
+  color: var(--muted) !important;
+}
+
+/* Buttons inside recurring cards should also theme correctly */
+body.page-recurring .pill-btn,
+body.page-recurring .ignore-btn,
+body.page-recurring button{
+  background: var(--btn-bg) !important;
+  color: var(--btn-text) !important;
+  border-color: var(--btn-border) !important;
+}
+
+body.page-recurring .merge-btn{
+  background: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+  border-color: var(--accent) !important;
+}
