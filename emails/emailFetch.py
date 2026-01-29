@@ -2,7 +2,7 @@ import imaplib
 import email
 from email.header import decode_header
 from bs4 import BeautifulSoup
-from emails.email_handlers import *
+from email_handlers import *
 from dotenv import load_dotenv
 import os
 import json

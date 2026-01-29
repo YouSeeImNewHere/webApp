@@ -3563,12 +3563,14 @@ body::-webkit-scrollbar {
   }
 
   /* Card */
-  body.page-recurring .rec-card{
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--card, #fff);
-    overflow: hidden;
-  }
+    body.page-recurring .rec-card{
+      border: 1px solid var(--border, rgba(0,0,0,0.14));
+      border-radius: 14px;
+      background: var(--card, #fff);
+      overflow: hidden;
+      margin: 12px 0;
+    }
+
 
   /* Header row */
   body.page-recurring .rec-head{
@@ -4107,3 +4109,92 @@ body{
   }
 }
 
+/* ============================
+   Bank Info panel: bordered “popup” look
+   ============================ */
+
+#bankInfoPanel{
+  border: 1px solid var(--border, rgba(0,0,0,0.14)) !important;
+  border-left-width: 1px !important; /* keep consistent */
+  border-radius: 16px !important;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.20) !important;
+
+  /* prevent accidental horizontal scroll inside the panel */
+  overflow-x: hidden !important;
+  touch-action: pan-y;
+}
+
+/* Slightly stronger overlay so it reads like a modal */
+#bankInfoOverlay{
+  background: rgba(0,0,0,0.45) !important;
+}
+
+/* When bank panel is open: lock page horizontal movement */
+body.bank-panel-open{
+  overflow-x: hidden !important;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+}
+/* Hard stop: no sideways scroll when bank panel is open */
+body.bank-panel-open{
+  overflow-x: hidden !important;
+  position: fixed;         /* locks the viewport */
+  width: 100%;
+}
+
+/* Ensure the panel itself never exceeds the viewport */
+#bankInfoPanel.side-panel{
+  max-width: 92vw;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* Prevent any child from forcing the panel wider */
+#bankInfoPanel *{
+  box-sizing: border-box;
+  max-width: 100%;
+}
+/* Bank rate editor: keep form controls from widening the panel */
+.bank-rate-editor{
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.bank-rate-editor__row{
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+}
+
+.bank-rate-editor__row select,
+.bank-rate-editor__row input{
+  width: 100%;
+  min-width: 0;      /* IMPORTANT: allows shrinking inside grid */
+  max-width: 100%;
+}
+body.settings-page{
+  background: var(--bg, #0b0f17);
+  color: var(--text, #e9eef7);
+}
+
+.settings-card{
+  background: var(--card, #111827);
+  border-color: var(--border, rgba(255,255,255,0.12));
+}
+
+/* Make the select match theme */
+.settings-page select{
+  background: var(--card, #111827) !important;
+  color: var(--text, #e9eef7) !important;
+  border: 1px solid var(--border, rgba(255,255,255,0.12)) !important;
+}
+
+/* Helps on desktop Chrome/Android; iOS picker is mostly native */
+.settings-page option{
+  background: var(--card, #111827);
+  color: var(--text, #e9eef7);
+}

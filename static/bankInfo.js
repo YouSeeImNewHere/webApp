@@ -21,11 +21,13 @@ function pct(v){
 }
 
 function openBankPanel(){
+  document.body.classList.add("bank-panel-open");
   document.getElementById("bankInfoOverlay").classList.remove("hidden");
   document.getElementById("bankInfoPanel").classList.remove("hidden");
 }
 
 function closeBankPanel(){
+  document.body.classList.remove("bank-panel-open");
   document.getElementById("bankInfoOverlay").classList.add("hidden");
   document.getElementById("bankInfoPanel").classList.add("hidden");
 }
