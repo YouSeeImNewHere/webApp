@@ -14,8 +14,8 @@
 />
 
   <meta charset="UTF-8" />
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/mobile.css">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+<link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
   <script src="/static/theme.js"></script>
 </head>
 
@@ -187,22 +187,21 @@
     }
   </script>
 
-  <script src="/static/topBar.js"></script>
-<script src="/static/notifs.js" defer></script>
-  <script src="/static/txInspect.js"></script>
-  <script src="/static/bankInfo.js"></script>
-  <script src="/static/profile.js"></script>
-  <script src="/static/bottomTabs.js"></script>
-  <script src="/static/category_icons.js"></script>
-  <script src="/static/upcomingCard.js"></script>
-  <script src="/static/chartControls.js"></script>
-  <script src="/static/chartCard.js"></script>
+  <script src="/static/topBar.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/notifs.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/txInspect.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/bankInfo.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/profile.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/bottomTabs.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/category_icons.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/upcomingCard.js?v={{ BUILD_ID }}" defer></script>
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- NEW -->
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-  <script src="/static/layout.js"></script>
 
-  <script src="/static/home.js"></script>
+  <script src="/static/layout.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/chartControls.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/chartCard.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/home.js?v={{ BUILD_ID }}" defer></script>
 </body>
 </html>

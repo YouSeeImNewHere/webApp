@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
   <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Finance" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Finance" />
 
-<meta name="theme-color" content="#ffffff" />
-<link rel="manifest" href="/static/manifest.webmanifest" />
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
 
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>All Transactions</title>
-<link rel="stylesheet" href="/static/css/base.css">
-<link rel="stylesheet" href="/static/css/mobile.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/mobile.css">
   <script src="/static/theme.js"></script>
 </head>
 
@@ -22,40 +22,121 @@
     <div id="topBar"></div>
 
     <div style="max-width:900px;margin:0 auto;">
-      <input
-        id="txSearch"
-        type="search"
-        placeholder="Search merchant, bank, card…"
+      <!-- FILTER BAR -->
+      <div
         style="
-          width:100%;
-          padding:12px 14px;
-          border-radius:14px;
-          border:1px solid rgba(0,0,0,0.14);
-          font-weight:700;
+          display:flex;
+          flex-direction:column;
+          gap:10px;
           margin-bottom:12px;
         "
-      />
+      >
+        <input
+          id="txSearch"
+          type="search"
+          placeholder="Search merchant, bank, card, category…"
+          style="
+            width:100%;
+            padding:12px 14px;
+            border-radius:14px;
+            border:1px solid rgba(0,0,0,0.14);
+            font-weight:700;
+          "
+        />
+
+        <div
+          style="
+            display:grid;
+            grid-template-columns: 1fr 1fr;
+            gap:10px;
+          "
+        >
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            From
+            <input id="dateFrom" type="date" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
+          </label>
+
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            To
+            <input id="dateTo" type="date" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
+          </label>
+        </div>
+
+        <div
+          style="
+            display:grid;
+            grid-template-columns: 1.2fr 1fr 1fr;
+            gap:10px;
+            align-items:end;
+          "
+        >
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            Amount filter
+            <select id="amtMode" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);">
+              <option value="any">Any</option>
+              <option value="exact">Exact</option>
+              <option value="min">At least</option>
+              <option value="max">At most</option>
+              <option value="between">Between</option>
+            </select>
+          </label>
+
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            Value
+            <input id="amtA" inputmode="decimal" placeholder="e.g. 25.00"
+              style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
+          </label>
+
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            And
+            <input id="amtB" inputmode="decimal" placeholder="e.g. 100.00"
+              style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
+          </label>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+          <label style="display:flex; gap:8px; align-items:center; font-weight:800;">
+            <input id="amtAbs" type="checkbox" checked />
+            ABS (treat -50 and +50 the same)
+          </label>
+
+          <button
+            id="clearFilters"
+            style="
+              margin-left:auto;
+              padding:10px 12px;
+              border-radius:12px;
+              border:1px solid rgba(0,0,0,0.14);
+              font-weight:900;
+              cursor:pointer;
+              background:transparent;
+            "
+          >
+            Clear
+          </button>
+        </div>
+      </div>
 
       <div id="allTxList" class="tx-list"></div>
+      <div id="txSentinel" style="height:1px;"></div>
+      <div id="txStatus" style="padding:10px; opacity:0.75;"></div>
     </div>
-
   </div>
 
   <!-- Bottom tabs -->
-<div id="bottomTabs"></div>
-<script src="/static/profile.js"></script>
-<script src="/static/bottomTabs.js"></script>
+  <div id="bottomTabs"></div>
+  <script src="/static/profile.js"></script>
+  <script src="/static/bottomTabs.js"></script>
 
-
-<script>
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js").catch(console.error);
-  }
-</script>
-<script src="/static/topBar.js"></script>
-<script src="/static/notifs.js" defer></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js").catch(console.error);
+    }
+  </script>
+  <script src="/static/topBar.js"></script>
+  <script src="/static/notifs.js" defer></script>
   <script src="/static/txInspect.js"></script>
-<script src="/static/category_icons.js"></script>
+  <script src="/static/category_icons.js"></script>
 
   <script src="/static/all-transactions.js"></script>
 </body>

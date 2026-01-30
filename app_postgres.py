@@ -23,6 +23,15 @@ from db import query_db, with_db_cursor, open_pool, close_pool
 from dotenv import load_dotenv
 load_dotenv()
 
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
+from fastapi import Request
+import time
+
+BUILD_ID = str(int(time.time()))
+
+templates = Jinja2Templates(directory="static")
+
 try:
     from Receipts.receipts import router as receipts_router
 except Exception:
@@ -224,9 +233,23 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 def ping():
     return {"ok": True, "file": __file__}
 
-@app.get("/")
-def home():
-    return FileResponse("static/home.html")
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    resp = templates.TemplateResponse(
+        "home.html",
+        {
+            "request": request,
+            "BUILD_ID": BUILD_ID,
+        }
+    )
+
+    # 🔑 VERY important for iOS webapp
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+
+    return resp
+
 
 @app.get("/settings")
 def settings_page():
@@ -863,10 +886,75 @@ def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)
     attach_transfer_peers_pg(rows)
     return rows
 
+from fastapi import Query
+
 @app.get("/transactions-all")
-def transactions_all(limit: int = Query(10000, ge=1, le=50000), offset: int = Query(0, ge=0)):
+def transactions_all(
+    limit: int = Query(50, ge=1, le=50000),
+    offset: int = Query(0, ge=0),
+
+    # NEW
+    q: str = "",
+    start: str = "",
+    end: str = "",
+    amt_mode: str = "any",     # any|exact|min|max|between (JS sends this)
+    amt_min: float | None = None,
+    amt_max: float | None = None,
+    amt_abs: int = 1,          # 1 => abs(amount)
+):
+    """
+    Paginated feed with server-side filtering for All Transactions page.
+    """
+    q = (q or "").strip()
+    start = (start or "").strip()
+    end = (end or "").strip()
+    amt_mode = (amt_mode or "any").strip().lower()
+    use_abs = bool(int(amt_abs or 0))
+
+    where = []
+    params = []
+
+    # text search across merchant/bank/card/category
+    if q:
+        where.append("""
+          (
+            COALESCE(t.merchant,'') ILIKE %s OR
+            COALESCE(a.institution,'') ILIKE %s OR
+            COALESCE(a.name,'') ILIKE %s OR
+            COALESCE(t.category,'') ILIKE %s
+          )
+        """)
+        like = f"%{q}%"
+        params.extend([like, like, like, like])
+
+    # date window (ISO yyyy-mm-dd)
+    if start:
+        # parse_iso already exists in your file
+        sd = parse_iso(start)
+        where.append("d >= %s")
+        params.append(sd)
+
+    if end:
+        ed = parse_iso(end)
+        where.append("d <= %s")
+        params.append(ed)
+
+    # amount filter
+    amt_expr = "ABS(t.amount::double precision)" if use_abs else "t.amount::double precision"
+
+    # If caller sets min/max directly, honor them (regardless of amt_mode)
+    if amt_min is not None:
+        where.append(f"{amt_expr} >= %s")
+        params.append(float(amt_min))
+    if amt_max is not None:
+        where.append(f"{amt_expr} <= %s")
+        params.append(float(amt_max))
+
+    # Build WHERE clause safely
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.*,
@@ -881,6 +969,7 @@ def transactions_all(limit: int = Query(10000, ge=1, le=50000), offset: int = Qu
           SELECT
             base.*,
             CASE
+              WHEN raw_date IS NULL THEN NULL
               WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
               WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
               ELSE NULL
@@ -891,11 +980,13 @@ def transactions_all(limit: int = Query(10000, ge=1, le=50000), offset: int = Qu
           *,
           d AS "dateISO"
         FROM norm
+        {where_sql}
         ORDER BY d DESC NULLS LAST, id DESC
         LIMIT %s OFFSET %s
         """,
-        (int(limit), int(offset)),
+        tuple(params + [int(limit), int(offset)]),
     )
+
     rows = [dict(r) for r in rows]
     attach_transfer_peers_pg(rows)
     return rows
@@ -4335,3 +4426,85 @@ def page_recurring():
         "notifications_unread": unread_count(),
     }
     return payload
+
+# -----------------------------------------------------------------------------
+# /unassigned  (Postgres)
+# -----------------------------------------------------------------------------
+@app.get("/unassigned")
+def get_unassigned(limit: int = 25, mode: str = "freq"):
+    """
+    mode:
+      - "freq"   => most frequent unassigned merchants
+      - "recent" => most recent unassigned transactions
+    """
+    limit = max(1, min(int(limit or 25), 500))
+    mode = (mode or "freq").strip().lower()
+
+    # shared normalization: postedDate/purchaseDate are strings like MM/DD/YY or MM/DD/YYYY (or 'unknown')
+    base_cte = """
+      WITH base AS (
+        SELECT
+          t.id,
+          COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+          TRIM(t.merchant) AS merchant,
+          t.amount::double precision AS amount,
+          a.institution AS bank,
+          a.name        AS card
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        WHERE (t.category IS NULL OR TRIM(t.category) = '')
+          AND t.merchant IS NOT NULL
+          AND TRIM(t.merchant) <> ''
+          AND LOWER(TRIM(t.merchant)) <> 'unknown'
+      ),
+      norm AS (
+        SELECT
+          *,
+          CASE
+            WHEN raw_date IS NULL THEN NULL
+            WHEN length(raw_date) = 8  THEN to_date(raw_date, 'MM/DD/YY')
+            WHEN length(raw_date) = 10 THEN to_date(raw_date, 'MM/DD/YYYY')
+            ELSE NULL
+          END AS d
+        FROM base
+      )
+    """
+
+    if mode == "recent":
+        rows = query_db(
+            base_cte
+            + """
+            SELECT
+              id,
+              raw_date AS "postedDate",
+              merchant,
+              amount,
+              bank,
+              card
+            FROM norm
+            ORDER BY d DESC NULLS LAST, id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return [dict(r) for r in rows]
+
+    # default: freq
+    rows = query_db(
+        base_cte
+        + """
+        SELECT
+          id,
+          raw_date AS "postedDate",
+          merchant,
+          amount,
+          bank,
+          card,
+          COUNT(*) OVER (PARTITION BY merchant) AS usage_count
+        FROM norm
+        ORDER BY usage_count DESC, d DESC NULLS LAST, id DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    return [dict(r) for r in rows]
