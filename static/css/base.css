@@ -3046,7 +3046,7 @@ body.settings-page{
 :root[data-theme="dark"] .tx-row:hover,
 :root[data-theme="dark"] .category-box:hover,a
 :root[data-theme="dark"] .bank-card:hover{
-  background: color-mix(in srgb, var(--card) 86%, white);
+   background: var(--surface-hover);
 }
 
 /* Strong, consistent focus ring */
@@ -4303,4 +4303,238 @@ body.page-recurring .merge-btn{
 
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+}
+:root[data-theme="oled"]{
+  --bg: #000000;
+  --card: #000000;
+  --card-2: #050505;
+
+  --text: #f2f2f2;
+  --muted: rgba(242,242,242,0.6);
+
+  --border: rgba(255,255,255,0.08);
+  --btn-border: rgba(255,255,255,0.14);
+
+  --btn-bg: rgba(255,255,255,0.04);
+  --btn-text: #f2f2f2;
+  --btn-hover: rgba(255,255,255,0.08);
+
+  --accent: #4f8cff;
+  --accent-contrast: #000;
+
+  --shadow-soft: none;
+  --shadow-float: none;
+
+  color-scheme: dark;
+}
+:root[data-theme="solarized"]{
+  --bg: #fdf6e3;
+  --card: #fffdf5;
+  --card-2: #f5efdc;
+
+  --text: #586e75;
+  --muted: rgba(88,110,117,0.65);
+
+  --border: rgba(88,110,117,0.18);
+  --btn-border: rgba(88,110,117,0.22);
+
+  --btn-bg: #fffdf5;
+  --btn-text: #586e75;
+  --btn-hover: #eee8d5;
+
+  --accent: #268bd2;
+  --accent-contrast: #ffffff;
+
+  --shadow-soft: 0 8px 22px rgba(88,110,117,0.15);
+  --shadow-float: 0 12px 30px rgba(88,110,117,0.22);
+}
+:root[data-theme="forest"]{
+  --bg: #0f1b16;
+  --card: #14261f;
+  --card-2: #10201a;
+
+  --text: #e6f2ec;
+  --muted: rgba(230,242,236,0.65);
+
+  --border: rgba(160,200,180,0.18);
+  --btn-border: rgba(160,200,180,0.22);
+
+  --btn-bg: rgba(255,255,255,0.04);
+  --btn-text: #e6f2ec;
+  --btn-hover: rgba(255,255,255,0.08);
+
+  --accent: #3cb371; /* medium sea green */
+  --accent-contrast: #0f1b16;
+
+  --shadow-soft: 0 14px 40px rgba(0,0,0,0.45);
+  --shadow-float: 0 18px 55px rgba(0,0,0,0.6);
+
+  color-scheme: dark;
+}
+:root[data-theme="midnight"]{
+  --bg: #060b1a;
+  --card: #0b1330;
+  --card-2: #080f24;
+
+  --text: #e7ebff;
+  --muted: rgba(231,235,255,0.65);
+
+  --border: rgba(120,140,255,0.22);
+  --btn-border: rgba(120,140,255,0.26);
+
+  --btn-bg: rgba(255,255,255,0.05);
+  --btn-text: #e7ebff;
+  --btn-hover: rgba(255,255,255,0.1);
+
+  --accent: #ffb454; /* amber */
+  --accent-contrast: #060b1a;
+
+  --shadow-soft: 0 16px 45px rgba(0,0,0,0.55);
+  --shadow-float: 0 20px 60px rgba(0,0,0,0.7);
+
+  color-scheme: dark;
+}
+/* =========================================
+   Upcoming modal + upcoming rows — theme fix
+   Put at VERY BOTTOM of base.css
+   ========================================= */
+
+/* The popup card + sticky header already exist, but some parts are hardcoded */
+.upc-card,
+.upcoming-day-modal,
+.upcoming-day-modal__head{
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+.upc-head{
+  background: var(--card) !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+
+/* Rows inside the upcoming modal were hardcoded to #fafafa */
+.upcoming-day-row{
+  background: var(--card-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+.upcoming-day-row__sub,
+.upc-muted{
+  color: var(--muted) !important;
+}
+
+/* Close buttons */
+.upc-close,
+.upcoming-day-modal__close{
+  background: var(--btn-bg) !important;
+  color: var(--btn-text) !important;
+  border-color: var(--btn-border) !important;
+}
+/* ============================
+   THEME OVERRIDES: transactions + modals MUST use tokens
+   Put this at the very bottom of base.css
+   ============================ */
+
+/* Page base */
+html, body{
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+
+/* Transaction cards (Home + All Transactions) */
+.tx-row{
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.tx-row:hover{
+  background: var(--card-2, var(--card)) !important;
+}
+
+/* If any transaction list containers are forcing white */
+#txList, .tx-list, .transactions-list{
+  background: transparent !important;
+}
+
+/* Transaction detail / inspect modal (your income inspect uses these classes) */
+.tx-inspect__card,
+.tx-inspect__head,
+.tx-inspect__body{
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Upcoming Transactions popup/day groups */
+.upcoming-day-row{
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.upcoming-day-row .upcoming-day-title,
+.upcoming-day-row .upcoming-day-sub{
+  color: var(--text) !important;
+}
+
+/* Close / icon buttons in popups */
+.upcoming-day-close,
+.tx-inspect__close,
+button[data-income-close]{
+  background: var(--btn-bg, transparent) !important;
+  color: var(--btn-text, var(--text)) !important;
+  border: 1px solid var(--btn-border, var(--border)) !important;
+}
+
+/* Top bar (yours was hard-coded white earlier) */
+.top-bar{
+  background: var(--card) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+/* ============================
+   FIX: tx-row hover highlight (theme-safe)
+   Put at VERY BOTTOM of base.css
+   ============================ */
+
+/* Kill the old "mix with white" hover behavior for ALL themes */
+:root[data-theme] .tx-row:hover{
+  background: var(--surface-hover, rgba(255,255,255,0.06)) !important;
+}
+
+/* Optional: add a subtle border cue instead of brightening */
+:root[data-theme] .tx-row:hover{
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border)) !important;
+}
+
+/* Make sure the "white pill" never happens from lingering rules */
+:root[data-theme] .tx-row{
+  background: var(--card) !important;
+}
+
+/* Make canvas reliably fit the box */
+body.page-spending .chart-canvas-box canvas{
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+/* ================================
+   Spending page: keep chart size stable
+   (prevents pie chart from filling the screen)
+   ================================ */
+body.page-spending .chart-canvas-box{
+  height: 567px;        /* desktop height — tweak if you want */
+  max-height: 567px;
+  overflow: hidden;     /* keep pie + legend from spilling */
+}
+
+/* mobile: match the normal mobile chart height */
+@media (max-width: 900px){
+  body.page-spending .chart-canvas-box{
+    height: 300px;
+    max-height: 300px;
+  }
 }

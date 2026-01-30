@@ -1,6 +1,6 @@
 // /static/theme.js
 (function () {
-  const KEY = "theme"; // "light" | "dark" | "system"
+  const KEY = "theme";
   const root = document.documentElement;
 
   function getSystemTheme() {
@@ -10,16 +10,26 @@
   }
 
   function applyTheme(mode) {
-    const theme = (mode === "system") ? getSystemTheme() : mode;
-    if (theme === "dark") root.setAttribute("data-theme", "dark");
-    else root.removeAttribute("data-theme");
+    const m = (mode || "system").toLowerCase();
 
-    // optional: update browser UI color on mobile
+    // Used only for mobile browser UI tinting
+    const resolved = (m === "system") ? getSystemTheme() : m;
+
+    // Apply:
+    // - system => no attribute (default tokens)
+    // - light  => no attribute (default tokens)
+    // - anything else => data-theme = that exact value (dark/solarized/forest/midnight/etc)
+    if (m === "system" || m === "light") {
+      root.removeAttribute("data-theme");
+    } else {
+      root.setAttribute("data-theme", m);
+    }
+
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#0b0d10" : "#ffffff");
+    if (meta) meta.setAttribute("content", resolved === "dark" ? "#0b0d10" : "#ffffff");
   }
 
-  const saved = localStorage.getItem(KEY) || "system";
+  const saved = (localStorage.getItem(KEY) || "system").toLowerCase();
   applyTheme(saved);
 
   // Keep in sync if user chose "system"
@@ -28,9 +38,8 @@
     mq.addEventListener?.("change", () => applyTheme("system"));
   }
 
-  // expose setter for settings page
   window.Theme = {
-    get: () => localStorage.getItem(KEY) || "system",
+    get: () => (localStorage.getItem(KEY) || "system").toLowerCase(),
     set: (mode) => {
       localStorage.setItem(KEY, mode);
       applyTheme(mode);
