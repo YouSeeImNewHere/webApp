@@ -1,11 +1,12 @@
 import imaplib
 import email
 from email.header import decode_header
-from dotenv import load_dotenv
 import os
 import time
+from dotenv import load_dotenv
+import requests
 
-from .email_handlers import *   # handlers + account constants
+from .email_handlers import *   # handlers + account constants (still used for inserts)
 from db import with_db_cursor, query_db, open_pool, close_pool
 
 
@@ -32,6 +33,44 @@ class Timer:
         dt = (time.perf_counter() - self.t0) * 1000
         dbg(f"{self.label} took {dt:.1f} ms")
 
+
+# ============================================================
+# PUSHOVER (centralized)
+# Triggers only when a NEW email matches a rule AND handler succeeds.
+# ============================================================
+PUSHOVER_USER = os.getenv("PUSHOVER_USER") or ""
+PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN") or ""
+
+def pushover_enabled() -> bool:
+    return bool(PUSHOVER_USER.strip()) and bool(PUSHOVER_TOKEN.strip())
+
+def send_pushover(title: str, message: str):
+    """
+    Sends a Pushover notification. Never raises (logs failures instead).
+    """
+    if not pushover_enabled():
+        log("⚠️ Pushover not configured (missing PUSHOVER_USER/PUSHOVER_TOKEN)")
+        return
+
+    try:
+        r = requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={
+                "token": PUSHOVER_TOKEN,
+                "user": PUSHOVER_USER,
+                "title": title[:250],
+                "message": message[:1024],
+            },
+            timeout=10,
+        )
+        if r.status_code != 200:
+            log(f"⚠️ Pushover failed: HTTP {r.status_code} | {r.text[:200]}")
+        else:
+            dbg("✅ Pushover sent")
+    except Exception as e:
+        log(f"⚠️ Pushover exception: {e}")
+
+
 # ============================================================
 # SUBJECT FILTER (ORIGINAL)
 # ============================================================
@@ -53,6 +92,7 @@ def subject_matches(subject: str) -> bool:
         return False
     lower = subject.lower()
     return any(keyword.lower() in lower for keyword in SUBJECTS)
+
 
 # ============================================================
 # ORIGINAL REGEXES (DO NOT MODIFY GROUPS)
@@ -127,6 +167,7 @@ navyFedZelleRegex = re.compile(
     r"As of\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})"
 )
 
+
 # ============================================================
 # RULES — EXACT HANDLER COMPATIBILITY
 # ============================================================
@@ -150,9 +191,44 @@ RULES = [
     {"name": "navy federal zelle", "regex": navyFedZelleRegex, "handler": navyFedZelle},
 ]
 
+
 # ============================================================
 # DB
 # ============================================================
+
+def get_bank_card_by_account_id(account_id: int):
+    rows = query_db(
+        "SELECT institution AS bank, name AS card FROM accounts WHERE id = %s LIMIT 1",
+        (int(account_id),)
+    )
+    if not rows:
+        return ("Your bank", "Card")
+    return (rows[0]["bank"], rows[0]["card"])
+
+def get_bank_card_for_transaction(cur, extracted: dict):
+    """
+    Returns (bank, card) using the most recent transaction matching extracted data.
+    """
+    if not extracted or not extracted.get("cost"):
+        return ("Your bank", "Card")
+
+    cur.execute(
+        """
+        SELECT a.institution AS bank, a.name AS card
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        WHERE t.amount = %s
+        ORDER BY t.id DESC
+        LIMIT 1
+        """,
+        (extracted["cost"],)
+    )
+    row = cur.fetchone()
+    if not row:
+        return ("Your bank", "Card")
+
+    return (row["bank"], row["card"])
+
 def ensure_seen_table(name="email_seen_ids"):
     with with_db_cursor() as (conn, cur):
         cur.execute(f"""
@@ -200,6 +276,7 @@ def write_seen(rows, table):
         """, rows)
         conn.commit()
 
+
 # ============================================================
 # HELPERS
 # ============================================================
@@ -235,6 +312,7 @@ def parse_money(v):
     except Exception:
         return None
 
+
 # ============================================================
 # FIELD EXTRACTION (FIXED)
 # ============================================================
@@ -244,22 +322,48 @@ def extract_fields(rule_name: str, m) -> dict:
     if rule_name == "navy credit":
         out["cost"] = parse_money(m.group(1))
         out["merchant"] = m.group(3)
+        out["time"] = m.group(4)
         out["date"] = m.group(5)
+        out["card"] = "Debit" if "debit" in m.group(2).lower() else "Credit"
         return out
 
     if rule_name == "capital one credit":
         out["date"] = m.group(1)
         out["merchant"] = m.group(2)
         out["cost"] = parse_money(m.group(3))
+        out["card"] = "Credit"
         return out
 
     if rule_name == "discover credit":
         out["date"] = m.group(1)
         out["merchant"] = m.group(2)
         out["cost"] = parse_money(m.group(3))
+        out["card"] = "Credit"
         return out
 
     return out
+
+
+def format_pushover_message(bank: str, extracted: dict) -> tuple[str, str]:
+    """
+    <Bank> <Card> was used at <Merchant> for <Cost> on <Date> at <Time>
+    """
+    card = extracted.get("card", "Card")
+    merchant = extracted.get("merchant", "Unknown merchant")
+    cost = extracted.get("cost")
+    date = extracted.get("date", "unknown date")
+    time = extracted.get("time", "unknown time")
+
+    cost_str = f"${cost:.2f}" if isinstance(cost, (int, float)) else "an unknown amount"
+
+    title = "Transaction alert"
+    message = (
+        f"{bank} {card} was used at {merchant} "
+        f"for {cost_str} on {date} at {time}"
+    )
+
+    return title, message
+
 
 # ============================================================
 # IMAP
@@ -275,13 +379,24 @@ def get_imap_ids(mail):
             ids.extend(x.decode() for x in data[0].split())
     return list(dict.fromkeys(ids))
 
+
 # ============================================================
 # MAIN
 # ============================================================
 TEST_MODE = False
 
 def run():
-    load_dotenv()
+    # Load .env from project root reliably (webApp/.env)
+    project_root = Path(__file__).resolve().parents[1]  # .../webApp
+    env_path = project_root / ".env"
+    load_dotenv(dotenv_path=env_path, override=False)
+
+    # Refresh pushover creds after dotenv load
+    global PUSHOVER_USER, PUSHOVER_TOKEN
+    PUSHOVER_USER = os.getenv("PUSHOVER_USER_KEY") or ""
+    PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
+
+
     EMAIL = os.getenv("GMAIL_ADDRESS")
     PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
@@ -327,6 +442,7 @@ def run():
             rows = []
 
             for (imap_id, subject, sender, date, hdr), key in zip(meta, keys):
+                # ✅ Deduping means this is a "new" email for our pipeline
                 if key in seen:
                     continue
 
@@ -349,24 +465,79 @@ def run():
                 body = extract_body(msg)
 
                 matched = False
+
                 for rule in RULES:
                     m = rule["regex"].search(body)
                     if not m:
                         continue
 
+                    # ✅ Matched a rule. Now run handler (inserts to DB), then send pushover.
                     matched = True
-                    rule["handler"](mail, imap_id, m, "", use_test_table=TEST_MODE)
-                    rows.append({
-                        "message_id": key,
-                        "subject": subject,
-                        "sender": sender,
-                        "email_date": date,
-                        "imap_id": int(imap_id),
-                        "matched": True,
-                        "matched_rule": rule["name"],
-                        "note": "inserted",
-                        "extracted": json.dumps(extract_fields(rule["name"], m)),
-                    })
+                    extracted = extract_fields(rule["name"], m)
+
+                    try:
+                        result = rule["handler"](mail, imap_id, m, "", use_test_table=TEST_MODE)
+
+                        # ✅ Only notify if a NEW row was inserted
+                        if not result or not result.get("inserted"):
+                            # matched email, but it updated existing row OR handler skipped insert
+                            rows.append({
+                                "message_id": key,
+                                "subject": subject,
+                                "sender": sender,
+                                "email_date": date,
+                                "imap_id": int(imap_id),
+                                "matched": True,
+                                "matched_rule": rule["name"],
+                                "note": "matched_no_insert" if result else "matched_handler_skip",
+                                "extracted": json.dumps(extracted) if extracted else None,
+                            })
+                            break
+
+                        account_id = int(result["account_id"])
+                        bank, card = get_bank_card_by_account_id(account_id)
+
+                        merchant = result.get("merchant") or "Unknown"
+                        amt = result.get("amount")
+                        date_str = result.get("purchaseDate") or "unknown date"
+                        time_str = result.get("time") or "unknown time"
+
+                        amt_str = f"${amt:.2f}" if isinstance(amt, (int, float)) else "an unknown amount"
+
+                        title = "Transaction alert"
+                        message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
+
+                        send_pushover(title, message)
+
+                        rows.append({
+                            "message_id": key,
+                            "subject": subject,
+                            "sender": sender,
+                            "email_date": date,
+                            "imap_id": int(imap_id),
+                            "matched": True,
+                            "matched_rule": rule["name"],
+                            "note": "inserted_and_notified",
+                            "extracted": json.dumps(extracted) if extracted else None,
+                        })
+                        break
+
+
+                    except Exception as e:
+                        # Handler failed -> don't notify; record failure
+                        log(f"⚠️ handler failed rule={rule['name']} imap_id={imap_id}: {e}")
+                        rows.append({
+                            "message_id": key,
+                            "subject": subject,
+                            "sender": sender,
+                            "email_date": date,
+                            "imap_id": int(imap_id),
+                            "matched": False,
+                            "matched_rule": rule["name"],
+                            "note": f"handler_error: {type(e).__name__}",
+                            "extracted": json.dumps(extracted) if extracted else None,
+                        })
+
                     break
 
                 if not matched:

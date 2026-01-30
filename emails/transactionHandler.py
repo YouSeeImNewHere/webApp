@@ -232,7 +232,6 @@ def insert_transaction(
     table = "transactions_test" if use_test_table else "transactions"
 
     with with_db_cursor() as (conn, cur):
-        # auto-assign category from rules
         auto_cat = assign_category(cur, where)
 
         cur.execute(
@@ -271,6 +270,10 @@ def insert_transaction(
                                THEN EXCLUDED.category
                                ELSE {table}.category
                              END
+            RETURNING
+              id AS tx_id,
+              account_id,
+              (xmax = 0) AS inserted
             """,
             (
                 key,
@@ -287,7 +290,23 @@ def insert_transaction(
                 auto_cat,
             ),
         )
+
+        row = cur.fetchone()
         conn.commit()
+
+        # row always exists for INSERT or UPDATE in this statement
+        # inserted=True means brand new row was created
+        return {
+            "tx_id": row["tx_id"] if isinstance(row, dict) else row[0],
+            "account_id": row["account_id"] if isinstance(row, dict) else row[1],
+            "inserted": row["inserted"] if isinstance(row, dict) else row[2],
+
+            # add these so pushover is always accurate
+            "merchant": where,
+            "amount": float(cost_str) if cost_str not in ("", "unknown") else None,
+            "purchaseDate": purchaseDate,
+            "time": time,
+        }
 
 
 def import_hysa_csv(csv_path: str):

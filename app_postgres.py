@@ -109,6 +109,10 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
 
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
 
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("static/icon/favicon.ico")
+
 @app.get("/login")
 def login_page(next: str = "/"):
     # Basic single-file login form so you don't need to create a new static page.

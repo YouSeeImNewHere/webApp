@@ -115,7 +115,7 @@ def finalize_transaction(
     mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
 
     # ---- insert ----
-    insert_transaction(
+    result = insert_transaction(
         key,
         bank,
         card,
@@ -127,10 +127,8 @@ def finalize_transaction(
         source,
         use_test_table=use_test_table,
     )
+    return result
 
-# =============================================================================
-# Handlers (unchanged below)
-# =============================================================================
 # =============================================================================
 # Handlers
 # =============================================================================
@@ -162,7 +160,7 @@ def navyFedCard(mail, msg_id_str, match, timeEmail, use_test_table: bool = False
     else:
         checkKey(mail, key)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card=card, where=where, time=time, date=date,
@@ -196,7 +194,7 @@ def navyFedWithdrawal(mail, msg_id_str, match, timeEmail, use_test_table: bool =
     # 3) otherwise it truly is unmatched → keep current behavior
     add_key(cost, date, time, msg_id_str, account_id=NAVY_DEBIT_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Debit", where="unknown", time=time, date=date,
@@ -217,7 +215,7 @@ def navyFedDeposit(mail, msg_id_str, match, timeEmail, use_test_table: bool = Fa
 
     key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Debit", where="unknown", time=time, date=date,
@@ -234,7 +232,7 @@ def navyFedCreditHold(mail, msg_id_str, match, timeEmail, use_test_table: bool =
 
     key = makeKey(cost, date, account_id=NAVY_CASHREWARDS_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="cashRewards", where=where, time=time, date=date,
@@ -262,7 +260,7 @@ def americanExpress(mail, msg_id_str, match, timeEmail, use_test_table: bool = F
 
     key = makeKey(cost, date, account_id=account_id)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card=card, where=where, time=timeEmail, date=date,
@@ -280,7 +278,7 @@ def capitalOneDebit(mail, msg_id_str, match, timeEmail, use_test_table: bool = F
 
     key = makeKey(cost, date, account_id=CAPONE_DEBIT_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Debit", where=where, time=timeEmail, date=date,
@@ -298,7 +296,7 @@ def capitalOneCredit(mail, msg_id_str, match, timeEmail, use_test_table: bool = 
 
     key = makeKey(cost, date, account_id=CAPONE_SAVOR_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Savor", where=where, time=timeEmail, date=date,
@@ -316,7 +314,7 @@ def discovery(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
 
     key = makeKey(cost, date, account_id=DISCOVER_IT_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Discover It", where=where, time=timeEmail, date=date,
@@ -346,7 +344,7 @@ def amexPayment(mail, msg_id_str, match, timeEmail, use_test_table: bool = False
 
     key = makeKey(cost, date, account_id=account_id)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost,
@@ -371,7 +369,7 @@ def discoverPayment(mail, msg_id_str, match, timeEmail, use_test_table: bool = F
 
     key = makeKey(cost, date, account_id=DISCOVER_IT_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Discover It", where=where, time=timeEmail, date=date,
@@ -390,7 +388,7 @@ def capitalOnePayment(mail, msg_id_str, match, timeEmail, use_test_table: bool =
 
     key = makeKey(cost, date, account_id=CAPONE_SAVOR_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Savor", where=where, time=timeEmail, date=date,
@@ -408,7 +406,7 @@ def navyFedZelle(mail, msg_id_str, match, timeEmail, use_test_table: bool = Fals
 
     key = makeKey(cost, date, account_id=NAVY_DEBIT_ID)
 
-    finalize_transaction(
+    return finalize_transaction(
         mail, msg_id_str,
         use_test_table=use_test_table,
         cost=cost, card="Debit", where=where, time=timeEmail, date=date,
