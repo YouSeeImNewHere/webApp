@@ -2,17 +2,16 @@
 (function () {
   // Builds the same chart card layout used on Home.
   // You can reuse on any page by providing IDs + options.
-  window.mountChartCard = function mountChartCard(mountElOrSelector, cfg) {
-    const mount =
-      typeof mountElOrSelector === "string"
-        ? document.querySelector(mountElOrSelector)
-        : mountElOrSelector;
+    window.mountChartCard = function mountChartCard(mountElOrSelector, cfg) {
+      const mount =
+        typeof mountElOrSelector === "string"
+          ? document.querySelector(mountElOrSelector)
+          : mountElOrSelector;
 
-    if (!mount) return;
+      if (!mount) return;
 
-    const ids = cfg.ids;
-
-    const showToggle = cfg.showToggle !== false;
+      const ids = cfg.ids;
+      const showToggle = cfg.showToggle !== false;
 
     mount.innerHTML = `
       <section class="chart-card">
@@ -106,12 +105,22 @@
       </section>
     `;
 
-    // If toggle is hidden, also hide dots area (optional).
-    if (!showToggle) {
-      const dots = document.getElementById(ids.dots);
-      if (dots) dots.style.display = "none";
-    }
-  };
+// ✅ Move the projected growth toggle into the chart (top-right overlay)
+const growthToggle = mount.querySelector(".chart-growth-toggle");
+const canvasBox = mount.querySelector(".chart-canvas-box");
+
+if (growthToggle && canvasBox) {
+  canvasBox.appendChild(growthToggle);
+  growthToggle.classList.add("chart-growth-overlay");
+}
+
+
+  if (!showToggle) {
+    const dots = document.getElementById(ids.dots);
+    if (dots) dots.style.display = "none";
+  }
+};
+
 
 
   // Helper for the inline growth % value

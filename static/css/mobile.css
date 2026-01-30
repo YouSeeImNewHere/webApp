@@ -698,6 +698,12 @@
   .btn{
     padding: 10px 12px !important;
   }
+/* Tighten ONLY the chart header date inputs */
+.chart-dates-inline--header input[type="date"]{
+  height: 34px !important;
+  padding: 0 10px !important;
+  box-sizing: border-box;
+}
 
   details .two{
     grid-template-columns: 1fr !important;
@@ -768,6 +774,30 @@
     justify-self: end;
     white-space: nowrap;
   }
+  /* Projected growth overlay — compact on mobile */
+.chart-growth-overlay{
+  top: 6px !important;
+  right: 6px !important;
+
+  padding: 4px 8px !important;
+  gap: 6px !important;
+
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+
+/* Shrink checkbox a bit */
+.chart-growth-overlay input[type="checkbox"]{
+  transform: scale(0.85);
+}
+
+/* Optional: tighten label text */
+.chart-growth-overlay label,
+.chart-growth-overlay span{
+  font-size: 12px !important;
+  opacity: 0.9;
+}
+
 }
 
 /* =============================================================================
@@ -878,4 +908,40 @@ body.page-recurring #recurringList{
   body.page-recurring .category-box > div::-webkit-scrollbar{
     height: 0;
   }
+
+  /* Make Start/End not stretch crazy wide */
+.chart-header-dates{
+  grid-template-columns: max-content max-content auto !important;
+  justify-content: start !important;
+}
+
+/* Labels should size to content, not fill 1fr columns */
+.chart-dates-inline--header label{
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* Cap the actual date input width */
+.chart-dates-inline--header input[type="date"]{
+  width: 150px !important;
+  max-width: 150px !important;
+}
+
+}
+
+.date-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.date-box {
+  flex: 0 0 150px;   /* ← key line */
+  max-width: 150px;
+}
+
+.update-btn {
+  margin-left: 4px;
+  padding: 10px 14px;
 }
