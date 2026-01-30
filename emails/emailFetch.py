@@ -5,11 +5,11 @@ from bs4 import BeautifulSoup
 from .email_handlers import *
 from dotenv import load_dotenv
 import os
-import json
 from pathlib import Path
 from datetime import datetime, timezone
 import re
 import requests
+import json
 
 from db import with_db_cursor, query_db, open_pool, close_pool
 
@@ -53,10 +53,91 @@ def log_parse_failure(dedupe_key: str, subject: str, sender: str, body: str):
         print("Failed to log parse failure notification:", e)
 
 
+# -----------------------------
+# DB Dedupe: email_seen_ids
+# -----------------------------
+def ensure_seen_table(table_name: str = "email_seen_ids"):
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+              message_id   TEXT PRIMARY KEY,
+
+              subject      TEXT,
+              sender       TEXT,
+              email_date   TEXT,
+              imap_id      INTEGER,
+
+              matched      BOOLEAN NOT NULL DEFAULT FALSE,
+              matched_rule TEXT,
+              note         TEXT,
+
+              processed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              extracted    JSONB
+            );
+            """
+        )
+        # lightweight helpful indexes
+        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_processed_at ON {table_name} (processed_at DESC);")
+        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_matched ON {table_name} (matched);")
+        conn.commit()
+
+def seen_exists(dedupe_key: str, table_name: str = "email_seen_ids") -> bool:
+    rows = query_db(f"SELECT 1 FROM {table_name} WHERE message_id = %s LIMIT 1", (dedupe_key,))
+    return bool(rows)
+
+def mark_seen_db(
+    *,
+    dedupe_key: str,
+    subject: str,
+    sender: str,
+    date_header: str,
+    imap_id: str,
+    matched_rule: str,
+    matched: bool,
+    note: str = "",
+    extracted: dict | None = None,
+    table_name: str = "email_seen_ids",
+):
+    ensure_seen_table(table_name)
+    payload = extracted or None
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            f"""
+            INSERT INTO {table_name} (
+              message_id, subject, sender, email_date, imap_id,
+              matched, matched_rule, note, processed_at, extracted
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s)
+            ON CONFLICT (message_id) DO UPDATE SET
+              subject      = EXCLUDED.subject,
+              sender       = EXCLUDED.sender,
+              email_date   = EXCLUDED.email_date,
+              imap_id      = EXCLUDED.imap_id,
+              matched      = EXCLUDED.matched,
+              matched_rule = EXCLUDED.matched_rule,
+              note         = EXCLUDED.note,
+              processed_at = now(),
+              extracted    = EXCLUDED.extracted
+            """,
+            (
+                dedupe_key,
+                subject or "",
+                sender or "",
+                date_header or "",
+                int(imap_id) if str(imap_id).isdigit() else None,
+                bool(matched),
+                matched_rule or "",
+                note or "",
+                json.dumps(payload) if payload else None,
+            ),
+        )
+        conn.commit()
+
+
 def parse_money_to_float(s: str | None):
     if not s:
         return None
-    # handles "$1,234.56" and "1234.56" and "-123.45"
     s = s.strip().replace("$", "").replace(",", "")
     try:
         return float(s)
@@ -65,57 +146,43 @@ def parse_money_to_float(s: str | None):
 
 
 def extract_fields(rule_name: str, m) -> dict:
-    """
-    Return best-effort: merchant, cost, date.
-    date is returned as whatever format the regex captures (string).
-    """
     out = {}
 
-    # NAVY FED CARD: (1) $amount (2) credit/debit (3) merchant (4) time (5) mm/dd/yy
     if rule_name == "navy credit":
         out["cost"] = parse_money_to_float(m.group(1))
-        card_kind = (m.group(2) or "").strip().lower()  # credit|debit
+        card_kind = (m.group(2) or "").strip().lower()
         out["merchant"] = (m.group(3) or "").strip()
         out["time"] = (m.group(4) or "").strip()
         out["date"] = (m.group(5) or "").strip()
-
-        # ✅ match handler mapping (navyFedCard)
         out["account_id"] = NAVY_CASHREWARDS_ID if card_kind == "credit" else NAVY_DEBIT_ID
         return out
 
-    # NAVY FED WITHDRAWAL: (1) $amount (2) mm/dd/yy (3) time
     if rule_name == "navy withdrawal":
         out["cost"] = parse_money_to_float(m.group(1))
         out["date"] = (m.group(2) or "").strip()
         return out
 
-    # NAVY FED DEPOSIT: (1) $amount (2) mm/dd/yy (3) time
     if rule_name == "navy deposit":
         out["cost"] = parse_money_to_float(m.group(1))
         out["date"] = (m.group(2) or "").strip()
         return out
 
-    # NAVY FED CREDIT HOLD: (1) merchant (2) time (3) mm/dd/yy
     if rule_name == "navy credit hold":
         out["merchant"] = (m.group(1) or "").strip()
         out["date"] = (m.group(3) or "").strip()
         return out
 
-    # AMEX CHARGE: (1) acct (2) merchant (3) $amount (4) date
     if rule_name == "american express":
         acct = (m.group(1) or "").strip()
         out["merchant"] = (m.group(2) or "").strip()
         out["cost"] = parse_money_to_float(m.group(3))
-        out["date"] = (m.group(4) or "").strip()  # note: handler normalizes format later
-
-        # ✅ same mapping as email_handlers.americanExpress()
+        out["date"] = (m.group(4) or "").strip()
         if acct == PLAT_ACCOUNT_NUMBER:
             out["account_id"] = AMEX_PLATINUM_ID
         elif acct == BCP_ACCOUNT_NUMBER:
             out["account_id"] = AMEX_BCP_ID
         return out
 
-    # CAP ONE DEBIT: (1) $amount (2) merchant (3) date
     if rule_name == "capital one debit":
         out["cost"] = parse_money_to_float(m.group(1))
         out["merchant"] = (m.group(2) or "").strip()
@@ -137,32 +204,27 @@ def extract_fields(rule_name: str, m) -> dict:
         out["account_id"] = DISCOVER_IT_ID
         return out
 
-    # AMEX PAYMENT: (1) acct (2) amount (3) date
     if rule_name == "amex payment":
         out["cost"] = parse_money_to_float(m.group(2))
         out["date"] = (m.group(3) or "").strip()
         return out
 
-    # DISCOVER PAYMENT: (1) amount (2) date
     if rule_name == "discover payment":
         out["cost"] = parse_money_to_float(m.group(1))
         out["date"] = (m.group(2) or "").strip()
         return out
 
-    # CAP ONE PAYMENT: (1) amount (2) date
     if rule_name == "capital one payment":
         out["cost"] = parse_money_to_float(m.group(1))
         out["date"] = (m.group(2) or "").strip()
         return out
 
-    # NAVY FED ZELLE: (1) amount (2) to person (3) date
     if rule_name == "navy federal zelle":
         out["cost"] = parse_money_to_float(m.group(1))
         out["merchant"] = (m.group(2) or "").strip()
         out["date"] = (m.group(3) or "").strip()
         return out
 
-    # default: no known mapping
     return out
 
 
@@ -171,12 +233,6 @@ load_dotenv()
 # For standalone scripts (not FastAPI startup)
 open_pool()
 
-# -----------------------------
-# Pushover (phone notifications)
-# -----------------------------
-# -----------------------------
-# Pushover (phone notifications)
-# -----------------------------
 PUSHOVER_API_TOKEN = (os.getenv("PUSHOVER_API_TOKEN") or "").strip()
 PUSHOVER_USER_KEY  = (os.getenv("PUSHOVER_USER_KEY")  or "").strip()
 PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
@@ -186,7 +242,6 @@ def send_pushover(message: str, title: str = "Finance", priority: int = 0) -> No
         print("Pushover not configured (missing token/user).")
         return
 
-    # Pushover rejects empty message
     message = (message or "").strip()
     if not message:
         print("Pushover skipped: empty message")
@@ -204,21 +259,15 @@ def send_pushover(message: str, title: str = "Finance", priority: int = 0) -> No
             },
             timeout=10,
         )
-
         if not r.ok:
-            # ✅ This will tell you *exactly* why it’s 400 (bad token/user/etc.)
             print("Pushover error:", r.status_code, r.text)
-
         r.raise_for_status()
-
     except Exception as e:
         print("Pushover failed:", e)
 
 
 EMAIL = os.getenv("GMAIL_ADDRESS")
 PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-
-# -----------------------------
 
 def _first_nonempty(d: dict, keys: list[str]) -> str:
     for k in keys:
@@ -230,57 +279,7 @@ def _first_nonempty(d: dict, keys: list[str]) -> str:
             return s
     return ""
 
-def card_label_from_account_id(account_id: int | None) -> str:
-    if not account_id:
-        return ""
-
-    # These constants already exist in email_handlers.py (imported via `from emails.email_handlers_pg import *`)
-    # :contentReference[oaicite:2]{index=2}
-    mapping = {
-        NAVY_DEBIT_ID: "Debit",
-        NAVY_CASHREWARDS_ID: "cashRewards",
-        AMEX_PLATINUM_ID: "Platinum",
-        AMEX_BCP_ID: "Blue Cash Preferred",
-        CAPONE_DEBIT_ID: "Capital One Debit",
-        CAPONE_SAVOR_ID: "Savor",
-        DISCOVER_IT_ID: "Discover It",
-    }
-    return mapping.get(account_id, f"Account {account_id}")
-
-def get_bank_and_card_from_db(account_id: int | None) -> tuple[str, str]:
-    """
-    Returns (bank, card_name) from accounts table.
-    accounts: id, institution, name, ...
-    """
-    if not account_id:
-        return ("", "")
-
-    try:
-        rows = query_db(
-            "SELECT institution, name FROM accounts WHERE id = %s LIMIT 1",
-            (int(account_id),),
-        )
-        if not rows:
-            return ("", "")
-        bank = (rows[0].get("institution") or "").strip()
-        card = (rows[0].get("name") or "").strip()
-        return (bank, card)
-    except Exception as e:
-        print("Account lookup failed:", e)
-        return ("", "")
-
 def _guess_card_label(extracted: dict) -> str:
-    # ✅ Prefer account_id mapping
-    try:
-        acct_id = extracted.get("account_id")
-        if acct_id is not None:
-            label = card_label_from_account_id(int(acct_id))
-            if label:
-                return label
-    except Exception:
-        pass
-
-    # (keep your existing logic)
     label = _first_nonempty(
         extracted,
         ["card_used","card","card_name","account","account_name","payment_method",
@@ -288,7 +287,6 @@ def _guess_card_label(extracted: dict) -> str:
     )
     if label:
         return label
-
     for k, v in extracted.items():
         lk = str(k).lower()
         if any(tok in lk for tok in ("last4", "card", "account", "acct")):
@@ -297,22 +295,9 @@ def _guess_card_label(extracted: dict) -> str:
                 return s
     return ""
 
-def _guess_datetime_label(extracted: dict) -> str:
-    # If your parser provides a combined datetime field, prefer that.
-    dt = _first_nonempty(extracted, ["datetime", "date_time", "timestamp", "posted_at", "authorized_at"])
-    if dt:
-        return dt
-
-    date = _first_nonempty(extracted, ["date", "posted_date", "transaction_date"])
-    time = _first_nonempty(extracted, ["time", "transaction_time"])
-    if date and time:
-        return f"{date} {time}"
-    return date or time
-
 def format_purchase_pushover(extracted: dict) -> str:
     merchant = _first_nonempty(extracted, ["merchant", "description", "merchant_name"]).strip()
 
-    # cost
     raw_cost = extracted.get("cost", "")
     cost_val = None
     try:
@@ -327,27 +312,10 @@ def format_purchase_pushover(extracted: dict) -> str:
 
     date = _first_nonempty(extracted, ["date", "posted_date", "transaction_date"]).strip()
     time = _first_nonempty(extracted, ["time", "transaction_time"]).strip()
+    card = _guess_card_label(extracted)
 
-    # ✅ Prefer DB truth via account_id (bank + card)
-    bank = ""
-    card = ""
-    try:
-        acct_id = extracted.get("account_id")
-        if acct_id is not None:
-            bank, card = get_bank_and_card_from_db(int(acct_id))
-    except Exception:
-        pass
-
-    # fallback if DB lookup didn’t return a label
-    if not card:
-        card = _guess_card_label(extracted)
-
-    # Build sentence (skip missing parts gracefully)
     cost_txt = f"${cost_val:,.2f}" if cost_val is not None else ""
-
-    subject = " ".join([x for x in [bank, card] if x]).strip()
-    if not subject:
-        subject = "A card"
+    subject = card or "A card"
 
     parts = [f"{subject} was used"]
     if merchant:
@@ -360,73 +328,6 @@ def format_purchase_pushover(extracted: dict) -> str:
         parts.append(f"at {time}")
 
     return " ".join(parts).strip() + "."
-
-# De-dupe: processed Message-IDs
-# -----------------------------
-SEEN_IDS_FILE = Path(__file__).resolve().parent / "seen_ids.json"
-SEEN_IDS_TEST_FILE = Path(__file__).resolve().parent / "seen_ids_test.json"
-
-# Toggle: when True, reads seen_ids.json but writes ONLY to seen_ids_test.json and inserts into transactions_test
-TEST_MODE = False
-
-
-def load_seen_ids(path: Path) -> dict:
-    if path.exists():
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_seen_ids(path: Path, seen: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(seen, f, indent=2)
-
-def mark_seen_test(
-    seen: dict,
-    dedupe_key: str,
-    subject: str,
-    sender: str,
-    date_header: str,
-    imap_id: str,
-    matched_rule: str,
-    matched: bool,
-    note: str = "",
-    extracted: dict | None = None,
-) -> None:
-    """
-    New JSON format:
-      {
-        "<message-id>": {
-           "subject": "...",
-           "sender": "...",
-           "date": "...",
-           "imap_id": "...",
-           "matched": true/false,
-           "matched_rule": "rule name or ''",
-           "note": "...",
-           "processed_at": "...",
-           "extracted": { "merchant": "...", "cost": 0.0, "date": "..." }   # optional
-        }
-      }
-    """
-    entry = {
-        "subject": subject or "",
-        "sender": sender or "",
-        "date": date_header or "",
-        "imap_id": imap_id,
-        "matched": bool(matched),
-        "matched_rule": matched_rule or "",
-        "note": note or "",
-        "processed_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if extracted:
-        # only keep non-empty values
-        entry["extracted"] = {k: v for k, v in extracted.items() if v not in (None, "", [])}
-
-    seen[dedupe_key] = entry
 
 def decode_hdr(val: str) -> str:
     if not val:
@@ -444,45 +345,25 @@ def get_dedupe_key_from_headers(hdr_msg, sender: str, subject: str, date_header:
     msgid = (hdr_msg.get("Message-ID") or "").strip().lower()
     if msgid:
         return msgid
-    # Rare fallback if Message-ID missing
     return f"{sender.strip().lower()}|{subject.strip().lower()}|{(date_header or '').strip()}|imap:{fallback_imap_id}"
-
-
-
-def mark_seen(path: Path, seen: dict, msg_id_str: str, subject: str) -> None:
-    # store minimal metadata (handy for debugging)
-    seen[msg_id_str] = {
-        "subject": subject,
-        "processed_at": datetime.now(timezone.utc).isoformat()
-    }
-    save_seen_ids(path, seen)
 
 def sender_matches(rule: dict, sender: str) -> bool:
     sender_l = (sender or "").lower()
     needles = rule.get("from_contains")
     if not needles:
-        return True  # no constraint => allowed
+        return True
     return any(n.lower() in sender_l for n in needles)
 
 MAILBOXES = ["INBOX", '"[Gmail]/All Mail"']
 
 def iter_message_ids(mail):
-    """
-    Yield message IDs from INBOX first, then All Mail (deduped).
-    Oldest -> newest within each mailbox.
-    """
     seen_local = set()
-
     for mbox in MAILBOXES:
         mail.select(mbox)
         status, data = mail.search(None, 'X-GM-RAW', 'newer_than:30d')
-
         if status != "OK" or not data or not data[0]:
             continue
-
         ids = data[0].split()
-
-        # oldest -> newest
         for msg_id in ids:
             msg_id_str = msg_id.decode()
             if msg_id_str in seen_local:
@@ -491,33 +372,31 @@ def iter_message_ids(mail):
             yield msg_id_str
 
 SUBJECTS = [
-    "Transaction Notification",  # navy fed
-    "Withdrawal Notification",  # navy fed
-    "Large Purchase Approved",  # amex
-    "Debit Card Purchase",  # capital one debit
-    "A new transaction was charged to your account",  # capital one credit
-    "Transaction Alert",  # discovery
-    "Deposit Notification",  # navy fed
-
-    "We processed your payment",  # card payment
-    "We've received your payment",  # card payment
+    "Transaction Notification",
+    "Withdrawal Notification",
+    "Large Purchase Approved",
+    "Debit Card Purchase",
+    "A new transaction was charged to your account",
+    "Transaction Alert",
+    "Deposit Notification",
+    "We processed your payment",
+    "We've received your payment",
     "Your payment to"
 ]
 
-navyFedRegex = re.compile( r"The transaction for (\$[\d,]+\.\d{2}) was approved for your (credit|debit) card ending in \d{4} at (.*) at ((?:0[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)) [A-Z]{3} on ((?:0[1-9]|1[0-2])\/(?:[0-2][0-9]|3[01])\/\d{2})")
+navyFedRegex = re.compile(r"The transaction for (\$[\d,]+\.\d{2}) was approved for your (credit|debit) card ending in \d{4} at (.*) at ((?:0[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)) [A-Z]{3} on ((?:0[1-9]|1[0-2])\/(?:[0-2][0-9]|3[01])\/\d{2})")
 navyFedWithdrawalRegex = re.compile(r"(\$[\d,]+\.\d{2}) was withdrawn from your Active Duty Checking account ending in \d{4}. As of ((?:0[1-9]|1[0-2])\/(?:[0-2][0-9]|3[01])\/\d{2}) at ((?:0[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)) [A-Z]{2}")
 navyFedDepositRegex = re.compile(r"(\$[\d,]+\.\d{2}) .* of (\d\d\/\d\d\/\d\d) at (\d\d:\d\d \w+) ")
 navyFedCreditHoldRegex = re.compile(r"at (.*) at (\d\d:\d\d \w+) .* on (\d\d\/\d\d\/\d\d)")
 americanExpressRegex = re.compile(
     r"(?s)Account Ending:\s*\(?(\d+)\)?"
-    r".*?\n([A-Z0-9][A-Z0-9 &'.,\-*/]+?)\s*\n"  # merchant (group 2)
-    r"\$([\d,]+\.\d{2})\*?\s*\n"  # amount (group 3)
-    r"(?:[A-Za-z]{3},\s*)?([A-Za-z]{3}\s+\d{1,2},\s+\d{4})"  # date (group 4)
+    r".*?\n([A-Z0-9][A-Z0-9 &'.,\-*/]+?)\s*\n"
+    r"\$([\d,]+\.\d{2})\*?\s*\n"
+    r"(?:[A-Za-z]{3},\s*)?([A-Za-z]{3}\s+\d{1,2},\s+\d{4})"
 )
 capitalOneDebitRegex = re.compile(r"Amount: (\$[\d,]+\.\d{2})\r?\n.* - (.*)\r?\nDate: ((?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4})")
 capitalOneCreditRegex = re.compile(r"As requested, we're notifying you that on ((?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}), at (.*), .* of (\$[\d,]+\.\d{2})")
 discoveryRegex = re.compile(r"Transaction Date:: ((?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4})\s*Merchant: (.*)\s*Amount: (\$[\d,]+\.\d{2})")
-
 amexPaymentRegex = re.compile(
     r"(?s)Account Ending:\s*\(?(\d+)\)?"
     r".*?Payment amount:\s*\(?\$?(-?\d{1,3}(?:,\d{3})*\.\d{2})\)?"
@@ -534,13 +413,11 @@ navyFedZelleRegex = re.compile(
     r"As of\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})"
 )
 
-
 def subject_matches(subject: str) -> bool:
     if not subject:
         return False
     lower = subject.lower()
     return any(keyword.lower() in lower for keyword in SUBJECTS)
-
 
 RULES = [
     {"name": "navy credit", "regex": navyFedRegex, "handler": navyFedCard},
@@ -561,7 +438,7 @@ RULES = [
     {
         "name": "discover payment",
         "from_contains": ["discover.com", "discover@services.discover.com", "discover card"],
-        "regex": discoverPaymentRegex,   # make a payment-specific regex if needed
+        "regex": discoverPaymentRegex,
         "handler": discoverPayment
     },
     {
@@ -578,12 +455,7 @@ RULES = [
     },
 ]
 
-
 def extract_email_body(msg) -> str:
-    """
-    Returns the best-effort text body from an email.message.Message.
-    Prefers text/plain, falls back to text/html (converted to text).
-    """
     if msg.is_multipart():
         plain_text = None
         html_text = None
@@ -619,14 +491,12 @@ def extract_email_body(msg) -> str:
 
 from email.utils import parsedate_to_datetime
 
-def test():
-    # ✅ always test mode for this run
-    use_test_table = False
-    seen_path = SEEN_IDS_FILE
+# Toggle: if True, inserts into transactions_test AND writes to email_seen_ids_test
+TEST_MODE = False
 
-    # Load existing seen file so we can skip already-processed emails
-    seen = load_seen_ids(seen_path)
-    seen_keys = set(seen.keys())  # dedupe_key = Message-ID
+def test():
+    use_test_table = bool(TEST_MODE)
+    seen_table = "email_seen_ids_test" if use_test_table else "email_seen_ids"
 
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(EMAIL, PASSWORD)
@@ -654,8 +524,8 @@ def test():
 
         dedupe_key = get_dedupe_key_from_headers(hdr_msg, sender, subject, date_header, msg_id_str)
 
-        # ✅ Skip if already processed
-        if dedupe_key in seen_keys:
+        # ✅ Skip if already processed (DB)
+        if seen_exists(dedupe_key, table_name=seen_table):
             continue
 
         # compute timeEmail for handlers
@@ -666,11 +536,9 @@ def test():
             sent_dt = None
         timeEmail = sent_dt.strftime("%I:%M %p") if sent_dt else ""
 
-        # If not a subject we care about, still record it as seen? (you previously did)
-        # If you ONLY want to record matched ones, change this to `continue` without mark_seen_test.
+        # If not a subject we care about, record as seen (DB)
         if not subject_matches(subject):
-            mark_seen_test(
-                seen=seen,
+            mark_seen_db(
                 dedupe_key=dedupe_key,
                 subject=subject,
                 sender=sender,
@@ -679,17 +547,15 @@ def test():
                 matched_rule="",
                 matched=False,
                 note="subject_not_matched",
-                extracted=None
+                extracted=None,
+                table_name=seen_table,
             )
-            save_seen_ids(seen_path, seen)
-            seen_keys.add(dedupe_key)
             continue
 
         # 2) Fetch full message (expensive)
         res, msg_data = mail.fetch(msg_id_str, "(RFC822)")
         if res != "OK":
-            mark_seen_test(
-                seen=seen,
+            mark_seen_db(
                 dedupe_key=dedupe_key,
                 subject=subject,
                 sender=sender,
@@ -698,10 +564,9 @@ def test():
                 matched_rule="",
                 matched=False,
                 note="fetch_rfc822_failed",
-                extracted=None
+                extracted=None,
+                table_name=seen_table,
             )
-            save_seen_ids(seen_path, seen)
-            seen_keys.add(dedupe_key)
             continue
 
         full_msg = None
@@ -711,8 +576,7 @@ def test():
                 break
 
         if full_msg is None:
-            mark_seen_test(
-                seen=seen,
+            mark_seen_db(
                 dedupe_key=dedupe_key,
                 subject=subject,
                 sender=sender,
@@ -721,13 +585,11 @@ def test():
                 matched_rule="",
                 matched=False,
                 note="no_message_bytes",
-                extracted=None
+                extracted=None,
+                table_name=seen_table,
             )
-            save_seen_ids(seen_path, seen)
-            seen_keys.add(dedupe_key)
             continue
 
-        # Re-read headers from full message (sometimes cleaner)
         subject = decode_hdr(full_msg.get("Subject", subject))
         sender = decode_hdr(full_msg.get("From", sender))
         date_header = full_msg.get("Date", date_header) or date_header
@@ -738,7 +600,7 @@ def test():
         matched_rule = ""
         extracted = None
 
-        # 3) Match rules + INSERT into transactions_test via handler
+        # 3) Match rules + handler insert
         for rule in RULES:
             if not sender_matches(rule, sender):
                 continue
@@ -751,25 +613,25 @@ def test():
             matched_rule = rule.get("name", "")
             extracted = extract_fields(matched_rule, m) or None
 
-            # If the regex didn't capture time, use the handler-style fallback
             if extracted is not None and "time" not in extracted:
                 extracted["time"] = timeEmail
 
-            # ✅ INSERT to DB test table (via your existing handler)
             try:
                 rule["handler"](mail, msg_id_str, m, timeEmail, use_test_table=use_test_table)
             except Exception as e:
                 print("Handler failed:", e)
                 log_parse_failure(dedupe_key, subject, sender, body)
                 # ❌ DO NOT mark seen — retry next run
-                continue
+                matched = False
+                matched_rule = ""
+                extracted = None
+                break
+
             break
 
-        # 4) Record outcome in JSON
+        # 4) Record outcome in DB
         if matched:
-            note = "inserted_transactions_test"
-            mark_seen_test(
-                seen=seen,
+            mark_seen_db(
                 dedupe_key=dedupe_key,
                 subject=subject,
                 sender=sender,
@@ -777,37 +639,30 @@ def test():
                 imap_id=msg_id_str,
                 matched_rule=matched_rule,
                 matched=True,
-                note=note,
-                extracted=extracted
+                note="inserted_transactions_test" if use_test_table else "inserted_transactions",
+                extracted=extracted,
+                table_name=seen_table,
             )
-            save_seen_ids(seen_path, seen)
-            seen_keys.add(dedupe_key)
 
             print("✅ Inserted + seen:", dedupe_key, "|", matched_rule, "|", extracted)
 
-            # ✅ Phone notification for PURCHASES only (no webapp notifications table entry)
+            # ✅ Phone notification for purchases only
             try:
                 rule_lower = (matched_rule or "").lower()
                 is_non_purchase = any(x in rule_lower for x in ["payment", "deposit", "withdrawal", "transfer", "interest"])
                 has_purchase_fields = bool(extracted and extracted.get("merchant") and extracted.get("cost") is not None)
                 if (not is_non_purchase) and has_purchase_fields:
                     message = format_purchase_pushover(extracted)
-                    send_pushover(
-                        title="Purchase Alert",
-                        message=message,
-                    )
+                    send_pushover(title="Purchase Alert", message=message)
             except Exception as e:
                 print("Purchase notification build failed:", e)
 
         else:
-            # If you want unmatched emails to stay un-seen so you can retry later, do NOT write them.
-            # Current behavior: still record them to seen file so you don't keep re-parsing noise.
             note = "no_rule_matched"
             if re.search("declined", body or "", re.IGNORECASE):
                 note = "no_rule_matched_declined_detected"
 
-            mark_seen_test(
-                seen=seen,
+            mark_seen_db(
                 dedupe_key=dedupe_key,
                 subject=subject,
                 sender=sender,
@@ -816,14 +671,11 @@ def test():
                 matched_rule="",
                 matched=False,
                 note=note,
-                extracted=None
+                extracted=None,
+                table_name=seen_table,
             )
-            save_seen_ids(seen_path, seen)
-            seen_keys.add(dedupe_key)
 
-            # optional: also log parse failure notification for unmatched (you used to)
             log_parse_failure(dedupe_key, subject, sender, body)
-
             print("— No match:", dedupe_key, "|", subject)
 
     mail.logout()
