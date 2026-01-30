@@ -211,7 +211,6 @@ app.add_middleware(
     same_site="lax",
     max_age=None,
     https_only=is_render,
-    max_age=None,   # ⬅️ browser-session cookie (deleted on close)
 )
 
 # =============================================================================
