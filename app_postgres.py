@@ -623,6 +623,29 @@ def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
 
     return {"ok": True, "id": tx_id, "category": category}
 
+@app.delete("/transaction/{tx_id}")
+def transaction_delete(tx_id: str):
+    """
+    Permanently deletes a transaction by id.
+    """
+    with with_db_cursor() as (conn, cur):
+        try:
+            cur.execute("DELETE FROM transactions WHERE id = %s", (tx_id,))
+            if (cur.rowcount or 0) == 0:
+                conn.rollback()
+                raise HTTPException(
+                    status_code=404,
+                    detail={"ok": False, "error": "not_found", "id": tx_id},
+                )
+            conn.commit()
+            return {"ok": True, "deleted": tx_id}
+        except HTTPException:
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 # =============================================================================
 # Balance / Series Helpers (Postgres)
 # Ported from balances.py

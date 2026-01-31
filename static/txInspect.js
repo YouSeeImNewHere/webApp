@@ -106,6 +106,17 @@
     );
   }
 
+  function removeAnyVisibleTxRows(txId) {
+    const rows = document.querySelectorAll(
+      `.tx-row[data-tx-id="${CSS.escape(String(txId))}"]`
+    );
+    rows.forEach((row) => row.remove());
+
+    window.dispatchEvent(
+      new CustomEvent("tx:deleted", { detail: { txId } })
+    );
+  }
+
   function renderTxInspect(obj, txId) {
     const grid = document.getElementById("txInspectGrid");
     if (!grid) return;
@@ -134,7 +145,7 @@
         return `
           <div class="tx-k">${esc(k)}</div>
           <div class="tx-v">
-            <div class="tx-inline-edit">
+            <div class="tx-inline-edit" style="gap:10px;">
               <input
                 id="txInspectCategoryInput"
                 class="tx-edit-input"
@@ -145,6 +156,12 @@
                 autocomplete="off"
               />
               <button id="txInspectCategorySave" class="tx-edit-btn" type="button">Save</button>
+              <button
+                id="txInspectDelete"
+                class="tx-edit-btn"
+                type="button"
+                style="background:#ff3b30;color:#fff;"
+              >Delete</button>
             </div>
             <div id="txInspectCategoryStatus" class="tx-edit-status" aria-live="polite"></div>
           </div>
@@ -158,6 +175,7 @@
     const btn = document.getElementById("txInspectCategorySave");
     const input = document.getElementById("txInspectCategoryInput");
     const status = document.getElementById("txInspectCategoryStatus");
+    const delBtn = document.getElementById("txInspectDelete");
 
     if (btn && input) {
       btn.onclick = async () => {
@@ -187,6 +205,35 @@
         }
       };
     }
+        if (delBtn) {
+      delBtn.onclick = async () => {
+        const ok = confirm("Delete this transaction? This cannot be undone.");
+        if (!ok) return;
+
+        delBtn.disabled = true;
+        if (status) status.textContent = "Deleting…";
+
+        try {
+          const res = await fetch(`/transaction/${encodeURIComponent(txId)}`, {
+            method: "DELETE",
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          removeAnyVisibleTxRows(txId);
+
+          // close modal
+          const backdrop = document.getElementById("txInspectBackdrop");
+          const modal = document.getElementById("txInspectModal");
+          if (backdrop) backdrop.style.display = "none";
+          if (modal) modal.style.display = "none";
+        } catch (e) {
+          console.error(e);
+          if (status) status.textContent = "Failed to delete";
+          delBtn.disabled = false;
+        }
+      };
+    }
+
   }
 
   async function openTxInspect(txId) {
