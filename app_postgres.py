@@ -111,7 +111,7 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
 
 @app.get("/favicon.ico")
 async def favicon():
-    return FileResponse("static/icon/favicon.ico")
+    return FileResponse("static/icons/favicon.ico")
 
 @app.get("/login")
 def login_page(next: str = "/"):

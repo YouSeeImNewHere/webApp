@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="64mm"
+   height="64mm"
+   viewBox="0 0 64 64"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   sodipodi:docname="bills.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="true"
+     inkscape:zoom="2.1252104"
+     inkscape:cx="132.22221"
+     inkscape:cy="110.81256"
+     inkscape:window-width="2560"
+     inkscape:window-height="1417"
+     inkscape:window-x="2552"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1">
+    <inkscape:grid
+       id="grid1"
+       units="mm"
+       originx="0"
+       originy="0"
+       spacingx="0.19999999"
+       spacingy="0.19999999"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="5"
+       enabled="true"
+       visible="true" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <rect
+       x="60.472439"
+       y="52.913384"
+       width="120.94488"
+       height="71.811023"
+       id="rect6" />
+    <rect
+       x="60.472439"
+       y="71.811021"
+       width="113.38582"
+       height="45.354329"
+       id="rect3" />
+    <rect
+       x="49.133857"
+       y="71.811021"
+       width="113.38582"
+       height="56.692912"
+       id="rect1" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <text
+       xml:space="preserve"
+       style="font-size:3.175px;writing-mode:lr-tb;direction:ltr;fill:#000000;fill-opacity:0;stroke:#000000;stroke-width:0.3"
+       x="27.999998"
+       y="23.999998"
+       id="text2"><tspan
+         sodipodi:role="line"
+         id="tspan2"
+         style="stroke-width:0.3"
+         x="27.999998"
+         y="23.999998" /></text>
+    <path
+       id="rect5"
+       style="fill:#f1f1f1;fill-opacity:1;stroke:#000000;stroke-width:0.9;stroke-dasharray:none"
+       d="m 15.622487,6.9999998 c 0.766734,-0.6987991 4.166703,-1.9951808 5.377512,-2 l 25.171015,-0.100183 h 5.828984 c 0.548864,0 -4,5.1001829 -4,5.1001829 l 0.09204,49.1001833 -4.094832,-4.802562 -3.496926,4.802562 -4.757691,-4.802562 -4.116484,4.802562 -4.757098,-4.802562 -4.18286,4.570801 -4.214172,-4.570801 -5.370047,4.802562 V 13 c 0,-2.15058 2.34983,-5.8443997 2.520558,-6.0000002 z"
+       sodipodi:nodetypes="sscsccccccccccsss" />
+    <path
+       id="path6"
+       style="fill:#b2b2b2;fill-opacity:1;stroke:#000000;stroke-width:0.9;stroke-dasharray:none"
+       d="m 52.265603,4.8998168 c -2.347108,7.18e-5 -4.26536,2.003156 -4.265432,4.3502646 v 6.5520546 l 1.864486,-1.401981 1.346171,1.399914 1.37976,-1.399914 1.096058,1.399914 1.313098,-1.399914 1.500166,1.401981 V 9.2500814 C 56.499838,6.9029732 54.612711,4.8998891 52.265603,4.8998168 Z"
+       sodipodi:nodetypes="ccccccccccc" />
+    <text
+       xml:space="preserve"
+       transform="matrix(0.35344851,0,0,0.48354563,-12.499942,-13.408921)"
+       id="text6"
+       style="font-size:42.6667px;text-align:center;letter-spacing:0px;writing-mode:lr-tb;direction:ltr;white-space:pre;shape-inside:url(#rect6);fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0;stroke-dasharray:none"
+       x="0"
+       y="0"><tspan
+         x="73.591111"
+         y="91.840185"
+         id="tspan1">BILL</tspan></text>
+  </g>
+</svg>
