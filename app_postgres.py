@@ -3029,9 +3029,20 @@ def les_paychecks(req: LESPaychecksRequest):
             "mid_month_collections_total": round(float(p.mid_month_collections_total), 2),
         },
         "net": {
-            "mid_month_pay": round(float(out.mid_month_pay), 2),
-            "eom": round(float(out.eom), 2),
-        },
+    # model (projected)
+    "projected_mid_month": round(float(out.mid_month_pay), 2),
+    "projected_eom": round(float(out.eom), 2),
+    "projected_monthly_net": round(float(projected_monthly_net), 2),
+
+    # display (what the UI should show)
+    "mid_month_pay": round(float(mid_month_display), 2),
+    "eom": round(float(eom_display), 2),
+
+    # helpful flags for the UI logic
+    "mid_month_is_actual": bool(actual_mid is not None),
+    "mid_month_actual": round(float(actual_mid), 2) if actual_mid is not None else None,
+},
+
     }
 
     return {"events": events, "breakdown": breakdown}
@@ -3057,6 +3068,10 @@ def get_les_profile(key: str = "default"):
         profile = {}
 
     return {"key": key, "profile": profile}
+
+class SaveLESProfileBody(BaseModel):
+    key: str = "default"
+    profile: Dict[str, Any]
 
 @app.post("/les-profile")
 def save_les_profile(body: SaveLESProfileBody):

@@ -3,25 +3,34 @@ import calendar
 from datetime import date
 
 BASE_PAY_TABLE = {
-    "E6": {0: 3276.60, 2: 3606.00, 3: 3765.00, 4: 3919.80, 6: 4080.60, 8: 4443.90, 10: 4585.20},
-    "E5": {0: 3220.50, 2: 3466.50, 3: 3637.50, 4: 3802.20, 6: 3959.40, 8: 4124.40, 10: 4234.50},
-    "E4": {0: 3027.30, 2: 3182.10, 3: 3354.90, 4: 3524.70, 6: 3675.60, 8: 3675.60, 10: 3675.60},
-    "E3": {0: 2733.00, 2: 2904.60, 3: 3081.00, 4: 3081.00, 6: 3081.00, 8: 3081.00, 10: 3081.00},
-    "E2": {0: 2599.20, 2: 2599.20, 3: 2599.20, 4: 2599.20, 6: 2599.20, 8: 2599.20, 10: 2599.20},
-    "E1": {0: 2319.00, 2: 2319.00, 3: 2319.00, 4: 2319.00, 6: 2319.00, 8: 2319.00, 10: 2319.00},
+    "E9": {0: 3932.10, 2: 4291.50, 3: 4456.20, 4: 4673.10, 6: 4843.80},
+    "E8": {0: 3401.10, 2: 3743.10, 3: 3908.10, 4: 4068.90, 6: 4235.70},
+    "E7": {0: 3542.90, 2: 3598.20, 3: 3775.80, 4: 3946.80, 6: 4110.00},
+    "E6": {0: 3401.10, 2: 3743.10, 3: 3908.10, 4: 4068.90, 6: 4235.70},
+    "E5": {0: 3342.90, 2: 3598.20, 3: 3775.80, 4: 3946.80, 6: 4110.00},
+    "E4": {0: 3142.20, 2: 3303.00, 3: 3482.40, 4: 3658.50, 6: 3815.40},
+    "E3": {0: 2836.80, 2: 3015.00, 3: 3198.00, 4: 3198.00, 6: 3198.00},
+    "E2": {0: 2697.90, 2: 2697.90, 3: 2697.90, 4: 2697.90, 6: 2697.90},
+    "E1": {0: 2407.20, 2: 2407.20, 3: 2407.20, 4: 2407.20, 6: 2407.20},
+    "E1<4MOS": {0: 2225.70},
 }
+
 
 
 # BAH lookup table (example values you provided)
 # key: paygrade (rank), value: (with_dependents, without_dependents)
 BAH_TABLE = {
-    "E1": (2253.00, 1866.00),
-    "E2": (2253.00, 1866.00),
-    "E3": (2253.00, 1866.00),
-    "E4": (2253.00, 1866.00),
-    "E5": (2358.00, 2043.00),
-    "E6": (2661.00, 2151.00),
+    "E1": (2265.00, 1974.00),
+    "E2": (2265.00, 1974.00),
+    "E3": (2265.00, 1974.00),
+    "E4": (2265.00, 1974.00),
+    "E5": (2364.00, 2091.00),
+    "E6": (2730.00, 2169.00),
+    "E7": (2844.00, 2265.00),
+    "E8": (2967.00, 2442.00),
+    "E9": (3105.00, 2547.00),
 }
+
 
 def get_bah(paygrade: str, has_dependents: bool) -> float:
     """
@@ -169,19 +178,24 @@ def generate_les_right_side(
     fica_wages_include_special_pays: bool = False,
 
     # NEW: meal deduction inputs
-    meal_rate_per_day: float = 13.30,
-    meal_year: int | None = None,
-    meal_month: int | None = None,
-    meal_end_day: int | None = None,
+        meal_enabled: bool = False,
+        meal_rate_per_day: float = 13.30,
+        meal_year: int | None = None,
+        meal_month: int | None = None,
+        meal_end_day: int | None = None,
 
-    mid_month_pay: float = 0.0,
+    mid_month_pay: float | None = None
 ) -> LESOutputs:
     # Meal deduction (computed if year/month/end_day provided; otherwise 0.0)
-    if meal_year is not None and meal_month is not None and meal_end_day is not None:
-        meal_deduction = calc_meal_deduction(meal_rate_per_day, meal_year, meal_month, meal_end_day)
+    if (
+            meal_enabled
+            and meal_year is not None
+            and meal_month is not None
+            and meal_end_day is not None
+    ):
+        meal_deduction = calc_meal_deduction(...)
     else:
         meal_deduction = 0.0
-
 
     # Taxable wages ("Wage Period" on LES)
     taxable = inp.base_pay + inp.submarine_pay + inp.career_sea_pay + inp.spec_duty_pay
@@ -204,19 +218,19 @@ def generate_les_right_side(
     # Deductions excluding mid-month (and excluding allotments if you add them later)
     deductions_no_mid = fed + fica_ss + fica_med + sgli + afrh + roth_tsp + meal_deduction
 
-    # NEW: compute mid-month pay
-    mid_month_pay = calc_mid_month_pay(
-        total_entitlements=total_entitlements,
-        total_deductions_excluding_mid=deductions_no_mid,
-        allotments_total=0.0,  # set from LES/allotments data if any
-        mid_month_fraction=0.5,  # default
-        mid_month_collections_total=0.0,  # set from LES collections if any
-    )
+    # Use override if provided; else compute DFAS-style
+    if mid_month_pay is None:
+        mid_month_pay = calc_mid_month_pay(
+            total_entitlements=total_entitlements,
+            total_deductions_excluding_mid=deductions_no_mid,
+            allotments_total=0.0,
+            mid_month_fraction=0.5,
+            mid_month_collections_total=0.0,
+        )
+    else:
+        mid_month_pay = truncate_cents(mid_month_pay)
 
-    # Total deductions includes mid-month
     total_deductions = deductions_no_mid + mid_month_pay
-
-    # EOM deposit
     eom = truncate_cents(total_entitlements - total_deductions)
 
     return LESOutputs(

@@ -86,11 +86,17 @@
     _saveTimer = setTimeout(async () => {
       try {
         _lastServerWrite = Date.now();
-        await fetch("/les-profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: SERVER_KEY, profile })
-        });
+        const res = await fetch("/les-profile", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ key: SERVER_KEY, profile })
+});
+
+if (!res.ok) {
+  const txt = await res.text();
+  console.error("LES profile save failed:", res.status, txt);
+}
+
       } catch (e) {
         // keep silent; localStorage is still the source of truth offline
         console.warn("LES profile save failed:", e);

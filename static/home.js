@@ -1729,14 +1729,22 @@ async function loadCategoryOptions() {
   });
 }
 
-function shortDate(mmddyyOrIso) {
-  if (!mmddyyOrIso) return "";
+function shortDate(s) {
+  if (!s) return "";
+
   // "12/01/25" -> "12/01"
-  if (mmddyyOrIso.includes("/")) {
-    const parts = mmddyyOrIso.split("/");
-    return `${parts[0]}/${parts[1]}`;
+  if (String(s).includes("/")) {
+    const [mm, dd] = String(s).split("/");
+    return `${mm}/${dd}`;
   }
-  const d = new Date(mmddyyOrIso);
+
+  // "YYYY-MM-DD" (date-only) -> "MM/DD" without timezone shifting
+  const iso = String(s);
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[2]}/${m[3]}`;
+
+  // fallback (if you ever pass a full datetime like 2026-01-30T12:34:56Z)
+  const d = new Date(iso);
   return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
 }
 
