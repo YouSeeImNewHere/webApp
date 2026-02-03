@@ -7,7 +7,7 @@ START_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 LOG_FILE="$(mktemp)"
 
 cd /opt/render/project/src
-python -m emails.emailFetch >"$LOG_FILE" 2>&1
+python -m emails.emailFetch 2>&1 | tee "$LOG_FILE"
 EXIT_CODE=$?
 
 if [ "$EXIT_CODE" -ne 0 ]; then
