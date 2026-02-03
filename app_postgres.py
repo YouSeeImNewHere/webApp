@@ -1412,7 +1412,7 @@ def bank_info():
         if has_card_benefits:
             cur.execute(
                 """
-                SELECT id AS account_id, category, cashback_percent
+                SELECT card_id AS account_id, category, cashback_percent
                 FROM card_benefits
                 ORDER BY account_id, category
                 """
