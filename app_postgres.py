@@ -7,6 +7,7 @@ from typing import Tuple, Callable, List, Any, Dict, Optional
 
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+import time
 from datetime import date as _date, timedelta as _timedelta, datetime, datetime as _datetime
 from datetime import date, timedelta
 import calendar
@@ -26,10 +27,9 @@ load_dotenv()
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from fastapi import Request
-import time
 
 BUILD_ID = str(int(time.time()))
-
+NOTIF_SECRET = os.getenv("NOTIF_SECRET", "")
 templates = Jinja2Templates(directory="static")
 
 try:
@@ -3119,7 +3119,6 @@ def save_les_profile(body: SaveLESProfileBody):
 # Notifications (Postgres) — ported from notifications.py
 # Table: notifications   (per your DB screenshot)
 # =============================================================================
-
 def ensure_notifications_table_pg():
     """
     Safe guard (optional). Keeps schema close to sqlite version but Postgres-native.
@@ -3174,8 +3173,11 @@ def _to_local_display_pg(ts: Optional[object]) -> str:
             return ""
 
 @app.post("/notifications/push")
-def push_notification(payload: NotificationPush):
+def push_notification(payload: NotificationPush, x_notif_secret: str = Header(default="")):
     ensure_notifications_table_pg()
+
+    if not NOTIF_SECRET or x_notif_secret != NOTIF_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     with with_db_cursor() as (conn, cur):
         try:

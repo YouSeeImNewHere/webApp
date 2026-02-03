@@ -1685,28 +1685,29 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   opacity: 1;
   pointer-events: auto;
 }
-
 /* =============================================================================
-   Pending Transactions
+   Pending Transactions (theme-aware for ALL themes)
    ============================================================================= */
 
-/* =============================
-   Pending Transactions (themed)
-   ============================= */
-
+/* Fallbacks (if color-mix isn't supported) */
 :root{
-  --pending-bg: #f2f2f2;
-  --pending-border: #d6d6d6;
-  --pending-hover: #ededed;
+  --pending-bg: var(--card-2);
+  --pending-border: var(--border);
+  --pending-hover: var(--btn-hover);
 }
 
-:root[data-theme="dark"]{
-  --pending-bg: rgba(255,255,255,0.06);
-  --pending-border: rgba(255,255,255,0.12);
-  --pending-hover: rgba(255,255,255,0.09);
+/* Preferred (auto-tints using the active theme accent + surfaces) */
+@supports (background: color-mix(in srgb, #000 10%, #fff)){
+  :root{
+    /* subtle accent tint so pending is “different” but still on-brand */
+    --pending-bg: color-mix(in srgb, var(--accent) 10%, var(--card));
+    --pending-border: color-mix(in srgb, var(--accent) 28%, var(--border));
+    --pending-hover: color-mix(in srgb, var(--accent) 14%, var(--card));
+  }
 }
 
-.is-pending{
+/* Apply ONLY to transaction cards */
+.tx-row.is-pending{
   background: var(--pending-bg) !important;
   border-color: var(--pending-border) !important;
 }
@@ -1714,6 +1715,7 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
 .tx-row.is-pending:hover{
   background: var(--pending-hover) !important;
 }
+
 
 /* =============================================================================
    Generic icon button
@@ -4537,4 +4539,39 @@ body.page-spending .chart-canvas-box{
     height: 300px;
     max-height: 300px;
   }
+}
+/* ============================
+   Pending transactions — FINAL override (wins vs :root[data-theme] .tx-row)
+   Put at VERY BOTTOM of base.css
+   ============================ */
+
+@supports (background: color-mix(in srgb, #000 10%, #fff)){
+  :root{
+    /* stronger tint so it’s visible in dark/colored themes */
+    --pending-bg:    color-mix(in srgb, var(--accent) 18%, var(--card));
+    --pending-hover: color-mix(in srgb, var(--accent) 26%, var(--card));
+    --pending-border: color-mix(in srgb, var(--accent) 32%, var(--border));
+  }
+}
+
+/* fallback if color-mix unsupported */
+@supports not (background: color-mix(in srgb, #000 10%, #fff)){
+  :root{
+    --pending-bg: var(--card-2);
+    --pending-hover: var(--card-2);
+    --pending-border: var(--border);
+  }
+}
+
+/* MUST match the specificity of :root[data-theme] .tx-row */
+:root[data-theme] .tx-row.is-pending,
+:root:not([data-theme]) .tx-row.is-pending{
+  background: var(--pending-bg) !important;
+  border-color: var(--pending-border) !important;
+}
+
+/* Pending hover must also beat your global hover rule */
+:root[data-theme] .tx-row.is-pending:hover,
+:root:not([data-theme]) .tx-row.is-pending:hover{
+  background: var(--pending-hover) !important;
 }

@@ -69,6 +69,33 @@ def send_pushover(title: str, message: str):
             dbg("✅ Pushover sent")
     except Exception as e:
         log(f"⚠️ Pushover exception: {e}")
+import requests, json, hashlib
+
+WEBAPP_URL = os.getenv("WEBAPP_URL") or ""
+NOTIF_SECRET = os.getenv("NOTIF_SECRET") or ""
+
+def push_notif(subject: str, body: str, kind: str = "system"):
+    if not WEBAPP_URL or not NOTIF_SECRET:
+        return
+    try:
+        # stable-ish dedupe for repeated same error in short time
+        h = hashlib.sha1((subject + "\n" + body).encode("utf-8", "ignore")).hexdigest()[:12]
+        dedupe_key = f"emailFetch:{kind}:{h}:{int(time.time())}"
+
+        requests.post(
+            f"{WEBAPP_URL}/notifications/push",
+            headers={"Content-Type": "application/json", "X-Notif-Secret": NOTIF_SECRET},
+            json={
+                "kind": kind,
+                "dedupe_key": dedupe_key,
+                "subject": subject[:250],
+                "sender": "emailFetch",
+                "body": body[:8000],
+            },
+            timeout=10,
+        )
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -523,9 +550,11 @@ def run():
                         break
 
 
+
                     except Exception as e:
-                        # Handler failed -> don't notify; record failure
-                        log(f"⚠️ handler failed rule={rule['name']} imap_id={imap_id}: {e}")
+                        msg = f"rule={rule['name']} imap_id={imap_id}\n{type(e).__name__}: {e}"
+                        log(f"⚠️ handler failed {msg}")
+                        push_notif(subject=f"emailFetch handler FAILED: {rule['name']}", body=msg, kind="handler_error")
                         rows.append({
                             "message_id": key,
                             "subject": subject,
