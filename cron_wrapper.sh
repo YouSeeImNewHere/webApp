@@ -5,11 +5,12 @@ JOB_NAME="emailFetch"
 START_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 LOG_FILE="$(mktemp)"
-python /opt/render/project/src/emails/emailFetch.py >"$LOG_FILE" 2>&1
+
+cd /opt/render/project/src
+python -m emails.emailFetch >"$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 if [ "$EXIT_CODE" -ne 0 ]; then
-  # last ~8k chars so you don't blow up DB/UI
   LOG_TAIL="$(python - <<PY
 import pathlib
 p = pathlib.Path("$LOG_FILE")
@@ -18,7 +19,6 @@ print(txt[-8000:])
 PY
 )"
 
-  # Dedupe key should be unique per failure run
   DEDUPE_KEY="cron:${JOB_NAME}:${START_UTC}:exit${EXIT_CODE}"
 
   curl -sS -X POST "$WEBAPP_URL/notifications/push" \
