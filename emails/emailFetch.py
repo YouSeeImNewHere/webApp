@@ -12,6 +12,21 @@ from db import with_db_cursor, query_db, open_pool, close_pool
 import requests
 import os
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+def in_allowed_window():
+    tz = ZoneInfo("America/Los_Angeles")
+    now = datetime.now(tz)
+    hour = now.hour
+
+    # Allowed windows (24h clock)
+    in_morning  = 5  <= hour < 7
+    in_midday   = 10 <= hour < 12
+    in_evening  = 16 <= hour < 23
+
+    return in_morning or in_midday or in_evening
+
 def wake_web_app():
     url = os.getenv("WEBAPP_URL")  # set in Render env vars
     try:
@@ -20,7 +35,11 @@ def wake_web_app():
     except Exception as e:
         print("Wake ping failed:", e)
 
-wake_web_app()
+if in_allowed_window():
+    wake_web_app()
+else:
+    print("Outside allowed window → letting Render sleep")
+    raise SystemExit(0)   # stops cron job early to save free minutes
 
 # ============================================================
 # DEBUG
