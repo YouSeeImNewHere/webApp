@@ -360,18 +360,19 @@ function computeCreditSummary(accounts) {
     usedSum += Math.max(0, -bal);
   }
 
-  // Avail is based on your 30% cap
+  // Your "allowed" limit is 30% of total
   const capLimit = limitSum * CREDIT_UTILIZATION_CAP;
+
+  // How much of the 30% cap remains
   const available = Math.max(0, capLimit - usedSum);
 
-  // % used is REAL utilization (100% = total credit limit)
-  const pctUsed = (limitSum > 0)
-    ? Math.round((usedSum / limitSum) * 100)
+  // % used should be based on the 30% cap (your "limit"), not the full limit
+  const pctUsed = (capLimit > 0)
+    ? Math.round((usedSum / capLimit) * 100)
     : 0;
 
-  return { limitSum, usedSum, available, pctUsed };
+  return { limitSum, capLimit, usedSum, available, pctUsed };
 }
-
 
 async function loadData() {
     const res = await fetch("/transactions");
@@ -539,8 +540,9 @@ if (isCardBalances && creditSummary) {
 
     ${isCardBalances && showCreditSummary ? `
       <div class="bank-accordion__sub">
-        ${accounts.length} acct • Avail ${money(creditSummary.available)} • ${creditSummary.pctUsed}% used
-      </div>
+  Limit ${money(creditSummary.capLimit)} • ${creditSummary.pctUsed}% used
+</div>
+
     ` : ""}
   </span>
 `;
@@ -622,9 +624,12 @@ if (isCardBalances) {
     <div>${formatCardBalance(displayTotal)}</div>
     ${showCreditSummary ? `
       <div class="bank-card__subtotal">
-        <span>Avail ${money(creditSummary.available)}</span>
-        <span class="dot">•</span>
-        <span>${creditSummary.pctUsed}% used</span>
+        <span>Limit ${money(creditSummary.capLimit)}</span>
+<span class="dot">•</span>
+<span>Used ${money(creditSummary.usedSum)}</span>
+<span class="dot">•</span>
+<span>${creditSummary.pctUsed}% used</span>
+
       </div>
     ` : ""}
   `;

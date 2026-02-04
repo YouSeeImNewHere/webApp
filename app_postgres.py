@@ -41,6 +41,9 @@ MAX_TRANSFER_WINDOW_DAYS = 10
 CATEGORY_RULES_TABLE = "categoryrules"
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+WIDGET_SECRET = os.getenv("WIDGET_SECRET", "")  # set this in Render env vars
+CREDIT_UTILIZATION_CAP = 0.30  # same as home.js
+
 app = FastAPI()
 if receipts_router is not None:
     app.include_router(receipts_router)
@@ -84,7 +87,15 @@ PUBLIC_PREFIXES = {"/static/"}
 class RequireLoginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        if path.startswith("/widget/"):
+            provided = request.headers.get("x-widget-secret", "")
+            if WIDGET_SECRET and provided == WIDGET_SECRET:
+                return await call_next(request)
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
 
+            # always allow these
+        if path in PUBLIC_EXACT:
+            return await call_next(request)
         # always allow these
         if path in PUBLIC_EXACT:
             return await call_next(request)
@@ -644,7 +655,6 @@ def transaction_delete(tx_id: str):
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
-
 
 # =============================================================================
 # Balance / Series Helpers (Postgres)
@@ -1412,9 +1422,12 @@ def bank_info():
         if has_card_benefits:
             cur.execute(
                 """
-                SELECT card_id AS account_id, category, cashback_percent
+                SELECT
+                    card_id AS account_id,
+                    benefit_type AS category,
+                    rate AS cashback_percent
                 FROM card_benefits
-                ORDER BY account_id, category
+                ORDER BY card_id, benefit_type, start_date NULLS FIRST, end_date NULLS LAST
                 """
             )
             benefits_rows = cur.fetchall()
@@ -2155,6 +2168,201 @@ class RuleTestBody(BaseModel):
 # -----------------------------
 # Helpers
 # -----------------------------
+def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
+    today = date.today()
+    month_start = date(year, month, 1)
+    month_end = date(year, month, _last_day_of_month(year, month))
+
+    # 1) Projected recurring events
+    cal = recurring_calendar(
+        year=year,
+        month=month,
+        min_occ=min_occ,
+        include_stale=include_stale,
+    )
+    events = (cal or {}).get("events") or []
+
+    spendable_account_id = 3
+
+    income_expected = 0.0
+    bills_remaining = 0.0
+
+    for e in events:
+        d = str(e.get("date") or "")
+        if not d:
+            continue
+        try:
+            ed = datetime.strptime(d, "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        if ed < month_start or ed > month_end:
+            continue
+
+        amt = float(e.get("amount") or 0.0)
+        etype = str(e.get("type") or "").lower().strip()
+        cadence = str(e.get("cadence") or "").lower().strip()
+        category = str(e.get("category") or "").strip()
+        merchant = str(e.get("merchant") or "")
+
+        is_income = (etype == "income") or (cadence in ("paycheck", "interest"))
+
+        if is_income:
+            try:
+                aid = int(e.get("account_id") or -1)
+            except Exception:
+                aid = -1
+            if aid == spendable_account_id:
+                income_expected += max(0.0, amt)
+            continue
+
+        if ed < today:
+            continue
+
+        if category.lower() == "transfer" or merchant.lower().startswith("from "):
+            continue
+
+        bills_remaining += abs(amt)
+
+    # 2) Actual spending so far
+    tx_rows = query_db(
+        """
+        WITH base AS (
+          SELECT
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            t.amount::double precision AS amount,
+            LOWER(TRIM(COALESCE(t.category,''))) AS category,
+            LOWER(a.accountType) AS accountType
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+        ),
+        norm AS (
+          SELECT
+            *,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT d, amount, category, accountType
+        FROM norm
+        WHERE d IS NOT NULL
+          AND d BETWEEN %s AND %s
+        """,
+        (month_start, today),
+    )
+
+    spent_so_far = 0.0
+    for r in tx_rows:
+        category = (r["category"] or "").strip().lower()
+        if category in ("card payment", "transfer"):
+            continue
+
+        amt = float(r["amount"] or 0.0)
+        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
+            spent_so_far += amt
+
+    # 3) LES + savings goal (Home logic)
+    pay_income = _les_pay_income_for_month(year, month) or 0.0
+    total_income = income_expected + pay_income
+
+    savings_goal = _compute_monthly_savings_goal(total_income)
+
+    spend_goal = total_income - bills_remaining - savings_goal
+    safe_to_spend = spend_goal - spent_so_far
+
+    return {
+        "ok": True,
+        "month_start": month_start.isoformat(),
+        "month_end": month_end.isoformat(),
+        "as_of": today.isoformat(),
+
+        "expected_income": round(total_income, 2),
+        "base_income": round(income_expected, 2),
+        "les_income": round(pay_income, 2),
+
+        "spent_so_far": round(spent_so_far, 2),
+        "bills_remaining": round(bills_remaining, 2),
+
+        "savings_goal": round(savings_goal, 2),
+        "spend_goal": round(spend_goal, 2),
+        "safe_to_spend": round(safe_to_spend, 2),
+    }
+
+def _get_savings_goal_cfg():
+    """
+    Returns (mode, value) where:
+      mode: "percent" | "amount"
+      value: float
+    Matches /settings/savings-goal storage (key='savings_goal', column=value_json).
+    """
+    _ensure_app_settings_pg()  # table has value_json:contentReference[oaicite:5]{index=5}
+
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key=%s LIMIT 1",
+        ("savings_goal",),
+    )
+    if not rows:
+        return "percent", 0.0
+
+    try:
+        j = json.loads(rows[0].get("value_json") or "{}")
+    except Exception:
+        j = {}
+
+    mode = (j.get("mode") or "percent").strip().lower()
+    try:
+        value = float(j.get("value") or 0)
+    except Exception:
+        value = 0.0
+
+    if mode not in ("percent", "amount"):
+        mode = "percent"
+    if value < 0:
+        value = 0.0
+    if mode == "percent" and value > 100:
+        value = 100.0
+
+    return mode, value
+
+def _compute_monthly_savings_goal(total_income: float) -> float:
+    mode, value = _get_savings_goal_cfg()
+    if mode == "percent":
+        return max(0.0, total_income * (value / 100.0))
+    # mode == "amount"
+    return max(0.0, value)
+
+def _get_default_les_profile():
+    rows = query_db("SELECT profile_json FROM les_profile WHERE key='default' LIMIT 1")
+    if not rows:
+        return None
+
+    v = rows[0].get("profile_json")
+    if v is None:
+        return None
+    if isinstance(v, (dict, list)):
+        return v
+    try:
+        return json.loads(v)
+    except Exception:
+        return None
+
+def _les_pay_income_for_month(year: int, month: int) -> float:
+    profile = _get_default_les_profile()
+    if not profile:
+        return 0.0
+
+    # Reuse the SAME logic as your /les/paychecks endpoint (including “actual deposit overrides”)
+    # If your endpoint code is currently inline, move it into a helper and call it both places.
+    req = LESPaychecksRequest(year=year, month=month, profile=profile)
+    out = les_paychecks(req)  # calls your existing endpoint function directly
+
+    events = (out or {}).get("events") or []
+    return float(sum(max(0.0, float(e.get("amount") or 0)) for e in events))
+
 def build_pattern_from_keywords(keywords: List[str]) -> str:
     kws = [k.strip() for k in (keywords or []) if (k or "").strip()]
     if not kws:
@@ -2545,124 +2753,9 @@ def unknown_merchant_total_range(start: str, end: str):
 # -----------------------------------------------------------------------------
 
 @app.get("/month-budget")
-def month_budget(min_occ: int = 3, include_stale: bool = False):
-    """
-    Summary for the current month:
-      - income_expected: projected income for the month (paychecks + interest)
-      - spent_so_far: actual spending posted so far this month (excludes transfers/card payments)
-      - bills_remaining: projected withdrawals remaining from today through month end
-      - safe_to_spend: income_expected - spent_so_far - bills_remaining
-    """
-    today = date.today()
-    year = today.year
-    month = today.month
-
-    month_start = date(year, month, 1)
-    month_end = date(year, month, _last_day_of_month(year, month))
-
-    # 1) Projected recurring events (withdrawals + income)
-    cal = recurring_calendar(year=year, month=month, min_occ=min_occ, include_stale=include_stale)
-    events = (cal or {}).get("events") or []
-
-    spendable_account_id = 3  # keep your original assumption
-
-    income_expected = 0.0
-    bills_remaining = 0.0
-
-    for e in events:
-        d = str(e.get("date") or "")
-        if not d:
-            continue
-        try:
-            ed = datetime.strptime(d, "%Y-%m-%d").date()
-        except Exception:
-            continue
-
-        if ed < month_start or ed > month_end:
-            continue
-
-        amt = float(e.get("amount") or 0.0)
-        etype = str(e.get("type") or "").lower().strip()
-        cadence = str(e.get("cadence") or "").lower().strip()
-        category = str(e.get("category") or "").strip()
-        merchant = str(e.get("merchant") or "")
-
-        is_income = (etype == "income") or (cadence in ("paycheck", "interest"))
-
-        if is_income:
-            try:
-                aid = int(e.get("account_id") or -1)
-            except Exception:
-                aid = -1
-            if aid == spendable_account_id:
-                income_expected += max(0.0, amt)
-            continue
-
-        if ed < today:
-            continue
-
-        if category.lower() == "transfer" or merchant.lower().startswith("from "):
-            continue
-
-        bills_remaining += abs(amt)
-
-    # 2) Actual spending so far this month (same rules as /spending)
-    tx_rows = query_db(
-        """
-        WITH base AS (
-          SELECT
-            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
-            t.amount::double precision AS amount,
-            LOWER(TRIM(COALESCE(t.category,''))) AS category,
-            LOWER(a.accountType) AS accountType
-          FROM transactions t
-          JOIN accounts a ON a.id = t.account_id
-        ),
-        norm AS (
-          SELECT
-            *,
-            CASE
-              WHEN raw_date IS NULL THEN NULL
-              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
-              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
-              ELSE NULL
-            END AS d
-          FROM base
-        )
-        SELECT d, amount, category, accountType
-        FROM norm
-        WHERE d IS NOT NULL
-          AND d BETWEEN %s AND %s
-        """,
-        (month_start, today),
-    )
-
-    spent_so_far = 0.0
-    for r in tx_rows:
-        category = (r["category"] or "").strip().lower()
-        if category in ("card payment", "transfer"):
-            continue
-
-        try:
-            amt = float(r["amount"])
-        except Exception:
-            continue
-
-        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
-            spent_so_far += amt
-
-    safe_to_spend = income_expected - spent_so_far - bills_remaining
-
-    return {
-        "ok": True,
-        "month_start": month_start.isoformat(),
-        "month_end": month_end.isoformat(),
-        "as_of": today.isoformat(),
-        "income_expected": round(income_expected, 2),
-        "spent_so_far": round(spent_so_far, 2),
-        "bills_remaining": round(bills_remaining, 2),
-        "safe_to_spend": round(safe_to_spend, 2),
-    }
+def month_budget():
+    now = datetime.now()
+    return _month_budget_home(now.year, now.month)
 
 # =============================================================================
 # LES (Postgres)
@@ -4552,3 +4645,59 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
         (limit,),
     )
     return [dict(r) for r in rows]
+
+@app.get("/widget/summary")
+def widget_summary(x_widget_secret: str = Header(default="")):
+    print("WIDGET_SECRET set?", bool(WIDGET_SECRET))
+    print("received header:", x_widget_secret)
+
+    #Simple protection so the widget can fetch data without a login session/cookies
+    if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
+    mb = _month_budget_home(datetime.now().year, datetime.now().month)
+
+    credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
+
+    limit_sum = 0.0
+    used_sum = 0.0
+
+    for a in credit_accounts:
+        lim = float(a.get("credit_limit") or 0)
+        if lim > 0:
+            limit_sum += lim
+
+        bal = float(a.get("total") or 0)
+        used_sum += max(0.0, -bal)  # only debt counts
+
+    cap_limit = limit_sum * CREDIT_UTILIZATION_CAP
+    available = max(0.0, cap_limit - used_sum)
+    pct_used = int(round((used_sum / cap_limit) * 100)) if cap_limit > 0 else 0
+
+    return {
+        "ok": True,
+
+        "credit": {
+            "used": round(used_sum, 2),
+            "cap": round(cap_limit, 2),
+            "pct": pct_used,
+            "available": round(available, 2),
+            "limit_sum": round(limit_sum, 2),
+        },
+
+        # ✅ keep this so your current Scriptable code still works
+        "safe_to_spend": mb["safe_to_spend"],
+"month": mb,
+
+
+        "totals": {
+            "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
+            "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
+        },
+
+        "meta": {
+            "cron": "OK",
+        }
+    }
+
