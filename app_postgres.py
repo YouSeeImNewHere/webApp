@@ -84,6 +84,10 @@ PUBLIC_EXACT = {"/__ping", "/login", "/favicon.ico", "/__whoami"}
 
 PUBLIC_PREFIXES = {"/static/"}
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 class RequireLoginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
