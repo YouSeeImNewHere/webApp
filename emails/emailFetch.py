@@ -9,6 +9,18 @@ import requests
 from .email_handlers import *   # handlers + account constants (still used for inserts)
 from db import with_db_cursor, query_db, open_pool, close_pool
 
+import requests
+import os
+
+def wake_web_app():
+    url = os.getenv("WEBAPP_URL")  # set in Render env vars
+    try:
+        requests.get(f"{url}/health", timeout=30)
+        print("Web app wake ping sent")
+    except Exception as e:
+        print("Wake ping failed:", e)
+
+wake_web_app()
 
 # ============================================================
 # DEBUG
