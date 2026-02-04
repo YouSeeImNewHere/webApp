@@ -47,6 +47,14 @@
     const detailBody = $("notifDetailBody");
     const detailDismiss = $("notifDismissBtn");
     const subtitle = $("notifSubtitle");
+    // Modal (popup) elements
+    const modal = $("notifModal");
+    const modalTitle = $("notifModalTitle");
+    const modalMeta = $("notifModalMeta");
+    const modalBody = $("notifModalBody");
+    const modalClose = $("notifModalClose");
+    const modalOk = $("notifModalOk");
+    const modalDismiss = $("notifModalDismiss");
 
     // If the top bar isn't on this page (or hasn't been injected yet), skip for now.
     if (!btn || !badge || !overlay || !panel || !listHost) return;
@@ -54,6 +62,18 @@
     window.__notifTopbarBound = true;
 
     let selectedId = null;
+        function openModal(){
+          if (!modal) return;
+          modal.classList.remove("hidden");
+          modal.setAttribute("aria-hidden", "false");
+        }
+
+        function closeModal(){
+          if (!modal) return;
+          modal.classList.add("hidden");
+          modal.setAttribute("aria-hidden", "true");
+          selectedId = null;
+        }
 
     function setOpen(open){
       const show = !!open;
@@ -131,14 +151,15 @@
       selectedId = id;
       try{
         const data = await api("/notifications/" + encodeURIComponent(id), { method:"GET" });
-        if (detailMeta) detailMeta.textContent = (data.sender || "") + (data.created_at_local ? (" • " + data.created_at_local) : "");
-        if (detailTitle) detailTitle.textContent = data.subject || "(no subject)";
-        if (detailBody) detailBody.textContent = data.body || "";
-        detail && detail.classList.remove("hidden");
+
+        if (modalTitle) modalTitle.textContent = data.subject || "(no subject)";
+        if (modalMeta)  modalMeta.textContent  = (data.sender || "") + (data.created_at_local ? (" • " + data.created_at_local) : "");
+        if (modalBody)  modalBody.textContent  = data.body || "";
+
+        openModal();
 
         // mark read
         await api("/notifications/" + encodeURIComponent(id) + "/read", { method:"POST" }).catch(()=>{});
-        // refresh list (so unread style updates + badge updates)
         await refresh();
       }catch(e){
         console.error("openDetail failed:", e);
@@ -188,6 +209,26 @@
     detailDismiss && detailDismiss.addEventListener("click", dismissSelected);
     markAllBtn && markAllBtn.addEventListener("click", markAllRead);
     clearReadBtn && clearReadBtn.addEventListener("click", clearRead);
+    // Modal close handlers
+    modalClose && modalClose.addEventListener("click", closeModal);
+    modalOk && modalOk.addEventListener("click", closeModal);
+
+    // Click outside card closes
+    modal && modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // Modal dismiss button
+    modalDismiss && modalDismiss.addEventListener("click", async () => {
+      if (!selectedId) return;
+      try{
+        await api("/notifications/" + encodeURIComponent(selectedId) + "/dismiss", { method:"POST" });
+      }catch(e){
+        console.error("dismiss failed:", e);
+      }
+      closeModal();
+      await refresh();
+    });
 
     // initial badge + periodic refresh
     refreshCount();

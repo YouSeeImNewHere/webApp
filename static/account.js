@@ -273,43 +273,73 @@ async function loadAccountTransactions(accountId){
     return;
   }
 
-  data.forEach(row => {
-const wrap = document.createElement("div");
-wrap.className = "tx-row";
-
-
-    wrap.dataset.txId = String(row.id ?? "");
-const subBits = [];
-if (row.transfer_peer) {
-  const dir = String(row.transfer_dir || "").toLowerCase() === "from" ? "From" : "To";
-  subBits.push(`${dir}: ${escHtml(row.transfer_peer)}`);
-} else if (row.category) {
-  subBits.push(escHtml(row.category));
-}
-const subHtml = subBits.map(s => `<div>${s}</div>`).join("");
-
-if (String(row.status || "").toLowerCase() === "pending") {
-  wrap.classList.add("is-pending");
+// helper: "2026-01-30" -> "01/30 (Fri)" (tweak formatting however you like)
+function headerDateLabel(isoOrMmdd) {
+  if (!isoOrMmdd) return "";
+  if (String(isoOrMmdd).includes("/")) return shortDate(isoOrMmdd); // fallback
+  const d = parseISODateLocal(isoOrMmdd);
+  const mmdd = d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
+  const wk = d.toLocaleDateString("en-US", { weekday: "short" });
+  return `${mmdd} (${wk})`;
 }
 
+function makeDayHeader(dateKey, endOfDayBalance) {
+  const h = document.createElement("div");
+  h.className = "tx-day-header";
+  h.innerHTML = `
+    <div class="tx-day-header__date">${escHtml(headerDateLabel(dateKey))}</div>
+    <div class="tx-day-header__bal">${money(endOfDayBalance)}</div>
+  `;
+  return h;
+}
 
-wrap.innerHTML = `
-  <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
-        ${categoryIconHTML(row.category)}
-      </div>
-  <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
-  <div class="tx-main">
-        <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
-        <div class="tx-sub">${subHtml}</div>
-      </div>
-      <div class="tx-right">
-        <div class="tx-amt">${money(row.amount)}</div>
-        <div class="tx-bal">${money(row.balance_after)}</div>
-      </div>
-    `;
+// ...
 
-    list.appendChild(wrap);
-  });
+let lastDateKey = null;
+
+data.forEach(row => {
+  const dateKey = String(row.dateISO || row.effectiveDate || "");
+
+  // Insert header BEFORE the first tx-row of that day (newest-first list)
+  if (dateKey && dateKey !== lastDateKey) {
+    list.appendChild(makeDayHeader(dateKey, row.balance_after));
+    lastDateKey = dateKey;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "tx-row";
+  wrap.dataset.txId = String(row.id ?? "");
+
+  const subBits = [];
+  if (row.transfer_peer) {
+    const dir = String(row.transfer_dir || "").toLowerCase() === "from" ? "From" : "To";
+    subBits.push(`${dir}: ${escHtml(row.transfer_peer)}`);
+  } else if (row.category) {
+    subBits.push(escHtml(row.category));
+  }
+  const subHtml = subBits.map(s => `<div>${s}</div>`).join("");
+
+  if (String(row.status || "").toLowerCase() === "pending") {
+    wrap.classList.add("is-pending");
+  }
+
+  wrap.innerHTML = `
+    <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
+      ${categoryIconHTML(row.category)}
+    </div>
+    <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
+    <div class="tx-main">
+      <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
+      <div class="tx-sub">${subHtml}</div>
+    </div>
+    <div class="tx-right">
+      <div class="tx-amt">${money(row.amount)}</div>
+      <div class="tx-bal">${money(row.balance_after)}</div>
+    </div>
+  `;
+
+  list.appendChild(wrap);
+});
 
   if (typeof window.attachTxInspect === 'function') window.attachTxInspect(list);
 }
