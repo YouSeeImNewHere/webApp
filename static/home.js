@@ -492,9 +492,6 @@ async function loadHomePayload() {
     loadBankTotals();
   }
 
-  // ✅ Month budget
-  loadMonthBudget();
-
   return payload;
 }
 
@@ -1182,46 +1179,9 @@ async function loadMonthBudget() {
   const barFill = document.getElementById("mbBarFill");
   const goalEl  = document.getElementById("mbGoal");
 
-  // Card isn't mounted on some pages
   if (!safeEl || !metaEl || !incEl || !spentEl || !billsEl || !barFill) return;
 
-  // Helper: fetch paychecks for a given month using the shared LES profile (localStorage via profile.js)
-  async function fetchPaychecks(year, month){
-    const profile0 = window.Profile?.get?.() || null;
-    if (!profile0?.paygrade) return [];
-
-    const profile = { ...profile0 };
-
-    // normalize a few fields so backend always understands them
-    if (profile.paygrade != null){
-      profile.paygrade = String(profile.paygrade)
-        .toUpperCase()
-        .replace(/\s+/g,"")
-        .replace("E-","E")
-        .replace("-","");
-    }
-    if (profile.service_start != null){
-      profile.service_start = String(profile.service_start);
-    }
-    if (profile.bah_override === "") profile.bah_override = null;
-
-    const res = await fetch("/les/paychecks", {
-      method: "POST",
-      headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ year, month, profile })
-    });
-
-    if (!res.ok){
-      const txt = await res.text().catch(()=> "");
-      console.error("Paycheck calc failed:", res.status, txt);
-      return [];
-    }
-
-    const data = await res.json().catch(()=>null);
-    return Array.isArray(data?.events) ? data.events : [];
-  }
-
-  const res = await fetch("/month-budget");
+  const res = await fetch("/month-budget", { cache: "no-store" });
   if (!res.ok) {
     console.error("month-budget failed:", res.status);
     safeEl.textContent = "—";
@@ -1231,90 +1191,32 @@ async function loadMonthBudget() {
 
   const j = await res.json();
 
-  // Base values from backend (currently includes interest; paychecks are added below)
-  let income = Number(j.income_expected || 0);
-  const spent  = Number(j.spent_so_far || 0);
-  const bills  = Number(j.bills_remaining || 0);
+  // ✅ backend is source of truth
+  const income      = Number(j.expected_income ?? 0);
+  const spent       = Number(j.spent_so_far ?? 0);
+  const bills       = Number(j.bills_remaining ?? 0);
+  const safe        = Number(j.safe_to_spend ?? 0);
+  const savingsGoal = Number(j.savings_goal ?? 0);
+  const spendGoal   = Number(j.spend_goal ?? (income - bills - savingsGoal));
 
-  // Determine month/year to request paychecks for (use backend month_start if present)
-  let year = new Date().getFullYear();
-  let month = new Date().getMonth() + 1;
-  if (j.month_start && /^\d{4}-\d{2}-\d{2}$/.test(j.month_start)){
-    year = Number(j.month_start.slice(0,4));
-    month = Number(j.month_start.slice(5,7));
-  }
-
-  // Add LES paychecks (if profile exists)
-  let payIncome = 0;
-  try{
-    const payEvents = await fetchPaychecks(year, month);
-    const monthKey = `${year}-${String(month).padStart(2,"0")}`;
-    for (const e of (payEvents || [])){
-      // Only count deposits that actually land *in this calendar month*
-      // (ex: Jan 1 payday can deposit on Dec 31 — that's NOT January spendable income)
-      const d = String(e?.date || "");
-      if (!d.startsWith(monthKey)) continue;
-
-      const amt = Number(e?.amount || 0);
-      if (amt > 0) payIncome += amt;
-    }
-  } catch (err){
-    console.warn("Paychecks fetch failed:", err);
-  }
-
-  const totalIncome = income + payIncome;
-
-// Apply monthly savings goal (deduct from Safe to spend)
-const { goal: savingsGoal, cfg: savingsCfg } = await computeMonthlySavingsGoal(totalIncome);
-
-// Safe to spend is AFTER savings goal
-const safe = totalIncome - spent - bills - savingsGoal;
-
-// Total spend budget for the month (after bills + savings goal)
-const spendBudget = totalIncome - bills - savingsGoal;
-
-// Remaining spend budget after spending so far
-const spendRemaining = spendBudget - spent;
-
-// For the progress bar & meta, compare spend vs spend budget (after bills + savings)
-const availableBeforeBills = spendBudget;
-
-  safeEl.textContent = money(safe);
-  incEl.textContent = money(totalIncome);
+  safeEl.textContent  = money(safe);
+  incEl.textContent   = money(income);
   spentEl.textContent = money(spent);
   billsEl.textContent = money(bills);
 
-// Savings/spend goal line
-if (goalEl) {
-  if (savingsGoal > 0) {
-    const savedStr = (savingsCfg?.mode === "percent")
-      ? `${Number(savingsCfg.value || 0)}%`
-      : money(savingsGoal);
-
-    // "goal is to spend this month"
-    goalEl.textContent = `Spend goal: ${money(Math.max(0, spendBudget))} • Saving ${money(savingsGoal)}` + (savingsCfg?.mode === "percent" ? ` (${savedStr})` : "");
-  } else {
-    goalEl.textContent = "Spend goal: " + money(Math.max(0, spendBudget));
-  }
-}
-
-  // Progress: spent vs (income - remaining bills)
-  let pct = 0;
-  if (availableBeforeBills <= 0) {
-    pct = spent > 0 ? 100 : 0;
-  } else {
-    pct = Math.min(100, Math.max(0, (spent / availableBeforeBills) * 100));
+  if (goalEl) {
+    goalEl.textContent =
+      `Spend goal: ${money(Math.max(0, spendGoal))}` +
+      (savingsGoal > 0 ? ` • Saving ${money(savingsGoal)}` : "");
   }
 
+  const denom = Math.max(0, spendGoal);
+  const pct = denom > 0 ? Math.min(100, (spent / denom) * 100) : 0;
   barFill.style.width = `${pct.toFixed(0)}%`;
-  if (spent > availableBeforeBills && availableBeforeBills > 0) barFill.classList.add("over");
-  else barFill.classList.remove("over");
 
   const asOf = j.as_of ? formatMMMdd(j.as_of) : "today";
-  metaEl.textContent = `${asOf} • Spent ${money(spent)} of ${money(Math.max(0, availableBeforeBills))}`;
+  metaEl.textContent = `${asOf} • Spent ${money(spent)} of ${money(Math.max(0, spendGoal))}`;
 }
-
-
 
 // =========================
 // Savings goal (DB-persisted)
@@ -1351,15 +1253,6 @@ async function getSavingsGoalConfig(){
   return _savingsGoalCfg;
 }
 
-async function computeMonthlySavingsGoal(totalIncome) {
-  const cfg = await getSavingsGoalConfig();
-  if (!cfg) return { goal: 0, cfg: null };
-
-  if (cfg.mode === "percent") {
-    return { goal: Math.max(0, (Number(totalIncome) || 0) * (cfg.value / 100)), cfg };
-  }
-  return { goal: Math.max(0, cfg.value), cfg };
-}
 
 function money(n) {
   const num = Number(n || 0);
@@ -1759,45 +1652,70 @@ function renderTxList(data){
 
   list.innerHTML = "";
 
-  data.forEach(row => {
+  const rows = Array.isArray(data) ? data : [];
+
+  // split pending vs posted
+  const pending = [];
+  const posted = [];
+  for (const r of rows) {
+    const isPending = String(r.status || "").toLowerCase() === "pending";
+    (isPending ? pending : posted).push(r);
+  }
+
+  // helper: header (reuse your existing styles from account page)
+  function makeSectionHeader(label) {
+    const h = document.createElement("div");
+    h.className = "tx-day-header";
+    h.innerHTML = `
+      <div class="tx-day-header__date">${label}</div>
+      <div class="tx-day-header__bal"></div>
+    `;
+    return h;
+  }
+
+  // render pending first (its own "day")
+  if (pending.length) {
+    list.appendChild(makeSectionHeader("Pending"));
+    pending.forEach(row => list.appendChild(renderOneTxRow(row)));
+  }
+
+  // then render the rest (your existing behavior)
+  posted.forEach(row => list.appendChild(renderOneTxRow(row)));
+
+  if (typeof window.attachTxInspect === 'function') window.attachTxInspect(list);
+
+  // --- local helper that returns the built tx-row element ---
+  function renderOneTxRow(row){
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
 
-    // Mark pending transactions
     if (String(row.status || "").toLowerCase() === "pending") {
       wrap.classList.add("is-pending");
     }
-
 
     const merchant = (row.merchant || "").toUpperCase();
     const sub = `${row.bank || ""}${row.card ? " • " + row.card : ""}`;
     const amtNum = Number(row.amount || 0);
     const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
 
-  const effectiveDate = (row.postedDate && row.postedDate !== "unknown") ? row.postedDate : ((row.purchaseDate && row.purchaseDate !== "unknown") ? row.purchaseDate : row.dateISO);
-wrap.dataset.txId = String(row.id ?? "");
-wrap.innerHTML = `
-  <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
-  ${categoryIconHTML(row.category)}
-</div>
+    const effectiveDate =
+      (row.postedDate && row.postedDate !== "unknown") ? row.postedDate :
+      ((row.purchaseDate && row.purchaseDate !== "unknown") ? row.purchaseDate : row.dateISO);
 
-
-  <div class="tx-date">${shortDate(effectiveDate)}</div>
-  <div class="tx-main">
-    <div class="tx-merchant">${merchant}</div>
-    <div class="tx-sub">${sub}</div>
-    <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
-  </div>
-  <div class="tx-amt">${money(row.amount)}</div>
-`;
-
-
-    list.appendChild(wrap);
-  });
-
-  // Enable transaction inspect modal when tapping the category icon
-  if (typeof window.attachTxInspect === "function") {
-    window.attachTxInspect(list);
+    wrap.dataset.txId = String(row.id ?? "");
+    wrap.innerHTML = `
+      <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
+        ${categoryIconHTML(row.category)}
+      </div>
+      <div class="tx-date">${shortDate(effectiveDate)}</div>
+      <div class="tx-main">
+        <div class="tx-merchant">${merchant}</div>
+        <div class="tx-sub">${sub}${transferText ? " • " + transferText : ""}</div>
+        <div class="tx-sub">${(row.category || "").trim()}</div>
+      </div>
+      <div class="tx-amt">${money(row.amount)}</div>
+    `;
+    return wrap;
   }
 }
 
@@ -2104,7 +2022,7 @@ async function refreshMonthBudgetCard() {
 
     if (rangeEl) rangeEl.textContent = `${formatMMMdd(d.month_start)} – ${formatMMMdd(d.month_end)}`;
 
-    const income = Number(d.income_expected || 0);
+    const income = Number(d.expected_income || 0); // ✅ matches backend
     const spent = Number(d.spent_so_far || 0);
     const billsRemaining = Number(d.bills_remaining || 0);
 

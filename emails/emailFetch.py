@@ -401,7 +401,7 @@ def get_imap_ids(mail):
     ids = []
     for box in MAILBOXES:
         mail.select(box)
-        status, data = mail.search(None, "X-GM-RAW", "newer_than:30d")
+        status, data = mail.search(None, "X-GM-RAW", "newer_than:2d")
         if status == "OK" and data and data[0]:
             ids.extend(x.decode() for x in data[0].split())
     return list(dict.fromkeys(ids))

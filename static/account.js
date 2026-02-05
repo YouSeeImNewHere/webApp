@@ -243,28 +243,26 @@ async function loadAccountTransactions(accountId){
   if (!start || !end) return;
 
   const baseUrl =
-  TX_MODE === "test"
-    ? "/transactions-test-range"
-    : "/account-transactions-range";
+    TX_MODE === "test"
+      ? "/transactions-test-range"
+      : "/account-transactions-range";
 
-    const res = await fetch(
-      `${baseUrl}?account_id=${accountId}&start=${start}&end=${end}&limit=500`,
-      { cache: "no-store" }
-    );
-
-
-  if (!res.ok) {
-    console.error("account-transactions-range failed:", res.status);
-    const list = document.getElementById("txList");
-    if (list) list.innerHTML = `<div style="padding:10px;">Failed to load (${res.status}).</div>`;
-    return;
-  }
-
-  const payload = await res.json();
-  const data = payload.transactions || [];
+  const res = await fetch(
+    `${baseUrl}?account_id=${accountId}&start=${start}&end=${end}&limit=500`,
+    { cache: "no-store" }
+  );
 
   const list = document.getElementById("txList");
   if (!list) return;
+
+  if (!res.ok) {
+    console.error("account-transactions-range failed:", res.status);
+    list.innerHTML = `<div style="padding:10px;">Failed to load (${res.status}).</div>`;
+    return;
+  }
+
+  const payload = await res.json(); // ✅ only once
+  const data = payload.transactions || [];
 
   list.innerHTML = "";
 
@@ -273,75 +271,157 @@ async function loadAccountTransactions(accountId){
     return;
   }
 
-// helper: "2026-01-30" -> "01/30 (Fri)" (tweak formatting however you like)
-function headerDateLabel(isoOrMmdd) {
-  if (!isoOrMmdd) return "";
-  if (String(isoOrMmdd).includes("/")) return shortDate(isoOrMmdd); // fallback
-  const d = parseISODateLocal(isoOrMmdd);
-  const mmdd = d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-  const wk = d.toLocaleDateString("en-US", { weekday: "short" });
-  return `${mmdd} (${wk})`;
+  const rows = Array.isArray(data) ? data : [];
+
+  // split pending vs posted
+  const pending = [];
+  const posted = [];
+  for (const r of rows) {
+    const isPending = String(r.status || "").toLowerCase() === "pending";
+    (isPending ? pending : posted).push(r);
+  }
+
+  // helper: "2026-01-30" -> "01/30 (Fri)"
+  function headerDateLabel(isoOrMmdd) {
+    if (!isoOrMmdd) return "";
+    if (String(isoOrMmdd).includes("/")) return shortDate(isoOrMmdd);
+    const d = parseISODateLocal(isoOrMmdd);
+    const mmdd = d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
+    const wk = d.toLocaleDateString("en-US", { weekday: "short" });
+    return `${mmdd} (${wk})`;
+  }
+
+  function makeDayHeader(dateKey, endOfDayBalance) {
+    const h = document.createElement("div");
+    h.className = "tx-day-header";
+
+    const isPendingHeader = (String(dateKey) === "Pending");
+
+    h.innerHTML = `
+      <div class="tx-day-header__date">${isPendingHeader ? "Pending" : escHtml(headerDateLabel(dateKey))}</div>
+      <div class="tx-day-header__bal">${(endOfDayBalance == null || isPendingHeader) ? "" : money(endOfDayBalance)}</div>
+    `;
+    return h;
+  }
+
+  // render row (supports overriding the displayed balance)
+  function renderRow(row, balanceOverride = null) {
+    const wrap = document.createElement("div");
+    wrap.className = "tx-row";
+    wrap.dataset.txId = String(row.id ?? "");
+
+    const subBits = [];
+    if (row.transfer_peer) {
+      const dir = String(row.transfer_dir || "").toLowerCase() === "from" ? "From" : "To";
+      subBits.push(`${dir}: ${escHtml(row.transfer_peer)}`);
+    } else if (row.category) {
+      subBits.push(escHtml(row.category));
+    }
+    const subHtml = subBits.map(s => `<div>${s}</div>`).join("");
+
+    if (String(row.status || "").toLowerCase() === "pending") {
+      wrap.classList.add("is-pending");
+    }
+
+    const shownBal =
+      (balanceOverride != null) ? balanceOverride :
+      (row.balance_after != null ? row.balance_after : null);
+
+    wrap.innerHTML = `
+      <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
+        ${categoryIconHTML(row.category)}
+      </div>
+      <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
+      <div class="tx-main">
+        <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
+        <div class="tx-sub">${subHtml}</div>
+      </div>
+      <div class="tx-right">
+        <div class="tx-amt">${money(row.amount)}</div>
+        <div class="tx-bal">${shownBal == null ? "" : money(shownBal)}</div>
+      </div>
+    `;
+
+    return wrap;
+  }
+function parseAnyDateToMs(x) {
+  if (!x) return 0;
+  const s = String(x);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return parseISODateLocal(s).getTime();
+
+  if (s.includes("/")) {
+    const parts = s.split("/");
+    const mm = Number(parts[0] || 1) - 1;
+    const dd = Number(parts[1] || 1);
+    let yy = Number(parts[2] || 1970);
+    if (yy < 100) yy += 2000;
+    return new Date(yy, mm, dd).getTime();
+  }
+
+  return 0;
 }
 
-function makeDayHeader(dateKey, endOfDayBalance) {
-  const h = document.createElement("div");
-  h.className = "tx-day-header";
-  h.innerHTML = `
-    <div class="tx-day-header__date">${escHtml(headerDateLabel(dateKey))}</div>
-    <div class="tx-day-header__bal">${money(endOfDayBalance)}</div>
-  `;
-  return h;
+// Base balance = most recent POSTED row balance (posted is newest-first from backend)
+const basePostedBalance =
+  (posted.length && posted[0].balance_after != null)
+    ? Number(posted[0].balance_after)
+    : null;
+
+if (pending.length) {
+  list.appendChild(makeDayHeader("Pending", null));
+
+  // 1) compute balances in chronological order (oldest -> newest)
+  const pendingChrono = [...pending].sort((a, b) => {
+    const ad = parseAnyDateToMs(a.effectiveDate || a.dateISO || a.postedDate || a.purchaseDate);
+    const bd = parseAnyDateToMs(b.effectiveDate || b.dateISO || b.postedDate || b.purchaseDate);
+    if (ad !== bd) return ad - bd;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
+
+  const balAfterById = new Map();
+  let running = basePostedBalance;
+
+  for (const row of pendingChrono) {
+    if (running == null) {
+      balAfterById.set(String(row.id ?? ""), null);
+      continue;
+    }
+    running = running - Number(row.amount || 0);
+    balAfterById.set(String(row.id ?? ""), running);
+  }
+
+  // 2) render newest-first
+  const pendingDisplay = [...pending].sort((a, b) => {
+    const ad = parseAnyDateToMs(a.effectiveDate || a.dateISO || a.postedDate || a.purchaseDate);
+    const bd = parseAnyDateToMs(b.effectiveDate || b.dateISO || b.postedDate || b.purchaseDate);
+    if (ad !== bd) return bd - ad;
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  });
+
+  for (const row of pendingDisplay) {
+    const bal = balAfterById.get(String(row.id ?? ""));
+    list.appendChild(renderRow(row, bal));
+  }
 }
 
-// ...
 
-let lastDateKey = null;
+  // ---- 2) Posted section (your existing newest-first day grouping) ----
+  let lastDateKey = null;
 
-data.forEach(row => {
-  const dateKey = String(row.dateISO || row.effectiveDate || "");
+  posted.forEach(row => {
+    const dateKey = String(row.dateISO || row.effectiveDate || "");
 
-  // Insert header BEFORE the first tx-row of that day (newest-first list)
-  if (dateKey && dateKey !== lastDateKey) {
-    list.appendChild(makeDayHeader(dateKey, row.balance_after));
-    lastDateKey = dateKey;
-  }
+    // Insert header BEFORE first tx-row of that day (newest-first list)
+    if (dateKey && dateKey !== lastDateKey) {
+      list.appendChild(makeDayHeader(dateKey, row.balance_after));
+      lastDateKey = dateKey;
+    }
 
-  const wrap = document.createElement("div");
-  wrap.className = "tx-row";
-  wrap.dataset.txId = String(row.id ?? "");
+    list.appendChild(renderRow(row, null));
+  });
 
-  const subBits = [];
-  if (row.transfer_peer) {
-    const dir = String(row.transfer_dir || "").toLowerCase() === "from" ? "From" : "To";
-    subBits.push(`${dir}: ${escHtml(row.transfer_peer)}`);
-  } else if (row.category) {
-    subBits.push(escHtml(row.category));
-  }
-  const subHtml = subBits.map(s => `<div>${s}</div>`).join("");
-
-  if (String(row.status || "").toLowerCase() === "pending") {
-    wrap.classList.add("is-pending");
-  }
-
-  wrap.innerHTML = `
-    <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
-      ${categoryIconHTML(row.category)}
-    </div>
-    <div class="tx-date">${shortDate(row.effectiveDate || row.dateISO)}</div>
-    <div class="tx-main">
-      <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
-      <div class="tx-sub">${subHtml}</div>
-    </div>
-    <div class="tx-right">
-      <div class="tx-amt">${money(row.amount)}</div>
-      <div class="tx-bal">${money(row.balance_after)}</div>
-    </div>
-  `;
-
-  list.appendChild(wrap);
-});
-
-  if (typeof window.attachTxInspect === 'function') window.attachTxInspect(list);
+  if (typeof window.attachTxInspect === "function") window.attachTxInspect(list);
 }
 
 function setActiveQuickButton(container, btn){

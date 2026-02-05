@@ -265,7 +265,6 @@ def home(request: Request):
 
     return resp
 
-
 @app.get("/settings")
 def settings_page():
     return FileResponse("static/settings.html")
@@ -2753,9 +2752,16 @@ def unknown_merchant_total_range(start: str, end: str):
 # -----------------------------------------------------------------------------
 
 @app.get("/month-budget")
-def month_budget():
+def month_budget(
+    year: int | None = None,
+    month: int | None = None,
+    min_occ: int = 3,
+    include_stale: bool = False,
+):
     now = datetime.now()
-    return _month_budget_home(now.year, now.month)
+    y = int(year or now.year)
+    m = int(month or now.month)
+    return _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale)
 
 # =============================================================================
 # LES (Postgres)
