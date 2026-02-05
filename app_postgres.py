@@ -80,9 +80,13 @@ def _is_authed(request: Request) -> bool:
     except Exception:
         return False
 
-PUBLIC_EXACT = {"/__ping", "/login", "/favicon.ico", "/__whoami"}
+PUBLIC_EXACT = {"/__ping", "/login", "/favicon.ico", "/__whoami", "/health"}
 
 PUBLIC_PREFIXES = {"/static/"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 class RequireLoginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
