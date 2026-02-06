@@ -2446,14 +2446,6 @@ def transactions_test(limit: int = Query(200, ge=1, le=10000), offset: int = Que
     """
     return query_db(sql, (limit, offset))
 
-@app.get("/transactions-test-page")
-def transactions_test_page():
-    return FileResponse("static/transactions_test_account.html")
-
-@app.get("/transactions-test-account")
-def transactions_test_account_page():
-    return FileResponse("static/transactions_test_account.html")
-
 @app.get("/transactions-test-range")
 def transactions_test_range(account_id: int, start: str, end: str, limit: int = 500):
     conn, cur = with_db_cursor()

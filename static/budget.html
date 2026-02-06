@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Budget</title>
+
+  <link rel="stylesheet" href="/static/css/base.css" />
+  <link rel="stylesheet" href="/static/css/mobile.css" />
+</head>
+
+<body class="page-budget">
+  <div class="budget-wrap">
+
+    <div class="budget-card">
+      <div style="display:flex; align-items:center; justify-content:flex-end;">
+  <div id="asOf" class="budget-muted"></div>
+</div>
+
+<div style="height:10px;"></div>
+
+
+      <div class="budget-row">
+        <label style="min-width:105px;">Savings goal</label>
+
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="radio" name="sgMode" value="percent" id="sgPercent">
+          Percent
+        </label>
+
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="radio" name="sgMode" value="amount" id="sgAmount">
+          Amount
+        </label>
+
+        <input id="sgValue" class="budget-input" placeholder="e.g. 10 or 2000" inputmode="decimal" />
+        <button id="sgSave" class="settings-btn primary">Save</button>
+        <span id="sgStatus" class="budget-muted" style="margin-left:auto;"></span>
+      </div>
+
+      <hr class="budget-hr" />
+
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+        <div style="font-weight:900;">This month</div>
+      </div>
+
+      <div class="budget-kpis">
+        <div class="budget-kpi"><span class="k">Expected income</span><span class="v" id="kIncome">—</span></div>
+        <div class="budget-kpi"><span class="k">Remaining bills</span><span class="v" id="kBills">—</span></div>
+        <div class="budget-kpi"><span class="k">Savings goal</span><span class="v" id="kSavings">—</span></div>
+        <div class="budget-kpi"><span class="k">Allocated (groups)</span><span class="v" id="kAllocated">—</span></div>
+        <div class="budget-kpi"><span class="k">Safe to spend (free)</span><span class="v" id="kSafe">—</span></div>
+        <div class="budget-kpi"><span class="k">Limit per day</span><span class="v" id="kDaily">—</span></div>
+      </div>
+    </div>
+
+    <div style="height:14px;"></div>
+
+    <div class="budget-card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="font-weight:900;">Group budgets (shared)</div>
+        <button id="addGroupBtn" class="settings-btn">Add group</button>
+      </div>
+
+      <div style="height:10px;"></div>
+
+      <div class="budget-table">
+        <div class="budget-table-head" style="grid-template-columns: 1fr .7fr .7fr 1.4fr .7fr .7fr auto;">
+          <div>Group</div>
+          <div>Allocated</div>
+          <div>Cap</div>
+          <div>Categories (comma-separated)</div>
+          <div>Spent</div>
+          <div>Remaining</div>
+          <div></div>
+        </div>
+        <div id="groupRows"></div>
+      </div>
+
+      <div id="groupsEmpty" class="budget-muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div style="height:14px;"></div>
+
+    <div class="budget-card">
+      <div style="font-weight:900;">Categories spent this month</div>
+      <div class="budget-muted" style="margin-top:6px;">
+        This is read-only. Add a group above only for categories you want to allocate.
+      </div>
+
+      <div style="height:10px;"></div>
+
+      <div class="budget-table">
+        <div class="budget-table-head" style="grid-template-columns: 1fr .7fr;">
+          <div>Category</div>
+          <div>Spent</div>
+        </div>
+        <div id="spentRows"></div>
+      </div>
+
+      <div id="spentEmpty" class="budget-muted" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/budget.js" defer></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+</body>
+</html>

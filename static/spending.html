@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/base.css">
@@ -10,7 +11,6 @@
 
 <body class="page-spending" data-page-title="Spending">
 <div class="page-container">
-  <div id="topBar"></div>
 
   <!-- ONE chart card (Next toggles Line <-> Pie) -->
   <div id="chartMount"></div>
@@ -23,17 +23,17 @@
     </div>
   </section>
 </div>
+<!-- Shared chrome (top bar + bottom tabs + notif modal) -->
+<div id="sharedChrome"></div>
 
-<div id="bottomTabs"></div>
-<script src="/static/topBar.js"></script>
 <script src="/static/category_icons.js"></script>
 <script src="/static/txInspect.js"></script>
 <script src="/static/profile.js"></script>
-<script src="/static/bottomTabs.js"></script>
 <script src="/static/chartControls.js"></script>
 <script src="/static/chartCard.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="/static/spending.js"></script>
-<script src="/static/notifs.js" defer></script>
+<script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+
 </body>
 </html>

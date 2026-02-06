@@ -1,6 +1,7 @@
 <!doctype html>
 <html>
 <head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Receipts</title>
@@ -46,8 +47,6 @@
 </head>
 <body>
   <div class="wrap">
-<div id="topBar"></div>
-
     <div class="card" style="margin-top:0;">
       <div class="row" style="justify-content:space-between;">
         <div>
@@ -149,12 +148,12 @@
 
     </div>
   </div>
+<!-- Shared chrome (top bar + bottom tabs + notif modal) -->
+<div id="sharedChrome"></div>
 
-<div id="bottomTabs"></div>
   <script src="/static/profile.js"></script>
-<script src="/static/notifs.js" defer></script>
-  <script src="/static/bottomTabs.js"></script>
-  <script src="/static/topBar.js"></script>
   <script src="/static/receipts.js"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+
 </body>
 </html>

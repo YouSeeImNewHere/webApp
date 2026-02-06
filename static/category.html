@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
+    <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+
   <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Finance" />
@@ -19,63 +21,49 @@
 
   <div class="page-container">
 
-  <!-- Shared top bar (settings + title + optional back button) -->
-  <div id="topBar"></div>
-
-
   <div class="cat-layout">
-    <!-- LEFT: lifetime categories -->
-
-
-    <!-- RIGHT: chart + tx -->
     <main class="cat-main">
-
-<div id="chartMount"></div>
-
-
+      <div id="chartMount"></div>
       <section aria-label="Transactions" style="margin-top:18px;">
-  <div class="category-box">
-    <div class="category-box__header">Transactions</div>
-    <div id="catTxList" class="tx-list"></div>
-  </div>
-</section>
-
-
+        <div class="category-box">
+          <div class="category-box__header">Transactions</div>
+          <div id="catTxList" class="tx-list"></div>
+        </div>
+      </section>
     </main>
   </div>
+
     <!-- Drawer backdrop -->
-<div id="catDrawerBackdrop" class="cat-drawer-backdrop" aria-hidden="true"></div>
+  <div id="catDrawerBackdrop" class="cat-drawer-backdrop" aria-hidden="true"></div>
 
 <!-- Slide-over drawer -->
-<aside id="catDrawer" class="cat-drawer" aria-label="All Categories">
-  <div class="cat-drawer__title">All Categories (Lifetime)</div>
-  <table class="cat-side-table" id="catSideTable">
-    <thead>
-      <tr><th>Category</th><th style="text-align:right;">Total</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-</aside>
+  <aside id="catDrawer" class="cat-drawer" aria-label="All Categories">
+    <div class="cat-drawer__title">All Categories (Lifetime)</div>
+    <table class="cat-side-table" id="catSideTable">
+      <thead>
+        <tr><th>Category</th><th style="text-align:right;">Total</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </aside>
 
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js").catch(console.error);
+    }
+  </script>
+  <!-- Shared chrome (top bar + bottom tabs + notif modal) -->
+  <div id="sharedChrome"></div>
 
-<div id="bottomTabs"></div>
-<script src="/static/topBar.js"></script>
-<script src="/static/txInspect.js"></script>
-<script src="/static/profile.js"></script>
-<script src="/static/bottomTabs.js"></script>
-
-<script>
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js").catch(console.error);
-  }
-</script>
-<script src="/static/category_icons.js"></script>
-
-    <script src="/static/chartControls.js"></script>
-<script src="/static/chartCard.js"></script>
-<script src="/static/notifs.js" defer></script>
+  <script src="/static/category_icons.js"></script>
+  <script src="/static/txInspect.js"></script>
+  <script src="/static/profile.js"></script>
+  <script src="/static/chartControls.js"></script>
+  <script src="/static/chartCard.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/static/category.js"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+
 </div>
 
 </body>

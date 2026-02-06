@@ -4745,3 +4745,317 @@ body.page-spending .chart-canvas-box{
 .error.hidden {
   display: none;
 }
+/* =============================================================================
+   Budget page
+   Put this at the VERY BOTTOM of base.css
+   ============================================================================= */
+
+body.page-budget{
+  background: var(--card-2);
+  color: var(--text);
+}
+
+.budget-wrap{
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 18px 16px 120px;
+}
+
+.budget-head{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.budget-title{
+  font-size: 22px;
+  font-weight: 900;
+  margin: 0;
+}
+
+.budget-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 14px;
+}
+
+.budget-row{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.budget-row label{
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .8;
+}
+
+.budget-input{
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.budget-hr{
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+  opacity: .7;
+}
+
+/* Month summary: 2-column grid on desktop, 1 on mobile */
+.budget-kpis{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.budget-kpi{
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.budget-kpi .k{
+  font-weight: 900;
+  font-size: 12px;
+  opacity: .75;
+  text-transform: uppercase;
+  letter-spacing: .2px;
+}
+
+.budget-kpi .v{
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Category budget list */
+.budget-table{
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
+.budget-table-head,
+.budget-table-row{
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr 0.8fr 0.8fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.budget-table-head{
+  font-size: 11px;
+  font-weight: 900;
+  opacity: .7;
+  padding: 0 6px;
+}
+
+.budget-table-row{
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 8px 8px;
+}
+
+.budget-table-row input{
+  width: 100%;
+}
+
+.budget-muted{
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .65;
+  margin-top: 8px;
+}
+
+@media (max-width: 900px){
+  .budget-kpis{ grid-template-columns: 1fr; }
+
+  /* Mobile: stack row into 2 lines */
+  .budget-table-head{ display:none; }
+  .budget-table-row{
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: auto;
+  }
+  .budget-table-row .cell-wide{ grid-column: 1 / -1; }
+}
+/* =============================================================================
+   Budget page — polish pass
+   Paste at VERY BOTTOM of base.css
+   ============================================================================= */
+
+body.page-budget{
+  background: var(--bg);
+}
+
+/* Header */
+.budget-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom: 10px;
+}
+
+.budget-title{
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: -0.2px;
+  margin: 0;
+}
+
+.budget-card{
+  padding: 16px;
+}
+
+/* Savings goal row */
+.budget-row{
+  gap: 10px;
+}
+.budget-row label{
+  opacity: .85;
+}
+.budget-row input[type="radio"]{
+  transform: translateY(1px);
+}
+
+/* Inputs */
+.budget-input{
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  min-width: 140px;
+}
+.budget-input::placeholder{
+  color: color-mix(in srgb, var(--text) 45%, transparent);
+}
+.budget-input:focus{
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* KPIs: make them feel like metric tiles */
+.budget-kpi{
+  border-radius: 16px;
+  padding: 12px 12px;
+  background: color-mix(in srgb, var(--card) 92%, var(--accent) 8%);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
+}
+.budget-kpi .v{
+  font-size: 18px;
+}
+#kSafe{
+  color: color-mix(in srgb, var(--text) 85%, var(--accent) 15%);
+}
+
+/* Table rows */
+.budget-table{
+  gap: 10px;
+}
+
+.budget-table-head{
+  padding: 0 8px;
+  opacity: .75;
+  letter-spacing: .2px;
+}
+
+.budget-table-row{
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+
+/* cell wrapper (added by JS) */
+.budget-cell{
+  min-width: 0;
+}
+.budget-cell.is-right{
+  text-align: right;
+}
+.budget-money{
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+.budget-money.is-bad{
+  color: var(--neg, #ff4d4f);
+}
+
+/* Actions */
+.budget-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+/* Make the groups header feel like a section header */
+.budget-card > div[style*="justify-content:space-between"]{
+  margin-bottom: 2px;
+}
+
+/* Mobile: show labels above each value */
+@media (max-width: 900px){
+  .budget-wrap{
+    padding-bottom: 140px;
+  }
+
+  .budget-title{
+    font-size: 22px;
+  }
+
+  .budget-table-row{
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px;
+  }
+
+  .budget-cell{
+    display:flex;
+    flex-direction:column;
+    gap: 6px;
+  }
+
+  .budget-cell::before{
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 900;
+    opacity: .65;
+    letter-spacing: .18px;
+    text-transform: uppercase;
+  }
+
+  /* categories & actions should span full width */
+  .budget-cell.cell-wide{
+    grid-column: 1 / -1;
+  }
+  .budget-cell.is-actions{
+    grid-column: 1 / -1;
+  }
+
+  .budget-actions{
+    justify-content: flex-start;
+  }
+
+  /* money cells right-align label + value feels weird on mobile */
+  .budget-cell.is-right{
+    text-align: left;
+  }
+}

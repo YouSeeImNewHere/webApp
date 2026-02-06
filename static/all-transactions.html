@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Finance" />
@@ -15,11 +17,11 @@
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="/static/css/mobile.css">
   <script src="/static/theme.js"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 </head>
 
 <body class="page-alltx" data-page-title="All Transactions">
   <div class="page-container">
-    <div id="topBar"></div>
 
     <div style="max-width:900px;margin:0 auto;">
       <!-- FILTER BAR -->
@@ -123,21 +125,17 @@
     </div>
   </div>
 
-  <!-- Bottom tabs -->
-  <div id="bottomTabs"></div>
-  <script src="/static/profile.js"></script>
-  <script src="/static/bottomTabs.js"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/static/sw.js").catch(console.error);
     }
   </script>
-  <script src="/static/topBar.js"></script>
-  <script src="/static/notifs.js" defer></script>
+  <div id="sharedChrome"></div>
+
+  <script src="/static/profile.js"></script>
   <script src="/static/txInspect.js"></script>
   <script src="/static/category_icons.js"></script>
-
   <script src="/static/all-transactions.js"></script>
 </body>
 </html>

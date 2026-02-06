@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <link rel="icon" href="data:,">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,7 +12,6 @@
 </head>
 <body class="page-recurring" data-page-title="Recurring">
   <div class="page-container">
-    <div id="topBar"></div>
 
     <!-- Calendar -->
 <div class="cal-box">
@@ -101,17 +101,14 @@
     <div id="ignoredBody" class="occ-body"></div>
   </div>
 </div>
+  </div>
+<!-- Shared chrome (top bar + bottom tabs + notif modal) -->
+<div id="sharedChrome"></div>
 
-
-
-<div id="bottomTabs"></div>
-<script src="/static/bottomTabs.js"></script>
-<script src="/static/topBar.js"></script>
-<script src="/static/category_icons.js"></script>
-
+  <script src="/static/category_icons.js"></script>
   <script src="/static/profile.js"></script>
-<script src="/static/notifs.js" defer></script>
   <script src="/static/recurring_page.js"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 
 
 </body>

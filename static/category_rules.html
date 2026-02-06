@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Category Rules</title>
@@ -12,8 +13,6 @@
 </head>
 
 <body class="page-category-rules" data-page-title="Category Rules">
-  <div id="topBar"></div>
-
   <div class="settings-wrap">
     <section class="settings-section">
       <div class="settings-section-head">
@@ -76,12 +75,11 @@
       </div>
     </div>
   </div>
+  <!-- Shared chrome (top bar + bottom tabs + notif modal) -->
+  <div id="sharedChrome"></div>
 
-  <div id="bottomTabs"></div>
-
-  <script src="/static/topBar.js"></script>
-  <script src="/static/bottomTabs.js"></script>
-<script src="/static/notifs.js" defer></script>
   <script src="/static/categoryRules.js"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+
 </body>
 </html>

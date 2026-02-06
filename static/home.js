@@ -1470,7 +1470,8 @@ async function saveRule() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-
+const btn = document.getElementById("goBudgetBtn");
+  if (btn) btn.addEventListener("click", () => (window.location.href = "/budget"));
 // Build the shared chart UI (so Home matches every other page)
 mountChartCard("#homeChartMount", {
   ids: HOME_IDS,

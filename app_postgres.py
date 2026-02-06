@@ -277,14 +277,6 @@ def settings_page():
 def account_page():
     return FileResponse("static/account.html")
 
-@app.get("/transactions-test-page")
-def transactions_test_page():
-    return FileResponse("static/transactions_test_account.html")
-
-@app.get("/transactions-test-account")
-def transactions_test_account_page():
-    return FileResponse("static/transactions_test_account.html")
-
 @app.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
     """Return *all* columns for a single transaction, plus account metadata (Postgres)."""
@@ -2147,9 +2139,6 @@ def list_categories():
 # Category Rules (Postgres) — ported from category_rules.py
 # =============================================================================
 
-# -----------------------------
-# Pydantic models (same API)
-# -----------------------------
 class RuleCreate(BaseModel):
     category: str
     keywords: List[str] = []
@@ -2227,7 +2216,7 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
 
         bills_remaining += abs(amt)
 
-    # 2) Actual spending so far
+    # 2) Actual spending so far + per-category spend map
     tx_rows = query_db(
         """
         WITH base AS (
@@ -2259,6 +2248,8 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
     )
 
     spent_so_far = 0.0
+    cat_spent: dict[str, float] = {}
+
     for r in tx_rows:
         category = (r["category"] or "").strip().lower()
         if category in ("card payment", "transfer"):
@@ -2267,15 +2258,46 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         amt = float(r["amount"] or 0.0)
         if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
             spent_so_far += amt
+            if category:
+                cat_spent[category] = cat_spent.get(category, 0.0) + amt
 
     # 3) LES + savings goal (Home logic)
     pay_income = _les_pay_income_for_month(year, month) or 0.0
     total_income = income_expected + pay_income
-
     savings_goal = _compute_monthly_savings_goal(total_income)
 
+    # Base spend goal (before budgeting)
     spend_goal = total_income - bills_remaining - savings_goal
-    safe_to_spend = spend_goal - spent_so_far
+
+    # 4) Group budgets (allocations) — reduce free safe-to-spend, but DON'T double-count spend
+    groups = _get_budget_groups_for_month(year, month)
+    allocations_total = sum(float(g.get("allocated") or 0.0) for g in groups)
+
+    # spent inside budgeted categories
+    budgeted_spent_total = 0.0
+    for g in groups:
+        g_spent = 0.0
+        for c in (g.get("categories") or []):
+            cn = _norm_cat(c)
+            g_spent += float(cat_spent.get(cn, 0.0))
+        budgeted_spent_total += g_spent
+
+    # Free-to-spend excludes allocated money
+    free_spend_goal = spend_goal - allocations_total
+
+    # But spent_so_far includes budgeted spending — remove it so we don't count it twice
+    spent_free = spent_so_far - budgeted_spent_total
+    safe_to_spend = free_spend_goal - spent_free
+
+    # Daily limit (based on days remaining in month incl. today)
+    if today < month_start:
+        days_left = (month_end - month_start).days + 1
+    elif today > month_end:
+        days_left = 0
+    else:
+        days_left = (month_end - today).days + 1
+
+    daily_limit = (safe_to_spend / days_left) if days_left > 0 else 0.0
 
     return {
         "ok": True,
@@ -2292,7 +2314,17 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
 
         "savings_goal": round(savings_goal, 2),
         "spend_goal": round(spend_goal, 2),
+
+        # NEW
+        "allocations_total": round(allocations_total, 2),
+        "budgeted_spent_total": round(budgeted_spent_total, 2),
+
+        # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
         "safe_to_spend": round(safe_to_spend, 2),
+        "daily_limit": round(daily_limit, 2),
+        "days_left": int(days_left),
+
+        "category_spent": {k: round(v, 2) for k, v in cat_spent.items()},
     }
 
 def _get_savings_goal_cfg():
@@ -2766,6 +2798,48 @@ def month_budget(
     y = int(year or now.year)
     m = int(month or now.month)
     return _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale)
+
+@app.get("/page/budget")
+def page_budget(year: int | None = None, month: int | None = None, min_occ: int = 3, include_stale: bool = False):
+    now = datetime.now()
+    y = int(year or now.year)
+    m = int(month or now.month)
+
+    mb = _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale)
+
+    groups = _get_budget_groups_for_month(y, m)
+
+    # decorate groups with spent/remaining using mb.category_spent
+    cat_spent = (mb.get("category_spent") or {}) if isinstance(mb, dict) else {}
+    out_groups = []
+    for g in groups:
+        g_spent = 0.0
+        for c in (g.get("categories") or []):
+            g_spent += float(cat_spent.get(_norm_cat(c), 0.0))
+        allocated = float(g.get("allocated") or 0.0)
+        cap = g.get("cap", None)
+        remaining = allocated - g_spent
+        out_groups.append(
+            {
+                **g,
+                "spent": round(g_spent, 2),
+                "remaining": round(remaining, 2),
+                "over_cap": bool(cap is not None and float(g_spent) > float(cap)),
+            }
+        )
+
+    # categories spent list (sorted desc), for the read-only section
+    spent_items = [{"category": k, "spent": float(v)} for k, v in (cat_spent or {}).items()]
+    spent_items.sort(key=lambda x: x["spent"], reverse=True)
+
+    return {
+        "ok": True,
+        "month": mb,
+        "groups": out_groups,
+        "spent_categories": spent_items,
+        "savings_goal_cfg": get_savings_goal(),  # re-use existing endpoint logic
+    }
+
 
 # =============================================================================
 # LES (Postgres)
@@ -4251,6 +4325,227 @@ def set_savings_goal(body: SavingsGoalIn):
         conn.commit()
 
     return {"ok": True}
+# =============================================================================
+# Budget Groups (shared allocations) — Postgres
+# =============================================================================
+
+class BudgetGroupUpsert(BaseModel):
+    year: int
+    month: int
+    name: str
+    allocated: float = 0.0
+    cap: Optional[float] = None
+    categories: List[str] = []
+
+def _ensure_budget_groups_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS budget_groups (
+              id SERIAL PRIMARY KEY,
+              year INT NOT NULL,
+              month INT NOT NULL,
+              name TEXT NOT NULL,
+              name_norm TEXT NOT NULL,
+              allocated DOUBLE PRECISION NOT NULL DEFAULT 0,
+              cap DOUBLE PRECISION NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname='public'
+                  AND indexname='ux_budget_groups_month_name'
+              ) THEN
+                CREATE UNIQUE INDEX ux_budget_groups_month_name
+                  ON budget_groups(year, month, name_norm);
+              END IF;
+            END $$;
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS budget_group_categories (
+              id SERIAL PRIMARY KEY,
+              group_id INT NOT NULL REFERENCES budget_groups(id) ON DELETE CASCADE,
+              year INT NOT NULL,
+              month INT NOT NULL,
+              category TEXT NOT NULL,
+              category_norm TEXT NOT NULL
+            );
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname='public'
+                  AND indexname='ux_budget_group_categories_unique'
+              ) THEN
+                CREATE UNIQUE INDEX ux_budget_group_categories_unique
+                  ON budget_group_categories(year, month, category_norm);
+              END IF;
+            END $$;
+            """
+        )
+        conn.commit()
+
+def _norm_name(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
+
+def _norm_cat(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
+
+def _row_first_id(row):
+    # Works for tuple rows or dict rows (RealDictCursor)
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get("id") or next(iter(row.values()), None)
+    return row[0]
+
+def _get_budget_groups_for_month(year: int, month: int) -> list[dict]:
+    _ensure_budget_groups_pg()
+    rows = query_db(
+        """
+        SELECT
+          g.id,
+          g.name,
+          g.allocated::double precision AS allocated,
+          g.cap::double precision AS cap,
+          COALESCE(array_agg(c.category ORDER BY c.category) FILTER (WHERE c.category IS NOT NULL), '{}') AS categories
+        FROM budget_groups g
+        LEFT JOIN budget_group_categories c ON c.group_id = g.id
+        WHERE g.year=%s AND g.month=%s
+        GROUP BY g.id
+        ORDER BY g.name_norm ASC
+        """,
+        (year, month),
+    )
+
+    out = []
+    for r in rows:
+        cats = r.get("categories") or []
+        # psycopg2 might return array as list already; keep safe:
+        if isinstance(cats, str):
+            cats = [x.strip() for x in cats.strip("{}").split(",") if x.strip()]
+        out.append(
+            {
+                "id": int(r["id"]),
+                "name": r.get("name") or "",
+                "allocated": float(r.get("allocated") or 0.0),
+                "cap": None if r.get("cap") is None else float(r.get("cap")),
+                "categories": cats,
+            }
+        )
+    return out
+
+@app.get("/budget/groups")
+def get_budget_groups(year: int, month: int):
+    return {"ok": True, "groups": _get_budget_groups_for_month(year, month)}
+
+@app.post("/budget/groups")
+def upsert_budget_group(b: BudgetGroupUpsert):
+    _ensure_budget_groups_pg()
+
+    y = int(b.year)
+    m = int(b.month)
+    nm = (b.name or "").strip()
+    if not nm:
+        raise HTTPException(status_code=422, detail="name is required")
+
+    name_norm = _norm_name(nm)
+    allocated = float(b.allocated or 0.0)
+    cap = None if b.cap is None else float(b.cap)
+
+    cats_in = b.categories or []
+    cats_norm = []
+    cats_out = []
+    for c in cats_in:
+        nn = _norm_cat(c)
+        if not nn:
+            continue
+        cats_norm.append(nn)
+        cats_out.append(nn)
+
+    with with_db_cursor() as (conn, cur):
+        # Upsert group
+        cur.execute(
+            """
+            INSERT INTO budget_groups(year, month, name, name_norm, allocated, cap, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s, now())
+            ON CONFLICT (year, month, name_norm)
+            DO UPDATE SET
+              name = EXCLUDED.name,
+              allocated = EXCLUDED.allocated,
+              cap = EXCLUDED.cap,
+              updated_at = now()
+            RETURNING id
+            """,
+            (y, m, nm, name_norm, allocated, cap),
+        )
+        row = cur.fetchone()
+        group_id = _row_first_id(row)  # ✅ fixes KeyError: 0
+        if group_id is None:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail="Failed to upsert budget group (no id returned)")
+
+        group_id = int(group_id)
+
+        # Replace categories for this group
+        cur.execute("DELETE FROM budget_group_categories WHERE group_id=%s", (group_id,))
+
+        # Ensure a category can belong to only one group per month:
+        # delete any existing mapping for these categories in the same (year,month)
+        if cats_norm:
+            cur.execute(
+                """
+                DELETE FROM budget_group_categories
+                WHERE year=%s AND month=%s AND category_norm = ANY(%s)
+                """,
+                (y, m, cats_norm),
+            )
+
+        for c in cats_out:
+            cur.execute(
+                """
+                INSERT INTO budget_group_categories(group_id, year, month, category, category_norm)
+                VALUES (%s,%s,%s,%s,%s)
+                """,
+                (group_id, y, m, c, c),
+            )
+
+        conn.commit()
+
+    return {"ok": True, "id": group_id}
+
+@app.delete("/budget/groups")
+def delete_budget_group(year: int, month: int, name: str):
+    _ensure_budget_groups_pg()
+    nm = (name or "").strip()
+    if not nm:
+        raise HTTPException(status_code=422, detail="name is required")
+
+    name_norm = _norm_name(nm)
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM budget_groups WHERE year=%s AND month=%s AND name_norm=%s",
+            (int(year), int(month), name_norm),
+        )
+        deleted = (cur.rowcount or 0) > 0
+        conn.commit()
+
+    return {"ok": True, "deleted": bool(deleted)}
 
 # =============================================================================
 # UI Layout (ui_layout)
@@ -4711,3 +5006,106 @@ def widget_summary(x_widget_secret: str = Header(default="")):
         }
     }
 
+def _ensure_budget_tables_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS budget_category_month (
+          year INT NOT NULL,
+          month INT NOT NULL,
+          category TEXT NOT NULL,
+          allocated DOUBLE PRECISION NOT NULL DEFAULT 0,
+          cap DOUBLE PRECISION NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (year, month, category)
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_budget_category_month_ym ON budget_category_month(year, month)")
+        conn.commit()
+
+class BudgetCatUpsert(BaseModel):
+    year: int
+    month: int
+    category: str
+    allocated: float = 0.0
+    cap: float | None = None
+
+@app.get("/budget/categories")
+def budget_categories(year: int, month: int):
+    _ensure_budget_tables_pg()
+    rows = query_db(
+        """
+        SELECT category, allocated, cap, updated_at
+        FROM budget_category_month
+        WHERE year=%s AND month=%s
+        ORDER BY LOWER(category)
+        """,
+        (int(year), int(month)),
+    )
+    return {"items": rows}
+
+@app.post("/budget/categories")
+def upsert_budget_category(b: BudgetCatUpsert):
+    _ensure_budget_tables_pg()
+    cat = (b.category or "").strip()
+    if not cat:
+        raise HTTPException(status_code=400, detail="category required")
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO budget_category_month(year, month, category, allocated, cap)
+            VALUES (%s,%s,%s,%s,%s)
+            ON CONFLICT (year, month, category)
+            DO UPDATE SET allocated=EXCLUDED.allocated, cap=EXCLUDED.cap, updated_at=now()
+            """,
+            (int(b.year), int(b.month), cat, float(b.allocated or 0.0), (None if b.cap is None else float(b.cap))),
+        )
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/budget/categories")
+def delete_budget_category(year: int, month: int, category: str):
+    _ensure_budget_tables_pg()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM budget_category_month WHERE year=%s AND month=%s AND category=%s",
+            (int(year), int(month), (category or "").strip()),
+        )
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/budget")
+def budget_page():
+    return FileResponse("static/budget.html")
+
+class BudgetGroupUpsert(BaseModel):
+    year: int
+    month: int
+    name: str
+    allocated: float = 0.0
+    cap: float | None = None
+    categories: list[str] = []
+
+def _ensure_budget_group_tables_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS budget_group_month (
+          id BIGSERIAL PRIMARY KEY,
+          year INT NOT NULL,
+          month INT NOT NULL,
+          name TEXT NOT NULL,
+          allocated DOUBLE PRECISION NOT NULL DEFAULT 0,
+          cap DOUBLE PRECISION NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE(year, month, name)
+        );
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS budget_group_member (
+          group_id BIGINT NOT NULL REFERENCES budget_group_month(id) ON DELETE CASCADE,
+          category TEXT NOT NULL,
+          PRIMARY KEY (group_id, category)
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_budget_group_month_ym ON budget_group_month(year, month)")
+        conn.commit()
