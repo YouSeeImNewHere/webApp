@@ -41,6 +41,20 @@
     .spent-chart{flex:1 1 auto; max-width:none; width:100%;}
     .budget-chart-box.is-square{max-height:none;}
   }
+  /* Number badge next to category */
+.cat-num{
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  flex: 0 0 auto;
+}
+
 </style>
 
 
@@ -92,7 +106,21 @@
         <div class="budget-kpi"><span class="k">Savings goal</span><span class="v" id="kSavings">—</span></div>
         <div class="budget-kpi"><span class="k">Allocated (groups)</span><span class="v" id="kAllocated">—</span></div>
         <div class="budget-kpi"><span class="k">Safe to spend (free)</span><span class="v" id="kSafe">—</span></div>
-        <div class="budget-kpi"><span class="k">Limit per day</span><span class="v" id="kDaily">—</span></div>
+        <div class="budget-kpi" id="todayKpi">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <span class="k">Left Today</span>
+    <button id="recalcTodayBtn" class="settings-btn" type="button" style="padding:6px 10px;">
+      Recalc
+    </button>
+  </div>
+
+  <div class="v" id="kTodayLeft" style="margin-top:6px;">—</div>
+
+  <div id="kTodayMeta" class="budget-muted" style="margin-top:6px;">
+    —
+  </div>
+</div>
+
       </div>
     </div>
 
@@ -100,7 +128,7 @@
 
     <div class="budget-card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-        <div style="font-weight:900;">Group budgets (shared)</div>
+        <div style="font-weight:900;">Budgets</div>
         <button id="addGroupBtn" class="settings-btn">Add group</button>
       </div>
 
@@ -160,9 +188,9 @@
 
   <div id="sharedChrome"></div>
 
-  <script src="/static/budget.js" defer></script>
-  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/budget.js" defer></script>
 
 </body>
 </html>

@@ -694,6 +694,7 @@ async function bootHome() {
     }
 
     setChartHeaderUI();
+refreshMonthBudgetCard(false);
 
     // kick these off immediately (parallel)
     setChartHeaderUI();
@@ -1974,7 +1975,7 @@ function mountMonthBudgetCard(mountSel) {
   if (!mount) return;
 
   // Use your existing "category-box" styling so it matches.
-  mount.innerHTML = `
+    mount.innerHTML = `
   <aside class="category-box category-box--sidebar" aria-label="This month">
     <div class="category-box__header" style="display:flex; justify-content:space-between;">
       <span>This month</span>
@@ -2001,12 +2002,25 @@ function mountMonthBudgetCard(mountSel) {
       </li>
     </ul>
 
+    <!-- 🔥 NEW: Daily limit (locked once/day) -->
     <div style="margin-top:8px; font-size:11px; opacity:.65;">
       <span id="mbSafeHint">Income − spent − remaining bills</span><br/>
-      <span id="mbGoal" style="opacity:.85;">—</span>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:6px;">
+        <span style="opacity:.85;">Limit today:</span>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span id="mbDaily" style="font-weight:800; opacity:.95;">—</span>
+          <button id="mbRecalcDaily" class="settings-btn" type="button" style="padding:6px 10px; font-size:12px;">
+            Recalc
+          </button>
+        </span>
+      </div>
+
+      <div id="mbDailyMeta" style="margin-top:4px; opacity:.6;">—</div>
     </div>
   </aside>
 `;
+
 
 
   // mobile: stack cards
@@ -2038,59 +2052,85 @@ function mountMonthBudgetCard(mountSel) {
 
 }
 
-async function refreshMonthBudgetCard() {
-  const rangeEl = document.getElementById("mbRange");
-  const incomeEl = document.getElementById("mbIncome");
-  const spentEl = document.getElementById("mbSpent");
+async function refreshMonthBudgetCard(forceRecalcDaily = false) {
   const safeEl = document.getElementById("mbSafe");
+  const metaEl = document.getElementById("mbMeta");
+  const goalEl = document.getElementById("mbGoal");
 
-  const incomeHint = document.getElementById("mbIncomeHint");
-  const billsHint = document.getElementById("mbBillsHint");
-  const safeHint = document.getElementById("mbSafeHint");
+  const incomeEl = document.getElementById("mbIncome");
+  const spentEl  = document.getElementById("mbSpent");
+  const billsEl  = document.getElementById("mbBills"); // if you have it; ok if null
+
+  // Daily limit UI (Home)
+  const dailyEl     = document.getElementById("mbDaily");
+  const dailyMetaEl = document.getElementById("mbDailyMeta");
+  const recalcBtn   = document.getElementById("mbRecalcDaily");
+
+  // Bind once
+  if (recalcBtn && !recalcBtn.dataset.bound) {
+    recalcBtn.dataset.bound = "1";
+    recalcBtn.addEventListener("click", () => refreshMonthBudgetCard(true));
+  }
 
   try {
+    // 1) Month budget numbers
     const res = await fetch("/month-budget");
     if (!res.ok) throw new Error("month-budget failed: " + res.status);
     const d = await res.json();
 
-    if (rangeEl) rangeEl.textContent = `${formatMMMdd(d.month_start)} – ${formatMMMdd(d.month_end)}`;
+    const safe  = Number(d.safe_to_spend || 0);
+    const asOf  = d.as_of ? String(d.as_of) : "";
+    const days  = Number(d.days_left || 0);
 
-    const income = Number(d.expected_income || 0); // ✅ matches backend
-    const spent = Number(d.spent_so_far || 0);
-    const billsRemaining = Number(d.bills_remaining || 0);
+    const income = Number(d.expected_income || 0);
+    const spent  = Number(d.spent_so_far || 0);
+    const bills  = Number(d.bills_remaining || 0);
 
-    const safe = Number(d.safe_to_spend || 0);
-
-    if (incomeEl) incomeEl.textContent = money(income);
-    if (spentEl) spentEl.textContent = money(spent);
-
-    // Show negative in red-ish by using existing negative class pattern if you want,
-    // but keep it simple for now:
     if (safeEl) safeEl.textContent = (safe < 0 ? "-" : "") + money(Math.abs(safe));
+    if (incomeEl) incomeEl.textContent = money(income);
+    if (spentEl)  spentEl.textContent  = money(spent);
+    if (billsEl)  billsEl.textContent  = money(bills);
 
-    if (incomeHint) incomeHint.textContent = `Expected this month (paychecks + interest)`;
-    if (billsHint) billsHint.textContent = `Bills remaining: ${money(billsRemaining)}`;
-    if (safeHint) safeHint.textContent = `Income - spent - remaining bills`;
+    // We'll fill mbMeta after we fetch /day-limit (so baseline is the locked value)
+
+    // 2) Daily limit (locked baseline + live remaining)
+    const dlUrl = forceRecalcDaily ? "/day-limit?recalc=1" : "/day-limit";
+    const dlRes = await fetch(dlUrl);
+    if (!dlRes.ok) throw new Error("day-limit failed: " + dlRes.status);
+    const dl = await dlRes.json();
+
+    const baseline  = Number(dl.baseline || 0);
+    const remaining = Number(dl.remaining_today || 0);
+    const spentFree = Number(dl.spent_today_free || 0);
+
+    if (dailyEl) dailyEl.textContent = money(remaining);
+    if (dailyMetaEl) {
+      dailyMetaEl.textContent = `Baseline: ${money(baseline)} • Spent free today: ${money(spentFree)}`;
+    }
+
+    // Keep your existing meta style: "Feb 07 • $45.71/day • 22 days left"
+    // BUT use the locked baseline from /day-limit, not the constantly-recomputed /month-budget daily_limit.
+    if (metaEl) {
+      const left = `${money(baseline)}/day • ${days} days left`;
+      metaEl.textContent = asOf ? `${asOf} • ${left}` : left;
+    }
+
+    // If you already compute/show savings goal elsewhere, keep it.
+    // goalEl can stay as-is if you set it in another function; otherwise set it here if you have the value.
+    // if (goalEl) goalEl.textContent = `Savings goal: ${money(Number(d.savings_goal || 0))}`;
 
   } catch (e) {
     console.error(e);
-    if (rangeEl) rangeEl.textContent = "—";
-    if (incomeEl) incomeEl.textContent = "—";
-    if (spentEl) spentEl.textContent = "—";
     if (safeEl) safeEl.textContent = "—";
-    if (incomeHint) incomeHint.textContent = "Could not load";
-    if (billsHint) billsHint.textContent = "";
-    if (safeHint) safeHint.textContent = "";
+    if (metaEl) metaEl.textContent = "—";
+    if (dailyEl) dailyEl.textContent = "—";
+    if (dailyMetaEl) dailyMetaEl.textContent = "";
   }
-
-
 }
-
 
 // =========================
 // Expected Income Breakdown Modal
 // =========================
-
 
 function bindIncomeRowClick() {
   const incomeRow = document.getElementById("mbIncomeRow");

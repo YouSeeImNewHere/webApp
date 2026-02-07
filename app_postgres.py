@@ -2870,7 +2870,6 @@ def page_budget(year: int | None = None, month: int | None = None, min_occ: int 
         "savings_goal_cfg": get_savings_goal(),  # re-use existing endpoint logic
     }
 
-
 # =============================================================================
 # LES (Postgres)
 # =============================================================================
@@ -4355,6 +4354,7 @@ def set_savings_goal(body: SavingsGoalIn):
         conn.commit()
 
     return {"ok": True}
+
 # =============================================================================
 # Budget Groups (shared allocations) — Postgres
 # =============================================================================
@@ -4992,7 +4992,7 @@ def widget_summary(x_widget_secret: str = Header(default="")):
 
     bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
     mb = _month_budget_home(datetime.now().year, datetime.now().month)
-
+    dl = day_limit(recalc=0)
     credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
 
     limit_sum = 0.0
@@ -5026,18 +5026,21 @@ def widget_summary(x_widget_secret: str = Header(default="")):
         "month": mb,
 
         # ✅ NEW: same as Home "$/day"
-        "cost_per_day": mb.get("daily_limit", 0.0),
+        "cost_per_day": dl.get("baseline", 0.0),
         "days_left": mb.get("days_left", 0),
         "as_of": mb.get("as_of"),
-
         "totals": {
             "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
             "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
         },
-
+        "today": {
+            "baseline": dl.get("baseline", 0.0),
+            "remaining_today": dl.get("remaining_today", 0.0),
+            "spent_today_free": dl.get("spent_today_free", 0.0),
+            "day": dl.get("day"),
+        },
         "meta": {"cron": "OK"}
     }
-
 
 def _ensure_budget_tables_pg():
     with with_db_cursor() as (conn, cur):
@@ -5142,10 +5145,12 @@ def _ensure_budget_group_tables_pg():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_budget_group_month_ym ON budget_group_month(year, month)")
         conn.commit()
+
 @app.get("/category")
 def category_page():
     """Category detail page (reads category from ?c=...)."""
     return FileResponse("static/category.html")
+
 def _category_totals_month_display(year: int, month: int):
     # month range
     month_start = date(year, month, 1)
@@ -5190,3 +5195,136 @@ def _category_totals_month_display(year: int, month: int):
         (month_start, month_end),
     )
     return [{"category": r["category"], "spent": float(r["total"] or 0.0)} for r in rows]
+
+def _ensure_daily_limit_snapshot_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS daily_limit_snapshot (
+          day DATE PRIMARY KEY,
+          baseline DOUBLE PRECISION NOT NULL,
+          computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """)
+        conn.commit()
+
+def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
+    """
+    Returns (spent_today_total, spent_today_budgeted, spent_today_free)
+    using the same rules as _month_budget_home:
+      - exclude category in ('card payment','transfer')
+      - only count amt > 0 for checking/credit
+      - budgeted = categories inside budget groups for this month
+      - free = total - budgeted
+    """
+    year = day.year
+    month = day.month
+
+    # Pull tx rows for *that day*
+    tx_rows = query_db(
+        """
+        WITH base AS (
+          SELECT
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            t.amount::double precision AS amount,
+            LOWER(TRIM(COALESCE(t.category,''))) AS category,
+            LOWER(a.accountType) AS accountType
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+        ),
+        norm AS (
+          SELECT
+            *,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT d, amount, category, accountType
+        FROM norm
+        WHERE d = %s
+        """,
+        (day,),
+    )
+
+    spent_today = 0.0
+    cat_spent: dict[str, float] = {}
+
+    for r in tx_rows:
+        category = (r["category"] or "").strip().lower()
+        if category in ("card payment", "transfer"):
+            continue
+
+        amt = float(r["amount"] or 0.0)
+        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
+            spent_today += amt
+            if category:
+                cat_spent[category] = cat_spent.get(category, 0.0) + amt
+
+    # Budgeted categories for this month
+    groups = _get_budget_groups_for_month(year, month)
+    budgeted_cats = set()
+    for g in (groups or []):
+        for c in (g.get("categories") or []):
+            budgeted_cats.add(_norm_cat(c))
+
+    spent_budgeted = 0.0
+    for cn, amt in cat_spent.items():
+        if _norm_cat(cn) in budgeted_cats:
+            spent_budgeted += float(amt)
+
+    spent_free = spent_today - spent_budgeted
+    return spent_today, spent_budgeted, spent_free
+
+@app.get("/day-limit")
+def day_limit(recalc: int = 0):
+    """
+    Daily baseline ($/day) is computed once per day and stored.
+    Remaining today updates live as you add purchases:
+      remaining_today = baseline - spent_free_today
+    Use ?recalc=1 to force a new baseline for today.
+    """
+    _ensure_daily_limit_snapshot_pg()
+
+    today = date.today()
+
+    # Get or compute today's baseline
+    row = query_db("SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s", (today,))
+    if recalc or not row:
+        mb = _month_budget_home(today.year, today.month)
+        baseline = float(mb.get("daily_limit") or 0.0)
+
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                INSERT INTO daily_limit_snapshot(day, baseline, computed_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT (day)
+                DO UPDATE SET baseline=EXCLUDED.baseline, computed_at=now()
+                """,
+                (today, baseline),
+            )
+            conn.commit()
+
+        row = query_db("SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s", (today,))
+
+    baseline = float(row[0]["baseline"])
+    computed_at = row[0]["computed_at"]
+
+    spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(today)
+    remaining = baseline - spent_free
+
+    return {
+        "ok": True,
+        "day": today.isoformat(),
+        "baseline": round(baseline, 2),
+        "computed_at": computed_at.isoformat() if hasattr(computed_at, "isoformat") else str(computed_at),
+
+        "spent_today_total": round(spent_today, 2),
+        "spent_today_budgeted": round(spent_budgeted, 2),
+        "spent_today_free": round(spent_free, 2),
+
+        "remaining_today": round(remaining, 2),
+    }

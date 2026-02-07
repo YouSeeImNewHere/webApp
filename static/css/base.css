@@ -5215,3 +5215,49 @@ body.page-budget .budget-table--spent .budget-cell.is-right {
     background: rgba(255,255,255,0.08);
   }
 }
+
+/* ============================
+   Budget groups: no clipping, no ugly overflow
+   (paste at VERY BOTTOM)
+   ============================ */
+
+/* Never clip the right edge (this is what cut off Delete) */
+body.page-budget .budget-table--groups{
+  overflow-x: auto;                 /* scroll only if needed */
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;              /* room so scrollbar doesn't touch content */
+}
+
+/* Make the header + rows shrink properly */
+body.page-budget .budget-table--groups .budget-table-head,
+body.page-budget .budget-table--groups .budget-table-row--group{
+  min-width: 980px;                 /* keeps it looking like a table */
+}
+
+/* Replace the too-rigid fixed columns with shrink-friendly ones */
+body.page-budget .budget-table--groups{
+  --cols: minmax(160px, 1.2fr)      /* Group */
+          110px                      /* Allocated */
+          110px                      /* Cap */
+          minmax(220px, 2fr)         /* Categories */
+          110px                      /* Spent */
+          110px                      /* Remaining */
+          minmax(140px, 170px);      /* Actions */
+}
+
+body.page-budget .budget-table--groups .budget-table-head,
+body.page-budget .budget-table--groups .budget-table-row--group{
+  grid-template-columns: var(--cols) !important;
+}
+
+/* Actions should never get clipped */
+body.page-budget .budget-cell.is-actions{
+  justify-self: stretch;
+}
+
+body.page-budget .budget-actions{
+  width: 100%;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+}

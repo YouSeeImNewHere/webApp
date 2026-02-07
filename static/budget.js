@@ -2,21 +2,30 @@
   const $ = (id) => document.getElementById(id);
 // -------- Category color mapping (shared between table + pie) --------
 // Deterministic HSL from a string so the same category is always the same color.
-function hashStr(s) {
-  s = String(s || "");
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0);
+// -------- Category palette + numbering (shared between table + pie) --------
+const CAT_PALETTE = [
+  "#E74C3C", "#8E44AD", "#F39C12", "#E91E63", "#2ECC71",
+  "#3498DB", "#1ABC9C", "#D35400", "#9B59B6", "#27AE60",
+  "#2980B9", "#C0392B", "#16A085", "#7F8C8D"
+];
+
+function buildSpentMap(items) {
+  const rows = (Array.isArray(items) ? items : [])
+    .map(r => ({ category: String(r.category || "").trim(), spent: Math.max(0, Number(r.spent) || 0) }))
+    .filter(r => r.category && r.spent > 0)
+    .sort((a, b) => (b.spent || 0) - (a.spent || 0)); // biggest first
+
+  const map = new Map();
+  rows.forEach((r, i) => {
+    map.set(r.category, {
+      idx: i + 1,
+      color: CAT_PALETTE[i % CAT_PALETTE.length],
+    });
+  });
+
+  return { rows, map };
 }
 
-function colorForCategory(cat) {
-  const h = hashStr(String(cat || "").toLowerCase()) % 360;
-  // Saturation/lightness tuned to look decent in both light + dark themes.
-  return `hsl(${h} 70% 55%)`;
-}
 
 let spentPieChart = null;
 
@@ -27,15 +36,13 @@ function destroySpentPie() {
   }
 }
 
-function renderSpentPie(items) {
+function renderSpentPie(items, spentMap) {
   const canvas = $("spentPie");
   const mount = canvas ? canvas.closest(".spent-chart") : null;
   if (!canvas) return;
 
-  const rows = (Array.isArray(items) ? items : [])
-    .map(r => ({ category: String(r.category || "").trim(), spent: Math.max(0, Number(r.spent) || 0) }))
-    .filter(r => r.category && r.spent > 0)
-    .sort((a, b) => (b.spent || 0) - (a.spent || 0));
+  const rows = spentMap?.rows || [];
+  const map = spentMap?.map || new Map();
 
   if (!rows.length) {
     destroySpentPie();
@@ -46,37 +53,80 @@ function renderSpentPie(items) {
 
   const labels = rows.map(r => r.category);
   const data = rows.map(r => r.spent);
-  const colors = rows.map(r => colorForCategory(r.category));
+  const colors = rows.map(r => (map.get(r.category)?.color || "#999"));
 
+  // Bulletproof destroy (handles any previous chart on same canvas)
+  const existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
   destroySpentPie();
+
+  // Plugin: draw slice numbers
+  const sliceNumbers = {
+    id: "sliceNumbers",
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta || !meta.data) return;
+
+      ctx.save();
+      ctx.font = "900 12px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      meta.data.forEach((arc, i) => {
+        // Compute a good label point inside the slice (works across Chart.js versions)
+        const props = arc.getProps(["x","y","startAngle","endAngle","innerRadius","outerRadius"], true);
+        const angle = (props.startAngle + props.endAngle) / 2;
+        const r = (props.innerRadius + props.outerRadius) / 2;
+        const pos = {
+          x: props.x + Math.cos(angle) * r,
+          y: props.y + Math.sin(angle) * r
+        };
+
+        const n = String(i + 1);
+
+        // small dark bubble
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        // white number
+        ctx.fillStyle = "#fff";
+        ctx.fillText(n, pos.x, pos.y);
+      });
+
+      ctx.restore();
+    }
+  };
+
   const ctx = canvas.getContext("2d");
   spentPieChart = new Chart(ctx, {
     type: "pie",
     data: {
       labels,
       datasets: [{
-  data,
-  backgroundColor: colors,
-  borderWidth: 0,
-  radius: "100%",   // use full canvas
-}]
-
+        data,
+        backgroundColor: colors,
+        borderWidth: 0,
+        radius: "100%",
+      }]
     },
     options: {
-  responsive: true,
-  maintainAspectRatio: false,
-  layout: { padding: 0 },   // 🔥 important
-  devicePixelRatio: window.devicePixelRatio || 1,
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      callbacks: {
-        label: (ctx) => `${ctx.label}: ${money(Number(ctx.raw || 0))}`
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: 0 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            // show "3. Food: $142.89"
+            label: (c) => `${c.dataIndex + 1}. ${c.label}: ${money(Number(c.raw || 0))}`
+          }
+        }
       }
-    }
-  }
-}
-
+    },
+    plugins: [sliceNumbers]
   });
 }
 
@@ -119,7 +169,6 @@ function renderSpentPie(items) {
     $("kBills").textContent = money(mb.bills_remaining || 0);
     $("kAllocated").textContent = money(mb.allocations_total || 0);
     $("kSafe").textContent = money(mb.safe_to_spend || 0);
-    $("kDaily").textContent = `${money(mb.daily_limit || 0)} / day`;
 
     const cfg = d.savings_goal_cfg || null;
     if (cfg) {
@@ -269,62 +318,70 @@ function renderSpentPie(items) {
   $("spentEmpty").textContent = "";
 
   // Keep the chart in sync with the table.
-  renderSpentPie(items);
+  const spentMap = buildSpentMap(items);
+renderSpentPie(items, spentMap);
 
-  for (const it of items) {
-    const category = (it.category || "").trim();
-    const swatchColor = colorForCategory(category);
 
-    const row = document.createElement("div");
-    row.className = "budget-table-row budget-table-row--spent";
-    row.setAttribute("role", "button");
-    row.setAttribute("tabindex", "0");
+  for (const it of spentMap.rows) {
+  const category = it.category;
+  const spent = it.spent;
 
-    const cat = document.createElement("div");
-    cat.className = "budget-cell";
-    cat.dataset.label = "Category";
+  const info = spentMap.map.get(category) || { idx: 0, color: "#999" };
 
-    // Color chip + category label (matches pie slice)
+  const row = document.createElement("div");
+  row.className = "budget-table-row budget-table-row--spent";
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+
+  const cat = document.createElement("div");
+  cat.className = "budget-cell";
+  cat.dataset.label = "Category";
+
+  // Number badge + color dot + label
+  // Number badge + label (color encoded by badge)
     const chip = document.createElement("div");
     chip.className = "cat-chip";
 
-    const sw = document.createElement("span");
-    sw.className = "cat-swatch";
-    sw.style.background = swatchColor;
+    const num = document.createElement("span");
+    num.className = "cat-num";
+    num.style.background = info.color;
+    num.textContent = String(info.idx);
 
     const label = document.createElement("span");
     label.textContent = category;
 
-    chip.appendChild(sw);
+    chip.appendChild(num);
     chip.appendChild(label);
     cat.appendChild(chip);
 
-    const spentCell = document.createElement("div");
-    spentCell.className = "budget-cell is-right";
-    spentCell.dataset.label = "Spent";
 
-    const spent = document.createElement("div");
-    spent.className = "budget-money";
-    spent.textContent = money(it.spent || 0);
-    spentCell.appendChild(spent);
+  const spentCell = document.createElement("div");
+  spentCell.className = "budget-cell is-right";
+  spentCell.dataset.label = "Spent";
 
-    const go = () => {
-      if (!category) return;
-      window.location.href = `/static/category.html?c=${encodeURIComponent(category)}`;
-    };
+  const spentEl = document.createElement("div");
+  spentEl.className = "budget-money";
+  spentEl.textContent = money(spent);
+  spentCell.appendChild(spentEl);
 
-    row.addEventListener("click", go);
-    row.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        go();
-      }
-    });
+  const go = () => {
+    if (!category) return;
+    window.location.href = `/static/category.html?c=${encodeURIComponent(category)}`;
+  };
 
-    row.appendChild(cat);
-    row.appendChild(spentCell);
-    host.appendChild(row);
-  }
+  row.addEventListener("click", go);
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      go();
+    }
+  });
+
+  row.appendChild(cat);
+  row.appendChild(spentCell);
+  host.appendChild(row);
+}
+
 }
 
   async function load() {
@@ -363,6 +420,19 @@ function renderSpentPie(items) {
     }
   }
 
+    async function loadDayLimit(forceRecalc = false) {
+      const dl = await fetchJSON(`/day-limit${forceRecalc ? "?recalc=1" : ""}`);
+
+      // Left Today KPI
+      $("kTodayLeft").textContent = money(dl.remaining_today || 0);
+
+      // Meta line under Left Today
+      const spentFree = Number(dl.spent_today_free || 0);
+      const baseline = Number(dl.baseline || 0);
+      $("kTodayMeta").textContent = `Spent free today ${money(spentFree)} • Baseline ${money(baseline)} / day`;
+    }
+
+
   window.addEventListener("DOMContentLoaded", async () => {
     initMonth();
 
@@ -375,10 +445,30 @@ function renderSpentPie(items) {
     });
 
     try {
-      await load();
-    } catch (e) {
-      console.error(e);
-      alert("Budget page failed to load: " + e.message);
-    }
+          await load();
+          await loadDayLimit(false);
+
+          const btn = $("recalcTodayBtn");
+          if (btn) {
+            btn.addEventListener("click", async () => {
+              const old = btn.textContent;
+              btn.disabled = true;
+              btn.textContent = "Recalc...";
+              try {
+                await loadDayLimit(true);
+              } catch (e) {
+                console.error(e);
+                alert("Recalc failed: " + e.message);
+              } finally {
+                btn.disabled = false;
+                btn.textContent = old;
+              }
+            });
+          }
+        } catch (e) {
+          console.error(e);
+          alert("Budget page failed to load: " + e.message);
+        }
+
   });
 })();
