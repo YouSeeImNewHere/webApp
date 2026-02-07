@@ -2,6 +2,48 @@
 <html lang="en">
 <head>
   <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+
+  <!-- add this <style> block in <head> (after your CSS links) -->
+<style>
+  /* Categories table + pie chart side-by-side (stacks on mobile) */
+  .spent-flex{display:flex; gap:12px; align-items:stretch;}
+  .spent-left{flex:1 1 auto; min-width:0;}
+  .spent-chart{
+  flex: 0 0 340px;   /* wider column */
+  max-width: 340px;
+  display: flex;
+}
+
+  .spent-chart .budget-chart-box{height:100%;}
+
+  .budget-chart-box{
+    border: 1px solid var(--border, rgba(255,255,255,0.12));
+    border-radius: 14px;
+    padding: 10px;
+    background: var(--card, rgba(0,0,0,0.08));
+  }
+
+  /* Square-ish box */
+  .budget-chart-box.is-square{
+  width: 100%;
+  height: 100%;        /* 🔥 fill available height */
+  min-height: 280px;  /* safety */
+}
+
+  .budget-chart-box canvas{width:100% !important; height:100% !important; display:block;}
+
+  /* Color chip in the category cell */
+  .cat-chip{display:flex; align-items:center; gap:10px;}
+  .cat-swatch{width:10px; height:10px; border-radius:999px; flex:0 0 auto;}
+
+  @media (max-width: 700px){
+    .spent-flex{flex-direction:column;}
+    .spent-chart{flex:1 1 auto; max-width:none; width:100%;}
+    .budget-chart-box.is-square{max-height:none;}
+  }
+</style>
+
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Budget</title>
@@ -14,11 +56,7 @@
   <div class="budget-wrap">
 
     <div class="budget-card">
-      <div style="display:flex; align-items:center; justify-content:flex-end;">
-  <div id="asOf" class="budget-muted"></div>
-</div>
 
-<div style="height:10px;"></div>
 
 
       <div class="budget-row">
@@ -38,6 +76,9 @@
         <button id="sgSave" class="settings-btn primary">Save</button>
         <span id="sgStatus" class="budget-muted" style="margin-left:auto;"></span>
       </div>
+
+      <div id="asOf" class="budget-muted" style="text-align:right; margin:0;"></div>
+<div style="height:10px;"></div>
 
       <hr class="budget-hr" />
 
@@ -65,8 +106,8 @@
 
       <div style="height:10px;"></div>
 
-      <div class="budget-table">
-        <div class="budget-table-head" style="grid-template-columns: 1fr .7fr .7fr 1.4fr .7fr .7fr auto;">
+      <div class="budget-table budget-table--groups">
+        <div class="budget-table-head">
           <div>Group</div>
           <div>Allocated</div>
           <div>Cap</div>
@@ -77,6 +118,7 @@
         </div>
         <div id="groupRows"></div>
       </div>
+
 
       <div id="groupsEmpty" class="budget-muted" style="margin-top:8px;"></div>
     </div>
@@ -91,13 +133,26 @@
 
       <div style="height:10px;"></div>
 
-      <div class="budget-table">
-        <div class="budget-table-head" style="grid-template-columns: 1fr .7fr;">
-          <div>Category</div>
-          <div>Spent</div>
-        </div>
-        <div id="spentRows"></div>
+      <!-- inside the “Categories spent this month” card, replace the table-only area with: -->
+<div class="spent-flex">
+  <div class="spent-left">
+    <div class="budget-table budget-table--spent">
+      <div class="budget-table-head">
+        <div>Category</div>
+        <div>Spent</div>
       </div>
+      <div id="spentRows"></div>
+    </div>
+  </div>
+
+  <div class="spent-chart">
+    <div class="budget-chart-box is-square" aria-label="Category spending pie chart">
+      <canvas id="spentPie"></canvas>
+    </div>
+  </div>
+</div>
+
+
 
       <div id="spentEmpty" class="budget-muted" style="margin-top:8px;"></div>
     </div>
@@ -107,5 +162,7 @@
 
   <script src="/static/budget.js" defer></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 </body>
 </html>

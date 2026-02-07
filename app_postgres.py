@@ -2829,7 +2829,37 @@ def page_budget(year: int | None = None, month: int | None = None, min_occ: int 
         )
 
     # categories spent list (sorted desc), for the read-only section
-    spent_items = [{"category": k, "spent": float(v)} for k, v in (cat_spent or {}).items()]
+    # cat_spent keys are normalized (lowercased). Map them back to canonical display names.
+    canon_rows = query_db(
+        """
+        SELECT category FROM (
+          SELECT DISTINCT TRIM(category) AS category
+          FROM transactions
+          WHERE category IS NOT NULL AND TRIM(category) <> ''
+
+          UNION
+
+          SELECT DISTINCT TRIM(category) AS category
+          FROM "categoryrules"
+          WHERE category IS NOT NULL AND TRIM(category) <> ''
+        ) u
+        ORDER BY LOWER(category) ASC
+        """
+    )
+
+    norm_to_display = {}
+    for r in canon_rows:
+        c = (r.get("category") or "").strip()
+        if not c:
+            continue
+        n = _norm_cat(c)
+        # first one wins (stable enough, and matches how your app already thinks about categories)
+        norm_to_display.setdefault(n, c)
+
+    spent_items = [
+        {"category": norm_to_display.get(k, k), "spent": float(v)}
+        for k, v in (cat_spent or {}).items()
+    ]
     spent_items.sort(key=lambda x: x["spent"], reverse=True)
 
     return {
@@ -4991,20 +5021,23 @@ def widget_summary(x_widget_secret: str = Header(default="")):
             "limit_sum": round(limit_sum, 2),
         },
 
-        # ✅ keep this so your current Scriptable code still works
+        # existing (keep)
         "safe_to_spend": mb["safe_to_spend"],
-"month": mb,
+        "month": mb,
 
+        # ✅ NEW: same as Home "$/day"
+        "cost_per_day": mb.get("daily_limit", 0.0),
+        "days_left": mb.get("days_left", 0),
+        "as_of": mb.get("as_of"),
 
         "totals": {
             "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
             "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
         },
 
-        "meta": {
-            "cron": "OK",
-        }
+        "meta": {"cron": "OK"}
     }
+
 
 def _ensure_budget_tables_pg():
     with with_db_cursor() as (conn, cur):
@@ -5109,3 +5142,51 @@ def _ensure_budget_group_tables_pg():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_budget_group_month_ym ON budget_group_month(year, month)")
         conn.commit()
+@app.get("/category")
+def category_page():
+    """Category detail page (reads category from ?c=...)."""
+    return FileResponse("static/category.html")
+def _category_totals_month_display(year: int, month: int):
+    # month range
+    month_start = date(year, month, 1)
+    month_end = date(year, month, _last_day_of_month(year, month))
+
+    base_cte = """
+      WITH base AS (
+        SELECT
+          COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+          TRIM(t.category) AS category,
+          t.amount::double precision AS amount
+        FROM transactions t
+        WHERE t.category IS NOT NULL
+          AND TRIM(t.category) <> ''
+      ),
+      norm AS (
+        SELECT
+          *,
+          CASE
+            WHEN raw_date IS NULL THEN NULL
+            WHEN length(raw_date) = 8  THEN to_date(raw_date, 'MM/DD/YY')
+            WHEN length(raw_date) = 10 THEN to_date(raw_date, 'MM/DD/YYYY')
+            ELSE NULL
+          END AS d
+        FROM base
+      )
+    """
+
+    rows = query_db(
+        base_cte + """
+        SELECT
+          category,
+          COALESCE(SUM(amount),0)::double precision AS total
+        FROM norm
+        WHERE d IS NOT NULL
+          AND d >= %s AND d <= %s
+          AND amount > 0
+          AND LOWER(category) NOT IN ('transfer','card payment')
+        GROUP BY category
+        ORDER BY total DESC
+        """,
+        (month_start, month_end),
+    )
+    return [{"category": r["category"], "spent": float(r["total"] or 0.0)} for r in rows]

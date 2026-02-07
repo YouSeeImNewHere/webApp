@@ -1170,6 +1170,9 @@ function setActiveMonthButton(btn) {
 // -----------------------------
 // Month budget card (Home sidebar)
 // -----------------------------
+// -----------------------------
+// Month budget card (Home sidebar)
+// -----------------------------
 async function loadMonthBudget() {
   const safeEl  = document.getElementById("mbSafe");
   const metaEl  = document.getElementById("mbMeta");
@@ -1186,36 +1189,65 @@ async function loadMonthBudget() {
     console.error("month-budget failed:", res.status);
     safeEl.textContent = "—";
     metaEl.textContent = "Could not load";
+    if (goalEl) goalEl.textContent = "";
+    barFill.style.width = "0%";
     return;
   }
 
   const j = await res.json();
 
   // ✅ backend is source of truth
-  const income      = Number(j.expected_income ?? 0);
-  const spent       = Number(j.spent_so_far ?? 0);
-  const bills       = Number(j.bills_remaining ?? 0);
-  const safe        = Number(j.safe_to_spend ?? 0);
-  const savingsGoal = Number(j.savings_goal ?? 0);
-  const spendGoal   = Number(j.spend_goal ?? (income - bills - savingsGoal));
+  const income        = Number(j.expected_income ?? 0);
+  const spent         = Number(j.spent_so_far ?? 0);
+  const bills         = Number(j.bills_remaining ?? 0);
+  const safe          = Number(j.safe_to_spend ?? 0);
+  const savingsGoal   = Number(j.savings_goal ?? 0);
+
+  // NEW: backend provides these (used to make bar match "free spending")
+  const budgetedSpent = Number(j.budgeted_spent_total ?? 0);
+
+  // NEW: daily + days left (what you want consistent across pages)
+  const dailyLimit    = Number(j.daily_limit ?? 0);
+  const daysLeft      = Number(j.days_left ?? 0);
 
   safeEl.textContent  = money(safe);
   incEl.textContent   = money(income);
   spentEl.textContent = money(spent);
   billsEl.textContent = money(bills);
 
+  // Only show savings goal (no "Spend goal" text)
   if (goalEl) {
-    goalEl.textContent =
-      `Spend goal: ${money(Math.max(0, spendGoal))}` +
-      (savingsGoal > 0 ? ` • Saving ${money(savingsGoal)}` : "");
+    if (savingsGoal > 0) {
+      goalEl.style.display = "block";
+      goalEl.textContent = `Savings goal: ${money(savingsGoal)}`;
+    } else {
+      goalEl.style.display = "none";
+      goalEl.textContent = "";
+    }
   }
 
-  const denom = Math.max(0, spendGoal);
-  const pct = denom > 0 ? Math.min(100, (spent / denom) * 100) : 0;
+  // Progress bar: "free spending" only (spent minus budgeted categories),
+  // because safe_to_spend is "FREE spending after allocations"
+  const spentFree = Math.max(0, spent - budgetedSpent);
+  const safePos   = Math.max(0, safe);
+  const denom     = spentFree + safePos;
+
+  const pct = denom > 0 ? Math.min(100, (spentFree / denom) * 100) : 0;
   barFill.style.width = `${pct.toFixed(0)}%`;
 
+  // If you're overspent (safe < 0), visually mark it
+  barFill.classList.toggle("over", safe < 0);
+
   const asOf = j.as_of ? formatMMMdd(j.as_of) : "today";
-  metaEl.textContent = `${asOf} • Spent ${money(spent)} of ${money(Math.max(0, spendGoal))}`;
+
+  // Meta: show $/day + days left (consistent concept)
+  const dayText = daysLeft === 1 ? "day left" : "days left";
+  metaEl.innerHTML =
+    `${asOf}
+     <span class="mb-dot">•</span>
+     <span class="mb-pill">${money(dailyLimit)}/day</span>
+     <span class="mb-dot">•</span>
+     ${daysLeft} ${dayText}`;
 }
 
 // =========================

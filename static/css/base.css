@@ -5059,3 +5059,159 @@ body.page-budget{
     text-align: left;
   }
 }
+/* Budget page: stop first-child margin from escaping the card */
+body.page-budget #asOf{ margin-top: 0; }
+body.page-budget .budget-table-row--spent{
+  cursor: pointer;
+}
+body.page-budget .budget-table-row--spent:hover{
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent) 12%);
+}
+body.page-budget .budget-table-row--spent:active{
+  transform: translateY(1px);
+}
+body.page-budget #asOf { margin-top: 0 !important; }
+.mb-dot{
+  margin: 0 6px;
+  opacity: 0.55;
+}
+
+.mb-pill{
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-weight: 800;
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+/* Make the bar work across themes */
+.mb-bar{
+  background: var(--border);
+}
+
+.mb-bar__fill{
+  background: var(--text);
+  opacity: 0.85;
+}
+
+/* =========================
+   Budget tables: TRUE column alignment
+   ========================= */
+
+/* Shared: header + rows must use same grid + same padding */
+body.page-budget .budget-table-head,
+body.page-budget .budget-table-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Give headers the same left/right inset as rows so text lines up */
+body.page-budget .budget-table-head {
+  padding: 0 10px;
+}
+
+/* Rows already look like “pills” — keep their padding consistent */
+body.page-budget .budget-table-row {
+  padding: 10px;
+}
+
+/* ---------- GROUPS (7 cols) ---------- */
+/* Fixed widths for numeric + actions = stable lanes */
+body.page-budget .budget-table--groups {
+  --cols: minmax(180px, 1.2fr)  /* Group */
+          120px                 /* Allocated */
+          120px                 /* Cap */
+          minmax(240px, 2fr)    /* Categories */
+          120px                 /* Spent */
+          120px                 /* Remaining */
+          170px;                /* Actions (Save/Delete) */
+}
+
+body.page-budget .budget-table--groups .budget-table-head,
+body.page-budget .budget-table--groups .budget-table-row--group {
+  grid-template-columns: var(--cols) !important;
+}
+
+/* Right-align money headers + money cells */
+body.page-budget .budget-table--groups .budget-table-head > div:nth-child(5),
+body.page-budget .budget-table--groups .budget-table-head > div:nth-child(6) {
+  text-align: right;
+}
+
+body.page-budget .budget-table--groups .budget-cell.is-right {
+  text-align: right;
+}
+
+/* Make actions a fixed lane and keep buttons from resizing the grid */
+body.page-budget .budget-cell.is-actions {
+  justify-self: end;
+}
+
+body.page-budget .budget-actions {
+  width: 170px;              /* must match actions col */
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+/* Keep inputs from forcing columns wider */
+body.page-budget .budget-cell { min-width: 0; }
+body.page-budget .budget-input { width: 100%; min-width: 0; }
+
+/* ---------- SPENT (2 cols) ---------- */
+/* Fixed amount column so header sits over the numbers */
+body.page-budget .budget-table--spent {
+  --cols: 1fr 150px;
+}
+
+body.page-budget .budget-table--spent .budget-table-head,
+body.page-budget .budget-table--spent .budget-table-row--spent {
+  grid-template-columns: var(--cols) !important;
+}
+
+/* Right-align “Spent” header + amounts */
+body.page-budget .budget-table--spent .budget-table-head > div:nth-child(2) {
+  text-align: right;
+}
+
+body.page-budget .budget-table--spent .budget-cell.is-right {
+  text-align: right;
+}
+/* Budget icon button (Month card) */
+#goBudgetBtn{
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 15px;
+  line-height: 1;
+
+  border-radius: 8px;
+  opacity: 0.65;
+
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+#goBudgetBtn:hover{
+  opacity: 1;
+  background: rgba(0,0,0,0.06);
+}
+
+#goBudgetBtn:active{
+  transform: scale(0.94);
+}
+
+@media (prefers-color-scheme: dark){
+  #goBudgetBtn:hover{
+    background: rgba(255,255,255,0.08);
+  }
+}
