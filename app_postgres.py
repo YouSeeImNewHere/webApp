@@ -2389,7 +2389,8 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         "weekday_days_left": int(weekday_days),
         "weekend_days_left": int(weekend_days),
         "daily_weight_mode": "weekend_x2",
-
+        "free_spend_goal": round(free_spend_goal, 2),
+        "spent_free": round(spent_free, 2),
         "category_spent": {k: round(v, 2) for k, v in cat_spent.items()},
 
     }
