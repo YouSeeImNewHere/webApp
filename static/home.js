@@ -1181,7 +1181,6 @@ async function loadMonthBudget() {
   const spentEl = document.getElementById("mbSpent");
   const billsEl = document.getElementById("mbBills");
   const barFill = document.getElementById("mbBarFill");
-  const goalEl  = document.getElementById("mbGoal");
 
   if (!safeEl || !metaEl || !incEl || !spentEl || !billsEl || !barFill) return;
 
@@ -1217,15 +1216,7 @@ async function loadMonthBudget() {
   billsEl.textContent = money(bills);
 
   // Only show savings goal (no "Spend goal" text)
-  if (goalEl) {
-    if (savingsGoal > 0) {
-      goalEl.style.display = "block";
-      goalEl.textContent = `Savings goal: ${money(savingsGoal)}`;
-    } else {
-      goalEl.style.display = "none";
-      goalEl.textContent = "";
-    }
-  }
+
 
   // Progress bar: "free spending" only (spent minus budgeted categories),
   // because safe_to_spend is "FREE spending after allocations"
@@ -2065,6 +2056,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
   const dailyEl     = document.getElementById("mbDaily");
   const dailyMetaEl = document.getElementById("mbDailyMeta");
   const recalcBtn   = document.getElementById("mbRecalcDaily");
+  const dailyBarFill = document.getElementById("mbDailyBarFill");
 
   // Bind once
   if (recalcBtn && !recalcBtn.dataset.bound) {
@@ -2102,6 +2094,10 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
     const baseline  = Number(dl.baseline || 0);
     const remaining = Number(dl.remaining_today || 0);
     const spentFree = Number(dl.spent_today_free || 0);
+    if (dailyBarFill) {
+      const pct = (baseline > 0) ? (Math.max(0, remaining) / baseline) * 100 : 0;
+      dailyBarFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    }
 
     if (dailyEl) dailyEl.textContent = money(remaining);
     if (dailyMetaEl) {

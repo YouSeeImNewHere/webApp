@@ -80,6 +80,28 @@
     margin: 10px 0 !important;
     border-top: 1px solid var(--border) !important;
   }
+  /* =============================================================================
+     CHARTS (mobile) — make Account/Spending/Categories match Home
+     ============================================================================= */
+
+  /* Edge-to-edge sections on these pages too */
+  body.page-account .page-container,
+  body.page-spending .page-container,
+  body.page-categories .page-container{
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Remove the “big rounded box” chart card look on mobile */
+  body.page-account .chart-card,
+  body.page-spending .chart-card,
+  body.page-categories .chart-card{
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 12px 10px 14px !important; /* same feel as Home */
+  }
 
   /* =============================================================================
      Bank Totals (Home, mobile) — show acct count + (Card Balances) Avail/% used WITHOUT expanding
@@ -798,6 +820,317 @@
   opacity: 0.9;
 }
 
+   /* =============================================================================
+     CATEGORY RULES (mobile) — CARD LAYOUT (no sideways scroll)
+     ============================================================================= */
+
+  body.page-category-rules .settings-wrap{ padding: 0 !important; }
+  body.page-category-rules .settings-section{ margin: 0 !important; padding: 0 !important; }
+
+  body.page-category-rules .settings-card{
+    border-radius: 0 !important;
+    border-left: 0 !important;
+    border-right: 0 !important;
+    padding: 10px 10px 12px !important;
+    overflow: visible !important;
+  }
+
+  body.page-category-rules .rules-toolbar{
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+    flex-wrap: wrap !important;
+  }
+
+  /* Hide the desktop table on mobile */
+  body.page-category-rules #rulesTable{
+    display: none !important;
+  }
+
+  /* Show the cards container on mobile (JS will unhide) */
+  body.page-category-rules .rules-cards{
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  body.page-category-rules .rule-card{
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  body.page-category-rules .rule-regex{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.25;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    margin: 0 0 10px 0;
+    opacity: .9;
+  }
+
+  body.page-category-rules .rule-row{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  body.page-category-rules .rule-field label{
+    display: block;
+    font-size: 11px;
+    font-weight: 900;
+    opacity: .75;
+    margin-bottom: 6px;
+  }
+
+  body.page-category-rules .rule-field .settings-input{
+    width: 100% !important;
+    font-size: 16px !important; /* prevent iOS zoom */
+  }
+
+  body.page-category-rules .rule-meta{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  body.page-category-rules .rule-meta .pill{
+    padding: 6px 10px;
+  }
+
+  body.page-category-rules .rule-toggles{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  body.page-category-rules .rule-actions{
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px !important;
+    margin-top: 12px;
+  }
+
+  body.page-category-rules .rule-actions .settings-btn.small{
+    width: 100%;
+    font-size: 14px !important;
+    padding: 10px 10px !important;
+    border-radius: 12px !important;
+    white-space: nowrap !important;
+  }
+
+/* HOME — Month budget card
+   Mobile: TWO COLUMNS (month left, daily right)
+*/
+body.page-home #monthBudget .mb-grid{
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important; /* <- two columns on mobile */
+  gap: 12px;
+  align-items: start;
+}
+
+body.page-home #monthBudget .mb-col--today{
+  border-top: 0 !important;
+  padding-top: 0 !important;
+
+  padding-left: 10px !important;
+  border-left: 1px solid rgba(0,0,0,0.10) !important;
+}
+
+/* =============================================================================
+   HOME — Month budget card (mobile)
+   ============================================================================= */
+
+body.page-home #monthBudget .month-budget__top{
+  grid-template-columns: 1fr;
+  column-gap: 0;
+  row-gap: 8px;
+}
+
+body.page-home #monthBudget .mb-daily{
+  grid-column: 1;
+  grid-row: auto;
+
+  border-left: none;
+  padding-left: 0;
+
+  margin-top: 6px !important;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+
+  /* Keep button on the right without crushing text */
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+body.page-home #monthBudget #mbDailyMeta{
+  max-width: 100%;
+  white-space: normal;
+}
+/* =============================================================================
+   BUDGET (mobile) — make Budgets usable (no sideways scroll)
+   ============================================================================= */
+
+/* =============================================================================
+   BUDGET (mobile) — fix iOS “blank until scroll” + stack layout
+   ============================================================================= */
+
+body.page-budget .budget-wrap{
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 10px 90px !important;
+  box-sizing: border-box !important;
+}
+body.page-budget{ overflow-x: hidden !important; }
+body.page-budget .budget-card{ margin: 0 !important; }
+
+body.page-budget .budget-card{
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: visible !important; /* important: don’t create nested scroll areas */
+}
+
+/* Kill the inner scroll container behavior on mobile (this is what causes “blank until scroll”) */
+body.page-budget .budget-table,
+body.page-budget .budget-table--groups,
+body.page-budget #groupRows{
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;     /* removes the tiny inner scrollbar */
+}
+
+/* Savings goal row: stack nicely */
+body.page-budget .budget-row{
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+  align-items: center !important;
+}
+body.page-budget .budget-row > label:first-child{
+  grid-column: 1 / -1 !important;
+}
+body.page-budget #sgValue,
+body.page-budget #sgSave,
+body.page-budget #sgStatus{
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  text-align: left !important;
+}
+
+/* KPI grid: 1 column */
+body.page-budget .budget-kpis{
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 10px !important;
+}
+
+/* =============================================================================
+   Group budgets: turn row into a 2-col grid so Spent/Remaining can sit side-by-side
+   ============================================================================= */
+
+body.page-budget .budget-table--groups .budget-table-head{
+  display: none !important;
+}
+
+/* Each group “row” becomes a grid card */
+body.page-budget .budget-table--groups .budget-table-row--group{
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+
+  padding: 12px !important;
+  margin: 12px 0 !important;
+
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+}
+
+/* Label + control stack inside each cell */
+body.page-budget .budget-table--groups .budget-cell{
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+body.page-budget .budget-table--groups .budget-cell::before{
+  content: attr(data-label);
+  font-size: 11px;
+  font-weight: 900;
+  opacity: .65;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+/* Inputs fill width */
+body.page-budget .budget-table--groups .budget-input{
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+/* Explicit grid layout (stable) */
+body.page-budget .budget-table--groups .budget-table-row--group{
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-areas:
+    "group group"
+    "allocated allocated"
+    "cap cap"
+    "categories categories"
+    "spent remaining"
+    "actions actions";
+  gap: 10px !important;
+}
+
+/* Map cells into areas */
+body.page-budget .budget-table--groups .budget-cell:nth-child(1){ grid-area: group; }
+body.page-budget .budget-table--groups .budget-cell:nth-child(2){ grid-area: allocated; }
+body.page-budget .budget-table--groups .budget-cell:nth-child(3){ grid-area: cap; }
+body.page-budget .budget-table--groups .budget-cell:nth-child(4){ grid-area: categories; }
+body.page-budget .budget-table--groups .budget-cell:nth-child(5){ grid-area: spent; }
+body.page-budget .budget-table--groups .budget-cell:nth-child(6){ grid-area: remaining; }
+body.page-budget .budget-table--groups .budget-cell:nth-child(7){ grid-area: actions; }
+
+
+/* Money alignment: left on mobile */
+body.page-budget .budget-table--groups .is-right{
+  text-align: left !important;
+}
+
+/* Actions: 2 buttons side-by-side */
+body.page-budget .budget-table--groups .is-actions{
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 8px !important;
+}
+body.page-budget .budget-table--groups .is-actions button{
+  width: 100% !important;
+}
+
+/* Categories spent section: keep it from forcing overflow */
+body.page-budget .spent-flex,
+body.page-budget .spent-left,
+body.page-budget .spent-chart{
+  min-width: 0 !important;
+}
+body.page-budget .spent-chart{
+  max-width: 100% !important;
+}
+
 }
 
 /* =============================================================================
@@ -944,4 +1277,43 @@ body.page-recurring #recurringList{
 .update-btn {
   margin-left: 4px;
   padding: 10px 14px;
+}
+/* =============================================================================
+   HOME — Month budget card (FINAL OVERRIDES)
+   Mobile: TWO COLUMNS (month left, daily right)
+   ============================================================================= */
+@media (max-width: 900px){
+  body.page-home #monthBudget .mb-grid{
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+    align-items: start !important;
+  }
+
+  body.page-home #monthBudget .mb-col--today{
+    border-top: 0 !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+
+    padding-left: 12px !important;
+    border-left: 1px solid rgba(0,0,0,0.10) !important;
+  }
+
+  /* Slightly smaller numbers on small screens */
+  body.page-home #monthBudget .mb-value{
+    font-size: 26px !important;
+  }
+
+  body.page-home #monthBudget .mb-today-value{
+    font-size: 20px !important;
+  }
+
+  body.page-home #monthBudget .mb-meta,
+  body.page-home #monthBudget .mb-today-meta{
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  body.page-home #monthBudget .mb-goal{
+    font-size: 13px !important;
+  }
 }

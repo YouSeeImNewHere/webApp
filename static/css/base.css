@@ -3868,35 +3868,33 @@ body.page-recurring .merge-btn:hover {
 body.page-recurring .ignore-btn {
   opacity: 0.9;
 }
-/* Recurring controls: single horizontal row */
-.category-box > div{
+/* Recurring controls: single horizontal row (ONLY on recurring page) */
+body.page-recurring .category-box > div{
   display: flex;
   align-items: center;
-  flex-wrap: wrap;           /* allows wrap on tiny screens */
+  flex-wrap: wrap; /* ok on small screens */
   gap: 10px;
 }
 
-/* Keep label + input together */
-.category-box label{
+body.page-recurring .category-box label{
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin: 0;
 }
 
-/* Min occurrences input */
-#minOcc{
+body.page-recurring #minOcc{
   width: 56px;
   height: 28px;
   text-align: center;
 }
 
-/* Buttons align nicely */
-.category-box button{
+body.page-recurring .category-box button{
   height: 28px;
   padding: 0 12px;
   white-space: nowrap;
 }
+
 
 body.page-recurring .category-box > div{
     display: flex;
@@ -5231,7 +5229,7 @@ body.page-budget .budget-table--groups{
 /* Make the header + rows shrink properly */
 body.page-budget .budget-table--groups .budget-table-head,
 body.page-budget .budget-table--groups .budget-table-row--group{
-  min-width: 980px;                 /* keeps it looking like a table */
+  min-width: 10%;                 /* keeps it looking like a table */
 }
 
 /* Replace the too-rigid fixed columns with shrink-friendly ones */
@@ -5260,4 +5258,291 @@ body.page-budget .budget-actions{
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: nowrap;
+}
+/* ===== Month budget card (Home) two-column layout ===== */
+body.page-home #monthBudget .mb-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+body.page-home #monthBudget .mb-col{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+body.page-home #monthBudget .mb-col--today{
+  padding-left: 10px;
+  border-left: 1px solid rgba(0,0,0,0.08);
+}
+
+body.page-home #monthBudget .mb-today-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.page-home #monthBudget .mb-today-value{
+  font-size: 18px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+body.page-home #monthBudget .mb-today-meta{
+  font-size: 11px;
+  opacity: .65;
+  line-height: 1.2;
+}
+
+/* Daily bar: "full = no spending", drains as you spend */
+body.page-home #monthBudget .mb-bar--daily{
+  background: rgba(0,0,0,0.10);
+}
+/* =============================================================================
+   HOME — Month budget card (desktop/tablet)
+   Put this at the VERY BOTTOM of base.css
+   ============================================================================= */
+
+body.page-home #monthBudget .month-budget__top{
+  /* Two columns: left = month, right = today */
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  column-gap: 14px;
+  row-gap: 6px;
+  align-items: start;
+}
+
+/* Left column content */
+body.page-home #monthBudget .mb-kpi{ grid-column: 1; }
+body.page-home #monthBudget .mb-meta{ grid-column: 1; margin-top: 0; }
+body.page-home #monthBudget .mb-goal{ grid-column: 1; margin-top: 2px !important; }
+
+/* Right column content (Today block) */
+body.page-home #monthBudget .mb-daily{
+  grid-column: 2;
+  grid-row: 1 / span 3;
+
+  /* override the inline flex row style cleanly */
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+
+  margin-top: 0 !important;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+
+body.page-home #monthBudget .mb-daily > div{
+  min-width: 0;
+}
+
+body.page-home #monthBudget #mbDaily{
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+body.page-home #monthBudget #mbDailyMeta{
+  line-height: 1.25;
+}
+
+/* Recalc button: never overflow / never wrap */
+body.page-home #monthBudget #mbRecalcDaily{
+  white-space: nowrap;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+/* Tighten the month bar spacing a bit */
+body.page-home #monthBudget .mb-bar{
+  margin-top: 8px;
+}
+
+/* If you have a daily bar element/class, make it look right */
+body.page-home #monthBudget .mb-bar--daily{
+  margin-top: 8px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+body.page-home #monthBudget .mb-bar--daily .mb-bar__fill{
+  height: 100%;
+  border-radius: 999px;
+}
+/* Recurring controls: single horizontal row */
+body.page-recurring .category-box > div{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* =============================================================================
+   HOME — Month budget card
+   Desktop: STACKED (month section, then daily section)
+   ============================================================================= */
+
+/* Make sure the generic ".category-box > div" never breaks this layout */
+body.page-home #monthBudget .mb-grid{
+  display: grid !important;
+  grid-template-columns: 1fr !important; /* <- stacked on desktop */
+  gap: 12px;
+  margin-top: 8px;
+  align-items: start;
+}
+
+body.page-home #monthBudget .mb-col{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Daily section becomes a second block underneath */
+body.page-home #monthBudget .mb-col--today{
+  padding-left: 0 !important;
+  border-left: 0 !important;
+
+  border-top: 1px solid rgba(0,0,0,0.10);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+/* Keep the "Today left" row clean */
+body.page-home #monthBudget .mb-today-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.page-home #monthBudget #mbRecalcDaily{
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* Bars should never shrink weirdly */
+body.page-home #monthBudget .mb-bar,
+body.page-home #monthBudget .mb-bar--daily{
+  width: 100%;
+}
+/* =============================================================================
+   HOME — Month budget card (FINAL OVERRIDES)
+   Desktop/tablet: STACKED (month section then daily section)
+   Fix typography + alignment so it stops looking “random”
+   ============================================================================= */
+body.page-home #monthBudget .mb-grid{
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 14px !important;
+  margin-top: 10px !important;
+  align-items: start !important;
+}
+
+body.page-home #monthBudget .mb-col{
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+/* Daily block under month block on desktop */
+body.page-home #monthBudget .mb-col--today{
+  padding-left: 0 !important;
+  border-left: 0 !important;
+
+  border-top: 1px solid rgba(0,0,0,0.10) !important;
+  padding-top: 12px !important;
+  margin-top: 2px !important;
+}
+
+/* --- Typography (consistent scale) --- */
+body.page-home #monthBudget .mb-label{
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: .02em !important;
+  text-transform: uppercase !important;
+  opacity: .65 !important;
+  line-height: 1.1 !important;
+}
+
+body.page-home #monthBudget .mb-value{
+  font-size: 30px !important;
+  font-weight: 950 !important;
+  line-height: 1.05 !important;
+  font-variant-numeric: tabular-nums !important;
+  margin-top: 2px !important;
+}
+
+body.page-home #monthBudget .mb-meta{
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  opacity: .65 !important;
+  line-height: 1.25 !important;
+  margin-top: 2px !important;
+}
+
+body.page-home #monthBudget .mb-goal{
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  line-height: 1.2 !important;
+  margin-top: 2px !important;
+}
+
+/* Today row: big number + button aligned nicely */
+body.page-home #monthBudget .mb-today-row{
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+body.page-home #monthBudget .mb-today-value{
+  font-size: 22px !important;
+  font-weight: 950 !important;
+  line-height: 1.05 !important;
+  font-variant-numeric: tabular-nums !important;
+  white-space: nowrap !important;
+}
+
+body.page-home #monthBudget .mb-today-meta{
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  opacity: .65 !important;
+  line-height: 1.25 !important;
+}
+
+/* Recalc button: match the card typography */
+body.page-home #monthBudget #mbRecalcDaily{
+  height: 30px !important;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+/* Bars: consistent height + spacing */
+body.page-home #monthBudget .mb-bar{
+  margin-top: 8px !important;
+  height: 10px !important;
+  border-radius: 999px !important;
+  overflow: hidden !important;
+  background: rgba(0,0,0,0.10) !important;
+}
+
+body.page-home #monthBudget .mb-bar__fill{
+  height: 100% !important;
+  border-radius: 999px !important;
+}
+
+/* Daily bar should look “drain down” (fill width is set in JS) */
+body.page-home #monthBudget .mb-bar--daily{
+  margin-top: 8px !important;
 }

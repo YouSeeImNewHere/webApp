@@ -3,11 +3,12 @@
 <head>
   <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <title>Category Rules</title>
 
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/mobile.css">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+<link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+
   <!-- ensure theme applies on this page too -->
   <script src="/static/theme.js"></script>
 </head>
@@ -25,6 +26,7 @@
           <button id="refreshRulesBtn" class="settings-btn small">Refresh</button>
           <span id="rulesStatus" class="settings-muted" style="margin:0;"></span>
         </div>
+<div id="rulesCards" class="rules-cards" hidden></div>
 
         <table class="settings-table rules-table" id="rulesTable">
           <thead>

@@ -8,10 +8,7 @@
 
   <meta name="theme-color" content="#ffffff" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
-/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 
   <meta charset="UTF-8" />
   <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
@@ -51,31 +48,44 @@
 </div>
 
 
-  <div class="month-budget__top">
+  <div class="mb-grid">
+
+  <!-- LEFT: MONTH -->
+  <div class="mb-col">
     <div class="mb-kpi">
       <div class="mb-label">Safe to spend</div>
       <div class="mb-value" id="mbSafe">—</div>
+      <div class="mb-meta" id="mbMeta">—</div>
     </div>
-    <div class="mb-meta" id="mbMeta">—</div>
-    <!-- Daily limit (locked once/day) -->
-<div class="mb-daily" style="margin-top:8px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
-  <div style="display:flex; flex-direction:column; gap:2px;">
-    <div style="font-size:12px; opacity:.75;">Today left</div>
-    <div id="mbDaily" style="font-size:18px; font-weight:800;">—</div>
-    <div id="mbDailyMeta" style="font-size:11px; opacity:.6;">—</div>
+
+
+    <!-- Monthly bar (your existing mbBarFill) -->
+    <div class="mb-bar" aria-hidden="true">
+      <div class="mb-bar__fill" id="mbBarFill" style="width:0%"></div>
+    </div>
   </div>
 
-  <button id="mbRecalcDaily" class="settings-btn" type="button" style="padding:6px 10px; font-size:12px;">
-    Recalc
-  </button>
+  <!-- RIGHT: TODAY -->
+  <div class="mb-col mb-col--today">
+    <div class="mb-kpi">
+      <div class="mb-label">Today left</div>
+
+      <div class="mb-today-row">
+        <div id="mbDaily" class="mb-today-value">—</div>
+        <button id="mbRecalcDaily" class="settings-btn" type="button">Recalc</button>
+      </div>
+
+      <div id="mbDailyMeta" class="mb-today-meta">—</div>
+    </div>
+
+    <!-- Daily bar (NEW) -->
+    <div class="mb-bar mb-bar--daily" aria-hidden="true">
+      <div class="mb-bar__fill" id="mbDailyBarFill" style="width:100%"></div>
+    </div>
+  </div>
+
 </div>
 
-    <div class="mb-goal" id="mbGoal" style="margin-top:6px; font-size:12px; opacity:.75;">—</div>
-  </div>
-
-  <div class="mb-bar" aria-hidden="true">
-    <div class="mb-bar__fill" id="mbBarFill" style="width:0%"></div>
-  </div>
 
   <!-- IMPORTANT: restore the pill layout your CSS styles -->
   <ul class="category-box__list" style="margin-top:10px;">

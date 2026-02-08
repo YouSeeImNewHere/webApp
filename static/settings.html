@@ -4,7 +4,7 @@
 <head>
   <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
 <meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 <title>Settings</title>
 <link href="/static/css/base.css" rel="stylesheet"/>
 <link href="/static/css/mobile.css" rel="stylesheet"/>
@@ -52,37 +52,7 @@
 </details>
 </section>
 
-<section class="settings-section">
-  <h2 class="settings-section-title">Savings goal</h2>
 
-  <div class="settings-card">
-    <div class="settings-row" style="flex-wrap:wrap; gap:12px; align-items:flex-end;">
-      <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
-        Mode
-        <select id="savingsGoalMode" style="padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--btn-bg); color:var(--btn-text); font-weight:800;">
-          <option value="percent">Percent of expected income</option>
-          <option value="amount">Fixed amount</option>
-        </select>
-      </label>
-
-      <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85; min-width:200px;">
-        Value
-        <div style="display:flex; gap:8px; align-items:center;">
-          <input id="savingsGoalValue" inputmode="decimal" type="number" min="0" step="0.01"
-                 style="flex:1; padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--btn-bg); color:var(--btn-text); font-weight:800;">
-          <span id="savingsGoalSuffix" class="settings-muted" style="margin:0;">%</span>
-        </div>
-      </label>
-
-      <button class="settings-btn primary" id="saveSavingsGoalBtn" type="button">Save</button>
-    </div>
-
-    <div class="settings-muted" style="margin-top:10px;">
-      This goal is deducted from <strong>Safe to spend</strong> on Home. Percent is based on this month’s expected income.
-    </div>
-    <div class="settings-muted" id="savingsGoalMsg" style="margin-top:6px;"></div>
-  </div>
-</section>
 
 <section class="settings-section">
 <h2 class="settings-section-title">Home Page Layout</h2>
@@ -136,73 +106,6 @@
 
     sel.value = Theme.get();
     sel.addEventListener("change", () => Theme.set(sel.value));
-  })();
-</script>
-<script>
-  (function(){
-    const modeEl = document.getElementById("savingsGoalMode");
-    const valEl = document.getElementById("savingsGoalValue");
-    const sufEl = document.getElementById("savingsGoalSuffix");
-    const saveBtn = document.getElementById("saveSavingsGoalBtn");
-    const msgEl = document.getElementById("savingsGoalMsg");
-    if (!modeEl || !valEl || !saveBtn) return;
-
-    function setSuffix(){
-      const mode = modeEl.value;
-      if (sufEl) sufEl.textContent = (mode === "percent") ? "%" : "USD";
-      valEl.step = (mode === "percent") ? "0.1" : "0.01";
-      valEl.placeholder = (mode === "percent") ? "50" : "2000";
-    }
-
-    async function loadGoal(){
-      msgEl.textContent = "Loading…";
-      try{
-        const res = await fetch("/settings/savings-goal", { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const j = await res.json();
-        modeEl.value = (j.mode === "amount") ? "amount" : "percent";
-        valEl.value = (j.value != null) ? String(j.value) : "";
-        setSuffix();
-        msgEl.textContent = "";
-      } catch(e){
-        console.warn("loadGoal failed", e);
-        setSuffix();
-        msgEl.textContent = "Could not load (using 0).";
-      }
-    }
-
-    async function saveGoal(){
-      const mode = modeEl.value;
-      const value = Number(valEl.value);
-      if (!isFinite(value) || value < 0) {
-        msgEl.textContent = "Enter a valid number.";
-        return;
-      }
-      if (mode === "percent" && value > 100) {
-        msgEl.textContent = "Percent must be 0–100.";
-        return;
-      }
-      msgEl.textContent = "Saving…";
-      try{
-        const res = await fetch("/settings/savings-goal", {
-          method: "POST",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ mode, value })
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        msgEl.textContent = "Saved ✅";
-        setTimeout(()=> msgEl.textContent="", 1200);
-      } catch(e){
-        console.warn("saveGoal failed", e);
-        msgEl.textContent = "Save failed.";
-      }
-    }
-
-    modeEl.addEventListener("change", setSuffix);
-    saveBtn.addEventListener("click", saveGoal);
-
-    setSuffix();
-    loadGoal();
   })();
 </script>
 

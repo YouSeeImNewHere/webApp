@@ -937,7 +937,6 @@ def transactions_all(
     limit: int = Query(50, ge=1, le=50000),
     offset: int = Query(0, ge=0),
 
-    # NEW
     q: str = "",
     start: str = "",
     end: str = "",
@@ -962,10 +961,10 @@ def transactions_all(
     if q:
         where.append("""
           (
-            COALESCE(t.merchant,'') ILIKE %s OR
-            COALESCE(a.institution,'') ILIKE %s OR
-            COALESCE(a.name,'') ILIKE %s OR
-            COALESCE(t.category,'') ILIKE %s
+            COALESCE(merchant,'') ILIKE %s OR
+            COALESCE(bank,'') ILIKE %s OR
+            COALESCE(card,'') ILIKE %s OR
+            COALESCE(category,'') ILIKE %s
           )
         """)
         like = f"%{q}%"
@@ -973,7 +972,6 @@ def transactions_all(
 
     # date window (ISO yyyy-mm-dd)
     if start:
-        # parse_iso already exists in your file
         sd = parse_iso(start)
         where.append("d >= %s")
         params.append(sd)
@@ -983,10 +981,9 @@ def transactions_all(
         where.append("d <= %s")
         params.append(ed)
 
-    # amount filter
-    amt_expr = "ABS(t.amount::double precision)" if use_abs else "t.amount::double precision"
+    # amount filter (note: outer query sees "amount", not "t.amount")
+    amt_expr = "ABS(amount::double precision)" if use_abs else "amount::double precision"
 
-    # If caller sets min/max directly, honor them (regardless of amt_mode)
     if amt_min is not None:
         where.append(f"{amt_expr} >= %s")
         params.append(float(amt_min))
@@ -994,7 +991,6 @@ def transactions_all(
         where.append(f"{amt_expr} <= %s")
         params.append(float(amt_max))
 
-    # Build WHERE clause safely
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
     rows = query_db(
@@ -1034,6 +1030,7 @@ def transactions_all(
     rows = [dict(r) for r in rows]
     attach_transfer_peers_pg(rows)
     return rows
+
 
 # -----------------------------------------------------------------------------
 # /account-series (single account balance series)

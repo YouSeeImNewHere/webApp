@@ -28,6 +28,16 @@ function setStatus(msg, isError = false) {
   el.style.color = isError ? "var(--danger)" : "var(--text-muted)";
 }
 
+function isMobileRules() {
+  return window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+}
+
+function ensureCardsHost() {
+  let host = document.getElementById("rulesCards");
+  if (!host) return null;
+  return host;
+}
+
 async function fetchCategories() {
   try {
     const res = await fetch("/categories", { cache: "no-store" });
@@ -122,10 +132,20 @@ async function runTest() {
 
 async function loadRules() {
   setStatus("Loading rules…");
-  const tbody = document.querySelector("#rulesTable tbody");
-  if (!tbody) return;
 
-  tbody.innerHTML = "";
+  const tbody = document.querySelector("#rulesTable tbody");
+  const cardsHost = document.getElementById("rulesCards");
+
+  // Helpers (inline so this function is copy/paste safe)
+  const isMobile = () =>
+    window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+
+  // Clear both render targets
+  if (tbody) tbody.innerHTML = "";
+  if (cardsHost) cardsHost.innerHTML = "";
+
+  // Show/hide the right container
+  if (cardsHost) cardsHost.hidden = !isMobile();
 
   try {
     const res = await fetch("/category-rules/list?include_inactive=1&with_counts=1", {
@@ -139,11 +159,154 @@ async function loadRules() {
     }
 
     for (const r of rules) {
-      const tr = document.createElement("tr");
-
+      const id = r.id;
       const isActive = !!r.is_active;
       const matchCount = Number(r.match_count || 0);
 
+      // =========================
+      // MOBILE: card layout
+      // =========================
+      if (isMobile() && cardsHost) {
+        const card = document.createElement("div");
+        card.className = "rule-card";
+        card.innerHTML = `
+          <div class="rule-regex">${esc(r.pattern)}</div>
+
+          <div class="rule-row">
+            <div class="rule-field">
+              <label>Category</label>
+              <input
+                class="settings-input"
+                list="categoryOptions"
+                value="${esc(r.category)}"
+              />
+            </div>
+
+            <div class="rule-meta">
+              <div>
+                <span class="settings-muted" style="margin:0;">Matches</span>
+                <span class="pill mono" style="margin-left:8px;">${esc(matchCount)}</span>
+              </div>
+
+              <label class="switch" title="Enable/disable rule" style="margin:0;">
+                <input type="checkbox" class="active-toggle" ${isActive ? "checked" : ""} />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="rule-toggles">
+              <label class="toggle">
+                <input type="checkbox" class="reapply-toggle" />
+                <span>Re-apply to existing</span>
+              </label>
+            </div>
+
+            <div class="rule-actions">
+              <button class="settings-btn small save-btn">Save</button>
+              <button class="settings-btn small test-btn">Test</button>
+              <button class="settings-btn small danger delete-btn">Delete</button>
+            </div>
+          </div>
+        `;
+
+        const input = card.querySelector("input.settings-input");
+        const saveBtn = card.querySelector(".save-btn");
+        const testBtn = card.querySelector(".test-btn");
+        const delBtn  = card.querySelector(".delete-btn");
+        const activeToggle = card.querySelector(".active-toggle");
+        const reapplyToggle = card.querySelector(".reapply-toggle");
+
+        // Save (optionally re-apply)
+        saveBtn.onclick = async () => {
+          const reapply = !!reapplyToggle.checked;
+          saveBtn.disabled = true;
+
+          try {
+            const resp = await fetch(`/category-rules/${id}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                category: input.value,
+                reapply_existing: reapply,
+              }),
+            });
+
+            const data = await resp.json();
+            if (!resp.ok || data?.ok === false) {
+              setStatus(data?.error || "Save failed", true);
+              return;
+            }
+
+            setStatus(
+              reapply
+                ? `Saved + re-applied (${data?.applied || 0} transactions)`
+                : "Saved"
+            );
+
+            await loadRules();
+          } catch (e) {
+            setStatus("Save failed", true);
+          } finally {
+            saveBtn.disabled = false;
+          }
+        };
+
+        // Active toggle
+        activeToggle.onchange = async (ev) => {
+          const desired = !!ev.target.checked;
+          try {
+            const resp = await fetch(`/category-rules/${id}/active`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ is_active: desired }),
+            });
+            const data = await resp.json();
+            if (!resp.ok || data?.ok === false) {
+              setStatus(data?.error || "Failed to update rule", true);
+              ev.target.checked = !desired;
+              return;
+            }
+            setStatus(desired ? "Rule enabled" : "Rule disabled");
+          } catch (e) {
+            setStatus("Failed to update rule", true);
+            ev.target.checked = !desired;
+          }
+        };
+
+        // Test
+        testBtn.onclick = () => {
+          openTestModal({ pattern: r.pattern, flags: r.flags || "i", ruleId: id });
+        };
+
+        // Delete
+        delBtn.onclick = async () => {
+          delBtn.disabled = true;
+          try {
+            const resp = await fetch(`/category-rules/${id}`, { method: "DELETE" });
+            const data = await resp.json();
+            if (!resp.ok || data?.ok === false) {
+              setStatus(data?.error || "Delete failed", true);
+              return;
+            }
+            card.remove();
+            setStatus("Rule deleted");
+          } catch (e) {
+            setStatus("Delete failed", true);
+          } finally {
+            delBtn.disabled = false;
+          }
+        };
+
+        cardsHost.appendChild(card);
+        continue; // skip desktop row
+      }
+
+      // =========================
+      // DESKTOP: table layout
+      // =========================
+      if (!tbody) continue;
+
+      const tr = document.createElement("tr");
       tr.innerHTML = `
         <td class="mono">${esc(r.pattern)}</td>
         <td>
@@ -160,9 +323,7 @@ async function loadRules() {
             </label>
           </div>
         </td>
-        <td>
-          <span class="pill mono">${esc(matchCount)}</span>
-        </td>
+        <td><span class="pill mono">${esc(matchCount)}</span></td>
         <td>
           <label class="switch" title="Enable/disable rule">
             <input type="checkbox" class="active-toggle" ${isActive ? "checked" : ""} />
@@ -178,47 +339,42 @@ async function loadRules() {
         </td>
       `;
 
-      const id = r.id;
-
       // Save (optionally re-apply)
-     tr.querySelector(".save-btn").onclick = async () => {
-  const input = tr.querySelector("input.settings-input");
-  const reapply = tr.querySelector(".reapply-toggle").checked;
-  const btn = tr.querySelector(".save-btn");
+      tr.querySelector(".save-btn").onclick = async () => {
+        const input = tr.querySelector("input.settings-input");
+        const reapply = tr.querySelector(".reapply-toggle").checked;
+        const btn = tr.querySelector(".save-btn");
+        btn.disabled = true;
 
-  btn.disabled = true;
+        try {
+          const resp = await fetch(`/category-rules/${id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              category: input.value,
+              reapply_existing: !!reapply,
+            }),
+          });
 
-  try {
-    const resp = await fetch(`/category-rules/${id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        category: input.value,
-        reapply_existing: !!reapply
-      }),
-    });
+          const data = await resp.json();
+          if (!resp.ok || data?.ok === false) {
+            setStatus(data?.error || "Save failed", true);
+            return;
+          }
 
-    const data = await resp.json();
-    if (!resp.ok || data?.ok === false) {
-      setStatus(data?.error || "Save failed", true);
-      return;
-    }
+          setStatus(
+            reapply
+              ? `Saved + re-applied (${data?.applied || 0} transactions)`
+              : "Saved"
+          );
 
-    setStatus(
-      reapply
-        ? `Saved + re-applied (${data?.applied || 0} transactions)`
-        : "Saved"
-    );
-
-    // 🔥 THIS LINE IS THE KEY
-    await loadRules();
-
-  } catch (e) {
-    setStatus("Save failed", true);
-  } finally {
-    btn.disabled = false;
-  }
-};
+          await loadRules();
+        } catch (e) {
+          setStatus("Save failed", true);
+        } finally {
+          btn.disabled = false;
+        }
+      };
 
       // Active toggle
       tr.querySelector(".active-toggle").onchange = async (ev) => {
