@@ -309,6 +309,39 @@ def ensure_seen_table(name="email_seen_ids"):
             );
         """)
         conn.commit()
+def ensure_pending_table(name="pushover_pending"):
+    with with_db_cursor() as (conn, cur):
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {name} (
+                k TEXT PRIMARY KEY,                 -- tx_fingerprint
+                account_id INTEGER NOT NULL,
+                amount NUMERIC,
+                purchase_date TEXT,
+                purchase_time TEXT,
+                rule_name TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+        """)
+        conn.commit()
+
+def upsert_pending(name: str, k: str, account_id: int, amount, purchase_date: str, purchase_time: str, rule_name: str):
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            f"""
+            INSERT INTO {name} (k, account_id, amount, purchase_date, purchase_time, rule_name)
+            VALUES (%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (k) DO UPDATE SET
+              last_seen_at = now(),
+              account_id = EXCLUDED.account_id,
+              amount = EXCLUDED.amount,
+              purchase_date = EXCLUDED.purchase_date,
+              purchase_time = EXCLUDED.purchase_time,
+              rule_name = EXCLUDED.rule_name
+            """,
+            (k, int(account_id), amount, purchase_date, purchase_time, rule_name),
+        )
+        conn.commit()
 
 def seen_keys(keys, table):
     if not keys:
@@ -375,6 +408,143 @@ def parse_money(v):
     except Exception:
         return None
 
+def _norm_amount_for_key(v) -> str:
+    """
+    Normalize amount so Decimal/float/int all produce a stable string.
+    """
+    if v is None:
+        return ""
+    try:
+        # Handles Decimal nicely too
+        return f"{float(v):.2f}"
+    except Exception:
+        return str(v).strip()
+
+def tx_fingerprint(account_id: int, amount, purchase_date: str, purchase_time: str) -> str:
+    """
+    Stable key tying together:
+      - Navy withdrawal email (often Unknown merchant)
+      - Navy Transaction Notification email (has merchant)
+    So we can dedupe notifications at the transaction-level.
+    """
+    a = int(account_id) if account_id is not None else 0
+    amt = _norm_amount_for_key(amount)
+    d = (purchase_date or "").strip().lower()
+    t = (purchase_time or "").strip().lower()
+    base = f"{a}|{amt}|{d}|{t}"
+    return hashlib.sha1(base.encode("utf-8", "ignore")).hexdigest()[:24]
+
+def already_notified(k: str) -> bool:
+    if not k:
+        return False
+    rows = query_db("SELECT 1 FROM notified_transactions WHERE k=%s LIMIT 1", (k,))
+    return bool(rows)
+
+def mark_notified(k: str):
+    if not k:
+        return
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "INSERT INTO notified_transactions (k) VALUES (%s) ON CONFLICT (k) DO NOTHING",
+            (k,),
+        )
+        conn.commit()
+def flush_pending_notifications(pending_table: str, ttl_minutes: int = 30):
+    """
+    Resolve any pending "unknown merchant" withdrawals.
+    - If a real merchant transaction exists now: notify once and mark_notified
+    - If already_notified: delete pending
+    - If too old: send fallback Unknown merchant notification once
+    """
+    # Nothing to do if pushover isn't configured
+    if not pushover_enabled():
+        return
+
+    tz = ZoneInfo("America/Los_Angeles")
+    now = datetime.now(tz)
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(f"""
+            SELECT k, account_id, amount, purchase_date, purchase_time, rule_name, created_at
+            FROM {pending_table}
+            ORDER BY created_at ASC
+        """)
+        pendings = cur.fetchall() or []
+
+        for p in pendings:
+            k = p["k"]
+
+            # If something else already notified this tx, just clear pending.
+            if already_notified(k):
+                cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
+                conn.commit()
+                continue
+
+            account_id = int(p["account_id"])
+            amt = p["amount"]
+            d = p["purchase_date"] or ""
+            t = p["purchase_time"] or ""
+
+            # Try to find a now-known merchant for this same transaction.
+            # Assumes transactions has: account_id, amount, merchant, purchase_date, time, id
+            cur.execute(
+                """
+                SELECT merchant, amount, purchase_date, time
+                FROM transactions
+                WHERE account_id = %s
+                  AND amount = %s
+                  AND purchase_date = %s
+                  AND time = %s
+                  AND merchant IS NOT NULL
+                  AND lower(merchant) NOT IN ('unknown', 'unknown merchant', '')
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (account_id, amt, d, t),
+            )
+            row = cur.fetchone()
+
+            if row:
+                bank, card = get_bank_card_by_account_id(account_id)
+                merchant = (row["merchant"] or "").strip()
+                amt_val = row["amount"]
+                amt_str = f"${float(amt_val):.2f}" if amt_val is not None else "an unknown amount"
+                date_str = row.get("purchase_date") or d or "unknown date"
+                time_str = row.get("time") or t or "unknown time"
+
+                title = "Transaction alert"
+                message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
+
+                send_pushover(title, message)
+                mark_notified(k)
+
+                cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
+                conn.commit()
+                continue
+
+            # No resolved merchant yet — maybe send fallback if TTL exceeded
+            created_at = p["created_at"]
+            try:
+                created_local = created_at.astimezone(tz)
+            except Exception:
+                created_local = now
+
+            age_minutes = (now - created_local).total_seconds() / 60.0
+
+            if age_minutes >= ttl_minutes:
+                bank, card = get_bank_card_by_account_id(account_id)
+                amt_str = f"${float(amt):.2f}" if amt is not None else "an unknown amount"
+                date_str = d or "unknown date"
+                time_str = t or "unknown time"
+
+                title = "Transaction alert"
+                message = f"{bank} {card} was used at Unknown merchant for {amt_str} on {date_str} at {time_str}"
+
+                send_pushover(title, message)
+                mark_notified(k)
+
+                cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
+                conn.commit()
 
 # ============================================================
 # FIELD EXTRACTION (FIXED)
@@ -468,6 +638,11 @@ def run():
 
     seen_table = "email_seen_ids_test" if TEST_MODE else "email_seen_ids"
     ensure_seen_table(seen_table)
+    pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
+    ensure_pending_table(pending_table)
+
+    # 20–30 minutes is what you wanted; default 30, configurable
+    PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
 
     log("Connecting to Gmail…")
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -560,17 +735,65 @@ def run():
                         account_id = int(result["account_id"])
                         bank, card = get_bank_card_by_account_id(account_id)
 
-                        merchant = result.get("merchant") or "Unknown"
+                        merchant = (result.get("merchant") or "Unknown").strip()
                         amt = result.get("amount")
                         date_str = result.get("purchaseDate") or "unknown date"
                         time_str = result.get("time") or "unknown time"
 
-                        amt_str = f"${amt:.2f}" if isinstance(amt, (int, float)) else "an unknown amount"
+                        # ✅ transaction-level fingerprint (dedupe across multiple emails)
+                        fp = tx_fingerprint(account_id, amt, date_str, time_str)
+
+                        # ✅ If we already sent a notification for this transaction, never send again
+                        if already_notified(fp):
+                            rows.append({
+                                "message_id": key,
+                                "subject": subject,
+                                "sender": sender,
+                                "email_date": date,
+                                "imap_id": int(imap_id),
+                                "matched": True,
+                                "matched_rule": rule["name"],
+                                "note": "inserted_but_already_notified",
+                                "extracted": json.dumps(extracted) if extracted else None,
+                            })
+                            break
+
+                        # ✅ Suppress the noisy Navy withdrawal “Unknown merchant” notification.
+                        # The matching “Transaction Notification” email will arrive shortly and send the real merchant.
+                        # ✅ Suppress the noisy Navy withdrawal “Unknown merchant” notification.
+                        # Store pending so we can notify later if merchant never arrives.
+                        is_unknown = (merchant.lower() in ("unknown", "unknown merchant", ""))
+                        if rule["name"] == "navy withdrawal" and is_unknown:
+                            upsert_pending(
+                                pending_table,
+                                fp,
+                                account_id,
+                                amt,
+                                date_str,
+                                time_str,
+                                rule["name"],
+                            )
+
+                            rows.append({
+                                "message_id": key,
+                                "subject": subject,
+                                "sender": sender,
+                                "email_date": date,
+                                "imap_id": int(imap_id),
+                                "matched": True,
+                                "matched_rule": rule["name"],
+                                "note": "inserted_withdrawal_unknown_pending",
+                                "extracted": json.dumps(extracted) if extracted else None,
+                            })
+                            break
+
+                        amt_str = f"${float(amt):.2f}" if amt is not None else "an unknown amount"
 
                         title = "Transaction alert"
                         message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
 
                         send_pushover(title, message)
+                        mark_notified(fp)
 
                         rows.append({
                             "message_id": key,
@@ -583,6 +806,8 @@ def run():
                             "note": "inserted_and_notified",
                             "extracted": json.dumps(extracted) if extracted else None,
                         })
+                        break
+
                         break
 
 
