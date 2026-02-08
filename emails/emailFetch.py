@@ -18,6 +18,11 @@ from zoneinfo import ZoneInfo
 def in_allowed_window():
     tz = ZoneInfo("America/Los_Angeles")
     now = datetime.now(tz)
+
+    # 0=Mon ... 5=Sat, 6=Sun
+    if now.weekday() in (5, 6):
+        return True  # ✅ stay awake all weekend
+
     hour = now.hour
 
     # Allowed windows (24h clock)
@@ -26,7 +31,7 @@ def in_allowed_window():
     in_evening  = 16 <= hour < 23
 
     return in_morning or in_midday or in_evening
-
+    
 def wake_web_app():
     url = os.getenv("WEBAPP_URL")  # set in Render env vars
     try:
