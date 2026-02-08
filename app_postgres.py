@@ -241,6 +241,18 @@ app.add_middleware(
     https_only=is_render,
 )
 
+from zoneinfo import ZoneInfo
+from datetime import datetime, date
+
+APP_TZ = ZoneInfo("America/Los_Angeles")
+
+def today_local() -> date:
+    return datetime.now(APP_TZ).date()
+
+def now_local() -> datetime:
+    return datetime.now(APP_TZ)
+
+
 # =============================================================================
 # Pages / Static routes (ported from pages.py)
 # =============================================================================
@@ -1829,7 +1841,7 @@ def spending_debug(start: str, end: str):
 # -----------------------------------------------------------------------------
 @app.get("/category-totals-month")
 def category_totals_month():
-    today = datetime.today().date()
+    today = today_local()
     first = today.replace(day=1)
     next_month = date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
 
@@ -2161,7 +2173,7 @@ class RuleTestBody(BaseModel):
 # Helpers
 # -----------------------------
 def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
-    today = date.today()
+    today = today_local()
     month_start = date(year, month, 1)
     month_end = date(year, month, _last_day_of_month(year, month))
 
@@ -2289,15 +2301,42 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
     spent_free = spent_so_far - budgeted_spent_total
     safe_to_spend = free_spend_goal - spent_free
 
-    # Daily limit (based on days remaining in month incl. today)
-    if today < month_start:
-        days_left = (month_end - month_start).days + 1
-    elif today > month_end:
-        days_left = 0
-    else:
-        days_left = (month_end - today).days + 1
+    # Daily limits with weekend override:
+    # - Weekday weight = 1
+    # - Weekend weight = 2
+    # This keeps the SAME total safe_to_spend, but redistributes it.
 
-    daily_limit = (safe_to_spend / days_left) if days_left > 0 else 0.0
+    if today < month_start:
+        start_day = month_start
+    elif today > month_end:
+        start_day = None
+    else:
+        start_day = today
+
+    weekday_days = 0
+    weekend_days = 0
+
+    if start_day is None:
+        days_left = 0
+        total_points = 0
+    else:
+        dcur = start_day
+        while dcur <= month_end:
+            if dcur.weekday() >= 5:  # 5=Sat, 6=Sun
+                weekend_days += 1
+            else:
+                weekday_days += 1
+            dcur += timedelta(days=1)
+
+        days_left = (month_end - start_day).days + 1
+        total_points = weekday_days + (2 * weekend_days)
+
+    weekday_limit = (safe_to_spend / total_points) if total_points > 0 else 0.0
+    weekend_limit = weekday_limit * 2
+
+    # Keep backward compat: daily_limit becomes "today's limit"
+    is_weekend_today = (today.weekday() >= 5)
+    today_limit = weekend_limit if is_weekend_today else weekday_limit
 
     return {
         "ok": True,
@@ -2320,11 +2359,23 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         "budgeted_spent_total": round(budgeted_spent_total, 2),
 
         # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
+                # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
         "safe_to_spend": round(safe_to_spend, 2),
-        "daily_limit": round(daily_limit, 2),
+
+        # Backward compatibility (what widget + UI already expects)
+        # This is now TODAY'S allowance
+        "daily_limit": round(today_limit, 2),
         "days_left": int(days_left),
 
+        # NEW weekend-weighted budgeting fields
+        "daily_weekday_limit": round(weekday_limit, 2),
+        "daily_weekend_limit": round(weekend_limit, 2),
+        "weekday_days_left": int(weekday_days),
+        "weekend_days_left": int(weekend_days),
+        "daily_weight_mode": "weekend_x2",
+
         "category_spent": {k: round(v, 2) for k, v in cat_spent.items()},
+
     }
 
 def _get_savings_goal_cfg():
@@ -2692,7 +2743,7 @@ def test_rule(body: RuleTestBody):
 # -----------------------------------------------------------------------------
 @app.get("/unknown-merchant-total-month")
 def unknown_merchant_total_month():
-    today = datetime.today().date()
+    today = today_local()
     first = today.replace(day=1)
     next_month = date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
 
@@ -4991,7 +5042,8 @@ def widget_summary(x_widget_secret: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
-    mb = _month_budget_home(datetime.now().year, datetime.now().month)
+    n = now_local()
+    mb = _month_budget_home(n.year, n.month)
     dl = day_limit(recalc=0)
     credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
 
@@ -5288,7 +5340,7 @@ def day_limit(recalc: int = 0):
     """
     _ensure_daily_limit_snapshot_pg()
 
-    today = date.today()
+    today = today_local()
 
     # Get or compute today's baseline
     row = query_db("SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s", (today,))
