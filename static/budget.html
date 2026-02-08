@@ -156,6 +156,25 @@
       <div id="groupsEmpty" class="budget-muted" style="margin-top:8px;"></div>
     </div>
 
+    <div class="budget-card" id="fundsCard">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="font-weight:900;">Sinking Funds</div>
+        <button id="addFundBtn" class="settings-btn">Add fund</button>
+      </div>
+
+      <div class="budget-muted" style="margin-top:6px;">
+        Set money aside for big future expenses (vacation, car repairs, gifts) so it’s not accidentally spendable.
+      </div>
+
+      <div style="height:10px;"></div>
+
+      <div id="fundsRows" class="funds-grid"></div>
+      <div id="fundsEmpty" class="budget-muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div style="height:14px;"></div>
+
+
     <div style="height:14px;"></div>
 
     <div class="budget-card">
@@ -188,6 +207,63 @@
 
 
       <div id="spentEmpty" class="budget-muted" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+
+  <!-- Sinking Fund modal -->
+  <div id="sfModal" class="sf-modal hidden" aria-hidden="true">
+    <div class="sf-backdrop" data-sf-close></div>
+    <div class="sf-card" role="dialog" aria-modal="true" aria-labelledby="sfTitle">
+      <div class="sf-head">
+        <div>
+          <div id="sfTitle" class="sf-title">Sinking Fund</div>
+          <div class="sf-sub">Set aside money so it’s not accidentally spendable.</div>
+        </div>
+        <button id="sfCloseBtn" class="settings-btn" type="button" data-sf-close>Close</button>
+      </div>
+
+      <form id="sfForm" class="sf-body">
+        <div class="sf-grid">
+          <label class="sf-field">
+            <span>Name</span>
+            <input id="sfName" class="budget-input" placeholder="Vacation" autocomplete="off" />
+          </label>
+
+          <label class="sf-field">
+            <span>Target amount (optional)</span>
+            <input id="sfTarget" class="budget-input" inputmode="decimal" placeholder="2500" />
+          </label>
+
+          <label class="sf-field">
+            <span>Target date (optional)</span>
+            <input id="sfDate" class="budget-input" type="date" />
+          </label>
+
+          <label class="sf-field">
+            <span>Contribution cadence</span>
+            <select id="sfCadence" class="budget-input">
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+              <option value="paycheck">Per paycheck</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+
+          <label class="sf-field">
+            <span>Planned contribution (per cadence)</span>
+            <input id="sfContrib" class="budget-input" inputmode="decimal" placeholder="0" />
+          </label>
+        </div>
+
+        <div class="sf-actions">
+          <div id="sfErr" class="budget-muted" style="color: var(--bad, #c0392b);"></div>
+          <div style="margin-left:auto; display:flex; gap:10px;">
+            <button class="settings-btn" type="button" data-sf-close>Cancel</button>
+            <button id="sfSaveBtn" class="settings-btn primary" type="submit">Save</button>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 

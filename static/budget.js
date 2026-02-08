@@ -292,20 +292,216 @@ function renderSpentPie(items, spentMap) {
 }
 
   function renderGroups(d) {
-    const host = $("groupRows");
-    host.innerHTML = "";
+  const host = $("groupRows");
+  host.innerHTML = "";
 
-    const groups = d.groups || [];
-    if (!groups.length) {
-      $("groupsEmpty").textContent = "No group budgets yet. Tap Add group to create one.";
-      return;
-    }
-    $("groupsEmpty").textContent = "";
-
-    for (const g of groups) host.appendChild(groupRowEl(g));
+  const groups = d.groups || [];
+  if (!groups.length) {
+    $("groupsEmpty").textContent = "No group budgets yet. Tap Add group to create one.";
+    return;
   }
+  $("groupsEmpty").textContent = "";
 
-  function renderSpent(d) {
+  for (const g of groups) host.appendChild(groupRowEl(g));
+}
+
+
+// ---- Sinking Fund modal helpers ----
+let sfModalState = { mode: "create", fund: null };
+
+function sfEl(id){ return document.getElementById(id); }
+
+function openSfModal(opts){
+  const modal = sfEl("sfModal");
+  if (!modal) return alert("Modal missing: sfModal");
+  const f = (opts && opts.fund) ? opts.fund : null;
+  sfModalState = { mode: (opts && opts.mode) ? opts.mode : (f ? "edit" : "create"), fund: f };
+
+  // Title
+  const title = sfEl("sfTitle");
+  if (title) title.textContent = (sfModalState.mode === "edit") ? "Edit Sinking Fund" : "Add Sinking Fund";
+
+  // Defaults / populate
+  sfEl("sfErr").textContent = "";
+  sfEl("sfName").value = (f && f.name) ? String(f.name) : "";
+  sfEl("sfTarget").value = (f && (f.target_amount != null)) ? String(f.target_amount || "") : "";
+  sfEl("sfDate").value = (f && f.target_date) ? String(f.target_date) : "";
+  sfEl("sfCadence").value = (f && f.cadence) ? String(f.cadence).toLowerCase() : "monthly";
+  sfEl("sfContrib").value = (f && (f.contrib_amount != null)) ? String(f.contrib_amount || 0) : "";
+
+  // show
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+
+  // focus
+  setTimeout(() => { try { sfEl("sfName").focus(); } catch(e){} }, 0);
+}
+
+function closeSfModal(){
+  const modal = sfEl("sfModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function parseMoneyInput(v){
+  const s = String(v || "").trim();
+  if (!s) return 0;
+  const n = Number(s.replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// ---------------- Sinking Funds ----------------
+function daysBetween(a, b) {
+  // a,b are Date objects (local)
+  const ms = b.getTime() - a.getTime();
+  return Math.ceil(ms / 86400000);
+}
+
+function fundNeededLine(f) {
+  const bal = Number(f.reserved_balance || 0);
+  const tgt = Number(f.target_amount || 0);
+
+  const dateStr = (f.target_date || "").trim();
+  if (!dateStr || !tgt || tgt <= bal) return "";
+
+  const today = new Date();
+  const due = new Date(dateStr + "T00:00:00");
+  if (Number.isNaN(due.getTime())) return "";
+
+  const days = Math.max(1, daysBetween(today, due));
+  const remain = Math.max(0, tgt - bal);
+  const perDay = remain / days;
+
+  return `${money(perDay)} / day to hit by ${dateStr}`;
+}
+
+function fundCardEl(f) {
+  const card = document.createElement("div");
+  card.className = "fund-card";
+
+  const name = (f.name || "").trim() || "Untitled";
+  const bal = Number(f.reserved_balance || 0);
+  const tgt = Number(f.target_amount || 0);
+
+  const top = document.createElement("div");
+  top.className = "fund-top";
+
+  const left = document.createElement("div");
+  left.className = "fund-name";
+  left.textContent = name;
+
+  const right = document.createElement("div");
+  right.className = "fund-bal";
+  right.textContent = money(bal);
+
+  top.appendChild(left);
+  top.appendChild(right);
+
+  const sub = document.createElement("div");
+  sub.className = "fund-sub";
+  sub.textContent = tgt ? `${money(bal)} / ${money(tgt)}` : `${money(bal)} set aside`;
+
+  const pct = tgt > 0 ? Math.max(0, Math.min(1, bal / tgt)) : 0;
+
+  const bar = document.createElement("div");
+  bar.className = "fund-bar";
+
+  const fill = document.createElement("div");
+  fill.className = "fund-bar__fill";
+  fill.style.width = `${Math.round(pct * 100)}%`;
+
+  bar.appendChild(fill);
+
+  const needed = fundNeededLine(f);
+  const meta = document.createElement("div");
+  meta.className = "fund-meta";
+  meta.textContent = needed || (f.target_date ? `Target date: ${f.target_date}` : "");
+
+  const actions = document.createElement("div");
+  actions.className = "fund-actions";
+
+  const btn = (label, cls) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "settings-btn" + (cls ? " " + cls : "");
+    b.textContent = label;
+    return b;
+  };
+
+  const addBtn = btn("Add money");
+  const useBtn = btn("Use money");
+  const editBtn = btn("Edit");
+  const delBtn = btn("Delete");
+
+  addBtn.addEventListener("click", async () => {
+    const amt = prompt(`Add how much to "${name}"?`, "50");
+    if (amt == null) return;
+    const n = Number(String(amt).replace(/[^0-9.\-]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return alert("Enter a positive number.");
+    await fetchJSON(`/funds/${f.id}/adjust`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: n, note: "manual add" }),
+    });
+    await load();
+  });
+
+  useBtn.addEventListener("click", async () => {
+    const amt = prompt(`Use how much from "${name}"?`, "50");
+    if (amt == null) return;
+    const n = Number(String(amt).replace(/[^0-9.\-]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return alert("Enter a positive number.");
+    await fetchJSON(`/funds/${f.id}/adjust`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: -n, note: "manual use" }),
+    });
+    await load();
+  });
+
+  editBtn.addEventListener("click", () => {
+    openSfModal({ mode: "edit", fund: f });
+  });
+
+  delBtn.addEventListener("click", async () => {
+    if (!confirm(`Delete "${name}"?`)) return;
+    await fetchJSON(`/funds/${f.id}`, { method: "DELETE" });
+    await load();
+  });
+
+  actions.appendChild(addBtn);
+  actions.appendChild(useBtn);
+  actions.appendChild(editBtn);
+  actions.appendChild(delBtn);
+
+  card.appendChild(top);
+  card.appendChild(sub);
+  card.appendChild(bar);
+  if (meta.textContent) card.appendChild(meta);
+  card.appendChild(actions);
+
+  return card;
+}
+
+function renderFunds(d) {
+  const host = $("fundsRows");
+  const empty = $("fundsEmpty");
+  if (!host || !empty) return;
+
+  host.innerHTML = "";
+  const funds = (d.funds || []).filter((x) => x && x.is_active !== false);
+
+  if (!funds.length) {
+    empty.textContent = "No sinking funds yet. Tap Add fund to create one.";
+    return;
+  }
+  empty.textContent = "";
+
+  for (const f of funds) host.appendChild(fundCardEl(f));
+}
+
+function renderSpent(d) {
   const host = $("spentRows");
   host.innerHTML = "";
 
@@ -389,6 +585,7 @@ renderSpentPie(items, spentMap);
     payload = await fetchJSON("/page/budget?" + qs.toString());
     renderTop(payload);
     renderGroups(payload);
+    renderFunds(payload);
     renderSpent(payload);
   }
 
@@ -444,7 +641,83 @@ renderSpentPie(items, spentMap);
       host.appendChild(groupRowEl({ name: "", allocated: 0, cap: null, categories: [], spent: 0, remaining: 0 }));
     });
 
-    try {
+
+    const addFundBtn = $("addFundBtn");
+    if (addFundBtn) {
+      addFundBtn.addEventListener("click", () => {
+        openSfModal({ mode: "create" });
+      });
+    }
+
+    // wire modal close + submit once
+    const sfModal = document.getElementById("sfModal");
+    if (sfModal && !sfModal.__wired) {
+      sfModal.__wired = true;
+
+      // close handlers
+      sfModal.addEventListener("click", (e) => {
+        const t = e.target;
+        if (t && (t.hasAttribute("data-sf-close"))) closeSfModal();
+      });
+
+      // ESC closes
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !sfModal.classList.contains("hidden")) closeSfModal();
+      });
+
+      // submit
+      const form = document.getElementById("sfForm");
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const err = document.getElementById("sfErr");
+        err.textContent = "";
+
+        const name = (sfEl("sfName").value || "").trim();
+        if (!name) { err.textContent = "Name is required."; return; }
+
+        const tgt = parseMoneyInput(sfEl("sfTarget").value);
+        const date = (sfEl("sfDate").value || "").trim(); // native date picker => YYYY-MM-DD or ""
+        const cadence = (sfEl("sfCadence").value || "monthly").trim().toLowerCase();
+        const contrib = parseMoneyInput(sfEl("sfContrib").value);
+
+        const payload = {
+          name,
+          target_amount: Number.isFinite(tgt) ? tgt : 0,
+          target_date: date,
+          cadence,
+          contrib_amount: Number.isFinite(contrib) ? contrib : 0,
+        };
+
+        const saveBtn = document.getElementById("sfSaveBtn");
+        const oldTxt = saveBtn ? saveBtn.textContent : "";
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
+
+        try {
+          if (sfModalState.mode === "edit" && sfModalState.fund && sfModalState.fund.id) {
+            await fetchJSON(`/funds/${sfModalState.fund.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+          } else {
+            await fetchJSON("/funds", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+          }
+
+          closeSfModal();
+          await load();
+        } catch (ex) {
+          console.error(ex);
+          err.textContent = "Save failed: " + (ex && ex.message ? ex.message : String(ex));
+        } finally {
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = oldTxt; }
+        }
+      });
+    }
+try {
           await load();
           await loadDayLimit(false);
 
