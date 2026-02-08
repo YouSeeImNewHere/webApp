@@ -35,6 +35,22 @@ const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
 // =============================
 let UI_LAYOUT = null;
 
+function isoLocalDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function loadJsonCache(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+}
+
+function saveJsonCache(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
 
 function getDefaultUILayout() {
   return {
@@ -2066,7 +2082,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
 
   try {
     // 1) Month budget numbers
-    const res = await fetch("/month-budget");
+    const res = await fetch("/month-budget", { cache: "no-store" });
     if (!res.ok) throw new Error("month-budget failed: " + res.status);
     const d = await res.json();
 
@@ -2087,7 +2103,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
 
     // 2) Daily limit (locked baseline + live remaining)
     const dlUrl = forceRecalcDaily ? "/day-limit?recalc=1" : "/day-limit";
-    const dlRes = await fetch(dlUrl);
+    const dlRes = await fetch(dlUrl, { cache: "no-store" });
     if (!dlRes.ok) throw new Error("day-limit failed: " + dlRes.status);
     const dl = await dlRes.json();
 
@@ -2101,15 +2117,32 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
 
     if (dailyEl) dailyEl.textContent = money(remaining);
     if (dailyMetaEl) {
-      dailyMetaEl.textContent = `Baseline: ${money(baseline)} • Spent free today: ${money(spentFree)}`;
+      dailyMetaEl.textContent =
+        `Baseline: ${money(baseline)}\n` +
+        `Spent Today: ${money(spentFree)}`;
     }
+
 
     // Keep your existing meta style: "Feb 07 • $45.71/day • 22 days left"
     // BUT use the locked baseline from /day-limit, not the constantly-recomputed /month-budget daily_limit.
-    if (metaEl) {
-      const left = `${money(baseline)}/day • ${days} days left`;
-      metaEl.textContent = asOf ? `${asOf} • ${left}` : left;
-    }
+    function formatDdMmmFromISO(iso) {
+  // expects "YYYY-MM-DD"
+  const d = String(iso || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
+  const [y, m, day] = d.split("-").map(Number);
+  const dt = new Date(y, (m || 1) - 1, day || 1);
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mmm = dt.toLocaleString("en-US", { month: "short" });
+  return `${dd}-${mmm}`;
+}
+
+if (metaEl) {
+  const ddMmm = asOf ? formatDdMmmFromISO(asOf) : "";
+  metaEl.textContent = ddMmm
+    ? `${ddMmm}\n${days} days left`
+    : `${days} days left`;
+}
+
 
     // If you already compute/show savings goal elsewhere, keep it.
     // goalEl can stay as-is if you set it in another function; otherwise set it here if you have the value.

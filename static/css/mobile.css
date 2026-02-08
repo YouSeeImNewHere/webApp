@@ -970,8 +970,9 @@ body.page-home #monthBudget .mb-daily{
 
 body.page-home #monthBudget #mbDailyMeta{
   max-width: 100%;
-  white-space: normal;
+  white-space: pre-line; /* honor \n */
 }
+
 /* =============================================================================
    BUDGET (mobile) — make Budgets usable (no sideways scroll)
    ============================================================================= */
@@ -1129,6 +1130,31 @@ body.page-budget .spent-chart{
 }
 body.page-budget .spent-chart{
   max-width: 100% !important;
+}
+/* =============================================================================
+   BUDGET — edge-to-edge cards on mobile (match Home)
+   ============================================================================= */
+
+/* Remove outer gutters */
+body.page-budget .page-container,
+body.page-budget .budget-wrap{
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Remove card chrome so content hits screen edge */
+body.page-budget .budget-card{
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+
+  /* inner breathing room, like Home */
+  padding: 12px 10px 14px !important;
+  margin: 0 !important;
+}
+body.page-budget .budget-card + .budget-card{
+  border-top: 1px solid var(--border);
 }
 
 }
@@ -1315,5 +1341,94 @@ body.page-recurring #recurringList{
 
   body.page-home #monthBudget .mb-goal{
     font-size: 13px !important;
+  }
+}
+/* ===============================
+   Savings goal — mobile layout
+   Match desktop feel
+   =============================== */
+
+@media (max-width: 900px){
+
+  /* Header row: keep inline, not grid */
+  body.page-budget .budget-row--head{
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  body.page-budget .budget-row--head > label{
+    font-weight: 900;
+  }
+
+  body.page-budget .budget-row--head #asOf{
+    margin-left: auto !important;
+    margin-top: 0 !important;
+    white-space: nowrap;
+    font-size: 12px;
+    opacity: .7;
+  }
+
+  /* Radios row: two clean columns */
+  body.page-budget .budget-row:not(.budget-row--head){
+    grid-template-columns: 1fr 1fr !important;
+    align-items: center !important;
+  }
+
+  body.page-budget .budget-row:not(.budget-row--head) label{
+    justify-self: start;
+  }
+}
+@media (max-width: 420px){
+  /* All Transactions: prevent Amount "And" from clipping */
+  #amtGrid{
+    grid-template-columns: 1fr 1fr !important;
+  }
+  #amtGrid > label:first-child{
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 700px){
+  #qMerchant, #qCard, #qCategory{ width: 100%; }
+}
+/* All Transactions — filter grid should not clip on narrow screens */
+@media (max-width: 900px){
+  body.page-alltx #qGrid,
+  body.page-alltx #amtGrid{
+    max-width: 100% !important;
+  }
+
+  /* Critical: allow grid children to shrink without overflowing */
+  body.page-alltx #qGrid > label,
+  body.page-alltx #amtGrid > label{
+    min-width: 0 !important;
+  }
+
+  body.page-alltx #qGrid input,
+  body.page-alltx #amtGrid input,
+  body.page-alltx #amtGrid select{
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* 2 columns on typical phones */
+@media (max-width: 520px){
+  body.page-alltx #qGrid{
+    grid-template-columns: 1fr 1fr !important;
+  }
+  /* Make Category full width (looks nicer + prevents tiny input) */
+  body.page-alltx #qGrid > label:nth-child(3){
+    grid-column: 1 / -1 !important;
+  }
+}
+
+/* 1 column on very small screens */
+@media (max-width: 360px){
+  body.page-alltx #qGrid{
+    grid-template-columns: 1fr !important;
+  }
+  body.page-alltx #qGrid > label:nth-child(3){
+    grid-column: auto !important;
   }
 }

@@ -40,4 +40,27 @@
       else window.location.href = "/";
     });
   }
+    // ======================================================
+  // HARD REFRESH BUTTON (bypass iOS PWA cache)
+  // ======================================================
+  // HARD REFRESH (works in iOS webapp)
+const refreshBtn = host.querySelector("#hardRefreshBtn");
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", () => {
+    const url = new URL(window.location.href);
+
+    // Remove old cache-busters so it stays clean
+    url.searchParams.delete("v");
+    url.searchParams.delete("refresh");
+
+    // Add a new cache-buster
+    url.searchParams.set("v", String(Date.now()));
+
+    // iOS webapp: replace() is more reliable than reload()
+    window.location.replace(url.toString());
+  });
+}
+
+
+
 })();

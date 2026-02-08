@@ -429,7 +429,7 @@ renderSpentPie(items, spentMap);
       // Meta line under Left Today
       const spentFree = Number(dl.spent_today_free || 0);
       const baseline = Number(dl.baseline || 0);
-      $("kTodayMeta").textContent = `Spent free today ${money(spentFree)} • Baseline ${money(baseline)} / day`;
+      $("kTodayMeta").textContent = `Spent today ${money(spentFree)} • Baseline ${money(baseline)} / day`;
     }
 
 

@@ -937,17 +937,25 @@ def transactions_all(
     limit: int = Query(50, ge=1, le=50000),
     offset: int = Query(0, ge=0),
 
+    merchant: str = "",
+    card: str = "",
+    category: str = "",
+
     q: str = "",
     start: str = "",
     end: str = "",
-    amt_mode: str = "any",     # any|exact|min|max|between (JS sends this)
+    amt_mode: str = "any",
     amt_min: float | None = None,
     amt_max: float | None = None,
-    amt_abs: int = 1,          # 1 => abs(amount)
+    amt_abs: int = 1,
 ):
+
     """
     Paginated feed with server-side filtering for All Transactions page.
     """
+    merchant = (merchant or "").strip()
+    card = (card or "").strip()
+    category = (category or "").strip()
     q = (q or "").strip()
     start = (start or "").strip()
     end = (end or "").strip()
@@ -956,6 +964,17 @@ def transactions_all(
 
     where = []
     params = []
+    if merchant:
+        where.append("COALESCE(merchant,'') ILIKE %s")
+        params.append(f"%{merchant}%")
+
+    if card:
+        where.append("COALESCE(card,'') ILIKE %s")
+        params.append(f"%{card}%")
+
+    if category:
+        where.append("COALESCE(category,'') ILIKE %s")
+        params.append(f"%{category}%")
 
     # text search across merchant/bank/card/category
     if q:

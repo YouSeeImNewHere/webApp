@@ -99,7 +99,10 @@ function renderAppend(list){
 }
 
 function buildQueryParams(){
-  const q = (document.getElementById("txSearch")?.value || "").trim();
+  const merchant = (document.getElementById("qMerchant")?.value || "").trim();
+  const card = (document.getElementById("qCard")?.value || "").trim();
+  const category = (document.getElementById("qCategory")?.value || "").trim();
+
   const start = (document.getElementById("dateFrom")?.value || "").trim(); // YYYY-MM-DD
   const end = (document.getElementById("dateTo")?.value || "").trim();     // YYYY-MM-DD
 
@@ -120,7 +123,6 @@ function buildQueryParams(){
   } else if (mode === "between"){
     if (a != null) amt_min = a;
     if (b != null) amt_max = b;
-    // if user swapped them, fix
     if (amt_min != null && amt_max != null && amt_min > amt_max){
       const t = amt_min; amt_min = amt_max; amt_max = t;
     }
@@ -130,7 +132,10 @@ function buildQueryParams(){
   params.set("limit", String(PAGE_SIZE));
   params.set("offset", String(OFFSET));
 
-  if (q) params.set("q", q);
+  if (merchant) params.set("merchant", merchant);
+  if (card) params.set("card", card);
+  if (category) params.set("category", category);
+
   if (start) params.set("start", start);
   if (end) params.set("end", end);
 
@@ -226,7 +231,7 @@ function initInfiniteScroll(){
 function initFilters(){
   const onChange = debounce(() => resetAndReload(), 250);
 
-  const ids = ["txSearch","dateFrom","dateTo","amtMode","amtA","amtB","amtAbs"];
+  const ids = ["qMerchant","qCard","qCategory","dateFrom","dateTo","amtMode","amtA","amtB","amtAbs"];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -237,7 +242,9 @@ function initFilters(){
   const clearBtn = document.getElementById("clearFilters");
   if (clearBtn){
     clearBtn.addEventListener("click", () => {
-      const txSearch = document.getElementById("txSearch");
+      const qMerchant = document.getElementById("qMerchant");
+const qCard = document.getElementById("qCard");
+const qCategory = document.getElementById("qCategory");
       const dateFrom = document.getElementById("dateFrom");
       const dateTo = document.getElementById("dateTo");
       const amtMode = document.getElementById("amtMode");
@@ -245,7 +252,9 @@ function initFilters(){
       const amtB = document.getElementById("amtB");
       const amtAbs = document.getElementById("amtAbs");
 
-      if (txSearch) txSearch.value = "";
+      if (qMerchant) qMerchant.value = "";
+if (qCard) qCard.value = "";
+if (qCategory) qCategory.value = "";
       if (dateFrom) dateFrom.value = "";
       if (dateTo) dateTo.value = "";
       if (amtMode) amtMode.value = "any";

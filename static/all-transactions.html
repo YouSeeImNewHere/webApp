@@ -33,18 +33,27 @@
           margin-bottom:12px;
         "
       >
-        <input
-          id="txSearch"
-          type="search"
-          placeholder="Search merchant, bank, card, category…"
-          style="
-            width:100%;
-            padding:12px 14px;
-            border-radius:14px;
-            border:1px solid rgba(0,0,0,0.14);
-            font-weight:700;
-          "
-        />
+        <div id="qGrid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+
+  <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+    Merchant
+    <input id="qMerchant" placeholder="e.g. Amazon"
+      style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
+  </label>
+
+  <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+    Card
+    <input id="qCard" placeholder="e.g. Chase Freedom"
+      style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
+  </label>
+
+  <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+    Category
+    <input id="qCategory" placeholder="e.g. Groceries"
+      style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
+  </label>
+</div>
+
 
         <div
           style="
@@ -65,13 +74,15 @@
         </div>
 
         <div
-          style="
-            display:grid;
-            grid-template-columns: 1.2fr 1fr 1fr;
-            gap:10px;
-            align-items:end;
-          "
-        >
+  id="amtGrid"
+  style="
+    display:grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap:10px;
+    align-items:end;
+  "
+>
+
           <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
             Amount filter
             <select id="amtMode" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);">

@@ -73,25 +73,30 @@
 
 
 
-      <div class="budget-row">
-        <label style="min-width:105px;">Savings goal</label>
+      <!-- Header line -->
+<div class="budget-row budget-row--head">
+  <label>Savings goal</label>
+  <div id="asOf" class="budget-muted"></div>
+</div>
 
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="radio" name="sgMode" value="percent" id="sgPercent">
-          Percent
-        </label>
+<!-- Controls line -->
+<div class="budget-row">
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input type="radio" name="sgMode" value="percent" id="sgPercent">
+    Percent
+  </label>
 
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="radio" name="sgMode" value="amount" id="sgAmount">
-          Amount
-        </label>
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input type="radio" name="sgMode" value="amount" id="sgAmount">
+    Amount
+  </label>
 
-        <input id="sgValue" class="budget-input" placeholder="e.g. 10 or 2000" inputmode="decimal" />
-        <button id="sgSave" class="settings-btn primary">Save</button>
-        <span id="sgStatus" class="budget-muted" style="margin-left:auto;"></span>
-      </div>
+  <input id="sgValue" class="budget-input" placeholder="e.g. 10 or 2000" inputmode="decimal" />
+  <button id="sgSave" class="settings-btn primary">Save</button>
+  <span id="sgStatus" class="budget-muted" style="margin-left:auto;"></span>
+</div>
 
-      <div id="asOf" class="budget-muted" style="text-align:right; margin:0;"></div>
+
 <div style="height:10px;"></div>
 
       <hr class="budget-hr" />
