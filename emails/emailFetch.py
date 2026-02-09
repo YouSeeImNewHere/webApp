@@ -287,11 +287,12 @@ discoveryRegex = re.compile(
     r"Amount: (\$[\d,]+\.\d{2})"
 )
 discoverAlertRegex = re.compile(
-    r"Merchant:\s*([A-Z0-9][A-Z0-9 &'.,\-*/]+?)\s*"
+    r"(?si)"
+    r"Merchant:\s*(.*?)\s*"
     r"Date:\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})\s*"
-    r"Amount:\s*\$([\d,]+\.\d{2})",
-    re.IGNORECASE
+    r"Amount:\s*\$([\d,]+\.\d{2})"
 )
+
 
 amexPaymentRegex = re.compile(
     r"(?s)Account Ending:\s*\(?(\d+)\)?"
@@ -331,7 +332,8 @@ RULES = [
     {"name": "capital one credit", "regex": capitalOneCreditRegex, "handler": capitalOneCredit},
 
     {"name": "discovery credit", "regex": discoveryRegex, "handler": discovery},
-    {"name": "discover alert", "regex": discoverAlertRegex, "handler": discovery},
+    {"name": "discover alert", "regex": discoverAlertRegex, "handler": discoverAlert},
+
 
     {"name": "amex payment", "regex": amexPaymentRegex, "handler": amexPayment},
     {"name": "discover payment", "regex": discoverPaymentRegex, "handler": discoverPayment},
@@ -573,7 +575,14 @@ def extract_body(msg):
                 html_part = text
 
         if plain:
+            # If plain is a template with blank fields (Discover does this), use HTML instead.
+            if (
+                    "Merchant:" in plain and re.search(r"Merchant:\s*\n\s*Date:\s*\n\s*Amount:\s*\n", plain)
+                    and html_part
+            ):
+                return _html_to_text(html_part)
             return plain
+
         if html_part:
             return _html_to_text(html_part)
         return ""

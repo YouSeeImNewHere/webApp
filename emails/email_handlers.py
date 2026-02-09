@@ -322,6 +322,25 @@ def discovery(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
         labels_add=("Discovery",),
     )
 
+def discoverAlert(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
+    where = match.group(1)   # Merchant
+    date = match.group(2)    # Date
+    cost = match.group(3)    # Amount number (no $)
+
+    date = datetime.strptime(date, "%B %d, %Y").strftime("%m/%d/%y")
+    cost = f"${cost}"
+
+    key = makeKey(cost, date, account_id=DISCOVER_IT_ID)
+
+    return finalize_transaction(
+        mail, msg_id_str,
+        use_test_table=use_test_table,
+        cost=cost, card="Discover It", where=where, time=timeEmail, date=date,
+        key=key, bank="Discover", accountType="credit",
+        labels_add=("Discover",),
+    )
+
+
 def amexPayment(mail, msg_id_str, match, timeEmail, use_test_table: bool = False):
     where = "Thanks for your payment"
 
