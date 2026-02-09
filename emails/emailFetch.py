@@ -5,15 +5,23 @@ import os
 import time
 from dotenv import load_dotenv
 import requests
+import re
+import html
+import requests, json, hashlib
 
-from .email_handlers import *   # handlers + account constants (still used for inserts)
+from .email_handlers import *  # handlers + account constants (still used for inserts)
 from db import with_db_cursor, query_db, open_pool, close_pool
-
-import requests
-import os
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+WEBAPP_URL = os.getenv("WEBAPP_URL") or ""
+NOTIF_SECRET = os.getenv("NOTIF_SECRET") or ""
+DEBUG = (os.getenv("EMAILFETCH_DEBUG") or "").lower() in ("1", "true", "yes")
+BATCH_SIZE = 200
+PUSHOVER_USER = os.getenv("PUSHOVER_USER_KEY") or ""
+PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
+MAILBOXES = ["INBOX"]
 
 def in_allowed_window():
     tz = ZoneInfo("America/Los_Angeles")
@@ -26,12 +34,12 @@ def in_allowed_window():
     hour = now.hour
 
     # Allowed windows (24h clock)
-    in_morning  = 5  <= hour < 7
-    in_midday   = 10 <= hour < 12
-    in_evening  = 16 <= hour < 23
+    in_morning = 5 <= hour < 7
+    in_midday = 10 <= hour < 12
+    in_evening = 16 <= hour < 23
 
     return in_morning or in_midday or in_evening
-    
+
 def wake_web_app():
     url = os.getenv("WEBAPP_URL")  # set in Render env vars
     try:
@@ -44,38 +52,103 @@ if in_allowed_window():
     wake_web_app()
 else:
     print("Outside allowed window → letting Render sleep")
-    raise SystemExit(0)   # stops cron job early to save free minutes
+    raise SystemExit(0)  # stops cron job early to save free minutes
 
 # ============================================================
 # DEBUG
 # ============================================================
-DEBUG = (os.getenv("EMAILFETCH_DEBUG") or "").lower() in ("1", "true", "yes")
-BATCH_SIZE = 200
 
 def log(msg: str):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[emailFetch {ts}] {msg}", flush=True)
-
 def dbg(msg: str):
     if DEBUG:
         log(msg)
+def dbg_header(imap_id, subject, sender, date, key):
+    if not DEBUG:
+        return
+    dbg("--------------------------------------------------")
+    dbg(f"📧 EMAIL FOUND")
+    dbg(f"IMAP ID: {imap_id}")
+    dbg(f"Subject: {subject}")
+    dbg(f"From: {sender}")
+    dbg(f"Date: {date}")
+    dbg(f"Dedupe key: {key}")
+def dbg_notify_status(subject, rule_name, inserted, fp=None, reason=""):
+    if not DEBUG:
+        return
+    dbg("🔔 NOTIFY STATUS")
+    dbg(f"  subject: {subject}")
+    dbg(f"  rule: {rule_name}")
+    dbg(f"  inserted: {inserted}")
+    if fp:
+        dbg(f"  fp: {fp}")
+    if reason:
+        dbg(f"  reason: {reason}")
+def dbg_dump_body_on_no_rule(subject: str, sender: str, imap_id: str, body: str, limit: int = 6000):
+    """
+    If subject matched but no RULES matched, dump body (truncated).
+    """
+    if not DEBUG:
+        return
+
+    b = (body or "").strip()
+    if not b:
+        dbg(f"🧾 BODY DUMP (empty) | imap_id={imap_id} | subject={subject} | from={sender}")
+        return
+
+    if len(b) > limit:
+        dbg(f"🧾 BODY DUMP (truncated to {limit} chars) | imap_id={imap_id} | subject={subject} | from={sender}")
+        dbg("----- BODY START -----")
+        dbg(b[:limit])
+        dbg("----- BODY END (TRUNCATED) -----")
+    else:
+        dbg(f"🧾 BODY DUMP | imap_id={imap_id} | subject={subject} | from={sender}")
+        dbg("----- BODY START -----")
+        dbg(b)
+        dbg("----- BODY END -----")
+def dbg_seen_check(key, is_seen):
+    if not DEBUG:
+        return
+    if is_seen:
+        dbg(f"🔁 ALREADY PROCESSED → skipping")
+    else:
+        dbg(f"🆕 NEW EMAIL → processing")
+def dbg_rule_attempt(rule_name):
+    if DEBUG:
+        dbg(f"🔎 Testing rule: {rule_name}")
+def dbg_rule_match(rule_name):
+    if DEBUG:
+        dbg(f"✅ RULE MATCHED: {rule_name}")
+def dbg_rule_no_match(rule_name):
+    if DEBUG:
+        dbg(f"❌ Rule did not match: {rule_name}")
+def dbg_handler_result(result):
+    if not DEBUG:
+        return
+    if not result:
+        dbg("⚠️ Handler returned None")
+        return
+    dbg(f"🧾 Handler result: inserted={result.get('inserted')} account={result.get('account_id')} merchant={result.get('merchant')} amount={result.get('amount')}")
+def dbg_notification_decision(reason):
+    if DEBUG:
+        dbg(f"🔔 Notification decision: {reason}")
 
 class Timer:
     def __init__(self, label):
         self.label = label
+
     def __enter__(self):
         self.t0 = time.perf_counter()
+
     def __exit__(self, *_):
         dt = (time.perf_counter() - self.t0) * 1000
         dbg(f"{self.label} took {dt:.1f} ms")
-
 
 # ============================================================
 # PUSHOVER (centralized)
 # Triggers only when a NEW email matches a rule AND handler succeeds.
 # ============================================================
-PUSHOVER_USER = os.getenv("PUSHOVER_USER") or ""
-PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN") or ""
 
 def pushover_enabled() -> bool:
     return bool(PUSHOVER_USER.strip()) and bool(PUSHOVER_TOKEN.strip())
@@ -105,10 +178,6 @@ def send_pushover(title: str, message: str):
             dbg("✅ Pushover sent")
     except Exception as e:
         log(f"⚠️ Pushover exception: {e}")
-import requests, json, hashlib
-
-WEBAPP_URL = os.getenv("WEBAPP_URL") or ""
-NOTIF_SECRET = os.getenv("NOTIF_SECRET") or ""
 
 def push_notif(subject: str, body: str, kind: str = "system"):
     if not WEBAPP_URL or not NOTIF_SECRET:
@@ -133,7 +202,6 @@ def push_notif(subject: str, body: str, kind: str = "system"):
     except Exception:
         pass
 
-
 # ============================================================
 # SUBJECT FILTER (ORIGINAL)
 # ============================================================
@@ -156,6 +224,18 @@ def subject_matches(subject: str) -> bool:
     lower = subject.lower()
     return any(keyword.lower() in lower for keyword in SUBJECTS)
 
+def debug_subject(subject: str, matched: bool):
+    """
+    Debug logging for subject filtering.
+    Shows every subject and whether it matched our SUBJECTS list.
+    """
+    if not DEBUG:
+        return
+
+    if matched:
+        dbg(f"📨 SUBJECT MATCHED: {subject}")
+    else:
+        dbg(f"📭 SUBJECT SKIPPED: {subject}")
 
 # ============================================================
 # ORIGINAL REGEXES (DO NOT MODIFY GROUPS)
@@ -182,8 +262,8 @@ navyFedCreditHoldRegex = re.compile(
 
 americanExpressRegex = re.compile(
     r"(?s)Account Ending:\s*\(?(\d+)\)?"
-    r".*?\n([A-Z0-9][A-Z0-9 &'.,\-*/]+?)\s*\n"
-    r"\$([\d,]+\.\d{2})\*?\s*\n"
+    r".*?\s([A-Z0-9][A-Z0-9 &'.,\-*/]+?)\s+"
+    r"\$([\d,]+\.\d{2})\*?\s+"
     r"(?:[A-Za-z]{3},\s*)?([A-Za-z]{3}\s+\d{1,2},\s+\d{4})"
 )
 
@@ -205,6 +285,12 @@ discoveryRegex = re.compile(
     r"\d{1,2}, \d{4})\s*"
     r"Merchant: (.*)\s*"
     r"Amount: (\$[\d,]+\.\d{2})"
+)
+discoverAlertRegex = re.compile(
+    r"Merchant:\s*([A-Z0-9][A-Z0-9 &'.,\-*/]+?)\s*"
+    r"Date:\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})\s*"
+    r"Amount:\s*\$([\d,]+\.\d{2})",
+    re.IGNORECASE
 )
 
 amexPaymentRegex = re.compile(
@@ -230,7 +316,6 @@ navyFedZelleRegex = re.compile(
     r"As of\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})"
 )
 
-
 # ============================================================
 # RULES — EXACT HANDLER COMPATIBILITY
 # ============================================================
@@ -246,6 +331,7 @@ RULES = [
     {"name": "capital one credit", "regex": capitalOneCreditRegex, "handler": capitalOneCredit},
 
     {"name": "discovery credit", "regex": discoveryRegex, "handler": discovery},
+    {"name": "discover alert", "regex": discoverAlertRegex, "handler": discovery},
 
     {"name": "amex payment", "regex": amexPaymentRegex, "handler": amexPayment},
     {"name": "discover payment", "regex": discoverPaymentRegex, "handler": discoverPayment},
@@ -258,6 +344,49 @@ RULES = [
 # ============================================================
 # DB
 # ============================================================
+def pending_exists(pending_table: str, k: str) -> bool:
+    if not k:
+        return False
+    rows = query_db(f"SELECT 1 FROM {pending_table} WHERE k=%s LIMIT 1", (k,))
+    return bool(rows)
+
+def try_resolve_pending_and_notify(pending_table: str, fp: str, account_id: int, merchant: str, amt, date_str: str, time_str: str):
+    """
+    If a pending 'unknown merchant' exists for this fp, and we now have a real merchant,
+    send pushover + mark_notified + delete pending.
+    """
+    if not fp:
+        return False
+    if not pushover_enabled():
+        return False
+    if already_notified(fp):
+        return False
+    if not pending_exists(pending_table, fp):
+        return False
+
+    m = (merchant or "").strip()
+    if not m or m.lower() in ("unknown", "unknown merchant"):
+        return False
+
+    bank, card = get_bank_card_by_account_id(int(account_id))
+    amt_str = f"${float(amt):.2f}" if amt is not None else "an unknown amount"
+
+    title = "Transaction alert"
+    message = f"{bank} {card} was used at {m} for {amt_str} on {date_str} at {time_str}"
+
+    dbg_notification_decision("Resolved pending → sending pushover now")
+    send_pushover(title, message)
+
+    mark_notified(fp)
+    delete_pending(pending_table, fp)
+    return True
+
+def delete_pending(pending_table: str, k: str):
+    if not k:
+        return
+    with with_db_cursor() as (conn, cur):
+        cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
+        conn.commit()
 
 def get_bank_card_by_account_id(account_id: int):
     rows = query_db(
@@ -306,6 +435,15 @@ def ensure_seen_table(name="email_seen_ids"):
                 note TEXT,
                 processed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 extracted JSONB
+            );
+        """)
+        conn.commit()
+def ensure_notified_table(name="notified_transactions"):
+    with with_db_cursor() as (conn, cur):
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {name} (
+                k TEXT PRIMARY KEY,
+                notified_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
         """)
         conn.commit()
@@ -372,7 +510,6 @@ def write_seen(rows, table):
         """, rows)
         conn.commit()
 
-
 # ============================================================
 # HELPERS
 # ============================================================
@@ -387,12 +524,74 @@ def decode_hdr(v):
             out.append(str(chunk))
     return "".join(out)
 
+def _html_to_text(s: str) -> str:
+    """
+    Very lightweight HTML → text:
+    - strips scripts/styles
+    - removes tags
+    - decodes entities
+    - normalizes whitespace
+    """
+    if not s:
+        return ""
+    s = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", s)
+    s = re.sub(r"(?is)<br\s*/?>", "\n", s)
+    s = re.sub(r"(?is)</p\s*>", "\n", s)
+    s = re.sub(r"(?is)<[^>]+>", " ", s)
+    s = html.unescape(s)
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n\s*\n+", "\n\n", s)
+    return s.strip()
+
 def extract_body(msg):
+    """
+    Prefer text/plain. If only HTML exists, convert HTML to readable text.
+    """
+    # multipart: choose best part
     if msg.is_multipart():
+        plain = None
+        html_part = None
+
         for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                return part.get_payload(decode=True).decode(errors="ignore")
-    return msg.get_payload(decode=True).decode(errors="ignore")
+            ctype = (part.get_content_type() or "").lower()
+            disp = (part.get("Content-Disposition") or "").lower()
+            if "attachment" in disp:
+                continue
+
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+
+            try:
+                text = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
+            except Exception:
+                text = payload.decode(errors="ignore")
+
+            if ctype == "text/plain" and not plain:
+                plain = text
+            elif ctype == "text/html" and not html_part:
+                html_part = text
+
+        if plain:
+            return plain
+        if html_part:
+            return _html_to_text(html_part)
+        return ""
+
+    # singlepart
+    payload = msg.get_payload(decode=True)
+    if not payload:
+        return ""
+
+    try:
+        text = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+    except Exception:
+        text = payload.decode(errors="ignore")
+
+    ctype = (msg.get_content_type() or "").lower()
+    if ctype == "text/html":
+        return _html_to_text(text)
+    return text
 
 def dedupe_key(hdr, sender, subject, date, imap_id):
     mid = (hdr.get("Message-ID") or "").lower().strip()
@@ -449,6 +648,7 @@ def mark_notified(k: str):
             (k,),
         )
         conn.commit()
+
 def flush_pending_notifications(pending_table: str, ttl_minutes: int = 30):
     """
     Resolve any pending "unknown merchant" withdrawals.
@@ -573,9 +773,14 @@ def extract_fields(rule_name: str, m) -> dict:
         out["cost"] = parse_money(m.group(3))
         out["card"] = "Credit"
         return out
+    if rule_name == "discover alert":
+        out["merchant"] = m.group(1)
+        out["date"] = m.group(2)
+        out["cost"] = parse_money(m.group(3))
+        out["card"] = "Credit"
+        return out
 
     return out
-
 
 def format_pushover_message(bank: str, extracted: dict) -> tuple[str, str]:
     """
@@ -597,21 +802,18 @@ def format_pushover_message(bank: str, extracted: dict) -> tuple[str, str]:
 
     return title, message
 
-
 # ============================================================
 # IMAP
 # ============================================================
-MAILBOXES = ["INBOX"]
 
 def get_imap_ids(mail):
     ids = []
     for box in MAILBOXES:
         mail.select(box)
-        status, data = mail.search(None, "X-GM-RAW", "newer_than:2d")
+        status, data = mail.search(None, "X-GM-RAW", "newer_than:4d")
         if status == "OK" and data and data[0]:
             ids.extend(x.decode() for x in data[0].split())
     return list(dict.fromkeys(ids))
-
 
 # ============================================================
 # MAIN
@@ -629,7 +831,6 @@ def run():
     PUSHOVER_USER = os.getenv("PUSHOVER_USER_KEY") or ""
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
-
     EMAIL = os.getenv("GMAIL_ADDRESS")
     PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
@@ -640,6 +841,7 @@ def run():
     ensure_seen_table(seen_table)
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
+    ensure_notified_table("notified_transactions")
 
     # 20–30 minutes is what you wanted; default 30, configurable
     PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
@@ -652,9 +854,12 @@ def run():
         all_ids = get_imap_ids(mail)
         log(f"Found {len(all_ids)} emails")
 
+        if DEBUG:
+            dbg(f"IMAP IDS: {all_ids}")
+
         for i in range(0, len(all_ids), BATCH_SIZE):
-            batch = all_ids[i:i+BATCH_SIZE]
-            dbg(f"Batch {i//BATCH_SIZE + 1} ({len(batch)})")
+            batch = all_ids[i:i + BATCH_SIZE]
+            dbg(f"Batch {i // BATCH_SIZE + 1} ({len(batch)})")
 
             res, hdrs = mail.fetch(
                 ",".join(batch),
@@ -668,23 +873,35 @@ def run():
             keys = []
             meta = []
             for idx, h in enumerate(headers):
-                imap_id = batch[min(idx, len(batch)-1)]
+                imap_id = batch[min(idx, len(batch) - 1)]
                 subj = decode_hdr(h.get("Subject"))
                 sndr = decode_hdr(h.get("From"))
                 date = h.get("Date") or ""
                 k = dedupe_key(h, sndr, subj, date, imap_id)
                 keys.append(k)
                 meta.append((imap_id, subj, sndr, date, h))
+                dbg_header(imap_id, subj, sndr, date, k)
 
             seen = seen_keys(keys, seen_table)
+            dbg(f"Seen keys from DB: {len(seen)}")
+
             rows = []
 
             for (imap_id, subject, sender, date, hdr), key in zip(meta, keys):
                 # ✅ Deduping means this is a "new" email for our pipeline
-                if key in seen:
+                already_seen = key in seen
+                dbg_seen_check(key, already_seen)
+
+                if already_seen:
                     continue
 
-                if not subject_matches(subject):
+                # ------------------------------------------------------------
+                # SUBJECT DEBUGGING (NEW)
+                # ------------------------------------------------------------
+                matched_subject = subject_matches(subject)
+                debug_subject(subject, matched_subject)
+
+                if not matched_subject:
                     rows.append({
                         "message_id": key,
                         "subject": subject,
@@ -705,9 +922,14 @@ def run():
                 matched = False
 
                 for rule in RULES:
+                    dbg_rule_attempt(rule["name"])
                     m = rule["regex"].search(body)
+
                     if not m:
+                        dbg_rule_no_match(rule["name"])
                         continue
+
+                    dbg_rule_match(rule["name"])
 
                     # ✅ Matched a rule. Now run handler (inserts to DB), then send pushover.
                     matched = True
@@ -715,10 +937,40 @@ def run():
 
                     try:
                         result = rule["handler"](mail, imap_id, m, "", use_test_table=TEST_MODE)
+                        dbg_handler_result(result)
 
                         # ✅ Only notify if a NEW row was inserted
+                        # ✅ Only notify if a NEW row was inserted
                         if not result or not result.get("inserted"):
-                            # matched email, but it updated existing row OR handler skipped insert
+                            reason = "handler returned None" if not result else "inserted=False (already in DB / deduped)"
+
+                            # NEW: even if inserted=False, a Transaction Notification might be the merchant-resolver
+                            # for a pending withdrawal. Try to resolve pending and notify.
+                            if result and rule["name"] == "navy credit":
+                                account_id = int(result.get("account_id") or 0)
+                                merchant = (result.get("merchant") or "").strip()
+                                amt = result.get("amount")
+                                date_str = result.get("purchaseDate") or "unknown date"
+                                time_str = result.get("time") or "unknown time"
+                                fp = tx_fingerprint(account_id, amt, date_str, time_str)
+                                dbg(f"Computed fp (inserted=False path): {fp}")
+
+                                resolved = try_resolve_pending_and_notify(
+                                    pending_table=pending_table,
+                                    fp=fp,
+                                    account_id=account_id,
+                                    merchant=merchant,
+                                    amt=amt,
+                                    date_str=date_str,
+                                    time_str=time_str,
+                                )
+
+                                if resolved:
+                                    reason = "inserted=False but resolved pending withdrawal → notified"
+
+                            dbg_notify_status(subject, rule["name"], inserted=(result or {}).get("inserted"),
+                                              reason=reason)
+
                             rows.append({
                                 "message_id": key,
                                 "subject": subject,
@@ -744,7 +996,13 @@ def run():
                         fp = tx_fingerprint(account_id, amt, date_str, time_str)
 
                         # ✅ If we already sent a notification for this transaction, never send again
+                        dbg(f"Computed fp: {fp}")
+
                         if already_notified(fp):
+                            dbg_notification_decision("Already notified → skipping")
+                            dbg_notify_status(subject, rule["name"], inserted=True, fp=fp,
+                                              reason="already_notified(fp)=True → skipping")
+
                             rows.append({
                                 "message_id": key,
                                 "subject": subject,
@@ -764,6 +1022,8 @@ def run():
                         # Store pending so we can notify later if merchant never arrives.
                         is_unknown = (merchant.lower() in ("unknown", "unknown merchant", ""))
                         if rule["name"] == "navy withdrawal" and is_unknown:
+                            dbg_notification_decision("Withdrawal unknown → stored pending")
+
                             upsert_pending(
                                 pending_table,
                                 fp,
@@ -791,6 +1051,8 @@ def run():
 
                         title = "Transaction alert"
                         message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
+                        dbg_notification_decision("Sending pushover now")
+                        dbg_notify_status(subject, rule["name"], inserted=True, fp=fp, reason="sending pushover")
 
                         send_pushover(title, message)
                         mark_notified(fp)
@@ -831,6 +1093,11 @@ def run():
                     break
 
                 if not matched:
+                    # If it passed the SUBJECT filter but none of the regex rules matched,
+                    # dump body so we can build a regex for this email type.
+                    if matched_subject:
+                        dbg_dump_body_on_no_rule(subject, sender, imap_id, body)
+
                     rows.append({
                         "message_id": key,
                         "subject": subject,
@@ -843,6 +1110,9 @@ def run():
                         "extracted": None,
                     })
 
+            dbg(f"Writing {len(rows)} rows to {seen_table}")
+            dbg("Flushing pending notifications…")
+            flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
             write_seen(rows, seen_table)
 
         log("DONE")
