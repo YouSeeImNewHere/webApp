@@ -68,66 +68,88 @@
 
 <body class="page-budget">
   <div class="budget-wrap">
+<div class="budget-card">
+  <div style="font-weight:900; margin-bottom:6px;">Savings goal</div>
+
+  <div style="display:flex; gap:16px; margin-bottom:10px;">
+    <label style="display:flex; align-items:center; gap:6px;">
+      <input type="radio" name="sgMode" id="sgPercent" />
+      Percent
+    </label>
+    <label style="display:flex; align-items:center; gap:6px;">
+      <input type="radio" name="sgMode" id="sgAmount" />
+      Amount
+    </label>
+  </div>
+
+  <input
+    id="sgValue"
+    class="budget-input"
+    placeholder="e.g. 10 or 2000"
+    inputmode="decimal"
+  />
+
+  <div style="display:flex; align-items:center; gap:12px; margin-top:10px;">
+    <button id="sgSave" class="settings-btn primary" type="button">Save</button>
+    <div id="sgStatus" class="budget-muted"></div>
+
+    <!-- IMPORTANT: renderTop() writes to this -->
+    <div style="margin-left:auto;" class="budget-muted">
+      Current: <span id="kSavings">—</span>
+    </div>
+  </div>
+</div>
 
     <div class="budget-card">
 
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+    <div style="font-weight:900;">This month</div>
+    <div id="asOf" class="budget-muted"></div>
+  </div>
 
+  <div class="budget-kpis">
+    <div class="budget-kpi" id="mbIncomeRow">
+      <span class="k">Expected income</span>
+      <span class="v" id="kIncome">—</span>
+    </div>
 
-      <!-- Header line -->
-<div class="budget-row budget-row--head">
-  <label>Savings goal</label>
-  <div id="asOf" class="budget-muted"></div>
-</div>
+    <div class="budget-kpi" id="mbBillsRow">
+      <span class="k">Remaining bills</span>
+      <span class="v" id="kBills">—</span>
+    </div>
 
-<!-- Controls line -->
-<div class="budget-row">
-  <label style="display:flex; align-items:center; gap:6px;">
-    <input type="radio" name="sgMode" value="percent" id="sgPercent">
-    Percent
-  </label>
+    <div class="budget-kpi" id="mbSpentRow">
+      <span class="k">Spent so far</span>
+      <span class="v" id="kSpent">—</span>
+    </div>
 
-  <label style="display:flex; align-items:center; gap:6px;">
-    <input type="radio" name="sgMode" value="amount" id="sgAmount">
-    Amount
-  </label>
+    <div class="budget-kpi">
+      <span class="k">Allocated (groups)</span>
+      <span class="v" id="kAllocated">—</span>
+    </div>
 
-  <input id="sgValue" class="budget-input" placeholder="e.g. 10 or 2000" inputmode="decimal" />
-  <button id="sgSave" class="settings-btn primary">Save</button>
-  <span id="sgStatus" class="budget-muted" style="margin-left:auto;"></span>
-</div>
+    <div class="budget-kpi">
+      <span class="k">Safe to spend (free)</span>
+      <span class="v" id="kSafe">—</span>
+    </div>
 
-
-<div style="height:10px;"></div>
-
-      <hr class="budget-hr" />
-
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
-        <div style="font-weight:900;">This month</div>
+    <div class="budget-kpi" id="todayKpi">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="k">Left Today</span>
+        <button id="recalcTodayBtn" class="settings-btn" type="button" style="padding:6px 10px;">
+          Recalc
+        </button>
       </div>
 
-      <div class="budget-kpis">
-        <div class="budget-kpi"><span class="k">Expected income</span><span class="v" id="kIncome">—</span></div>
-        <div class="budget-kpi"><span class="k">Remaining bills</span><span class="v" id="kBills">—</span></div>
-        <div class="budget-kpi"><span class="k">Savings goal</span><span class="v" id="kSavings">—</span></div>
-        <div class="budget-kpi"><span class="k">Allocated (groups)</span><span class="v" id="kAllocated">—</span></div>
-        <div class="budget-kpi"><span class="k">Safe to spend (free)</span><span class="v" id="kSafe">—</span></div>
-        <div class="budget-kpi" id="todayKpi">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <span class="k">Left Today</span>
-    <button id="recalcTodayBtn" class="settings-btn" type="button" style="padding:6px 10px;">
-      Recalc
-    </button>
-  </div>
+      <div class="v" id="kTodayLeft" style="margin-top:6px;">—</div>
 
-  <div class="v" id="kTodayLeft" style="margin-top:6px;">—</div>
-
-  <div id="kTodayMeta" class="budget-muted" style="margin-top:6px;">
-    —
-  </div>
-</div>
-
+      <div id="kTodayMeta" class="budget-muted" style="margin-top:6px;">
+        —
       </div>
     </div>
+  </div>
+</div>
+
 
     <div style="height:14px;"></div>
 
@@ -269,7 +291,8 @@
 
   <div id="sharedChrome"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/profile.js?v={{ BUILD_ID }}" defer></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
   <script src="/static/budget.js" defer></script>
 

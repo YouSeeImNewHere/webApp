@@ -162,26 +162,37 @@ function renderSpentPie(items, spentMap) {
   let payload = null;
 
   function renderTop(d) {
-    const mb = d.month || {};
-    $("asOf").textContent = `As of ${todayISO()}`;
+  const mb = d.month || {};
+  $("asOf").textContent = `As of ${todayISO()}`;
 
-    $("kIncome").textContent = money(mb.expected_income || 0);
-    $("kBills").textContent = money(mb.bills_remaining || 0);
-    $("kAllocated").textContent = money(mb.allocations_total || 0);
-    $("kSafe").textContent = money(mb.safe_to_spend || 0);
+  $("kIncome").textContent = money(mb.expected_income || 0);
+  $("kBills").textContent = money(mb.bills_remaining || 0);
+  $("kAllocated").textContent = money(mb.allocations_total || 0);
+  $("kSafe").textContent = money(mb.safe_to_spend || 0);
 
-    const cfg = d.savings_goal_cfg || null;
-    if (cfg) {
-      $("sgPercent").checked = cfg.mode === "percent";
-      $("sgAmount").checked = cfg.mode === "amount";
-      $("sgValue").value = String(cfg.value ?? "");
-      $("kSavings").textContent = (cfg.mode === "percent") ? `${Number(cfg.value || 0).toFixed(2)}%` : money(mb.savings_goal || 0);
-    } else {
-      $("sgAmount").checked = true;
-      $("sgValue").value = "";
-      $("kSavings").textContent = money(mb.savings_goal || 0);
-    }
+  // ✅ NEW: Spent so far value
+  const kSpent = $("kSpent");
+  if (kSpent) kSpent.textContent = money(mb.spent_so_far || 0);
+
+  // savings goal (unchanged)
+  const cfg = d.savings_goal_cfg || null;
+  if (cfg) {
+    $("sgPercent").checked = cfg.mode === "percent";
+    $("sgAmount").checked = cfg.mode === "amount";
+    $("sgValue").value = String(cfg.value ?? "");
+    $("kSavings").textContent =
+      (cfg.mode === "percent") ? `${Number(cfg.value || 0).toFixed(2)}%` : money(mb.savings_goal || 0);
+  } else {
+    $("sgAmount").checked = true;
+    $("sgValue").value = "";
+    $("kSavings").textContent = money(mb.savings_goal || 0);
   }
+
+  // ✅ NEW: make rows clickable
+  try { bindIncomeRowClick(); } catch (e) {}
+  try { bindBillsRowClick(); } catch (e) {}
+  try { bindSpentRowClick(); } catch (e) {}
+}
 
   function groupRowEl(row) {
   const wrap = document.createElement("div");
@@ -587,6 +598,10 @@ renderSpentPie(items, spentMap);
     renderGroups(payload);
     renderFunds(payload);
     renderSpent(payload);
+    bindIncomeRowClick();
+    bindBillsRowClick();
+bindSpentRowClick();
+
   }
 
   function initMonth() {
@@ -629,6 +644,564 @@ renderSpentPie(items, spentMap);
       $("kTodayMeta").textContent = `Spent today ${money(spentFree)} • Baseline ${money(baseline)} / day`;
     }
 
+// =========================
+// Shared modal helpers (same behavior as Home page)
+// =========================
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+function escapeHtmlAttr(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+function cssEscapeAttr(s) {
+  return String(s || "").replaceAll('"', "&quot;");
+}
+
+function ensureTxInspectModal() {
+  let root = document.getElementById("txInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "txInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-tx-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
+          <div id="txInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="txInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-tx-close]")) closeTxInspect();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeTxInspect();
+  });
+
+  return root;
+}
+function closeTxInspect() {
+  const root = document.getElementById("txInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+// =========================
+// Expected income popup (same as Home)
+// =========================
+function bindIncomeRowClick() {
+  const incomeRow = document.getElementById("mbIncomeRow");
+  if (!incomeRow || incomeRow.dataset.bound) return;
+  incomeRow.dataset.bound = "1";
+
+  incomeRow.setAttribute("role", "button");
+  incomeRow.setAttribute("tabindex", "0");
+  incomeRow.style.cursor = "pointer";
+
+  incomeRow.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openIncomeBreakdown();
+  });
+  incomeRow.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openIncomeBreakdown();
+    }
+  });
+}
+
+function ensureIncomeInspectModal() {
+  let root = document.getElementById("incomeInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "incomeInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-income-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
+          <div id="incomeInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="incomeInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-income-close]")) closeIncomeInspect();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeIncomeInspect();
+  });
+
+  return root;
+}
+function closeIncomeInspect() {
+  const root = document.getElementById("incomeInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+async function fetchPaychecksForMonth(year, month) {
+  const profile0 = window.Profile?.get?.();
+  if (!profile0?.paygrade) return { events: [], breakdown: null };
+
+  const profile = { ...profile0 };
+  if (profile.paygrade != null) {
+    profile.paygrade = String(profile.paygrade).toUpperCase().replace(/\s+/g, "").replace("E-", "E").replace("-", "");
+  }
+  if (profile.service_start != null) profile.service_start = String(profile.service_start);
+  if (profile.bah_override === "") profile.bah_override = null;
+
+  const res = await fetch("/les/paychecks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year, month, profile })
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error("Paycheck calc failed: " + res.status + " " + txt);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  return {
+    events: Array.isArray(data?.events) ? data.events : [],
+    breakdown: data?.breakdown || null,
+  };
+}
+
+async function fetchInterestForMonth(year, month) {
+  const res = await fetch(`/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  const events = Array.isArray(data?.events) ? data.events : [];
+
+  return events.filter(e => {
+    const cadence = String(e?.cadence || "").toLowerCase();
+    const type = String(e?.type || "").toLowerCase();
+    return cadence === "interest" || (type === "income" && cadence !== "paycheck" && String(e?.merchant||"").toLowerCase().includes("interest"));
+  });
+}
+
+function kvRow(k, v) {
+  return `<div class="tx-kv__k">${escapeHtml(k)}</div><div class="tx-kv__v">${escapeHtml(v)}</div>`;
+}
+
+async function openIncomeBreakdown() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth() + 1;
+
+  const profile0 = window.Profile?.get?.();
+if (!profile0) {
+  alert("Profile still loading — try again in a second.");
+  return;
+}
+if (!profile0.paygrade) {
+  alert("Your LES Profile is missing paygrade. Open Profile and resave.");
+  return;
+}
+
+
+  const modal = ensureIncomeInspectModal();
+  const titleEl = document.getElementById("incomeInspectTitle");
+  const subEl = document.getElementById("incomeInspectSub");
+  const bodyEl = document.getElementById("incomeInspectBody");
+
+  if (titleEl) titleEl.textContent = "Expected income";
+  if (subEl) subEl.textContent = "Loading…";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  modal.classList.remove("hidden");
+
+  try {
+    const [{ events: payEventsRaw, breakdown }, interestEventsRaw] = await Promise.all([
+      fetchPaychecksForMonth(year, month),
+      fetchInterestForMonth(year, month),
+    ]);
+
+    const SPENDABLE_ACCOUNT_ID = 3;
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+
+    const payEvents = (payEventsRaw || []).filter(e =>
+      String(e?.date || "").startsWith(monthKey + "-") &&
+      Number(e?.account_id) === SPENDABLE_ACCOUNT_ID
+    );
+
+    const interestEvents = (interestEventsRaw || []).filter(e =>
+      String(e?.date || "").startsWith(monthKey + "-") &&
+      Number(e?.account_id) === SPENDABLE_ACCOUNT_ID
+    );
+
+    const paycheckTotal = payEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
+    const interestTotal = interestEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
+    const grandTotal = paycheckTotal + interestTotal;
+
+    if (subEl) subEl.textContent = `${money(grandTotal)} • ${today.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+
+    const payList = payEvents
+      .slice()
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date)}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Paycheck")} • ${money(e.amount)}</div>`)
+      .join("");
+
+    const intList = interestEvents
+      .slice()
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date || "")}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Interest")} • ${money(e.amount)}</div>`)
+      .join("");
+
+    let breakdownHtml = "";
+    if (breakdown) {
+      const ent = breakdown.entitlements || {};
+      const ded = breakdown.deductions || {};
+      const net = breakdown.net || {};
+      const p = breakdown.profile || {};
+
+      breakdownHtml = `
+        <div style="margin-bottom:12px; font-weight:700;">How the paychecks are calculated</div>
+        <div class="tx-kv">
+          ${kvRow("Paygrade", p.paygrade ?? "")}
+          ${kvRow("Service start", p.service_start ?? "")}
+          ${kvRow("Dependents", (p.has_dependents ? "Yes" : "No"))}
+
+          ${kvRow("Base pay (monthly)", money(ent.base_pay))}
+          ${kvRow("BAH (monthly)", money(ent.bah))}
+          ${kvRow("BAS (monthly)", money(ent.bas))}
+          ${kvRow("Sub pay (monthly)", money(ent.submarine_pay))}
+          ${kvRow("Career sea pay (monthly)", money(ent.career_sea_pay))}
+          ${kvRow("Spec duty pay (monthly)", money(ent.spec_duty_pay))}
+
+          ${kvRow("Federal taxes", money(ded.federal_taxes))}
+          ${kvRow("FICA social security", money(ded.fica_social_security))}
+          ${kvRow("FICA medicare", money(ded.fica_medicare))}
+          ${kvRow("SGLI", money(ded.sgli))}
+          ${kvRow("AFRH", money(ded.afrh))}
+          ${kvRow("Roth TSP", money(ded.roth_tsp))}
+          ${kvRow("Meal deduction", money(ded.meal_deduction))}
+          ${kvRow("Allotments total", money(ded.allotments_total))}
+          ${kvRow("Mid-month collections", money(ded.mid_month_collections_total))}
+
+          ${kvRow("Mid-month net pay", money(net.mid_month_pay))}
+          ${kvRow("End-of-month net pay", money(net.eom))}
+        </div>
+      `;
+    }
+
+    bodyEl.innerHTML = `
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+        <span class="category-pill" style="padding:8px 10px;">Paychecks: <strong style="margin-left:6px;">${money(paycheckTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Interest: <strong style="margin-left:6px;">${money(interestTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
+      </div>
+
+      <div style="margin:0 0 12px; opacity:.7; font-size:12px;">
+        Only counting deposits <strong>into account 3</strong> that land in <strong>${monthKey}</strong>.
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Paychecks in this month</div>
+        <div class="tx-kv">${payList || `<div style="opacity:.7;">No paychecks found for this month.</div>`}</div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Estimated interest in this month</div>
+        <div class="tx-kv">${intList || `<div style="opacity:.7;">No interest events found.</div>`}</div>
+      </div>
+
+      ${breakdownHtml}
+    `;
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+  }
+}
+
+// =========================
+// Remaining bills popup (paid vs upcoming for the month)
+// Uses month payload fields: bills_paid, bills_remaining, bills_paid_items, bills_future_items
+// =========================
+function bindBillsRowClick() {
+  const row = document.getElementById("mbBillsRow");
+  if (!row || row.dataset.bound) return;
+  row.dataset.bound = "1";
+
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.style.cursor = "pointer";
+
+  row.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openBillsBreakdown();
+  });
+
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openBillsBreakdown();
+    }
+  });
+}
+
+function billsItemRow(it) {
+  const d = escapeHtml(it?.date || "");
+  const m = escapeHtml(it?.merchant || "—");
+  const c = escapeHtml(it?.category || "");
+  const a = money(Number(it?.amount || 0));
+  return `
+    <div class="bills-row">
+      <div class="bills-row__left">
+        <div class="bills-row__merchant" title="${m}">${m}</div>
+        <div class="bills-row__meta">${d}${c ? " • " + c : ""}</div>
+      </div>
+      <div class="bills-row__amt">${a}</div>
+    </div>
+  `;
+}
+
+function openBillsBreakdown() {
+  const root = ensureTxInspectModal();
+  const titleEl = document.getElementById("txInspectTitle");
+  const subEl = document.getElementById("txInspectSub");
+  const bodyEl = document.getElementById("txInspectBody");
+
+  const mb = payload?.month || {};
+  const paid = Number(mb.bills_paid || 0);
+  const remaining = Number(mb.bills_remaining || 0);
+  const total = Number(mb.bills_total || 0);
+
+  const paidItems = Array.isArray(mb.bills_paid_items) ? mb.bills_paid_items : [];
+  const futureItems = Array.isArray(mb.bills_future_items) ? mb.bills_future_items : [];
+
+  if (titleEl) titleEl.textContent = "Remaining bills";
+  if (subEl) subEl.textContent = `${money(remaining)} remaining • ${money(paid)} paid • ${money(total)} total`;
+
+
+if (bodyEl) {
+    const paidCount = paidItems.length;
+    const futureCount = futureItems.length;
+
+    bodyEl.innerHTML = `
+      <div class="bills-metrics">
+        <div class="bills-metric">
+          <div class="bills-metric__label">Paid</div>
+          <div class="bills-metric__value">${money(paid)}</div>
+        </div>
+        <div class="bills-metric">
+          <div class="bills-metric__label">Remaining</div>
+          <div class="bills-metric__value">${money(remaining)}</div>
+        </div>
+        <div class="bills-metric">
+          <div class="bills-metric__label">Total</div>
+          <div class="bills-metric__value">${money(total)}</div>
+        </div>
+      </div>
+
+      <div class="bills-section">
+        <div class="bills-section__hdr">
+          <div class="bills-section__title">Paid bills</div>
+          <div class="bills-section__count">${paidCount ? `${paidCount} item${paidCount === 1 ? "" : "s"}` : "—"}</div>
+        </div>
+        <div class="bills-list">
+          ${paidItems.length ? paidItems.map(billsItemRow).join("") : `<div class="bills-empty">None yet.</div>`}
+        </div>
+      </div>
+
+      <div class="bills-section" style="margin-top:14px;">
+        <div class="bills-section__hdr">
+          <div class="bills-section__title">Upcoming bills</div>
+          <div class="bills-section__count">${futureCount ? `${futureCount} item${futureCount === 1 ? "" : "s"}` : "—"}</div>
+        </div>
+        <div class="bills-list">
+          ${futureItems.length ? futureItems.map(billsItemRow).join("") : `<div class="bills-empty">None remaining.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  root.classList.remove("hidden");
+}
+
+// =========================
+// Spent so far popup (same as Home)
+// =========================
+function bindSpentRowClick() {
+  const row = document.getElementById("mbSpentRow");
+  if (!row || row.dataset.bound) return;
+  row.dataset.bound = "1";
+
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.style.cursor = "pointer";
+
+  row.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openSpentBreakdown();
+  });
+
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openSpentBreakdown();
+    }
+  });
+}
+
+async function openSpentBreakdown() {
+  const root = ensureTxInspectModal();
+
+  const titleEl = document.getElementById("txInspectTitle");
+  const subEl   = document.getElementById("txInspectSub");
+  const bodyEl  = document.getElementById("txInspectBody");
+
+  if (titleEl) titleEl.textContent = "Spent so far";
+  if (subEl) subEl.textContent = "Loading…";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startISO = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}-${String(start.getDate()).padStart(2,"0")}`;
+  const endISO   = todayISO();
+
+  try {
+    const res = await fetch(`/spent-so-far-breakdown?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+
+    if (subEl) subEl.textContent = `${d.start} → ${d.end} · Total: ${money(Number(d.total || 0))}`;
+
+    const excluded = Array.isArray(d.excluded) ? d.excluded : [];
+    const included = Array.isArray(d.included) ? d.included : [];
+
+    const excludedHtml = `
+      <div style="font-weight:800; margin-bottom:6px;">Excluded categories</div>
+      <div style="border-top:1px solid rgba(0,0,0,.08); margin:8px 0;"></div>
+      ${excluded.map(x => `
+        <div style="display:flex; justify-content:space-between; padding:6px 0;">
+          <div style="opacity:.85;">${escapeHtml(x.category)}</div>
+          <div style="font-weight:800;">${money(Number(x.total || 0))}</div>
+        </div>
+      `).join("") || `<div style="opacity:.7;">None</div>`}
+      <div style="border-top:1px solid rgba(0,0,0,.08); margin:10px 0;"></div>
+    `;
+
+    const includedRows = included.map(x => `
+      <div style="border:1px solid rgba(0,0,0,.10); border-radius:10px; margin:8px 0; overflow:hidden;">
+        <button type="button"
+          data-spent-acc-btn="1"
+          data-cat="${escapeHtmlAttr(x.category)}"
+          aria-expanded="false"
+          style="width:100%; text-align:left; padding:10px 12px; display:flex; justify-content:space-between; gap:12px; background:rgba(0,0,0,.02); border:0; cursor:pointer;">
+          <span style="font-weight:750;">${escapeHtml(x.category)}</span>
+          <span style="display:flex; align-items:center; gap:10px;">
+            <span style="font-weight:800;">${money(Number(x.total || 0))}</span>
+            <span style="opacity:.45;">▾</span>
+          </span>
+        </button>
+        <div data-spent-acc-pane="${escapeHtmlAttr(x.category)}" style="display:none; padding:10px 12px;"></div>
+      </div>
+    `).join("");
+
+    const includedHtml = `
+      <div style="font-weight:800; margin-bottom:6px;">Included categories</div>
+      <div style="opacity:.7; font-size:12px; margin-bottom:8px;">Tap a category to see the transactions included in the total.</div>
+      <div>${includedRows || `<div style="opacity:.7;">No spending yet.</div>`}</div>
+    `;
+
+    bodyEl.innerHTML = excludedHtml + includedHtml;
+
+    if (!bodyEl.dataset.spentAccBound) {
+      bodyEl.dataset.spentAccBound = "1";
+      bodyEl.addEventListener("click", async (e) => {
+        const btn = e.target.closest?.("button[data-spent-acc-btn]");
+        if (!btn) return;
+
+        const cat = btn.getAttribute("data-cat") || "";
+        const pane = bodyEl.querySelector(`[data-spent-acc-pane="${cssEscapeAttr(cat)}"]`);
+        if (!pane) return;
+
+        const isOpen = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", String(!isOpen));
+        pane.style.display = isOpen ? "none" : "block";
+
+        if (isOpen) return;
+
+        if (pane.dataset.loaded === "1") return;
+        pane.dataset.loaded = "1";
+        pane.innerHTML = `<div style="opacity:.7;">Loading…</div>`;
+
+        try {
+          const txRes = await fetch(`/spent-so-far-transactions?category=${encodeURIComponent(cat)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`, { cache: "no-store" });
+          if (!txRes.ok) throw new Error("HTTP " + txRes.status);
+          const txData = await txRes.json();
+          const tx = (txData && txData.transactions) || [];
+
+          if (!tx.length) {
+            pane.innerHTML = `<div style="opacity:.7;">No transactions.</div>`;
+            return;
+          }
+
+          pane.innerHTML = tx.map(r => `
+            <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.06);">
+              <div style="min-width:0;">
+                <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  ${escapeHtml(r.merchant || "—")}
+                </div>
+                <div style="opacity:.65; font-size:12px;">
+                  ${escapeHtml(r.date || "")}${(r.bank || r.card) ? " • " + escapeHtml(`${r.bank || ""}${r.card ? " • " + r.card : ""}`.trim()) : ""}
+                </div>
+              </div>
+              <div style="font-weight:800; white-space:nowrap;">${money(Number(r.amount || 0))}</div>
+            </div>
+          `).join("");
+        } catch (err) {
+          console.error(err);
+          pane.innerHTML = `<div style="opacity:.8;">Failed to load transactions.</div>`;
+        }
+      });
+    }
+
+    root.classList.remove("hidden");
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load spent breakdown.</div>`;
+    root.classList.remove("hidden");
+  }
+}
 
   window.addEventListener("DOMContentLoaded", async () => {
     initMonth();

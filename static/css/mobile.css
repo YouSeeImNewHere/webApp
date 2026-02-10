@@ -1057,7 +1057,7 @@ body.page-budget .budget-table--groups .budget-table-row--group{
 
   border: 1px solid var(--border) !important;
   border-radius: 14px !important;
-  background: #fff !important;
+  background: var(--card) !important;  /* was #fff */
 }
 
 /* Label + control stack inside each cell */

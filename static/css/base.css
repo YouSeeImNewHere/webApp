@@ -2363,6 +2363,136 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   word-break: break-word;
 }
 
+/* =============================================================================
+   "Spent so far" breakdown (inside tx-inspect modal)
+   ============================================================================= */
+.spentx-sec{ margin: 2px 0 10px; }
+
+.spentx-sec__hdr{
+  display:flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.spentx-sec__title{
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  font-size: 12px;
+}
+
+.spentx-sec__hint{
+  font-size: 12px;
+  opacity: .65;
+  font-weight: 800;
+}
+
+.spentx-list{
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.015);
+}
+
+.spentx-row{
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.spentx-row:last-child{ border-bottom: 0; }
+
+.spentx-row__label{ font-weight: 800; opacity: .9; }
+.spentx-row__amt{ font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.spentx-empty{
+  padding: 12px;
+  opacity: .7;
+  font-weight: 700;
+}
+
+.spentx-accs{ display: grid; gap: 10px; }
+
+.spentx-acc{
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.spentx-acc__btn{
+  width: 100%;
+  border: 0;
+  background: rgba(0,0,0,0.02);
+  display:flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.spentx-acc__btn:hover{ background: rgba(0,0,0,0.035); }
+.spentx-acc__btn:focus-visible{ outline: 2px solid rgba(0,0,0,0.25); outline-offset: 2px; }
+
+.spentx-acc__label{
+  font-weight: 900;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spentx-acc__right{
+  display:flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.spentx-acc__amt{ font-weight: 900; font-variant-numeric: tabular-nums; }
+
+.spentx-acc__chev{
+  opacity: .45;
+  transition: transform 120ms ease;
+}
+
+.spentx-acc__btn[aria-expanded="true"] .spentx-acc__chev{ transform: rotate(180deg); }
+
+.spentx-acc__pane{
+  padding: 8px 12px 10px;
+  background: #fff;
+}
+
+.spentx-txlist{ display: grid; }
+
+.spentx-tx{
+  display:flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.spentx-tx:last-child{ border-bottom: 0; }
+
+.spentx-tx__left{ min-width: 0; }
+
+.spentx-tx__m{
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spentx-tx__meta{ font-size: 12px; opacity: .65; font-weight: 700; }
+.spentx-tx__amt{ font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 
 
 /* =============================================================================
@@ -5760,11 +5890,11 @@ body.page-budget .fund-actions{
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  background: var(--panel, #fff);
+  background: var(--card);
   border-radius: 16px;
-  border: 1px solid rgba(0,0,0,0.12);
+  border: 1px solid var(--border);
   overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+  box-shadow: var(--shadow-float, 0 18px 50px rgba(0,0,0,0.25));
 }
 .sf-head{
   display:flex;
@@ -5772,7 +5902,7 @@ body.page-budget .fund-actions{
   align-items: flex-start;
   gap: 12px;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(0,0,0,0.08);
+  border-bottom: 1px solid var(--border);
 }
 .sf-title{ font-weight: 900; font-size: 16px; }
 .sf-sub{ font-size: 12px; opacity: .7; font-weight: 700; margin-top: 2px; }
@@ -5805,5 +5935,99 @@ body.page-budget .fund-actions{
   gap: 10px;
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid rgba(0,0,0,0.08);
+  border-top: 1px solid var(--border);
+}
+
+
+
+/* =========================
+   Bills breakdown (Remaining bills modal)
+   ========================= */
+.bills-metrics{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.bills-metric{
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.03);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.bills-metric__label{
+  font-size: 12px;
+  opacity: .65;
+  letter-spacing: .02em;
+}
+.bills-metric__value{
+  margin-top: 2px;
+  font-weight: 850;
+  font-size: 18px;
+}
+
+.bills-section__hdr{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap: 10px;
+  margin: 6px 2px 8px;
+}
+.bills-section__title{
+  font-weight: 850;
+}
+.bills-section__count{
+  font-size: 12px;
+  opacity: .55;
+}
+
+.bills-list{
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.01);
+}
+.bills-row{
+  display:flex;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+}
+.bills-row:last-child{
+  border-bottom: 0;
+}
+.bills-row__left{
+  min-width: 0;
+}
+.bills-row__merchant{
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bills-row__meta{
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: .65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bills-row__amt{
+  font-weight: 850;
+  white-space: nowrap;
+}
+.bills-empty{
+  padding: 12px;
+  opacity: .7;
+}
+
+@media (max-width: 520px){
+  .bills-metrics{
+    grid-template-columns: 1fr;
+  }
+  .bills-metric__value{
+    font-size: 17px;
+  }
 }

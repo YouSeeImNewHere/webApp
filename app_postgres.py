@@ -130,14 +130,16 @@ async def favicon():
 
 @app.get("/login")
 def login_page(next: str = "/"):
-    # Basic single-file login form so you don't need to create a new static page.
-    # Uses POST /login with a form field "password".
     html = f"""
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+        <!-- Helps disable iOS smart autofill heuristics -->
+        <meta name="format-detection" content="telephone=no">
+
         <title>Login</title>
         <style>
           body {{
@@ -159,15 +161,32 @@ def login_page(next: str = "/"):
           .hint {{ color: #666; font-size: 13px; margin-top: 10px; }}
         </style>
       </head>
+
       <body>
         <div class="card">
           <h2 style="margin:0 0 10px 0;">Login</h2>
-          <form method="post" action="/login">
+
+          <!-- 🚫 Disable browser password saving -->
+          <form method="post" action="/login" autocomplete="off">
             <input type="hidden" name="next" value="{next}"/>
-            <label>Password</label>
-            <input name="password" type="password" autocomplete="current-password" autofocus />
+
+            <!-- Fake hidden password field (tricks iOS/Chrome) -->
+            <input type="password" style="display:none">
+
+            <label>Access code</label>
+            <input
+              name="secret_field_1"
+              type="password"
+              autocomplete="new-password"
+              autocorrect="off"
+              autocapitalize="none"
+              spellcheck="false"
+              autofocus
+            />
+
             <button type="submit">Continue</button>
           </form>
+
           <div class="hint">This site is private.</div>
         </div>
       </body>
@@ -192,7 +211,7 @@ async def login(request: Request):
         next_url = str(data.get("next", "/") or "/")
     else:
         form = await request.form()
-        password = (str(form.get("password", "")) or "").strip()
+        password = (str(form.get("secret_field_1", "")) or "").strip()
         next_url = str(form.get("next", "/") or "/")
 
     if password != APP_PASSWORD:
@@ -2202,11 +2221,18 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
     )
     events = (cal or {}).get("events") or []
 
+    bills_debug_event_merchants = sorted({str(e.get("merchant") or "").strip() for e in events if str(e.get("merchant") or "").strip()})
+
     spendable_account_id = 3
 
     income_expected = 0.0
+    bills_total = 0.0
     bills_remaining = 0.0
+    bill_categories: set[str] = set()
 
+
+    bills_paid_items: list[dict] = []
+    bills_future_items: list[dict] = []
     for e in events:
         d = str(e.get("date") or "")
         if not d:
@@ -2236,12 +2262,29 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
                 income_expected += max(0.0, amt)
             continue
 
-        if ed < today:
-            continue
-
+        # Skip internal transfers in bill projections
         if category.lower() == "transfer" or merchant.lower().startswith("from "):
             continue
 
+        # Total bills for the month (includes past + future)
+        bills_total += abs(amt)
+        if category:
+            bill_categories.add(_norm_cat(category))
+
+        item = {
+            "date": ed.isoformat(),
+            "merchant": merchant or "",
+            "category": category or "",
+            "amount": round(abs(amt), 2),
+        }
+        if ed < today:
+            bills_paid_items.append(item)
+        else:
+            bills_future_items.append(item)
+
+        # Remaining bills: only those scheduled on/after today
+        if ed < today:
+            continue
         bills_remaining += abs(amt)
 
     # 2) Actual spending so far + per-category spend map
@@ -2293,27 +2336,46 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
     pay_income = _les_pay_income_for_month(year, month) or 0.0
     total_income = income_expected + pay_income
     savings_goal = _compute_monthly_savings_goal(total_income)
-
     # Base spend goal (before budgeting)
-    spend_goal = total_income - bills_remaining - savings_goal
-
+    base_goal = total_income - savings_goal
+    spend_goal = base_goal
     # 4) Group budgets (allocations) — reduce free safe-to-spend, but DON'T double-count spend
     groups = _get_budget_groups_for_month(year, month)
-    allocations_total = sum(float(g.get("allocated") or 0.0) for g in groups)
 
-    # spent inside budgeted categories
+    # Synthetic default group: Bills (used for per-group tracking + excluding bills from "spent so far")
+    has_bills = any((_norm_name(g.get("name", "")) == "bills") for g in (groups or []))
+    if not has_bills:
+        groups = list(groups or [])
+        groups.append(
+            {
+                "id": -1,
+                "name": "Bills",
+                "allocated": float(bills_total or 0.0),   # TOTAL bills for the month
+                "cap": None,
+                "categories": sorted([c for c in bill_categories if c]) or ["bills"],
+            }
+        )
+
+    # Allocations include Bills + any other allocated budget groups
+    allocations_total = sum(
+        float(g.get("allocated") or 0.0)
+        for g in (groups or [])
+        if float(g.get("allocated") or 0.0) > 0
+    )
+
+    # spent inside budgeted categories (INCLUDING Bills, so spent_so_far excludes it)
     budgeted_spent_total = 0.0
-    for g in groups:
+    for g in (groups or []):
         g_spent = 0.0
         for c in (g.get("categories") or []):
             cn = _norm_cat(c)
             g_spent += float(cat_spent.get(cn, 0.0))
         budgeted_spent_total += g_spent
 
-    # Free-to-spend excludes allocated money
-    free_spend_goal = spend_goal - allocations_total
+    # Free-to-spend excludes allocated money (including Bills)
+    free_spend_goal = base_goal - allocations_total
 
-    # But spent_so_far includes budgeted spending — remove it so we don't count it twice
+    # spent_so_far includes budgeted categories — remove them so we don't double-count
     spent_free = spent_so_far - budgeted_spent_total
     safe_to_spend = free_spend_goal - spent_free
 
@@ -2364,18 +2426,27 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         "base_income": round(income_expected, 2),
         "les_income": round(pay_income, 2),
 
-        "spent_so_far": round(spent_so_far, 2),
+        # "Spent so far" should exclude anything in budget groups (including default Bills)
+        "spent_so_far": round(spent_free, 2),
         "bills_remaining": round(bills_remaining, 2),
 
+        # Total bills for the month (includes past + future) and paid-to-date
+        "bills_total": round(bills_total, 2),
+        "bills_paid": round(max(0.0, bills_total - bills_remaining), 2),
+        "bills_paid_items": bills_paid_items,
+        "bills_future_items": bills_future_items,
+        "bill_categories": sorted([c for c in bill_categories if c]),
+
+        "bills_debug_event_merchants": bills_debug_event_merchants,
         "savings_goal": round(savings_goal, 2),
-        "spend_goal": round(spend_goal, 2),
+        "spend_goal": round(base_goal, 2),
 
         # NEW
         "allocations_total": round(allocations_total, 2),
         "budgeted_spent_total": round(budgeted_spent_total, 2),
 
         # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
-                # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
+# UPDATED meaning: safe-to-spend (FREE spending, after allocations)
         "safe_to_spend": round(safe_to_spend, 2),
 
         # Backward compatibility (what widget + UI already expects)
@@ -2876,6 +2947,34 @@ def page_budget(year: int | None = None, month: int | None = None, min_occ: int 
     mb = _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale)
 
     groups = _get_budget_groups_for_month(y, m)
+
+    # ------------------------------------------------------------
+    # Default budget group: Bills (auto-allocated to TOTAL bills)
+    # - Synthetic unless the user already created a real "Bills" group.
+    # - Uses projected recurring bill categories for the month.
+    # ------------------------------------------------------------
+    try:
+        bills_alloc = float((mb or {}).get("bills_total") or 0.0)
+    except Exception:
+        bills_alloc = 0.0
+
+    try:
+        bill_cats = list((mb or {}).get("bill_categories") or [])
+    except Exception:
+        bill_cats = []
+
+    has_bills = any((_norm_name(g.get("name", "")) == "bills") for g in (groups or []))
+    if not has_bills:
+        groups = list(groups or [])
+        groups.append(
+            {
+                "id": -1,  # synthetic
+                "name": "Bills",
+                "allocated": bills_alloc,
+                "cap": None,
+                "categories": bill_cats or ["bills"],
+            }
+        )
 
     # decorate groups with spent/remaining using mb.category_spent
     cat_spent = (mb.get("category_spent") or {}) if isinstance(mb, dict) else {}
@@ -3786,14 +3885,24 @@ def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: in
     """
     Returns list[date] of projected occurrences within [month_start, month_end]
     using cadence + anchor_day (day-of-month from last_seen for month-based cadences).
+
+    IMPORTANT:
+    - We include `last_seen` itself if it falls inside the target month window.
+      This makes month projections include charges that already happened this month
+      (e.g., Verizon/ChatGPT on the 1st), so they contribute to bills_total and
+      appear under "Paid bills".
     """
-    out = []
+    out: list[date] = []
     cadence = (cadence or "").lower().strip()
+
+    # Always include last_seen if it falls within the requested month window.
+    if month_start <= last_seen <= month_end:
+        out.append(last_seen)
 
     if cadence in ("weekly", "biweekly"):
         step = 7 if cadence == "weekly" else 14
 
-        d = last_seen + timedelta(days=step)  # don't re-include last_seen itself
+        d = last_seen + timedelta(days=step)
         while d < month_start:
             d += timedelta(days=step)
 
@@ -3801,15 +3910,19 @@ def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: in
             out.append(d)
             d += timedelta(days=step)
 
-        return out
+        # de-dupe + sort
+        return sorted(set(out))
 
     if cadence in ("monthly", "quarterly", "yearly"):
         step_months = {"monthly": 1, "quarterly": 3, "yearly": 12}[cadence]
 
-        base = last_seen
-        base_anchor = base.replace(day=min(anchor_day, _last_day_of_month(base.year, base.month)))
-        cursor = _add_months(base_anchor, step_months)
+        base_anchor = last_seen.replace(day=min(anchor_day, _last_day_of_month(last_seen.year, last_seen.month)))
 
+        # Include the anchored occurrence too (in case last_seen was adjusted by day clamp)
+        if month_start <= base_anchor <= month_end:
+            out.append(base_anchor)
+
+        cursor = _add_months(base_anchor, step_months)
         while cursor < month_start:
             cursor = _add_months(cursor, step_months)
 
@@ -3817,9 +3930,9 @@ def _project_occurrences_for_month(last_seen: date, cadence: str, anchor_day: in
             out.append(cursor)
             cursor = _add_months(cursor, step_months)
 
-        return out
+        return sorted(set(out))
 
-    return out
+    return sorted(set(out))
 
 def get_category_from_db(tx_ids):
     """
@@ -5626,4 +5739,347 @@ def day_limit(recalc: int = 0):
         "spent_today_free": round(spent_free, 2),
 
         "remaining_today": round(remaining, 2),
+    }
+# -----------------------------------------------------------------------------
+# /spent-so-far-breakdown  (for the modal summary)
+# -----------------------------------------------------------------------------
+@app.get("/spent-so-far-transactions")
+def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
+    today = today_local()
+    month_start = date(today.year, today.month, 1)
+
+    start_date = parse_iso(start) if (start or "").strip() else month_start
+    end_date = parse_iso(end) if (end or "").strip() else today
+    end_excl = end_date + timedelta(days=1)
+
+    cat = (category or "").strip()
+
+    params = [start_date, end_excl]
+
+    # IMPORTANT: filter using the CTE output column name (no "t.")
+    if cat.lower() == "unassigned":
+        cat_where = "AND (category IS NULL OR category = '')"
+    else:
+        # case-insensitive match (also against CTE column)
+        cat_where = "AND LOWER(COALESCE(category,'')) = LOWER(%s)"
+        params.append(cat)
+
+    rows = query_db(
+        f"""
+        WITH base AS (
+          SELECT
+            t.id,
+            CASE
+              WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
+              ELSE t.amount::double precision
+            END AS amount,
+            t.merchant,
+            TRIM(t.category) AS category,
+            a.institution AS bank,
+            a.name AS card,
+            LOWER(a.accountType) AS accountType,
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'),
+                     NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          WHERE LOWER(a.accountType) IN ('checking','credit')
+            AND (
+              (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
+              OR
+              (LOWER(a.accountType) = 'credit' AND t.amount::double precision <> 0)
+            )
+        ),
+        norm AS (
+          SELECT
+            *,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT id, d, amount, merchant, category, bank, card
+        FROM norm
+        WHERE d IS NOT NULL
+          AND d >= %s AND d < %s
+          AND LOWER(COALESCE(category,'')) NOT IN ('card payment','transfer')
+          {cat_where}
+        ORDER BY d DESC, id DESC
+        LIMIT 500
+        """,
+        tuple(params),
+    )
+
+    out = []
+    for r in rows:
+        out.append(
+            {
+                # FIX: your id isn't always numeric (e.g. '3_020226_591.67_0')
+                "id": str(r.get("id")),
+                "date": r["d"].isoformat() if r.get("d") else None,
+                "amount": float(r.get("amount") or 0),
+                "merchant": r.get("merchant"),
+                "category": r.get("category"),
+                "bank": r.get("bank"),
+                "card": r.get("card"),
+            }
+        )
+
+    return {"ok": True, "transactions": out}
+
+# -----------------------------------------------------------------------------
+# /spent-so-far-transactions (lazy-load tx list for accordion)
+# category="Unassigned" returns NULL/blank category tx
+# -----------------------------------------------------------------------------
+@app.get("/spent-so-far-breakdown")
+def spent_so_far_breakdown(start: str = "", end: str = ""):
+    """
+    Returns a breakdown of *free* spending (what counts toward "Spent so far"),
+    plus everything excluded (card payment/transfer + any categories inside budget
+    groups that have an allocation).
+
+    UI contract:
+      - total   => FREE spending total (included categories sum)
+      - excluded => list of excluded categories + totals
+      - included => list of included categories + totals
+      - total_all => (debug) total spend across all categories (incl. excluded)
+    """
+    today = today_local()
+    month_start = date(today.year, today.month, 1)
+
+    start_date = parse_iso(start) if (start or "").strip() else month_start
+    end_date = parse_iso(end) if (end or "").strip() else today
+
+    # inclusive end in UI, but SQL easiest as < (end+1)
+    end_excl = end_date + timedelta(days=1)
+
+    # Determine budgets month (use start_date's month)
+    y = int(start_date.year)
+    m = int(start_date.month)
+
+    # Month budget gives us projected bill categories + totals, and ensures consistency with home math
+    mb = _month_budget_home(y, m)
+
+    # Build budget groups for this month, including synthetic Bills group if missing
+    groups = _get_budget_groups_for_month(y, m)
+
+    try:
+        bills_alloc = float((mb or {}).get("bills_total") or 0.0)
+    except Exception:
+        bills_alloc = 0.0
+
+    try:
+        bill_cats = list((mb or {}).get("bill_categories") or [])
+    except Exception:
+        bill_cats = []
+
+    has_bills = any((_norm_name(g.get("name", "")) == "bills") for g in (groups or []))
+    if not has_bills:
+        groups = list(groups or [])
+        groups.append(
+            {
+                "id": -1,
+                "name": "Bills",
+                "allocated": bills_alloc,
+                "cap": None,
+                "categories": bill_cats or ["bills"],
+            }
+        )
+
+    # Categories to exclude from "spent so far" = any category in an allocated group
+    excluded_norm: set[str] = set(["card payment", "transfer"])
+    for g in (groups or []):
+        try:
+            alloc = float(g.get("allocated") or 0.0)
+        except Exception:
+            alloc = 0.0
+        if alloc <= 0:
+            continue
+        for c in (g.get("categories") or []):
+            cn = _norm_cat(c)
+            if cn:
+                excluded_norm.add(cn)
+
+    # --- Pull totals ---
+    row = query_db(
+        """
+        WITH base AS (
+          SELECT
+            -- keep the original signed amount for transfer/card-payment math
+            t.amount::double precision AS signed_amount,
+
+            -- normalized amount for "spend" math (credit may be stored negative)
+            CASE
+              WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
+              ELSE t.amount::double precision
+            END AS amount,
+
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            LOWER(a.accountType) AS accountType,
+            TRIM(t.category) AS category_trim
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          WHERE LOWER(a.accountType) IN ('checking','credit')
+            AND (
+              (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
+              OR
+              (LOWER(a.accountType) = 'credit' AND t.amount::double precision <> 0)
+            )
+        ),
+        norm AS (
+          SELECT
+            amount,
+            signed_amount,
+            accountType,
+            category_trim,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        ),
+        scoped AS (
+          SELECT *
+          FROM norm
+          WHERE d IS NOT NULL AND d >= %s AND d < %s
+        )
+        SELECT
+          COALESCE(SUM(amount),0)::double precision AS total_all,
+
+          -- only count the positive side for card payment / transfer
+          COALESCE(SUM(
+            CASE
+              WHEN LOWER(COALESCE(category_trim,'')) = 'card payment' AND signed_amount > 0
+                THEN signed_amount
+              ELSE 0
+            END
+          ),0)::double precision AS total_card_payment,
+
+          COALESCE(SUM(
+            CASE
+              WHEN LOWER(COALESCE(category_trim,'')) = 'transfer' AND signed_amount > 0
+                THEN signed_amount
+              ELSE 0
+            END
+          ),0)::double precision AS total_transfer,
+
+          COALESCE(SUM(CASE
+            WHEN category_trim IS NULL OR category_trim = '' THEN amount
+            ELSE 0
+          END),0)::double precision AS total_unassigned
+        FROM scoped
+        """,
+        (start_date, end_excl),
+    )[0]
+
+    # Totals per explicit category (excluding null/empty). We'll decide included vs excluded in Python.
+    cats = query_db(
+        """
+        WITH base AS (
+          SELECT
+            CASE
+              WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
+              ELSE t.amount::double precision
+            END AS amount,
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            TRIM(t.category) AS category_trim
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          WHERE LOWER(a.accountType) IN ('checking','credit')
+            AND (
+              (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
+              OR
+              (LOWER(a.accountType) = 'credit' AND t.amount::double precision <> 0)
+            )
+        ),
+        norm AS (
+          SELECT
+            amount,
+            category_trim,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT
+          category_trim AS category,
+          SUM(amount)::double precision AS total
+        FROM norm
+        WHERE d IS NOT NULL AND d >= %s AND d < %s
+          AND category_trim IS NOT NULL AND category_trim <> ''
+        GROUP BY category_trim
+        ORDER BY total DESC
+        """,
+        (start_date, end_excl),
+    )
+
+    # Build norm->display map from actual transaction categories (stable + matches UI)
+    norm_to_display: dict[str, str] = {}
+    norm_to_total: dict[str, float] = {}
+
+    for r in cats:
+        cat_disp = (r.get("category") or "").strip()
+        if not cat_disp:
+            continue
+        cn = _norm_cat(cat_disp)
+        if not cn:
+            continue
+        # Skip card payment/transfer here; we use the special totals from 'row' (signed>0)
+        if cn in ("card payment", "transfer"):
+            continue
+        norm_to_display.setdefault(cn, cat_disp)
+        norm_to_total[cn] = norm_to_total.get(cn, 0.0) + float(r.get("total") or 0.0)
+
+    # Inject special categories with correct totals
+    norm_to_display.setdefault("card payment", "Card Payment")
+    norm_to_display.setdefault("transfer", "Transfer")
+    norm_to_total["card payment"] = float(row.get("total_card_payment") or 0.0)
+    norm_to_total["transfer"] = float(row.get("total_transfer") or 0.0)
+
+    # Unassigned is treated as its own included "category"
+    unassigned_total = float(row.get("total_unassigned") or 0.0)
+
+    excluded = []
+    included = []
+
+    # Excluded: show EVERY excluded category (even if $0) so user can see what's being removed
+    # (except we don't add "unassigned" here)
+    for cn in sorted(excluded_norm):
+        total = float(norm_to_total.get(cn, 0.0) or 0.0)
+        excluded.append({"category": norm_to_display.get(cn, cn), "total": total})
+
+    # Included: everything else
+    for cn, total in norm_to_total.items():
+        if cn in excluded_norm:
+            continue
+        if total == 0:
+            continue
+        included.append({"category": norm_to_display.get(cn, cn), "total": float(total)})
+
+    if unassigned_total > 0:
+        included.append({"category": "Unassigned", "total": float(unassigned_total)})
+
+    included.sort(key=lambda x: float(x.get("total") or 0.0), reverse=True)
+
+    total_free = sum(float(x.get("total") or 0.0) for x in included)
+
+    return {
+        "start": start_date.isoformat(),
+        "end": end_date.isoformat(),
+
+        # FREE spending (what counts toward your "Spent so far" metric)
+        "total": float(total_free or 0.0),
+
+        # Debug / transparency
+        "total_all": float(row.get("total_all") or 0),
+
+        "excluded": excluded,
+        "included": included,
     }

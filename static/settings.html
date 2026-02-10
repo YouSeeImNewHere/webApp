@@ -87,18 +87,28 @@
 <div id="sharedChrome"></div>
 
 <script>
-    // Mount the LES editor
+document.addEventListener("DOMContentLoaded", () => {
+  // Mount LES editor AFTER profile.js loads
+  if (window.Profile) {
     Profile.mountEditor("#lesProfileMount");
+  } else {
+    console.error("Profile failed to load");
+  }
 
-    // Reset Home layout by clearing saved layout; Home merges defaults back in on load
-    document.getElementById("resetHomeLayoutBtn").addEventListener("click", async () => {
+  // Reset Home layout button
+  const btn = document.getElementById("resetHomeLayoutBtn");
+  if (btn && window.LayoutStore) {
+    btn.addEventListener("click", async () => {
       const msg = document.getElementById("layoutMsg");
       msg.textContent = "Resetting...";
       await LayoutStore.save("home", {});
       msg.textContent = "Reset ✅";
       setTimeout(() => (msg.textContent = ""), 1500);
     });
-  </script>
+  }
+});
+</script>
+
 <script>
   (function(){
     const sel = document.getElementById("themeSelect");

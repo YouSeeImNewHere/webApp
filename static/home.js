@@ -735,6 +735,7 @@ refreshMonthBudgetCard(false);
     try { mountMonthBudgetCard("#monthBudgetMount"); } catch(_) {}
 
     bindIncomeRowClick();
+    bindSpentRowClick();
   } catch (err) {
     console.error("bootHome failed:", err);
 
@@ -743,6 +744,7 @@ refreshMonthBudgetCard(false);
     loadBankTotals();
     loadMonthBudget();
     bindIncomeRowClick();
+    bindSpentRowClick();
     loadCategoryTotalsThisMonth();
     loadData();
     mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
@@ -1998,10 +2000,15 @@ function mountMonthBudgetCard(mountSel) {
         </span>
       </li>
 
-      <li class="category-pill">
-        <span class="cat-name">Spent so far</span>
-        <span id="mbSpent" class="cat-amt">—</span>
-      </li>
+      <li id="mbSpentRow" class="category-pill" role="button" tabindex="0"
+    style="cursor:pointer;" title="View spent breakdown">
+  <span class="cat-name">Spent so far</span>
+  <span style="display:flex; align-items:center; gap:6px;">
+    <span id="mbSpent" class="cat-amt">—</span>
+    <span style="opacity:.45;">›</span>
+  </span>
+</li>
+
 
       <li class="category-pill" style="border-top:1px dashed rgba(0,0,0,.15); padding-top:12px;">
         <span class="cat-name"><strong>Safe to spend</strong></span>
@@ -2040,6 +2047,7 @@ function mountMonthBudgetCard(mountSel) {
 
   // In case the Month Budget HTML is static (home.html), bind click too
   bindIncomeRowClick();
+  bindSpentRowClick();
 
   const incomeRow = document.getElementById("mbIncomeRow");
     if (incomeRow) {
@@ -2402,6 +2410,292 @@ async function openIncomeBreakdown() {
     if (subEl) subEl.textContent = "Failed to load";
     if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
   }
+}
+// =========================
+// Spent So Far Breakdown Modal (Excluded + Included + Accordion tx list)
+// =========================
+
+function bindSpentRowClick() {
+  const row = document.getElementById("mbSpentRow");
+  if (!row || row.dataset.bound) return;
+  row.dataset.bound = "1";
+
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.style.cursor = "pointer";
+
+  row.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openSpentBreakdown();
+  });
+
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openSpentBreakdown();
+    }
+  });
+}
+
+function ensureSpentInspectModal() {
+  let root = document.getElementById("spentInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "spentInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-spent-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="spentInspectTitle" class="tx-inspect__title">Spent so far</div>
+          <div id="spentInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-spent-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="spentInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-spent-close]")) closeSpentInspect();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSpentInspect();
+  });
+
+  return root;
+}
+
+function closeSpentInspect() {
+  const root = document.getElementById("spentInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+async function openSpentBreakdown() {
+  const root = ensureSpentInspectModal();
+  root.classList.remove("hidden");
+
+  const titleEl = document.getElementById("spentInspectTitle");
+  const subEl   = document.getElementById("spentInspectSub");
+  const bodyEl  = document.getElementById("spentInspectBody");
+
+  if (titleEl) titleEl.textContent = "Spent so far";
+  if (subEl) subEl.textContent = "Loading…";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  // current month range (local)
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startISO = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}-${String(start.getDate()).padStart(2,"0")}`;
+  const endISO   = isoLocalDate();
+
+  try {
+    const res = await fetch(
+      `/spent-so-far-breakdown?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+
+    if (subEl) subEl.textContent = `${d.start} → ${d.end} · Total: ${money(Number(d.total || 0))}`;
+
+    const excluded = Array.isArray(d.excluded) ? d.excluded : [];
+    const included = Array.isArray(d.included) ? d.included : [];
+
+    const excludedHtml = `
+      <div style="font-weight:800; margin-bottom:6px;">Excluded categories</div>
+      <div style="border-top:1px solid rgba(0,0,0,.08); margin:8px 0;"></div>
+      ${excluded.map(x => `
+        <div style="display:flex; justify-content:space-between; padding:6px 0;">
+          <div style="opacity:.85;">${escapeHtml(x.category)}</div>
+          <div style="font-weight:800;">${money(Number(x.total || 0))}</div>
+        </div>
+      `).join("") || `<div style="opacity:.7;">None</div>`}
+      <div style="border-top:1px solid rgba(0,0,0,.08); margin:10px 0;"></div>
+    `;
+
+    const includedRows = included.map(x => `
+      <div style="border:1px solid rgba(0,0,0,.10); border-radius:10px; margin:8px 0; overflow:hidden;">
+        <button type="button"
+          data-spent-acc-btn="1"
+          data-cat="${escapeHtmlAttr(x.category)}"
+          aria-expanded="false"
+          style="width:100%; text-align:left; padding:10px 12px; display:flex; justify-content:space-between; gap:12px; background:rgba(0,0,0,.02); border:0; cursor:pointer;">
+          <span style="font-weight:750;">${escapeHtml(x.category)}</span>
+          <span style="display:flex; align-items:center; gap:10px;">
+            <span style="font-weight:800;">${money(Number(x.total || 0))}</span>
+            <span style="opacity:.45;">▾</span>
+          </span>
+        </button>
+        <div data-spent-acc-pane="${escapeHtmlAttr(x.category)}" style="display:none; padding:10px 12px;"></div>
+      </div>
+    `).join("");
+
+    const includedHtml = `
+      <div style="font-weight:800; margin-bottom:6px;">Included categories</div>
+      <div style="opacity:.7; font-size:12px; margin-bottom:8px;">Tap a category to see the transactions included in the total.</div>
+      <div>${includedRows || `<div style="opacity:.7;">No spending yet.</div>`}</div>
+    `;
+
+    bodyEl.innerHTML = excludedHtml + includedHtml;
+
+    // one handler for the accordion
+    if (!bodyEl.dataset.spentAccBound) {
+      bodyEl.dataset.spentAccBound = "1";
+      bodyEl.addEventListener("click", async (e) => {
+        const btn = e.target.closest?.("button[data-spent-acc-btn]");
+        if (!btn) return;
+
+        const cat = btn.getAttribute("data-cat") || "";
+        const pane = bodyEl.querySelector(`[data-spent-acc-pane="${cssEscapeAttr(cat)}"]`);
+        if (!pane) return;
+
+        const isOpen = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", String(!isOpen));
+        pane.style.display = isOpen ? "none" : "block";
+
+        if (isOpen) return; // closing
+        if (pane.dataset.loaded === "1") return;
+
+        pane.dataset.loaded = "1";
+        pane.innerHTML = `<div style="opacity:.7;">Loading…</div>`;
+
+        try {
+          const txRes = await fetch(
+            `/spent-so-far-transactions?category=${encodeURIComponent(cat)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
+            { cache: "no-store" }
+          );
+          if (!txRes.ok) throw new Error("HTTP " + txRes.status);
+          const txData = await txRes.json();
+          const tx = (txData && txData.transactions) || [];
+
+          if (!tx.length) {
+            pane.innerHTML = `<div style="opacity:.7;">No transactions.</div>`;
+            return;
+          }
+
+          pane.innerHTML = tx.map(r => `
+            <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.06);">
+              <div style="min-width:0;">
+                <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.merchant || "—")}</div>
+                <div style="opacity:.65; font-size:12px;">${escapeHtml(r.date || "")}${(r.bank || r.card) ? " • " + escapeHtml(`${r.bank || ""}${r.card ? " • " + r.card : ""}`.trim()) : ""}</div>
+              </div>
+              <div style="font-weight:800; white-space:nowrap;">${money(Number(r.amount || 0))}</div>
+            </div>
+          `).join("");
+        } catch (err) {
+          console.error(err);
+          pane.innerHTML = `<div style="opacity:.8;">Failed to load transactions.</div>`;
+        }
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load spent breakdown.</div>`;
+  }
+}
+
+async function fetchCategoryTx(category, start, end, limit = 500) {
+  const catParam = (String(category || "") === "")
+    ? "__NULL__"
+    : String(category);
+
+  const url =
+    `/category-transactions?category=${encodeURIComponent(catParam)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&limit=${encodeURIComponent(limit)}`;
+
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("category-transactions failed: " + res.status);
+  const rows = await res.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+function renderSpentSection(title, items, { muted = false } = {}) {
+  const rows = (items || []).map(x => `
+    <div style="display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid rgba(0,0,0,.06);">
+      <div style="opacity:${muted ? ".75" : "1"};">${escapeHtml(x.category || "")}</div>
+      <div style="font-weight:700; opacity:${muted ? ".75" : "1"};">${money(Number(x.total || 0))}</div>
+    </div>
+  `).join("");
+
+  return `
+    <div style="font-weight:800; margin-bottom:6px;">${escapeHtml(title)}</div>
+    <div>${rows || `<div style="opacity:.7;">None</div>`}</div>
+  `;
+}
+
+function renderIncludedAccordion(included, { start, end }) {
+  const rows = (included || []).map(x => `
+    <div style="border:1px solid rgba(0,0,0,.10); border-radius:10px; margin:8px 0; overflow:hidden;">
+      <button type="button"
+        data-spent-acc-btn
+        data-cat-key="${escapeHtmlAttr(x.key)}"
+        aria-expanded="false"
+        style="width:100%; text-align:left; padding:10px 12px; display:flex; justify-content:space-between; gap:12px; background:rgba(0,0,0,.02); border:0; cursor:pointer;">
+        <span style="font-weight:750;">${escapeHtml(x.label)}</span>
+        <span style="display:flex; align-items:center; gap:10px;">
+          <span style="font-weight:800;">${money(x.total)}</span>
+          <span style="opacity:.45;">▾</span>
+        </span>
+      </button>
+      <div data-spent-acc-pane="${escapeHtmlAttr(x.key)}" style="display:none; padding:10px 12px;"></div>
+    </div>
+  `).join("");
+
+  return `
+    <div style="font-weight:800; margin-bottom:6px;">Included categories</div>
+    <div style="opacity:.7; font-size:12px; margin-bottom:8px;">Tap a category to see the transactions included in the total.</div>
+    <div>${rows || `<div style="opacity:.7;">No spending yet.</div>`}</div>
+  `;
+}
+
+function renderTxMiniList(rows) {
+  const tx = Array.isArray(rows) ? rows : [];
+  if (!tx.length) return `<div style="opacity:.7;">No transactions.</div>`;
+
+  // same effective date behavior you use elsewhere
+  const lines = tx.map(r => {
+    const d = r.postedDate || r.dateISO || "";
+    const m = (r.merchant || "").toString();
+    const amt = Number(r.amount || 0);
+    const bank = r.bank || "";
+    const card = r.card || "";
+    const sub = `${bank}${card ? " • " + card : ""}`.trim();
+
+    return `
+      <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.06);">
+        <div style="min-width:0;">
+          <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(m || "—")}</div>
+          <div style="opacity:.65; font-size:12px;">${escapeHtml(d)}${sub ? " • " + escapeHtml(sub) : ""}</div>
+        </div>
+        <div style="font-weight:800; white-space:nowrap;">${money(amt)}</div>
+      </div>
+    `;
+  }).join("");
+
+  return `<div>${lines}</div>`;
+}
+
+// Helpers for attribute escaping + safe selectors
+function escapeHtmlAttr(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+function cssEscapeAttr(s) {
+  // minimal “escape” for our attribute lookup; we already store exact string in attribute
+  return String(s || "").replaceAll('"', "&quot;");
 }
 
 function ensureTxInspectModal() {
