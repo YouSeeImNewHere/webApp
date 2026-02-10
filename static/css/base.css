@@ -6031,3 +6031,99 @@ body.page-budget .fund-actions{
     font-size: 17px;
   }
 }
+
+
+/* ===== Safe-to-spend calc modal ===== */
+.calc{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.calc__title{
+  font-weight: 900;
+  letter-spacing: .2px;
+  margin-bottom: 2px;
+}
+.calc__section{
+  border: 1px solid var(--border);
+  background: var(--card-2, var(--card));
+  border-radius: 14px;
+  padding: 12px 12px;
+}
+.calc__sectionTitle{
+  font-weight: 850;
+  font-size: 13px;
+  opacity: .95;
+  margin-bottom: 8px;
+}
+.calc__grid{
+  row-gap: 8px;
+}
+.tx-kv{
+  display:grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 14px;
+  row-gap: 10px;
+  align-items: baseline;
+}
+.tx-kv__k{
+  font-weight: 750;
+  line-height: 1.25;
+}
+.tx-kv__v{
+  text-align:right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  opacity: .95;
+}
+.tx-kv__k.is-sub{
+  font-weight: 650;
+  color: var(--muted);
+  padding-left: 14px;
+  position: relative;
+}
+.tx-kv__k.is-sub::before{
+  content:"";
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--border);
+  position:absolute;
+  left: 0;
+  top: .55em;
+}
+.tx-kv__k.is-formula{
+  font-weight: 800;
+}
+.calc__formula{
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.calc__result{
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 16px;
+  padding: 12px 12px;
+  display:flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.calc__resultLabel{
+  font-weight: 900;
+}
+.calc__resultValue{
+  font-weight: 950;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.calc__note{
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}

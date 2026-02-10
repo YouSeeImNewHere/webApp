@@ -192,6 +192,8 @@ function renderSpentPie(items, spentMap) {
   try { bindIncomeRowClick(); } catch (e) {}
   try { bindBillsRowClick(); } catch (e) {}
   try { bindSpentRowClick(); } catch (e) {}
+  try { bindSafeRowClick(); } catch (e) {}
+
 }
 
   function groupRowEl(row) {
@@ -601,6 +603,7 @@ renderSpentPie(items, spentMap);
     bindIncomeRowClick();
     bindBillsRowClick();
 bindSpentRowClick();
+bindSafeRowClick();
 
   }
 
@@ -770,6 +773,153 @@ function closeIncomeInspect() {
   const root = document.getElementById("incomeInspectRoot");
   if (root) root.classList.add("hidden");
 }
+// =========================
+// Safe to spend popup (show calculation)
+// =========================
+function bindSafeRowClick() {
+  const row = document.getElementById("mbSafeRow");
+  if (!row || row.dataset.bound) return;
+  row.dataset.bound = "1";
+
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.style.cursor = "pointer";
+
+  row.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openSafeBreakdown();
+  });
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openSafeBreakdown();
+    }
+  });
+}
+
+function ensureSafeInspectModal() {
+  let root = document.getElementById("safeInspectRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "safeInspectRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-safe-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="safeInspectTitle" class="tx-inspect__title">Safe to spend</div>
+          <div id="safeInspectSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-safe-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="safeInspectBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-safe-close]")) closeSafeInspect();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSafeInspect();
+  });
+
+  return root;
+}
+
+function closeSafeInspect() {
+  const root = document.getElementById("safeInspectRoot");
+  if (root) root.classList.add("hidden");
+}
+
+function openSafeBreakdown() {
+  const mb = (payload && payload.month) ? payload.month : {};
+
+  const root = ensureSafeInspectModal();
+  const titleEl = document.getElementById("safeInspectTitle");
+  const subEl   = document.getElementById("safeInspectSub");
+  const bodyEl  = document.getElementById("safeInspectBody");
+
+  if (titleEl) titleEl.textContent = "Safe to spend (free)";
+  if (subEl) subEl.textContent = `${money(Number(mb.safe_to_spend || 0))} • As of ${escapeHtml(mb.as_of || todayISO())}`;
+
+  const expected_income = Number(mb.expected_income || 0);
+  const base_income = Number(mb.base_income || 0);
+  const les_income = Number(mb.les_income || 0);
+  const savings_goal = Number(mb.savings_goal || 0);
+  const spend_goal = Number(mb.spend_goal || 0);
+  const allocations_total = Number(mb.allocations_total || 0);
+  const budgeted_spent_total = Number(mb.budgeted_spent_total || 0);
+  const free_spend_goal = Number(mb.free_spend_goal || 0);
+  const spent_so_far = Number(mb.spent_so_far || 0);
+  const spent_free = Number(mb.spent_free || 0);
+  const safe_to_spend = Number(mb.safe_to_spend || 0);
+
+  const stepsHtml = `
+    <div class="calc">
+      <div class="calc__title">Calculation</div>
+
+      <div class="calc__section">
+        <div class="calc__sectionTitle">Income</div>
+        <div class="tx-kv calc__grid">
+          ${kvRow("Expected income (total)", money(expected_income))}
+          ${kvRow("Base income", money(base_income), { kClass: "is-sub" })}
+          ${kvRow("LES income", money(les_income), { kClass: "is-sub" })}
+        </div>
+      </div>
+
+      <div class="calc__section">
+        <div class="calc__sectionTitle">Goals</div>
+        <div class="tx-kv calc__grid">
+          ${kvRow("Savings goal", money(savings_goal))}
+          ${kvRow("Spend goal", money(spend_goal), { kClass: "is-formula" })}
+        </div>
+        <div class="calc__formula">Spend goal = income − savings</div>
+      </div>
+
+      <div class="calc__section">
+        <div class="calc__sectionTitle">Allocations</div>
+        <div class="tx-kv calc__grid">
+          ${kvRow("Allocations total (all groups incl. Bills)", money(allocations_total))}
+          ${kvRow("Free spend goal", money(free_spend_goal), { kClass: "is-formula" })}
+        </div>
+        <div class="calc__formula">Free spend goal = spend goal − allocations</div>
+      </div>
+
+      <div class="calc__section">
+        <div class="calc__sectionTitle">Spending</div>
+        <div class="tx-kv calc__grid">
+          ${kvRow("Budgeted spent (inside groups)", money(budgeted_spent_total))}
+          ${kvRow("Spent so far (free)", money(spent_so_far))}
+          ${kvRow("Spent free", money(spent_free), { kClass: "is-formula" })}
+        </div>
+        <div class="calc__formula">Spent free should match “spent so far (free)”</div>
+      </div>
+
+      <div class="calc__result">
+        <div class="calc__resultLabel">Safe to spend</div>
+        <div class="calc__resultValue">${escapeHtml(money(safe_to_spend))}</div>
+      </div>
+      <div class="calc__formula">Safe to spend = free spend goal − spent free</div>
+
+      <div class="calc__note">
+        Safe to spend is only your <b>free</b> spending after subtracting all group allocations
+        (including the auto Bills group), and after removing spending that happened inside those groups
+        so we don’t double-count it.
+      </div>
+    </div>
+  `;
+
+  if (bodyEl) bodyEl.innerHTML = stepsHtml;
+  root.classList.remove("hidden");
+}
 
 async function fetchPaychecksForMonth(year, month) {
   const profile0 = window.Profile?.get?.();
@@ -813,8 +963,11 @@ async function fetchInterestForMonth(year, month) {
   });
 }
 
-function kvRow(k, v) {
-  return `<div class="tx-kv__k">${escapeHtml(k)}</div><div class="tx-kv__v">${escapeHtml(v)}</div>`;
+function kvRow(k, v, opts = {}) {
+  const kClass = (opts && opts.kClass) ? String(opts.kClass) : "";
+  const vClass = (opts && opts.vClass) ? String(opts.vClass) : "";
+  return `<div class="tx-kv__k ${escapeHtmlAttr(kClass)}">${escapeHtml(k)}</div>` +
+         `<div class="tx-kv__v ${escapeHtmlAttr(vClass)}">${escapeHtml(v)}</div>`;
 }
 
 async function openIncomeBreakdown() {
