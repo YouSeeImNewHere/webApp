@@ -116,6 +116,113 @@ function applySidebarOrder() {
   }
 }
 
+function fmtISOToShort(iso) {
+  // iso: YYYY-MM-DD
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(iso || "");
+  return `${m[2]}/${m[3]}`;
+}
+
+function signMoney(n) {
+  const x = Number(n || 0);
+  if (x < 0) return "-" + money(Math.abs(x));
+  return money(x);
+}
+
+async function openExtraSavedBreakdown() {
+  const root = ensureExtraSavedModal();
+  root.classList.remove("hidden");
+
+  const subEl = document.getElementById("extraSavedSub");
+  const bodyEl = document.getElementById("extraSavedBody");
+
+  if (subEl) subEl.textContent = "Loading…";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  try {
+    const res = await fetch("/extra-saved-detail", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+    if (!d.ok) throw new Error("bad payload");
+
+    const days = Array.isArray(d.days) ? d.days : [];
+    const total = Number(d.total_extra_saved || 0);
+
+    if (subEl) {
+      subEl.textContent = `${fmtISOToShort(d.month_start)} → ${fmtISOToShort(d.today)} • Total: ${signMoney(total)}`;
+    }
+
+    if (!days.length) {
+      bodyEl.innerHTML = `<div style="opacity:.7;">No daily snapshots found yet.</div>`;
+      return;
+    }
+
+    // table header
+    const header = `
+      <div style="display:flex; justify-content:space-between; gap:10px; font-weight:800; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.10);">
+        <div style="width:64px;">Date</div>
+        <div style="flex:1; text-align:right;">Baseline</div>
+        <div style="flex:1; text-align:right;">Spent (free)</div>
+        <div style="flex:1; text-align:right;">Leftover</div>
+      </div>
+    `;
+
+    const rows = days.map(x => {
+      const day = fmtISOToShort(x.day);
+      const baseline = Number(x.baseline || 0);
+      const spentFree = Number(x.spent_today_free || 0);
+      const leftover = Number(x.leftover || 0);
+
+      // leftover can be negative (you asked for that)
+      const leftoverStyle = leftover < 0 ? "opacity:1; font-weight:900;" : "opacity:.95; font-weight:800;";
+
+      return `
+        <div style="display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.06);">
+          <div style="width:64px; opacity:.75;">${escapeHtml(day)}</div>
+          <div style="flex:1; text-align:right;">${money(baseline)}</div>
+          <div style="flex:1; text-align:right;">${money(spentFree)}</div>
+          <div style="flex:1; text-align:right; ${leftoverStyle}">
+            ${signMoney(leftover)}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // optional: small explainer
+    const note = `
+      <div style="margin-top:10px; font-size:12px; opacity:.7;">
+        Leftover = baseline − spent free. Negative days reduce the total.
+      </div>
+    `;
+
+    bodyEl.innerHTML = header + rows + note;
+
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load extra saved breakdown.</div>`;
+  }
+}
+function bindExtraSavedRowClick() {
+  const row = document.getElementById("mbExtraSavedRow");
+  if (!row || row.dataset.bound) return;
+  row.dataset.bound = "1";
+
+  row.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openExtraSavedBreakdown();
+  });
+
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openExtraSavedBreakdown();
+    }
+  });
+}
+
+
 // -----------------------------
 // Customize mode (drag/drop)
 // -----------------------------
@@ -176,6 +283,18 @@ function initCustomizeUI() {
   window.HomeCustomize = { enter, exit };
 }
 
+async function loadExtraSaved() {
+  try {
+    const res = await fetch("/extra-saved");
+    const j = await res.json();
+    if (!j.ok) return;
+
+    const el = document.getElementById("mbExtraSaved");
+    if (el) el.textContent = money(j.extra_saved);
+  } catch (e) {
+    console.error("extra-saved failed", e);
+  }
+}
 
 function initSortables() {
   if (!window.Sortable) {
@@ -736,6 +855,7 @@ refreshMonthBudgetCard(false);
 
     bindIncomeRowClick();
     bindSpentRowClick();
+    bindExtraSavedRowClick();
   } catch (err) {
     console.error("bootHome failed:", err);
 
@@ -2101,6 +2221,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
     const income = Number(d.expected_income || 0);
     const spent  = Number(d.spent_so_far || 0);
     const bills  = Number(d.bills_remaining || 0);
+    loadExtraSaved();
 
     if (safeEl) safeEl.textContent = (safe < 0 ? "-" : "") + money(Math.abs(safe));
     if (incomeEl) incomeEl.textContent = money(income);
@@ -2411,6 +2532,50 @@ async function openIncomeBreakdown() {
     if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
   }
 }
+
+function ensureExtraSavedModal() {
+  let root = document.getElementById("extraSavedRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "extraSavedRoot";
+  root.className = "tx-inspect hidden";
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-extra-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true">
+      <div class="tx-inspect__head">
+        <div>
+          <div id="extraSavedTitle" class="tx-inspect__title">Extra saved</div>
+          <div id="extraSavedSub" class="tx-inspect__sub">—</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-extra-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="extraSavedBody" class="tx-inspect__body"></div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-extra-close]")) closeExtraSavedModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeExtraSavedModal();
+  });
+
+  return root;
+}
+
+function closeExtraSavedModal() {
+  const root = document.getElementById("extraSavedRoot");
+  if (root) root.classList.add("hidden");
+}
+
+
 // =========================
 // Spent So Far Breakdown Modal (Excluded + Included + Accordion tx list)
 // =========================

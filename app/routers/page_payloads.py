@@ -550,6 +550,108 @@ def day_limit(recalc: int = 0):
 
         "remaining_today": round(remaining, 2),
     }
+
+@router.get("/extra-saved")
+def extra_saved():
+    """
+    Sum of leftover free spending (baseline - spent_free)
+    from the 1st of the month through today.
+    Only positive leftover days count.
+    """
+    _ensure_daily_limit_snapshot_pg()
+
+    today = today_local()
+    month_start = date(today.year, today.month, 1)
+
+    # Pull all stored baselines this month
+    rows = query_db(
+        """
+        SELECT day, baseline
+        FROM daily_limit_snapshot
+        WHERE day >= %s AND day <= %s
+        ORDER BY day ASC
+        """,
+        (month_start, today),
+    )
+
+    total_extra = 0.0
+    days_counted = 0
+
+    for r in rows:
+        d = r["day"]
+        baseline = float(r["baseline"] or 0.0)
+
+        _, _, spent_free = _compute_spent_free_for_day(d)
+        leftover = baseline - spent_free
+
+        total_extra += leftover
+
+        days_counted += 1
+
+    return {
+        "ok": True,
+        "extra_saved": round(total_extra, 2),
+        "days_counted": days_counted,
+    }
+
+@router.get("/extra-saved-detail")
+def extra_saved_detail():
+    """
+    Day-by-day breakdown of:
+      leftover = baseline - spent_free
+    from the 1st of the month through today.
+
+    IMPORTANT: includes negative days (overspent days reduce the total).
+    """
+    _ensure_daily_limit_snapshot_pg()
+
+    today = today_local()
+    month_start = date(today.year, today.month, 1)
+
+    rows = query_db(
+        """
+        SELECT day, baseline, computed_at
+        FROM daily_limit_snapshot
+        WHERE day >= %s AND day <= %s
+        ORDER BY day ASC
+        """,
+        (month_start, today),
+    )
+
+    days = []
+    total = 0.0
+
+    for r in rows:
+        d = r["day"]
+        baseline = float(r["baseline"] or 0.0)
+
+        spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(d)
+        leftover = baseline - spent_free
+
+        total += leftover
+
+        days.append({
+            "day": d.isoformat(),
+            "baseline": round(baseline, 2),
+            "spent_today_total": round(float(spent_today or 0.0), 2),
+            "spent_today_budgeted": round(float(spent_budgeted or 0.0), 2),
+            "spent_today_free": round(float(spent_free or 0.0), 2),
+            "leftover": round(float(leftover or 0.0), 2),
+            "computed_at": (
+                r["computed_at"].isoformat()
+                if hasattr(r["computed_at"], "isoformat")
+                else str(r["computed_at"])
+            ),
+        })
+
+    return {
+        "ok": True,
+        "month_start": month_start.isoformat(),
+        "today": today.isoformat(),
+        "total_extra_saved": round(total, 2),
+        "days": days,
+    }
+
 # -----------------------------------------------------------------------------
 # /spent-so-far-breakdown  (for the modal summary)
 # -----------------------------------------------------------------------------
