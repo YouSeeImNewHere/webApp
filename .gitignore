@@ -44,3 +44,4 @@ backup/
 
 # Logs
 *.log
+/data/
