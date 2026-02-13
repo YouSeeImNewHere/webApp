@@ -51,7 +51,6 @@ if in_allowed_window():
     wake_web_app()
 else:
     print("Outside allowed window → letting Render sleep")
-    raise SystemExit(0)  # stops cron job early to save free minutes
 
 # ============================================================
 # DEBUG
