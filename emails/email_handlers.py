@@ -1,32 +1,87 @@
-# email_handlers.py (Postgres)
-
 from __future__ import annotations
-
 from datetime import datetime, timedelta
-
 from db import query_db
-#from transactionHandler import *  # provides makeKey/checkKey/find_matching_key/insert_transaction/etc.
+
+from zoneinfo import ZoneInfo
 from .transactionHandler import *
 # =============================================================================
 # Shared helper (ONE place to change print/labels/insert behavior)
 # =============================================================================
 
-NAVY_DEBIT_ID = 3
-NAVY_CASHREWARDS_ID = 6
-AMEX_PLATINUM_ID = 2
-AMEX_BCP_ID = 8
-CAPONE_DEBIT_ID = 4
-CAPONE_SAVOR_ID = 5
-DISCOVER_IT_ID = 7
+def load_account_ids() -> dict[str, int]:
+    rows = query_db("SELECT id, institution, name, accounttype FROM accounts", ())
+    m: dict[str, int] = {}
+
+    for r in rows or []:
+        key = f"{r['institution']}|{r['name']}".lower().strip()
+        m[key] = int(r["id"])
+
+    # helper to fetch required keys (fail loud if missing)
+    def req(inst: str, name: str) -> int:
+        k = f"{inst}|{name}".lower().strip()
+        if k not in m:
+            raise RuntimeError(f"Missing account in DB: {inst} / {name}")
+        return m[k]
+
+    return {
+        "NAVY_DEBIT_ID":        req("Navy Federal", "Debit"),
+        "NAVY_CASHREWARDS_ID":  req("Navy Federal", "cashRewards"),
+        "AMEX_PLATINUM_ID":     req("American Express", "Platinum"),
+        "AMEX_BCP_ID":          req("American Express", "Blue Cash Preferred"),
+        "CAPONE_DEBIT_ID":      req("Capital One", "Debit"),
+        "CAPONE_SAVOR_ID":      req("Capital One", "Savor"),
+        "DISCOVER_IT_ID":       req("Discovery", "Discover It"),
+    }
+
+NAVY_DEBIT_ID = None
+NAVY_CASHREWARDS_ID = None
+AMEX_PLATINUM_ID = None
+AMEX_BCP_ID = None
+CAPONE_DEBIT_ID = None
+CAPONE_SAVOR_ID = None
+DISCOVER_IT_ID = None
+
+def init_account_ids(ids: dict[str, int] | None = None) -> None:
+    global NAVY_DEBIT_ID, NAVY_CASHREWARDS_ID, AMEX_PLATINUM_ID, AMEX_BCP_ID, CAPONE_DEBIT_ID, CAPONE_SAVOR_ID, DISCOVER_IT_ID
+    m = ids or load_account_ids()
+    NAVY_DEBIT_ID = m["NAVY_DEBIT_ID"]
+    NAVY_CASHREWARDS_ID = m["NAVY_CASHREWARDS_ID"]
+    AMEX_PLATINUM_ID = m["AMEX_PLATINUM_ID"]
+    AMEX_BCP_ID = m["AMEX_BCP_ID"]
+    CAPONE_DEBIT_ID = m["CAPONE_DEBIT_ID"]
+    CAPONE_SAVOR_ID = m["CAPONE_SAVOR_ID"]
+    DISCOVER_IT_ID = m["DISCOVER_IT_ID"]
 
 BCP_ACCOUNT_NUMBER = "51007"
 PLAT_ACCOUNT_NUMBER = "72008"
+
+ET = ZoneInfo("America/New_York")
+PT = ZoneInfo("America/Los_Angeles")
+
+def et_time_to_local(date_mmddyy: str, time_str: str) -> str:
+    """
+    Convert email time (Eastern) -> local LA time.
+    Returns same format like "09:58 PM".
+    """
+    if not date_mmddyy or not time_str:
+        return time_str
+
+    try:
+        # Combine date + time assuming Eastern timezone
+        dt_et = datetime.strptime(f"{date_mmddyy} {time_str}", "%m/%d/%y %I:%M %p")
+        dt_et = dt_et.replace(tzinfo=ET)
+
+        # Convert to LA time
+        dt_local = dt_et.astimezone(PT)
+
+        return dt_local.strftime("%I:%M %p")
+    except Exception:
+        return time_str  # fail safe
 
 
 def _parse_money_to_float(cost: str) -> float:
     # "$1,234.56" -> 1234.56
     return float(cost.replace("$", "").replace(",", ""))
-
 
 def find_existing_tx_key_by_amount_time_near_date(
     cost: str,
@@ -72,12 +127,10 @@ def find_existing_tx_key_by_amount_time_near_date(
     )
     return rows[0]["id"] if rows else None
 
-
 def transaction_exists(key: str, *, use_test_table: bool = False) -> bool:
     table = "transactions_test" if use_test_table else "transactions"
     rows = query_db(f"SELECT 1 FROM {table} WHERE id = %s LIMIT 1", (str(key),))
     return bool(rows)
-
 
 def finalize_transaction(
     mail,
@@ -96,6 +149,9 @@ def finalize_transaction(
     labels_add=(),
     labels_remove=(r"\Inbox \Important",),
 ):
+    # Convert email ET → local LA time
+    time = et_time_to_local(date, time)
+
     # ---- print ----
     print("Cost:", cost)
     print("Card:", card)
@@ -114,6 +170,8 @@ def finalize_transaction(
     # Always mark processed here (single place to change)
     mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
 
+    if cost == "":
+        cost = None
     # ---- insert ----
     result = insert_transaction(
         key,
@@ -228,7 +286,7 @@ def navyFedCreditHold(mail, msg_id_str, match, timeEmail, use_test_table: bool =
     where = match.group(1)
     time = match.group(2)
     date = match.group(3)
-    cost = ""
+    cost = None
 
     key = makeKey(cost, date, account_id=NAVY_CASHREWARDS_ID)
 

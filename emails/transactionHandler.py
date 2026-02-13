@@ -188,7 +188,7 @@ def assign_category(cur, merchant: str) -> str:
     """
     Auto-assign category using categoryrules (Postgres).
 
-    NOTE: app_postgres.py uses CATEGORY_RULES_TABLE = "categoryrules".
+    NOTE: app_postgresOld.py uses CATEGORY_RULES_TABLE = "categoryrules".
     """
     rows = cur.execute(
         """

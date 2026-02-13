@@ -1,13 +1,18 @@
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.env
+
+# VSCode
+.vscode/
 
 # Virtual environments
 .venv/
 venv/
 
 # Secrets / auth / state
-.env
 *.env
 token.json
 credentials.json
@@ -26,9 +31,16 @@ downloads/
 
 # OS / IDE
 .idea/
-.vscode/
 .DS_Store
+Thumbs.db
 
 # Random local stuff
 website/
 /data/
+
+backup/
+*.dump
+*.json
+
+# Logs
+*.log

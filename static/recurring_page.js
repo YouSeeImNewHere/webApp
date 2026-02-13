@@ -436,7 +436,9 @@ function merchantHTMLIgnored(g, gi){
 
       <div class="rec-merchant-actions">
         <button class="pill-btn" type="button" onclick="mergeMerchantPrompt('${esc(g.merchant)}')">Merge</button>
-        <button class="pill-btn" type="button" onclick="ignoreMerchant('${esc(g.merchant)}')">Unignore</button>
+        <button class="pill-btn" type="button"
+  onclick="unignoreMerchant('${esc(g.merchant)}')">Unignore</button>
+
       </div>
     </div>
   `;
@@ -669,6 +671,9 @@ async function unignoreMerchant(name){
   await openIgnoredModal(); // refresh ignored list
   loadRecurring();          // refresh main list
 }
+
+window.ignoreMerchant = ignoreMerchant;
+window.unignoreMerchant = unignoreMerchant;
 
 document.getElementById("reviewIgnored")?.addEventListener("click", openIgnoredModal);
 

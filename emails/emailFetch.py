@@ -4,7 +4,6 @@ from email.header import decode_header
 import os
 import time
 from dotenv import load_dotenv
-import requests
 import re
 import html
 import requests, json, hashlib
@@ -179,28 +178,62 @@ def send_pushover(title: str, message: str):
     except Exception as e:
         log(f"⚠️ Pushover exception: {e}")
 
-def push_notif(subject: str, body: str, kind: str = "system"):
-    if not WEBAPP_URL or not NOTIF_SECRET:
-        return
-    try:
-        # stable-ish dedupe for repeated same error in short time
-        h = hashlib.sha1((subject + "\n" + body).encode("utf-8", "ignore")).hexdigest()[:12]
-        dedupe_key = f"emailFetch:{kind}:{h}:{int(time.time())}"
+def push_error(kind: str, subject: str, body: str):
+    sig = _stable_err_sig(kind, subject, body)
+    dedupe_key = f"emailFetch:{kind}:{sig}"
 
-        requests.post(
-            f"{WEBAPP_URL}/notifications/push",
-            headers={"Content-Type": "application/json", "X-Notif-Secret": NOTIF_SECRET},
-            json={
-                "kind": kind,
-                "dedupe_key": dedupe_key,
-                "subject": subject[:250],
-                "sender": "emailFetch",
-                "body": body[:8000],
-            },
-            timeout=10,
+    inserted = push_db_notification(kind=kind, subject=subject, body=body, dedupe_key=dedupe_key)
+
+    if inserted:
+        send_pushover(
+            title="⚠️ emailFetch error",
+            message=f"{subject}\n\n{(body or '')[:700]}",
         )
+    else:
+        dbg("🔕 Error deduped → skipping pushover")
+
+
+# --- DB notifications (write directly to notifications table) ---
+def ensure_notifications_table_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                dedupe_key TEXT NOT NULL UNIQUE,
+                subject TEXT,
+                sender TEXT,
+                body TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                dismissed BOOLEAN NOT NULL DEFAULT FALSE
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_dismissed ON notifications(dismissed)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)")
+        conn.commit()
+
+def push_db_notification(kind: str, subject: str, body: str, dedupe_key: str, sender: str = "emailFetch"):
+    try:
+        ensure_notifications_table_pg()
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                INSERT INTO notifications (kind, dedupe_key, subject, sender, body, is_read, dismissed)
+                VALUES (%s, %s, %s, %s, %s, FALSE, FALSE)
+                ON CONFLICT (dedupe_key) DO NOTHING
+                RETURNING id
+                """,
+                (kind, dedupe_key, subject[:250], sender[:250], (body or "")[:8000]),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return bool(row)  # True only if inserted
     except Exception:
-        pass
+        return False
+
 
 # ============================================================
 # SUBJECT FILTER (ORIGINAL)
@@ -512,6 +545,24 @@ def write_seen(rows, table):
         """, rows)
         conn.commit()
 
+def _stable_err_sig(kind: str, subject: str, body: str) -> str:
+    """
+    Turn a noisy error body into a stable signature so repeated failures dedupe.
+    Strips changing bits like imap_id, timestamps, numbers.
+    """
+    s = (body or "")
+
+    # remove obvious run-to-run noise
+    s = re.sub(r"imap_id=\d+", "imap_id=?", s)
+    s = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "hh:mm:ss", s)
+    s = re.sub(r"\b\d+\b", "N", s)  # numbers → N (aggressive but effective)
+
+    # keep it short and stable
+    s = (s.strip()[:500]).lower()
+
+    base = f"{kind}|{subject.lower().strip()}|{s}"
+    return hashlib.sha1(base.encode("utf-8", "ignore")).hexdigest()[:16]
+
 # ============================================================
 # HELPERS
 # ============================================================
@@ -698,11 +749,11 @@ def flush_pending_notifications(pending_table: str, ttl_minutes: int = 30):
             # Assumes transactions has: account_id, amount, merchant, purchase_date, time, id
             cur.execute(
                 """
-                SELECT merchant, amount, purchase_date, time
+                SELECT merchant, amount, purchasedate, time
                 FROM transactions
                 WHERE account_id = %s
                   AND amount = %s
-                  AND purchase_date = %s
+                  AND purchasedate = %s
                   AND time = %s
                   AND merchant IS NOT NULL
                   AND lower(merchant) NOT IN ('unknown', 'unknown merchant', '')
@@ -834,6 +885,7 @@ def run():
     project_root = Path(__file__).resolve().parents[1]  # .../webApp
     env_path = project_root / ".env"
     load_dotenv(dotenv_path=env_path, override=False)
+    init_account_ids()
 
     # Refresh pushover creds after dotenv load
     global PUSHOVER_USER, PUSHOVER_TOKEN
@@ -1086,7 +1138,7 @@ def run():
                     except Exception as e:
                         msg = f"rule={rule['name']} imap_id={imap_id}\n{type(e).__name__}: {e}"
                         log(f"⚠️ handler failed {msg}")
-                        push_notif(subject=f"emailFetch handler FAILED: {rule['name']}", body=msg, kind="handler_error")
+                        push_error(subject=f"emailFetch handler FAILED: {rule['name']}", body=msg, kind="handler_error")
                         rows.append({
                             "message_id": key,
                             "subject": subject,
@@ -1121,7 +1173,18 @@ def run():
 
             dbg(f"Writing {len(rows)} rows to {seen_table}")
             dbg("Flushing pending notifications…")
-            flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
+            dbg("Flushing pending notifications…")
+            try:
+                flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
+            except Exception as e:
+                msg = f"{type(e).__name__}: {e}"
+                log(f"⚠️ flush_pending_notifications failed: {msg}")
+                push_error(
+                    kind="cron_error",
+                    subject="emailFetch: flush_pending_notifications FAILED",
+                    body=msg,
+                )
+
             write_seen(rows, seen_table)
 
         log("DONE")
@@ -1133,6 +1196,11 @@ def run():
 if __name__ == "__main__":
     open_pool()
     try:
-        run()
+        try:
+            run()
+        except Exception as e:
+            msg = f"{type(e).__name__}: {e}"
+            push_error(kind="cron_error", subject="emailFetch crashed", body=msg)
+            raise
     finally:
         close_pool()
