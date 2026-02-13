@@ -286,7 +286,7 @@ def navyFedCreditHold(mail, msg_id_str, match, timeEmail, use_test_table: bool =
     where = match.group(1)
     time = match.group(2)
     date = match.group(3)
-    cost = None
+    cost = ""
 
     key = makeKey(cost, date, account_id=NAVY_CASHREWARDS_ID)
 

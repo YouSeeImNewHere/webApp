@@ -14,7 +14,7 @@ from app.core.time import today_local, now_local
 router = APIRouter()
 
 # Public endpoints
-PUBLIC_EXACT = {"/__ping", "/login", "/favicon.ico", "/__whoami", "/health"}
+PUBLIC_EXACT = {"/", "/__ping", "/login", "/favicon.ico", "/__whoami", "/health"}
 PUBLIC_PREFIXES = {"/static/"}
 
 def _is_authed(request: Request) -> bool:
