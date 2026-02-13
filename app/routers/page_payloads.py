@@ -476,7 +476,8 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
 
     for r in tx_rows:
         category = (r["category"] or "").strip().lower()
-        if category in ("card payment", "transfer"):
+        # Exclusions from DAILY spend (still count in monthly math elsewhere)
+        if category in ("card payment", "transfer", "cash withdrawal"):
             continue
 
         amt = float(r["amount"] or 0.0)
