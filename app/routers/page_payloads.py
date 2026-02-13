@@ -207,9 +207,6 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
 
 @router.get("/widget/summary")
 def widget_summary(x_widget_secret: str = Header(default="")):
-    print("WIDGET_SECRET set?", bool(WIDGET_SECRET))
-    print("received header:", x_widget_secret)
-
     #Simple protection so the widget can fetch data without a login session/cookies
     if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
