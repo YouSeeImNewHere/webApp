@@ -1,8 +1,10 @@
 import imaplib
 import email
 from email.header import decode_header
+from email.utils import parsedate_to_datetime
 import os
 import time
+from pathlib import Path
 from dotenv import load_dotenv
 import re
 import html
@@ -11,7 +13,7 @@ import requests, json, hashlib
 from .email_handlers import *  # handlers + account constants (still used for inserts)
 from db import with_db_cursor, query_db, open_pool, close_pool
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 WEBAPP_URL = os.getenv("WEBAPP_URL") or ""
@@ -47,10 +49,6 @@ def wake_web_app():
     except Exception as e:
         print("Wake ping failed:", e)
 
-if in_allowed_window():
-    wake_web_app()
-else:
-    print("Outside allowed window → letting Render sleep")
 
 # ============================================================
 # DEBUG
@@ -817,10 +815,38 @@ def get_imap_ids(mail):
     ids = []
     for box in MAILBOXES:
         mail.select(box)
-        status, data = mail.search(None, f'X-GM-RAW "newer_than:10m -label:ProcessedNew"')
+        # Gmail's newer_than uses d/m/y units; use a 1-day prefilter and do exact minute filtering in Python.
+        # X-GM-RAW parsing can vary by IMAP client/server; try common compatible forms.
+        status, data = "BAD", []
+        search_attempts = [
+            (None, 'X-GM-RAW "newer_than:1d -label:ProcessedNew"'),
+            (None, "X-GM-RAW", "newer_than:1d -label:ProcessedNew"),
+            ("UTF-8", 'X-GM-RAW "newer_than:1d -label:ProcessedNew"'),
+        ]
+        for args in search_attempts:
+            try:
+                status, data = mail.search(*args)
+                if status == "OK":
+                    break
+            except imaplib.IMAP4.error:
+                continue
         if status == "OK" and data and data[0]:
             ids.extend(x.decode() for x in data[0].split())
     return list(dict.fromkeys(ids))
+
+
+def is_within_minutes_window(date_header: str, cutoff_utc: datetime) -> bool:
+    if not date_header:
+        return False
+    try:
+        dt = parsedate_to_datetime(date_header)
+        if dt is None:
+            return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc) >= cutoff_utc
+    except Exception:
+        return False
 
 # ============================================================
 # MAIN
@@ -848,6 +874,8 @@ def run():
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
     ensure_notified_table("notified_transactions")
+    window_minutes = int(os.getenv("EMAILFETCH_WINDOW_MINUTES") or "10")
+    cutoff_utc = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
 
     # 20–30 minutes is what you wanted; default 30, configurable
     PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
@@ -858,7 +886,7 @@ def run():
 
     try:
         all_ids = get_imap_ids(mail)
-        log(f"Found {len(all_ids)} emails")
+        log(f"Found {len(all_ids)} emails in 1-day prefilter; applying {window_minutes}m window")
         did_work = False
 
         if DEBUG:
@@ -884,6 +912,8 @@ def run():
                 subj = decode_hdr(h.get("Subject"))
                 sndr = decode_hdr(h.get("From"))
                 date = h.get("Date") or ""
+                if not is_within_minutes_window(date, cutoff_utc):
+                    continue
                 k = dedupe_key(h, sndr, subj, date, imap_id)
                 keys.append(k)
                 meta.append((imap_id, subj, sndr, date, h))
@@ -1019,18 +1049,18 @@ def run():
                     if matched_subject:
                         dbg_dump_body_on_no_rule(subject, sender, imap_id, body)
 
-            if did_work:
-                dbg("Flushing pending notifications…")
-                try:
-                    flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
-                except Exception as e:
-                    msg = f"{type(e).__name__}: {e}"
-                    log(f"⚠️ flush_pending_notifications failed: {msg}")
-                    push_error(
-                        kind="cron_error",
-                        subject="emailFetch: flush_pending_notifications FAILED",
-                        body=msg,
-                    )
+        if did_work:
+            dbg("Flushing pending notifications…")
+            try:
+                flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
+            except Exception as e:
+                msg = f"{type(e).__name__}: {e}"
+                log(f"⚠️ flush_pending_notifications failed: {msg}")
+                push_error(
+                    kind="cron_error",
+                    subject="emailFetch: flush_pending_notifications FAILED",
+                    body=msg,
+                )
 
         log("DONE")
 
@@ -1049,3 +1079,5 @@ if __name__ == "__main__":
             raise
     finally:
         close_pool()
+
+
