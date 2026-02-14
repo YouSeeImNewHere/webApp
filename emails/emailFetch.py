@@ -817,7 +817,7 @@ def get_imap_ids(mail):
     ids = []
     for box in MAILBOXES:
         mail.select(box)
-        status, data = mail.search(None, "X-GM-RAW", "newer_than:10m -label:ProcessedNew")
+        status, data = mail.search(None, f'X-GM-RAW "newer_than:10m -label:ProcessedNew"')
         if status == "OK" and data and data[0]:
             ids.extend(x.decode() for x in data[0].split())
     return list(dict.fromkeys(ids))
