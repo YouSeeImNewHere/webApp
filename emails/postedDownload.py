@@ -18,6 +18,7 @@ except Exception:
 # Postgres
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import argparse
 
 # You said: .env "DATABASE_URL=<database>"
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -66,6 +67,20 @@ PAYMENT_GENERIC_TOKENS = {
     "payment", "pay", "thank", "thanks", "thankyou", "you",
     "mobile", "autopay", "online", "electronic", "transfer"
 }
+
+
+def build_jobs(input_dir: Optional[str] = None):
+    if not input_dir:
+        return IMPORT_JOBS
+
+    base = Path(input_dir)
+    # Use the SAME expected filenames, but inside the temp upload dir.
+    jobs = []
+    for j in IMPORT_JOBS:
+        fname = Path(j["csv"]).name  # e.g. "amexCredit_72008.csv"
+        jobs.append({**j, "csv": base / fname})
+    return jobs
+
 
 # If you used transactionHandler.makeKey before, keep the same key strategy here:
 # This replicates your previous “base + seq” behavior but WITHOUT importing sqlite DB_PATH.
@@ -1229,9 +1244,15 @@ def import_navy_csv(conn, csv_path: Path, account_id: int, allow_tip_adjust: boo
 # ============================================================
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input-dir", default=None, help="Directory containing uploaded CSVs renamed to expected filenames")
+    args = ap.parse_args()
+
+    jobs = build_jobs(args.input_dir)
+
     conn = get_conn()
     try:
-        for job in IMPORT_JOBS:
+        for job in jobs:
             name = job["name"].lower()
             csv_path: Path = job["csv"]
             account_id: int = job["account_id"]

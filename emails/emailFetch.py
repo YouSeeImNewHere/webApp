@@ -105,13 +105,7 @@ def dbg_dump_body_on_no_rule(subject: str, sender: str, imap_id: str, body: str,
         dbg("----- BODY START -----")
         dbg(b)
         dbg("----- BODY END -----")
-def dbg_seen_check(key, is_seen):
-    if not DEBUG:
-        return
-    if is_seen:
-        dbg(f"🔁 ALREADY PROCESSED → skipping")
-    else:
-        dbg(f"🆕 NEW EMAIL → processing")
+
 def dbg_rule_attempt(rule_name):
     if DEBUG:
         dbg(f"🔎 Testing rule: {rule_name}")
@@ -455,23 +449,6 @@ def get_bank_card_for_transaction(cur, extracted: dict):
 
     return (row["bank"], row["card"])
 
-def ensure_seen_table(name="email_seen_ids"):
-    with with_db_cursor() as (conn, cur):
-        cur.execute(f"""
-            CREATE TABLE IF NOT EXISTS {name} (
-                message_id TEXT PRIMARY KEY,
-                subject TEXT,
-                sender TEXT,
-                email_date TEXT,
-                imap_id INTEGER,
-                matched BOOLEAN NOT NULL DEFAULT FALSE,
-                matched_rule TEXT,
-                note TEXT,
-                processed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                extracted JSONB
-            );
-        """)
-        conn.commit()
 def ensure_notified_table(name="notified_transactions"):
     with with_db_cursor() as (conn, cur):
         cur.execute(f"""
@@ -513,35 +490,6 @@ def upsert_pending(name: str, k: str, account_id: int, amount, purchase_date: st
             """,
             (k, int(account_id), amount, purchase_date, purchase_time, rule_name),
         )
-        conn.commit()
-
-def seen_keys(keys, table):
-    if not keys:
-        return set()
-    rows = query_db(
-        f"SELECT message_id FROM {table} WHERE message_id = ANY(%s)",
-        (keys,)
-    )
-    return {r["message_id"] for r in rows}
-
-def write_seen(rows, table):
-    if not rows:
-        return
-    with with_db_cursor() as (conn, cur):
-        cur.executemany(f"""
-            INSERT INTO {table}
-            (message_id, subject, sender, email_date, imap_id,
-             matched, matched_rule, note, processed_at, extracted)
-            VALUES
-            (%(message_id)s,%(subject)s,%(sender)s,%(email_date)s,%(imap_id)s,
-             %(matched)s,%(matched_rule)s,%(note)s,now(),%(extracted)s)
-            ON CONFLICT (message_id) DO UPDATE SET
-              matched=EXCLUDED.matched,
-              matched_rule=EXCLUDED.matched_rule,
-              note=EXCLUDED.note,
-              processed_at=now(),
-              extracted=EXCLUDED.extracted
-        """, rows)
         conn.commit()
 
 def _stable_err_sig(kind: str, subject: str, body: str) -> str:
@@ -869,7 +817,7 @@ def get_imap_ids(mail):
     ids = []
     for box in MAILBOXES:
         mail.select(box)
-        status, data = mail.search(None, "X-GM-RAW", "newer_than:4d")
+        status, data = mail.search(None, "X-GM-RAW", "newer_than:10m -label:ProcessedNew")
         if status == "OK" and data and data[0]:
             ids.extend(x.decode() for x in data[0].split())
     return list(dict.fromkeys(ids))
@@ -897,8 +845,6 @@ def run():
     if not EMAIL or not PASSWORD:
         raise RuntimeError("Missing Gmail credentials")
 
-    seen_table = "email_seen_ids_test" if TEST_MODE else "email_seen_ids"
-    ensure_seen_table(seen_table)
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
     ensure_notified_table("notified_transactions")
@@ -913,6 +859,7 @@ def run():
     try:
         all_ids = get_imap_ids(mail)
         log(f"Found {len(all_ids)} emails")
+        did_work = False
 
         if DEBUG:
             dbg(f"IMAP IDS: {all_ids}")
@@ -942,19 +889,7 @@ def run():
                 meta.append((imap_id, subj, sndr, date, h))
                 dbg_header(imap_id, subj, sndr, date, k)
 
-            seen = seen_keys(keys, seen_table)
-            dbg(f"Seen keys from DB: {len(seen)}")
-
-            rows = []
-
             for (imap_id, subject, sender, date, hdr), key in zip(meta, keys):
-                # ✅ Deduping means this is a "new" email for our pipeline
-                already_seen = key in seen
-                dbg_seen_check(key, already_seen)
-
-                if already_seen:
-                    continue
-
                 # ------------------------------------------------------------
                 # SUBJECT DEBUGGING (NEW)
                 # ------------------------------------------------------------
@@ -962,18 +897,9 @@ def run():
                 debug_subject(subject, matched_subject)
 
                 if not matched_subject:
-                    rows.append({
-                        "message_id": key,
-                        "subject": subject,
-                        "sender": sender,
-                        "email_date": date,
-                        "imap_id": int(imap_id),
-                        "matched": False,
-                        "matched_rule": "",
-                        "note": "subject_skip",
-                        "extracted": None,
-                    })
                     continue
+
+                did_work = True
 
                 _, data = mail.fetch(imap_id, "(RFC822)")
                 msg = email.message_from_bytes(data[0][1])
@@ -1030,18 +956,6 @@ def run():
 
                             dbg_notify_status(subject, rule["name"], inserted=(result or {}).get("inserted"),
                                               reason=reason)
-
-                            rows.append({
-                                "message_id": key,
-                                "subject": subject,
-                                "sender": sender,
-                                "email_date": date,
-                                "imap_id": int(imap_id),
-                                "matched": True,
-                                "matched_rule": rule["name"],
-                                "note": "matched_no_insert" if result else "matched_handler_skip",
-                                "extracted": json.dumps(extracted) if extracted else None,
-                            })
                             break
 
                         account_id = int(result["account_id"])
@@ -1062,24 +976,8 @@ def run():
                             dbg_notification_decision("Already notified → skipping")
                             dbg_notify_status(subject, rule["name"], inserted=True, fp=fp,
                                               reason="already_notified(fp)=True → skipping")
-
-                            rows.append({
-                                "message_id": key,
-                                "subject": subject,
-                                "sender": sender,
-                                "email_date": date,
-                                "imap_id": int(imap_id),
-                                "matched": True,
-                                "matched_rule": rule["name"],
-                                "note": "inserted_but_already_notified",
-                                "extracted": json.dumps(extracted) if extracted else None,
-                            })
                             break
 
-                        # ✅ Suppress the noisy Navy withdrawal “Unknown merchant” notification.
-                        # The matching “Transaction Notification” email will arrive shortly and send the real merchant.
-                        # ✅ Suppress the noisy Navy withdrawal “Unknown merchant” notification.
-                        # Store pending so we can notify later if merchant never arrives.
                         is_unknown = (merchant.lower() in ("unknown", "unknown merchant", ""))
                         if rule["name"] == "navy withdrawal" and is_unknown:
                             dbg_notification_decision("Withdrawal unknown → stored pending")
@@ -1093,18 +991,6 @@ def run():
                                 time_str,
                                 rule["name"],
                             )
-
-                            rows.append({
-                                "message_id": key,
-                                "subject": subject,
-                                "sender": sender,
-                                "email_date": date,
-                                "imap_id": int(imap_id),
-                                "matched": True,
-                                "matched_rule": rule["name"],
-                                "note": "inserted_withdrawal_unknown_pending",
-                                "extracted": json.dumps(extracted) if extracted else None,
-                            })
                             break
 
                         amt_str = f"${float(amt):.2f}" if amt is not None else "an unknown amount"
@@ -1116,20 +1002,6 @@ def run():
 
                         send_pushover(title, message)
                         mark_notified(fp)
-
-                        rows.append({
-                            "message_id": key,
-                            "subject": subject,
-                            "sender": sender,
-                            "email_date": date,
-                            "imap_id": int(imap_id),
-                            "matched": True,
-                            "matched_rule": rule["name"],
-                            "note": "inserted_and_notified",
-                            "extracted": json.dumps(extracted) if extracted else None,
-                        })
-                        break
-
                         break
 
 
@@ -1138,17 +1010,6 @@ def run():
                         msg = f"rule={rule['name']} imap_id={imap_id}\n{type(e).__name__}: {e}"
                         log(f"⚠️ handler failed {msg}")
                         push_error(subject=f"emailFetch handler FAILED: {rule['name']}", body=msg, kind="handler_error")
-                        rows.append({
-                            "message_id": key,
-                            "subject": subject,
-                            "sender": sender,
-                            "email_date": date,
-                            "imap_id": int(imap_id),
-                            "matched": False,
-                            "matched_rule": rule["name"],
-                            "note": f"handler_error: {type(e).__name__}",
-                            "extracted": json.dumps(extracted) if extracted else None,
-                        })
 
                     break
 
@@ -1158,33 +1019,18 @@ def run():
                     if matched_subject:
                         dbg_dump_body_on_no_rule(subject, sender, imap_id, body)
 
-                    rows.append({
-                        "message_id": key,
-                        "subject": subject,
-                        "sender": sender,
-                        "email_date": date,
-                        "imap_id": int(imap_id),
-                        "matched": False,
-                        "matched_rule": "",
-                        "note": "no_rule",
-                        "extracted": None,
-                    })
-
-            dbg(f"Writing {len(rows)} rows to {seen_table}")
-            dbg("Flushing pending notifications…")
-            dbg("Flushing pending notifications…")
-            try:
-                flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
-            except Exception as e:
-                msg = f"{type(e).__name__}: {e}"
-                log(f"⚠️ flush_pending_notifications failed: {msg}")
-                push_error(
-                    kind="cron_error",
-                    subject="emailFetch: flush_pending_notifications FAILED",
-                    body=msg,
-                )
-
-            write_seen(rows, seen_table)
+            if did_work:
+                dbg("Flushing pending notifications…")
+                try:
+                    flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
+                except Exception as e:
+                    msg = f"{type(e).__name__}: {e}"
+                    log(f"⚠️ flush_pending_notifications failed: {msg}")
+                    push_error(
+                        kind="cron_error",
+                        subject="emailFetch: flush_pending_notifications FAILED",
+                        body=msg,
+                    )
 
         log("DONE")
 
