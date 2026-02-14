@@ -1,3 +1,6 @@
+import { money } from "/static/shared/format.module.js";
+import { formatMMMdd, shortDate } from "/static/shared/dates.module.js";
+
 let categoryChartInstance = null;
 
 const CATEGORY_CHART_IDS = {
@@ -45,11 +48,6 @@ function bindCatDrawerUI() {
 }
 
 
-function money(n) {
-  const num = Number(n || 0);
-  return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
-
 function getCategoryFromURL() {
   const params = new URLSearchParams(window.location.search);
   return params.get("c") || "";
@@ -60,18 +58,6 @@ function setCategoryInURL(category) {
   url.searchParams.set("c", category);
   window.history.pushState({}, "", url);
 }
-
-function shortDate(mmddyyOrIso) {
-  if (!mmddyyOrIso) return "";
-  if (String(mmddyyOrIso).toLowerCase() === "unknown") return "";
-  if (String(mmddyyOrIso).includes("/")) {
-    const [m, d] = String(mmddyyOrIso).split("/");
-    return `${m}/${d}`;
-  }
-  const d = parseISODateLocal(mmddyyOrIso);
-  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-}
-
 
 async function loadCategoryChart() {
   const category = getCategoryFromURL() || "Uncategorized";

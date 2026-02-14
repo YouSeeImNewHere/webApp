@@ -24,7 +24,7 @@ def ping():
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     resp = templates.TemplateResponse(
-        "home.html",
+        "pages/home/home.html",
         {
             "request": request,
             "BUILD_ID": BUILD_ID,

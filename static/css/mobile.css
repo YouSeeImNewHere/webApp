@@ -35,52 +35,6 @@
   }
 
   /* =============================================================================
-     HOME (mobile)
-     ============================================================================= */
-
-  body.page-home .bank-area{
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  body.page-home .bank-main{ order: 1; }
-  body.page-home .sidebar-stack{ order: 2; }
-  body.page-home #categoryTotals{ order: 3; }
-
-  body.page-home .sidebar-stack,
-  body.page-home #categoryTotals,
-  body.page-home #monthBudget,
-  body.page-home .category-box--sidebar{
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    align-self: stretch;
-  }
-
-  /* Edge-to-edge sections on Home only */
-  body.page-home .page-container{
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-  }
-
-  body.page-home .category-box,
-  body.page-home .chart-card,
-  body.page-home .bank-card{
-    border: none !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    background: transparent !important;
-  }
-
-  body.page-home .category-box{ padding: 10px 8px 12px !important; }
-  body.page-home .chart-card{ padding: 12px 10px 14px !important; }
-
-  body.page-home .section-divider,
-  body.page-home #txDivider{
-    margin: 10px 0 !important;
-    border-top: 1px solid var(--border) !important;
-  }
-  /* =============================================================================
      CHARTS (mobile) — make Account/Spending/Categories match Home
      ============================================================================= */
 
@@ -101,87 +55,6 @@
     box-shadow: none !important;
     background: transparent !important;
     padding: 12px 10px 14px !important; /* same feel as Home */
-  }
-
-  /* =============================================================================
-     Bank Totals (Home, mobile) — show acct count + (Card Balances) Avail/% used WITHOUT expanding
-     ============================================================================= */
-
-  /* Prevent any inherited flex from generic ".category-box > div" rules */
-  body.page-home #bankTotals{
-    display: block !important;
-  }
-
-  body.page-home #bankTotals .bank-accordion{
-    margin: 8px 0;
-  }
-
-  body.page-home #bankTotals .bank-accordion__header{
-    display: grid !important;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 2px 10px;
-    align-items: center !important;
-
-    padding: 10px 12px !important;
-    border-radius: 14px !important;
-
-    /* IMPORTANT: allow header to grow for subline */
-    height: auto !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-  }
-
-  /* Left: title + "N acct" */
-  body.page-home #bankTotals .bank-accordion__header > span:first-child{
-    grid-column: 1;
-    grid-row: 1 / span 2;
-    min-width: 0 !important;
-
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 2px !important;
-    line-height: 1.1 !important;
-  }
-
-  body.page-home #bankTotals .bank-accordion__meta{
-    margin-left: 0 !important;
-    font-size: 11px !important;
-    font-weight: 800 !important;
-    opacity: .70 !important;
-    white-space: nowrap !important;
-  }
-
-  /* Right: total + optional subline */
-  body.page-home #bankTotals .bank-accordion__right{
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    min-width: 0 !important;
-
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-end !important;
-    gap: 2px !important;
-
-    height: auto !important;
-    overflow: visible !important;
-  }
-
-  body.page-home #bankTotals .bank-accordion__right > div:first-child{
-    font-size: 14px !important;
-    font-weight: 900 !important;
-    line-height: 1.1 !important;
-    white-space: nowrap !important;
-  }
-
-  /* "Avail … • % used" line */
-  body.page-home #bankTotals .bank-accordion__sub{
-    display: block !important;
-    font-size: 11px !important;
-    font-weight: 800 !important;
-    opacity: .78 !important;
-    white-space: nowrap !important;
   }
 
   /* =============================================================================
@@ -771,31 +644,6 @@
     font-size: 13px;
   }
 
-  /* =============================================================================
-     HOME tx cards (mobile) — match desktop layout
-     (keep ONE copy)
-     ============================================================================= */
-  body.page-home .tx-row{
-    position: relative;
-    display: grid;
-    grid-template-columns: max-content 1fr auto; /* date | main | amount */
-    align-items: center;
-    padding-left: 72px; /* room for icon */
-  }
-
-  body.page-home .tx-icon-wrap{
-    position: absolute !important;
-    left: 12px !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    width: 38px;
-    height: 38px;
-  }
-
-  body.page-home .tx-amt{
-    justify-self: end;
-    white-space: nowrap;
-  }
   /* Projected growth overlay — compact on mobile */
 .chart-growth-overlay{
   top: 6px !important;
@@ -890,88 +738,6 @@
     width: 100% !important;
     font-size: 16px !important; /* prevent iOS zoom */
   }
-
-  body.page-category-rules .rule-meta{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin-top: 8px;
-  }
-
-  body.page-category-rules .rule-meta .pill{
-    padding: 6px 10px;
-  }
-
-  body.page-category-rules .rule-toggles{
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 10px;
-  }
-
-  body.page-category-rules .rule-actions{
-    display: grid !important;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px !important;
-    margin-top: 12px;
-  }
-
-  body.page-category-rules .rule-actions .settings-btn.small{
-    width: 100%;
-    font-size: 14px !important;
-    padding: 10px 10px !important;
-    border-radius: 12px !important;
-    white-space: nowrap !important;
-  }
-
-/* HOME — Month budget card
-   Mobile: TWO COLUMNS (month left, daily right)
-*/
-body.page-home #monthBudget .mb-grid{
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important; /* <- two columns on mobile */
-  gap: 12px;
-  align-items: start;
-}
-
-body.page-home #monthBudget .mb-col--today{
-  border-top: 0 !important;
-  padding-top: 0 !important;
-
-  padding-left: 10px !important;
-  border-left: 1px solid rgba(0,0,0,0.10) !important;
-}
-
-/* =============================================================================
-   HOME — Month budget card (mobile)
-   ============================================================================= */
-
-body.page-home #monthBudget .month-budget__top{
-  grid-template-columns: 1fr;
-  column-gap: 0;
-  row-gap: 8px;
-}
-
-body.page-home #monthBudget .mb-daily{
-  grid-column: 1;
-  grid-row: auto;
-
-  border-left: none;
-  padding-left: 0;
-
-  margin-top: 6px !important;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-
-  /* Keep button on the right without crushing text */
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-body.page-home #monthBudget #mbDailyMeta{
-  max-width: 100%;
-  white-space: pre-line; /* honor \n */
-}
 
 /* =============================================================================
    BUDGET (mobile) — make Budgets usable (no sideways scroll)
@@ -1303,45 +1069,6 @@ body.page-recurring #recurringList{
 .update-btn {
   margin-left: 4px;
   padding: 10px 14px;
-}
-/* =============================================================================
-   HOME — Month budget card (FINAL OVERRIDES)
-   Mobile: TWO COLUMNS (month left, daily right)
-   ============================================================================= */
-@media (max-width: 900px){
-  body.page-home #monthBudget .mb-grid{
-    grid-template-columns: 1fr 1fr !important;
-    gap: 12px !important;
-    align-items: start !important;
-  }
-
-  body.page-home #monthBudget .mb-col--today{
-    border-top: 0 !important;
-    padding-top: 0 !important;
-    margin-top: 0 !important;
-
-    padding-left: 12px !important;
-    border-left: 1px solid rgba(0,0,0,0.10) !important;
-  }
-
-  /* Slightly smaller numbers on small screens */
-  body.page-home #monthBudget .mb-value{
-    font-size: 26px !important;
-  }
-
-  body.page-home #monthBudget .mb-today-value{
-    font-size: 20px !important;
-  }
-
-  body.page-home #monthBudget .mb-meta,
-  body.page-home #monthBudget .mb-today-meta{
-    font-size: 11px !important;
-    line-height: 1.25 !important;
-  }
-
-  body.page-home #monthBudget .mb-goal{
-    font-size: 13px !important;
-  }
 }
 /* ===============================
    Savings goal — mobile layout

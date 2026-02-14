@@ -11,6 +11,9 @@ let lastPayload = {
   categoryRows: []
 };
 
+import { money } from "/static/shared/format.module.js";
+import { formatMMMdd } from "/static/shared/dates.module.js";
+
 const SPENDING_IDS = {
   title: "spChartTitle",
   dots: "spChartDots",
@@ -29,12 +32,6 @@ const SPENDING_IDS = {
   canvas: "spChart",
   monthButtons: "spMonthButtons",
 };
-
-function money(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "—";
-  return v.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 function setTitleForView() {
   const t = document.getElementById(SPENDING_IDS.title);

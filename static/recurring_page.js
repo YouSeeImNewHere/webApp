@@ -1,3 +1,6 @@
+import { money } from "/static/shared/format.module.js";
+import { parseISODateLocal, formatDateLong, formatMMDDYY } from "/static/shared/dates.module.js";
+
 // --- calendar state (GLOBAL, REQUIRED) ---
 const today = new Date();
 window.__calYear  = today.getFullYear();
@@ -11,6 +14,7 @@ if (window.__recurringPageLoaded) {
   window.__recurringPageLoaded = true;
 
   window.__mainData = window.__mainData || [];
+  window.__lastData = window.__lastData || [];
   window.__reopenIgnoredAfterOcc = window.__reopenIgnoredAfterOcc ?? false;
 
 // Shared profile helpers (provided by /static/profile.js)
@@ -64,12 +68,6 @@ async function fetchPaychecks(year, month){
 
 function monthName(m){
   return ["January","February","March","April","May","June","July","August","September","October","November","December"][m-1] || "";
-}
-
-function parseISODateLocal(iso){
-  // iso = "YYYY-MM-DD"
-  const [y, m, d] = String(iso).split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1); // local time
 }
 
 function isoYMD(d){
@@ -242,18 +240,6 @@ function renderCalendarGrid(year, month){
   grid.innerHTML = cells.join("");
 }
 
-function prettyLongDate(iso){
-  // iso = "YYYY-MM-DD"
-  if (!iso) return "";
-  const d = parseISODateLocal(iso);
-  return d.toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric"
-  });
-}
-
 function openCalDayModal(isoDate){
   const modal = document.getElementById("calDayModal");
   const title = document.getElementById("calDayTitle");
@@ -264,7 +250,7 @@ function openCalDayModal(isoDate){
   const evts = __calEventsByDate[isoDate] || [];
   if (!evts.length) return;
 
-  title.textContent = prettyLongDate(isoDate);
+  title.textContent = formatDateLong(isoDate);
 
   const total = evts.reduce((a,e)=>a+Number(e.amount||0),0);
   sub.textContent = `${evts.length} expected • Total ${money(total)}`;
@@ -324,21 +310,6 @@ function closeCalDayModal(){
 }
 
 
-function money(n){
-  const x = Number(n || 0);
-  const sign = x < 0 ? "-" : "";
-  const abs = Math.abs(x);
-  // Force "$" always (no "US$")
-  return sign + "$" + abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-
-function shortDateISO(iso){
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month:"2-digit", day:"2-digit", year:"2-digit" });
-}
-
 function esc(s){
   return String(s ?? "")
     .replaceAll("&","&amp;")
@@ -350,7 +321,7 @@ function esc(s){
 
 function merchantHTML(g, gi){
   const m = (g.merchant_display || g.merchant || "").toUpperCase();
-  const date = shortDateISO(g.last_seen);
+  const date = formatMMDDYY(g.last_seen);
 
   return `
     <div class="rec-head">
@@ -388,7 +359,7 @@ function patternCategory(p){
 
 function patternHTML(gIdx, pIdx, p){
   const freq = (p.cadence || "irregular").toLowerCase();
-  const date = shortDateISO(p.last_seen);
+  const date = formatMMDDYY(p.last_seen);
   const occ  = `x${p.occurrences || 0}`;
 
   const merchant = p.merchant ?? __lastData[gIdx]?.merchant ?? "";
@@ -421,7 +392,7 @@ function patternHTML(gIdx, pIdx, p){
 
 function merchantHTMLIgnored(g, gi){
   const m = (g.merchant_display || g.merchant || "").toUpperCase();
-  const date = shortDateISO(g.last_seen);
+  const date = formatMMDDYY(g.last_seen);
 
   return `
     <div class="rec-head">
@@ -446,7 +417,7 @@ function merchantHTMLIgnored(g, gi){
 
 function patternHTMLIgnored(gIdx, pIdx, p){
   const freq = (p.cadence || "irregular").toLowerCase();
-  const date = shortDateISO(p.last_seen);
+  const date = formatMMDDYY(p.last_seen);
   const occ  = `x${p.occurrences || 0}`;
 
   const merchant = p.merchant ?? __lastData[gIdx]?.merchant ?? "";
@@ -538,13 +509,13 @@ function openOccModal(groupIndex, patternIndex){
   const occ   = `x${p.occurrences || 0}`;
 
   title.textContent = merch;
-  sub.textContent = `${freq} • ${shortDateISO(p.last_seen)} • ${occ} • ${money(p.amount)}`;
+  sub.textContent = `${freq} • ${formatMMDDYY(p.last_seen)} • ${occ} • ${money(p.amount)}`;
 
   const tx = Array.isArray(p.tx) ? p.tx : [];
   body.innerHTML = tx.map(t => `
 <div class="occ-tx">
   <div class="occ-left">
-        <div class="occ-date">${esc(shortDateISO(t.date))}</div>
+        <div class="occ-date">${esc(formatMMDDYY(t.date))}</div>
         <div class="occ-merchant">${esc((t.merchant_display ? String(t.merchant_display) : (t.merchant || "").toUpperCase()))}</div>
         <div class="occ-meta">${esc(t.category || "")}${t.account_id ? " • acct " + esc(t.account_id) : ""}</div>
       </div>
@@ -674,6 +645,11 @@ async function unignoreMerchant(name){
 
 window.ignoreMerchant = ignoreMerchant;
 window.unignoreMerchant = unignoreMerchant;
+window.openCalDayModal = openCalDayModal;
+window.closeCalDayModal = closeCalDayModal;
+window.openOccModal = openOccModal;
+window.closeOccModal = closeOccModal;
+window.closeIgnoredModal = closeIgnoredModal;
 
 document.getElementById("reviewIgnored")?.addEventListener("click", openIgnoredModal);
 

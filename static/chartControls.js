@@ -1,15 +1,3 @@
-function parseISODateLocal(iso) {
-  // iso: "YYYY-MM-DD"
-  const [y, m, d] = String(iso).split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1); // local midnight, no UTC shift
-}
-
-function formatMMMdd(iso) {
-  const d = parseISODateLocal(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
-}
-
-
 (function () {
   window.initChartControls = function initChartControls(ids, onUpdate) {
     let selectedYear = new Date().getFullYear();

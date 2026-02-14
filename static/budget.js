@@ -1,3 +1,6 @@
+import { money } from "/static/shared/format.module.js";
+import { formatMonthYearLong } from "/static/shared/dates.module.js";
+
 (function () {
   const $ = (id) => document.getElementById(id);
 // -------- Category color mapping (shared between table + pie) --------
@@ -130,13 +133,7 @@ function renderSpentPie(items, spentMap) {
   });
 }
 
-  function money(n) {
-    const x = Number(n || 0);
-    const sign = x < 0 ? "-" : "";
-    return sign + "$" + Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  function todayISO() {
+    function todayISO() {
     const d = new Date();
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
@@ -1020,7 +1017,7 @@ if (!profile0.paygrade) {
     const interestTotal = interestEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
     const grandTotal = paycheckTotal + interestTotal;
 
-    if (subEl) subEl.textContent = `${money(grandTotal)} • ${today.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+  if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(today)}`;
 
     const payList = payEvents
       .slice()

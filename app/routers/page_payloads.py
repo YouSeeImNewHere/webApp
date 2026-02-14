@@ -334,7 +334,7 @@ def delete_budget_category(year: int, month: int, category: str):
 
 @router.get("/budget")
 def budget_page():
-    return FileResponse("static/budget.html")
+    return FileResponse("static/pages/budget/budget.html")
 
 class BudgetGroupUpsert(BaseModel):
     year: int

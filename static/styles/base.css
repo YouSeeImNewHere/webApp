@@ -1,0 +1,2 @@
+/* Bridge: keep existing app styling while migrating to /static/styles */
+@import url("/static/css/base.css");

@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.core import auth
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from app.routers.csv_upload import router as csv_upload_router
 
 from db import open_pool, close_pool
 
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(transactions.router)
     app.include_router(page_payloads.router)
     app.include_router(auth.router)
+    app.include_router(csv_upload_router)
 
     return app
 

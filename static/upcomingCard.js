@@ -1,3 +1,6 @@
+import { money } from "/static/shared/format.module.js";
+import { isoLocal, formatWeekdayShort, formatDateLong, formatMMDD } from "/static/shared/dates.module.js";
+
 // static/upcomingCard.js
 // Shared "Upcoming transactions" scroller card for Home + Account pages.
 //
@@ -5,35 +8,10 @@
 //   mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
 //   mountUpcomingCard("#upcomingMount", { daysAhead: 30, accountId: 5 });
 
-(function () {
-  function isoLocal(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  }
-
   function addDays(d, n) {
     const x = new Date(d);
     x.setDate(x.getDate() + n);
     return x;
-  }
-
-  function dayLabel(d) {
-    return d.toLocaleDateString("en-US", { weekday: "short" });
-  }
-
-  function longLabel(d) {
-    return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  }
-
-  function shortMD(d) {
-    return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-  }
-
-  function money(n) {
-    const num = Number(n || 0);
-    return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
   }
 
   function signedMoney(n, isIncome) {
@@ -208,7 +186,7 @@ function dedupeEvents(evts) {
     const body = document.getElementById("upcomingDayBody");
     if (!title || !body) return;
 
-    title.textContent = longLabel(dateObj);
+    title.textContent = formatDateLong(dateObj);
 
     const items = (events || []).slice();
     items.sort((a, b) => {
@@ -257,12 +235,14 @@ function dedupeEvents(evts) {
   function renderDayCard({ dateObj, events }) {
     const cell = document.createElement("div");
     cell.className = "upcoming-day-card";
+    cell.setAttribute("role", "button");
+    cell.setAttribute("tabindex", "0");
 
     const head = document.createElement("div");
     head.className = "upcoming-day-card__head";
     head.innerHTML = `
-      <div class="upcoming-day-card__dow">${dayLabel(dateObj)}</div>
-      <div class="upcoming-day-card__md">${shortMD(dateObj)}</div>
+      <div class="upcoming-day-card__dow">${formatWeekdayShort(dateObj)}</div>
+      <div class="upcoming-day-card__md">${formatMMDD(dateObj)}</div>
     `;
 
     const list = document.createElement("div");
@@ -322,13 +302,23 @@ function dedupeEvents(evts) {
     cell.appendChild(head);
     cell.appendChild(list);
 
-    // click opens modal with full merchants list
-    cell.addEventListener("click", () => openDayModal(dateObj, items));
+    // Direct handlers (primary path)
+    cell.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDayModal(dateObj, items);
+    });
+    cell.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        openDayModal(dateObj, items);
+      }
+    });
 
     return cell;
   }
 
-  async function mountUpcomingCard(mountSelector, { daysAhead = 30, accountId = null } = {}) {
+  export async function mountUpcomingCard(mountSelector, { daysAhead = 30, accountId = null } = {}) {
     const mount = document.querySelector(mountSelector);
     if (!mount) {
       console.warn("mountUpcomingCard: mount not found:", mountSelector);
@@ -377,9 +367,36 @@ function dedupeEvents(evts) {
     for (let i = 0; i < (Number(daysAhead) || 30); i++) {
       const dObj = addDays(today, i);
       const iso = isoLocal(dObj);
-      body.appendChild(renderDayCard({ dateObj: dObj, events: byDate[iso] || [] }));
+      const card = renderDayCard({ dateObj: dObj, events: byDate[iso] || [] });
+      card.dataset.iso = iso;
+      body.appendChild(card);
     }
+
+    // Fallback delegated handlers: survives wrappers/DOM churn on Home.
+    body.addEventListener("click", (e) => {
+      const card = e.target?.closest?.(".upcoming-day-card");
+      if (!card || !body.contains(card)) return;
+      const iso = String(card.dataset.iso || "");
+      if (!iso) return;
+      const [y, m, d] = iso.split("-").map(Number);
+      openDayModal(new Date(y || 1970, (m || 1) - 1, d || 1), byDate[iso] || []);
+    });
+    body.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const card = e.target?.closest?.(".upcoming-day-card");
+      if (!card || !body.contains(card)) return;
+      e.preventDefault();
+      const iso = String(card.dataset.iso || "");
+      if (!iso) return;
+      const [y, m, d] = iso.split("-").map(Number);
+      openDayModal(new Date(y || 1970, (m || 1) - 1, d || 1), byDate[iso] || []);
+    });
+
+    // Keep modal above other app overlays.
+    const backdrop = ensureModal();
+    backdrop.style.zIndex = "10002";
   }
 
-  window.mountUpcomingCard = mountUpcomingCard;
-})();
+  if (typeof window !== "undefined") {
+    window.mountUpcomingCard = mountUpcomingCard;
+  }

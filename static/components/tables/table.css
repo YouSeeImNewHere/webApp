@@ -1,0 +1,10 @@
+.c-table{
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.c-table th,
+.c-table td{
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.12));
+}

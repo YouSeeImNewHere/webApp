@@ -1,27 +1,5 @@
-function money(n){
-  const num = Number(n || 0);
-  return num.toLocaleString("en-US", { style:"currency", currency:"USD" });
-}
-
-function shortDate(s) {
-  if (!s) return "";
-
-  // "12/01/25" -> "12/01"
-  if (String(s).includes("/")) {
-    const [mm, dd] = String(s).split("/");
-    return `${mm}/${dd}`;
-  }
-
-  // "YYYY-MM-DD" (date-only) -> "MM/DD" without timezone shifting
-  const iso = String(s);
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return `${m[2]}/${m[3]}`;
-
-  // fallback (if you ever pass a full datetime like 2026-01-30T12:34:56Z)
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-}
-
+import { money } from "/static/shared/format.module.js";
+import { shortDate } from "/static/shared/dates.module.js";
 
 function parseNum(x){
   if (x == null) return null;

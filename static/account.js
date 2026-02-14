@@ -1,3 +1,7 @@
+import { money } from "/static/shared/format.module.js";
+import { isoLocal, parseISODateLocal, shortDate, formatMMDD, formatWeekdayShort } from "/static/shared/dates.module.js";
+import { mountUpcomingCard } from "/static/upcomingCard.js";
+
 let chart = null;
 let accountId = null;
 const TX_MODE = window.TX_MODE || "prod";
@@ -28,13 +32,6 @@ const ACCOUNT_CHART_IDS = {
 function qs(name){
   return new URLSearchParams(window.location.search).get(name);
 }
-function toISODate(d){ return isoLocal(d); }
-
-function money(n){
-  const num = Number(n || 0);
-  return num.toLocaleString("en-US", { style:"currency", currency:"USD" });
-}
-
 
 function escHtml(s){
   return String(s ?? "")
@@ -45,22 +42,11 @@ function escHtml(s){
     .replace(/'/g, "&#39;");
 }
 
-function formatMMMdd(iso){
-  const d = parseISODateLocal(iso);
-  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-}
 function firstDayOfMonth(y,m){ return new Date(y,m,1); }
 function lastDayOfMonth(y,m){ return new Date(y,m+1,0); }
 
 let showPotentialGrowth = (localStorage.getItem("showPotentialGrowth") === "true");
 let endBeforePotential = null;
-
-function isoLocal(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function endOfCurrentMonthISO() {
   const t = new Date();
@@ -96,7 +82,7 @@ async function loadAccountChart(accountId){
   const res = await fetch(`${seriesUrl}?account_id=${accountId}&start=${start}&end=${end}`);
   const data = await res.json();
 
-  const labels = data.map(d => formatMMMdd(d.date));
+  const labels = data.map(d => formatMMDD(d.date));
   const values = data.map(d => Number(d.value));
   const last = values.length ? values[values.length - 1] : 0;
 
@@ -227,16 +213,6 @@ events = events.filter(e => Number(e.account_id) === Number(accountId));
   });
 }
 
-function shortDate(mmddyyOrIso) {
-  if (!mmddyyOrIso) return "";
-  if (mmddyyOrIso.includes("/")) {
-    const [m,d] = mmddyyOrIso.split("/");
-    return `${m}/${d}`;
-  }
-  const d = parseISODateLocal(mmddyyOrIso);
-  return d.toLocaleDateString("en-US", { month:"2-digit", day:"2-digit" });
-}
-
 async function loadAccountTransactions(accountId){
   const start = document.getElementById("a-start").value;
   const end   = document.getElementById("a-end").value;
@@ -285,9 +261,8 @@ async function loadAccountTransactions(accountId){
   function headerDateLabel(isoOrMmdd) {
     if (!isoOrMmdd) return "";
     if (String(isoOrMmdd).includes("/")) return shortDate(isoOrMmdd);
-    const d = parseISODateLocal(isoOrMmdd);
-    const mmdd = d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-    const wk = d.toLocaleDateString("en-US", { weekday: "short" });
+    const mmdd = formatMMDD(isoOrMmdd);
+    const wk = formatWeekdayShort(isoOrMmdd);
     return `${mmdd} (${wk})`;
   }
 

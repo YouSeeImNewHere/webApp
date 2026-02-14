@@ -1,18 +1,3 @@
-function isoToday(){
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function money(v){
-  if (v === null || v === undefined) return "—";
-  const n = Number(v);
-  if (Number.isNaN(n)) return String(v);
-  return n.toLocaleString(undefined, { style:"currency", currency:"USD" });
-}
-
 function pct(v){
   if (v === null || v === undefined) return "—";
   const n = Number(v);
@@ -224,7 +209,7 @@ if (cards.length){
 
       <div class="kv kv--spaced">
         <div class="k">APR</div><div class="v">${pct(c.apr)}</div>
-        <div class="k">Limit</div><div class="v">${money(c.credit_limit)}</div>
+        <div class="k">Limit</div><div class="v">${moneyOrDash(c.credit_limit)}</div>
       </div>
 
       ${benefits || `<div class="mini-note">No benefits saved.</div>`}

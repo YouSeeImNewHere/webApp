@@ -21,6 +21,8 @@
 
 <script src="/static/theme.js"></script>
 <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
+<script src="/static/shared/format.js?v={{ BUILD_ID }}"></script>
+<script src="/static/shared/dates.js?v={{ BUILD_ID }}"></script>
 <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 
 </head>
@@ -52,13 +54,12 @@
   }
 </script>
     <script src="/static/txInspect.js"></script>
-    <script src="/static/upcomingCard.js"></script>
     <script src="/static/category_icons.js"></script>
     <script src="/static/profile.js"></script>
     <script src="/static/chartControls.js"></script>
     <script src="/static/chartCard.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/static/account.js"></script>
+    <script type="module" src="/static/account.js"></script>
 
 </body>
 </html>

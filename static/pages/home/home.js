@@ -1,3 +1,9 @@
+import { apiFetch, apiGetJson, apiPostJson, apiPostForm } from "/static/shared/api.module.js";
+import { escapeHtml, escapeHtmlAttr, cssEscapeAttr } from "/static/shared/dom.module.js";
+import { isoLocal, isoLocalDate, parseISODateLocal, formatMMMdd, formatMonthYearLong, shortDate, fmtISOToShort } from "/static/shared/dates.module.js";
+import { money } from "/static/shared/format.module.js";
+import { mountUpcomingCard } from "/static/upcomingCard.js";
+
 // IDs used by the shared chart card (chartCard.js)
 const HOME_IDS = {
   title: "chartTitle",
@@ -34,14 +40,6 @@ const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
 // Requires /static/layout.js + /ui-layout backend
 // =============================
 let UI_LAYOUT = null;
-
-function isoLocalDate() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function loadJsonCache(key) {
   try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
@@ -116,13 +114,6 @@ function applySidebarOrder() {
   }
 }
 
-function fmtISOToShort(iso) {
-  // iso: YYYY-MM-DD
-  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return String(iso || "");
-  return `${m[2]}/${m[3]}`;
-}
-
 function signMoney(n) {
   const x = Number(n || 0);
   if (x < 0) return "-" + money(Math.abs(x));
@@ -140,9 +131,7 @@ async function openExtraSavedBreakdown() {
   if (bodyEl) bodyEl.innerHTML = "";
 
   try {
-    const res = await fetch("/extra-saved-detail", { cache: "no-store" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const d = await res.json();
+    const d = await apiGetJson("/extra-saved-detail", { cache: "no-store" });
     if (!d.ok) throw new Error("bad payload");
 
     const days = Array.isArray(d.days) ? d.days : [];
@@ -285,8 +274,7 @@ function initCustomizeUI() {
 
 async function loadExtraSaved() {
   try {
-    const res = await fetch("/extra-saved");
-    const j = await res.json();
+    const j = await apiGetJson("/extra-saved");
     if (!j.ok) return;
 
     const el = document.getElementById("mbExtraSaved");
@@ -411,11 +399,7 @@ function isoDayLocal() {
 
 async function pushNotif({ kind, dedupe_key, subject, sender, body }) {
   try {
-    await fetch("/notifications/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, dedupe_key, subject, sender, body }),
-    });
+    await apiPostJson("/notifications/push", { kind, dedupe_key, subject, sender, body });
   } catch (e) {
     console.warn("pushNotif failed:", e);
   }
@@ -509,26 +493,6 @@ function computeCreditSummary(accounts) {
   return { limitSum, capLimit, usedSum, available, pctUsed };
 }
 
-async function loadData() {
-    const res = await fetch("/transactions");
-    const data = await res.json();
-
-    const tbody = document.querySelector("#dataTable tbody");
-    tbody.innerHTML = "";
-
-    data.forEach(row => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${row.postedDate}</td>
-            <td>${row.merchant}</td>
-            <td>${row.amount}</td>
-            <td>${row.bank}</td>
-            <td>${row.card}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
 function sortAccountsByOrder(accounts, orderList) {
   if (!Array.isArray(accounts)) return [];
   const pos = new Map();
@@ -543,13 +507,13 @@ function sortAccountsByOrder(accounts, orderList) {
 }
 
 async function loadBankTotals() {
-  const res = await fetch("/bank-totals");
-  if (!res.ok) {
-    console.error("bank-totals failed:", res.status);
+  let data;
+  try {
+    data = await apiGetJson("/bank-totals");
+  } catch (err) {
+    console.error("bank-totals failed:", err);
     return;
   }
-
-  const data = await res.json();
 
   const container = document.getElementById("bankTotals");
   if (!container) return;
@@ -597,9 +561,7 @@ function creditUsagePctText(balance, limit) {
 }
 
 async function loadHomePayload() {
-  const res = await fetch("/page/home?tx_limit=15", { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load /page/home");
-  const payload = await res.json();
+  const payload = await apiGetJson("/page/home?tx_limit=15", { cache: "no-store" });
 
   // ✅ Recent transactions
   if (Array.isArray(payload.transactions)) {
@@ -976,12 +938,6 @@ function toggleChart() {
 }
 
 
-function formatMMMdd(isoDateStr) {
-  const d = parseISODateLocal(isoDateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
-}
-
-
 async function loadChart() {
   const start = document.getElementById("nw-start").value;
   const end = document.getElementById("nw-end").value;
@@ -989,13 +945,13 @@ async function loadChart() {
 
   const { endpoint, title } = currentChart();
 
-  const res = await fetch(`${endpoint}?start=${start}&end=${end}`);
-  if (!res.ok) {
+  let data;
+  try {
+    data = await apiGetJson(`${endpoint}?start=${start}&end=${end}`);
+  } catch (err) {
     alert(`Error fetching ${title}`);
     return;
   }
-
-  const data = await res.json();
 
   // --- Potential growth projection (Net Worth only, current month only) ---
 let potentialSeries = null;
@@ -1026,10 +982,13 @@ if (isNet && showPotentialGrowth) {
     const [payOut, calJson] = await Promise.all([
       fetchPaychecksForMonth(y, m).catch(() => ({ events: [], breakdown: null })),
       (async () => {
-        const calRes = await fetch(
-          `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`
-        );
-        return calRes.ok ? await calRes.json().catch(() => ({ events: [] })) : { events: [] };
+        try {
+          return await apiGetJson(
+            `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`,
+          );
+        } catch (_) {
+          return { events: [] };
+        }
       })()
     ]);
 
@@ -1322,17 +1281,17 @@ async function loadMonthBudget() {
 
   if (!safeEl || !metaEl || !incEl || !spentEl || !billsEl || !barFill) return;
 
-  const res = await fetch("/month-budget", { cache: "no-store" });
-  if (!res.ok) {
-    console.error("month-budget failed:", res.status);
+  let j;
+  try {
+    j = await apiGetJson("/month-budget", { cache: "no-store" });
+  } catch (err) {
+    console.error("month-budget failed:", err);
     safeEl.textContent = "—";
     metaEl.textContent = "Could not load";
     if (goalEl) goalEl.textContent = "";
     barFill.style.width = "0%";
     return;
   }
-
-  const j = await res.json();
 
   // ✅ backend is source of truth
   const income        = Number(j.expected_income ?? 0);
@@ -1404,9 +1363,7 @@ async function getSavingsGoalConfig(){
   if (_savingsGoalLoaded) return _savingsGoalCfg;
   _savingsGoalLoaded = true;
   try{
-    const res = await fetch(SAVINGS_GOAL_ENDPOINT, { cache: "no-store" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const j = await res.json().catch(()=>null);
+    const j = await apiGetJson(SAVINGS_GOAL_ENDPOINT, { cache: "no-store" });
     _savingsGoalCfg = normalizeSavingsCfg(j);
   } catch(e){
     console.warn("Savings goal load failed:", e);
@@ -1415,11 +1372,6 @@ async function getSavingsGoalConfig(){
   return _savingsGoalCfg;
 }
 
-
-function money(n) {
-  const num = Number(n || 0);
-  return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 // Credit-card balance formatting:
 //   negative = you owe (debt)
@@ -1444,13 +1396,13 @@ function formatCardBalance(n, { showLabel = false } = {}) {
 }
 
 async function loadCategoryTotalsThisMonth() {
-  const res = await fetch("/category-totals-month");
-  if (!res.ok) {
-    console.error("category-totals-month failed:", res.status);
+  let payload;
+  try {
+    payload = await apiGetJson("/category-totals-month");
+  } catch (err) {
+    console.error("category-totals-month failed:", err);
     return;
   }
-
-  const payload = await res.json();
   const data = payload.categories || [];
   const unassignedAllTime = Number(payload.unassigned_all_time || 0);
 
@@ -1576,11 +1528,12 @@ function fillModalFromTx(tx) {
 }
 
 async function openRuleModal() {
-  const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
-
-  if (!res.ok) return alert("Failed to load unassigned.");
-
-  unassignedQueue = await res.json();
+  try {
+    unassignedQueue = await apiGetJson(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+  } catch (err) {
+    alert("Failed to load unassigned.");
+    return;
+  }
   unassignedIndex = 0;
 
   if (!unassignedQueue.length) {
@@ -1609,13 +1562,13 @@ async function saveRule() {
   if (!category) return alert("Enter a category.");
   if (!keywords.length) return alert("Enter at least one keyword.");
 
-  const res = await fetch("/category-rules", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ category, keywords, apply_now: applyNow })
-  });
-
-  const out = await res.json();
+  let out;
+  try {
+    out = await apiPostJson("/category-rules", { category, keywords, apply_now: applyNow });
+  } catch (err) {
+    document.getElementById("ruleSaveMsg").textContent = "Error: " + (err?.message || "unknown");
+    return;
+  }
   if (!out.ok) {
     document.getElementById("ruleSaveMsg").textContent = "Error: " + (out.error || "unknown");
     return;
@@ -1775,10 +1728,12 @@ function nextUnassigned() {
 }
 
 async function loadCategoryOptions() {
-  const res = await fetch("/categories");
-  if (!res.ok) return;
-
-  const cats = await res.json();
+  let cats;
+  try {
+    cats = await apiGetJson("/categories");
+  } catch (_) {
+    return;
+  }
   const dl = document.getElementById("categoryOptions");
   if (!dl) return;
 
@@ -1788,25 +1743,6 @@ async function loadCategoryOptions() {
     opt.value = c;
     dl.appendChild(opt);
   });
-}
-
-function shortDate(s) {
-  if (!s) return "";
-
-  // "12/01/25" -> "12/01"
-  if (String(s).includes("/")) {
-    const [mm, dd] = String(s).split("/");
-    return `${mm}/${dd}`;
-  }
-
-  // "YYYY-MM-DD" (date-only) -> "MM/DD" without timezone shifting
-  const iso = String(s);
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return `${m[2]}/${m[3]}`;
-
-  // fallback (if you ever pass a full datetime like 2026-01-30T12:34:56Z)
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
 }
 
 function renderTxList(data){
@@ -1883,13 +1819,13 @@ function renderTxList(data){
 }
 
 async function loadData() {
-  const res = await fetch("/transactions?limit=15");
-  if (!res.ok) {
-    console.error("Failed to load transactions:", res.status);
+  let data;
+  try {
+    data = await apiGetJson("/transactions?limit=15");
+  } catch (err) {
+    console.error("Failed to load transactions:", err);
     return;
   }
-
-  const data = await res.json();
   renderTxList(data);
 }
 
@@ -1907,9 +1843,12 @@ function initUnassignedToggle() {
   }
 
   async function loadUnassigned() {
-    const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
-    if (!res.ok) return;
-    const rows = await res.json();
+    let rows;
+    try {
+      rows = await apiGetJson(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+    } catch (_) {
+      return;
+    }
     // render rows...
   }
 
@@ -1926,12 +1865,18 @@ function initUnassignedToggle() {
 
 document.addEventListener("DOMContentLoaded", initUnassignedToggle);
 
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("csvUploadBtn");
+  if (btn) btn.addEventListener("click", openCsvUploadModal);
+});
 
 
 async function fetchUnassignedQueue() {
-  const res = await fetch(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
-  if (!res.ok) throw new Error("Failed to refresh unassigned");
-  return await res.json();
+  try {
+    return await apiGetJson(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+  } catch (err) {
+    throw new Error("Failed to refresh unassigned");
+  }
 }
 
 async function refreshUnassignedQueueAfterSave() {
@@ -1983,10 +1928,12 @@ async function loadNetWorthBreakdownForEndDate() {
   const end = document.getElementById("nw-end")?.value;
   if (!end) return;
 
-  const res = await fetch(`/net-worth?start=${end}&end=${end}`);
-  if (!res.ok) return;
-
-  const arr = await res.json();
+  let arr;
+  try {
+    arr = await apiGetJson(`/net-worth?start=${end}&end=${end}`);
+  } catch (_) {
+    return;
+  }
   setBreakdownUI(arr && arr.length ? arr[0] : null);
 }
 
@@ -2005,13 +1952,6 @@ function setInlineBreakdown(label, value) {
 
   l.textContent = label;
   v.textContent = money(value);
-}
-
-function isoLocal(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function endOfCurrentMonthISO() {
@@ -2034,14 +1974,6 @@ function addDays(d, n) {
   return x;
 }
 
-function dayLabel(d) {
-  return d.toLocaleDateString("en-US", { weekday: "short" });
-}
-
-function shortMD(d) {
-  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-}
-
 function signedMoney(n, isIncome) {
   const amt = Math.abs(Number(n || 0));
   const sign = isIncome ? "+" : "-";
@@ -2061,10 +1993,13 @@ function ellipsize(s, max = 14) {
 }
 
 async function renderUnknownMerchantRow(ul) {
-  const res = await fetch("/unknown-merchant-total-month");
-  if (!res.ok) return;
-
-  const { total, tx_count } = await res.json();
+  let payload;
+  try {
+    payload = await apiGetJson("/unknown-merchant-total-month");
+  } catch (_) {
+    return;
+  }
+  const { total, tx_count } = payload || {};
   const t = Number(total || 0);
   const c = Number(tx_count || 0);
 
@@ -2210,9 +2145,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
 
   try {
     // 1) Month budget numbers
-    const res = await fetch("/month-budget", { cache: "no-store" });
-    if (!res.ok) throw new Error("month-budget failed: " + res.status);
-    const d = await res.json();
+    const d = await apiGetJson("/month-budget", { cache: "no-store" });
 
     const safe  = Number(d.safe_to_spend || 0);
     const asOf  = d.as_of ? String(d.as_of) : "";
@@ -2232,9 +2165,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
 
     // 2) Daily limit (locked baseline + live remaining)
     const dlUrl = forceRecalcDaily ? "/day-limit?recalc=1" : "/day-limit";
-    const dlRes = await fetch(dlUrl, { cache: "no-store" });
-    if (!dlRes.ok) throw new Error("day-limit failed: " + dlRes.status);
-    const dl = await dlRes.json();
+    const dl = await apiGetJson(dlUrl, { cache: "no-store" });
 
     const baseline  = Number(dl.baseline || 0);
     const remaining = Number(dl.remaining_today || 0);
@@ -2367,7 +2298,7 @@ async function fetchPaychecksForMonth(year, month) {
   if (profile.service_start != null) profile.service_start = String(profile.service_start);
   if (profile.bah_override === "") profile.bah_override = null;
 
-  const res = await fetch("/les/paychecks", {
+  const res = await apiFetch("/les/paychecks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ year, month, profile })
@@ -2386,9 +2317,12 @@ async function fetchPaychecksForMonth(year, month) {
 }
 
 async function fetchInterestForMonth(year, month) {
-  const res = await fetch(`/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
-  if (!res.ok) return [];
-  const data = await res.json().catch(() => ({}));
+  let data;
+  try {
+    data = await apiGetJson(`/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+  } catch (_) {
+    return [];
+  }
   const events = Array.isArray(data?.events) ? data.events : [];
 
   // only interest-like income events
@@ -2451,7 +2385,7 @@ async function openIncomeBreakdown() {
     const interestTotal = interestEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
     const grandTotal = paycheckTotal + interestTotal;
 
-    if (subEl) subEl.textContent = `${money(grandTotal)} • ${today.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+    if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(today)}`;
 
     const payList = payEvents
       .slice()
@@ -2570,6 +2504,164 @@ function ensureExtraSavedModal() {
   return root;
 }
 
+// =========================
+// CSV Upload Modal (runs /csv/ingest)
+// =========================
+
+function ensureCsvUploadModal() {
+  let root = document.getElementById("csvUploadRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "csvUploadRoot";
+  root.className = "tx-inspect hidden";
+
+  // These are the EXACT filenames your postedDownload.py expects (without ".csv" is fine too).
+  // Keep these in sync with IMPORT_JOBS names/paths.
+  const expected = [
+    "amexCredit_72008",
+    "amexHYSA_3912",
+    "amexCredit_51007",
+    "capitalOne_9691",
+    "capitalOne_1047",
+    "capitalOne_8424",
+    "navyfcu_main_9338",
+    "navyfcu_bills_7613",
+    "discovery"
+  ];
+
+  const rowsHtml = expected.map(name => `
+    <div class="modal-row" style="display:grid; grid-template-columns: 180px 1fr; gap:10px; align-items:center;">
+      <div style="font-weight:700; opacity:.9;">${escapeHtml(name)}.csv</div>
+      <input type="file" accept=".csv,text/csv" data-csv-name="${escapeHtmlAttr(name)}" />
+    </div>
+  `).join("");
+
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-csv-close></div>
+
+    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="Import CSVs">
+      <div class="tx-inspect__head">
+        <div>
+          <div class="tx-inspect__title">Import CSVs</div>
+          <div id="csvUploadSub" class="tx-inspect__sub">Uploads are processed then deleted on the server.</div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="tx-inspect__body">
+        <div style="opacity:.75; font-size:12px; margin-bottom:10px;">
+          Pick the downloaded CSV for each account. Any missing files will be skipped.
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          ${rowsHtml}
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end;">
+          <button id="csvUploadCancel" class="settings-btn" type="button">Cancel</button>
+          <button id="csvUploadRun" class="settings-btn primary" type="button">Run import</button>
+        </div>
+
+        <div id="csvUploadMsg" style="margin-top:12px; font-size:12px; white-space:pre-wrap; opacity:.85;"></div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(root);
+
+  // close handlers
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-csv-close]")) closeCsvUploadModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeCsvUploadModal();
+  });
+
+  // buttons
+  const cancel = root.querySelector("#csvUploadCancel");
+  if (cancel) cancel.addEventListener("click", closeCsvUploadModal);
+
+  const runBtn = root.querySelector("#csvUploadRun");
+  if (runBtn) runBtn.addEventListener("click", runCsvIngest);
+
+  return root;
+}
+
+function closeCsvUploadModal() {
+  const root = document.getElementById("csvUploadRoot");
+  if (root) root.classList.add("hidden");
+}
+
+function openCsvUploadModal() {
+  const root = ensureCsvUploadModal();
+  const msg = document.getElementById("csvUploadMsg");
+  if (msg) msg.textContent = "";
+  root.classList.remove("hidden");
+}
+
+async function runCsvIngest() {
+  const msg = document.getElementById("csvUploadMsg");
+  const sub = document.getElementById("csvUploadSub");
+  const runBtn = document.getElementById("csvUploadRun");
+
+  if (msg) msg.textContent = "";
+  if (sub) sub.textContent = "Uploading…";
+  if (runBtn) runBtn.disabled = true;
+
+  try {
+    const inputs = Array.from(document.querySelectorAll('#csvUploadRoot input[type="file"][data-csv-name]'));
+    const fd = new FormData();
+
+    let picked = 0;
+    for (const inp of inputs) {
+      const name = inp.getAttribute("data-csv-name");
+      const file = inp.files && inp.files[0];
+      if (!file) continue;
+
+      picked += 1;
+      // IMPORTANT: these two lists must align by index
+      fd.append("target_names", name);
+      fd.append("files", file, file.name);
+    }
+
+    if (picked === 0) {
+      if (sub) sub.textContent = "Pick at least one CSV.";
+      if (runBtn) runBtn.disabled = false;
+      return;
+    }
+
+    let out;
+    try {
+      out = await apiPostForm("/csv/ingest", fd);
+    } catch (err) {
+      const detail = err?.message ? String(err.message) : "";
+      throw new Error(detail || "Upload failed");
+    }
+
+    if (!out.ok) {
+      const detail = out?.detail ? JSON.stringify(out.detail, null, 2) : JSON.stringify(out, null, 2);
+      throw new Error(detail || "Upload failed");
+    }
+
+    if (sub) sub.textContent = `Imported: ${Array.isArray(out.processed) ? out.processed.length : 0} file(s)`;
+    if (msg) msg.textContent = (out.stdout || "").trim() || "Done.";
+
+    // Refresh UI
+    try { loadBankTotals(); } catch (_) {}
+    try { loadData(); } catch (_) {}
+    try { loadMonthBudget(); } catch (_) {}
+
+  } catch (e) {
+    console.error(e);
+    if (sub) sub.textContent = "Import failed";
+    if (msg) msg.textContent = String(e?.message || e);
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+
 function closeExtraSavedModal() {
   const root = document.getElementById("extraSavedRoot");
   if (root) root.classList.add("hidden");
@@ -2664,12 +2756,10 @@ async function openSpentBreakdown() {
   const endISO   = isoLocalDate();
 
   try {
-    const res = await fetch(
+    const d = await apiGetJson(
       `/spent-so-far-breakdown?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
       { cache: "no-store" }
     );
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const d = await res.json();
 
     if (subEl) subEl.textContent = `${d.start} → ${d.end} · Total: ${money(Number(d.total || 0))}`;
 
@@ -2735,12 +2825,10 @@ async function openSpentBreakdown() {
         pane.innerHTML = `<div style="opacity:.7;">Loading…</div>`;
 
         try {
-          const txRes = await fetch(
+          const txData = await apiGetJson(
             `/spent-so-far-transactions?category=${encodeURIComponent(cat)}&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
             { cache: "no-store" }
           );
-          if (!txRes.ok) throw new Error("HTTP " + txRes.status);
-          const txData = await txRes.json();
           const tx = (txData && txData.transactions) || [];
 
           if (!tx.length) {
@@ -2778,9 +2866,7 @@ async function fetchCategoryTx(category, start, end, limit = 500) {
   const url =
     `/category-transactions?category=${encodeURIComponent(catParam)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&limit=${encodeURIComponent(limit)}`;
 
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("category-transactions failed: " + res.status);
-  const rows = await res.json();
+  const rows = await apiGetJson(url, { cache: "no-store" });
   return Array.isArray(rows) ? rows : [];
 }
 
@@ -2850,19 +2936,6 @@ function renderTxMiniList(rows) {
   return `<div>${lines}</div>`;
 }
 
-// Helpers for attribute escaping + safe selectors
-function escapeHtmlAttr(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-function cssEscapeAttr(s) {
-  // minimal “escape” for our attribute lookup; we already store exact string in attribute
-  return String(s || "").replaceAll('"', "&quot;");
-}
-
 function ensureTxInspectModal() {
   let root = document.getElementById("txInspectRoot");
   if (root) return root;
@@ -2905,21 +2978,9 @@ function closeTxInspect() {
   if (root) root.classList.add("hidden");
 }
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 async function openTxInspect(txId) {
   try {
-    const res = await fetch(`/transaction/${encodeURIComponent(txId)}`);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-
-    const data = await res.json();
+    const data = await apiGetJson(`/transaction/${encodeURIComponent(txId)}`);
     if (!data.ok) {
       alert("Transaction not found: " + txId);
       return;

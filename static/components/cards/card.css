@@ -1,0 +1,5 @@
+.c-card{
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--radius-lg, 16px);
+  background: var(--card, #fff);
+}

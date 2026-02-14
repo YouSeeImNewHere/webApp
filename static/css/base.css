@@ -82,28 +82,11 @@ body{
    Bank + Category Layout
    ============================================================================= */
 
-.bank-area{
-  display: flex;
-  gap: 16px;
-  align-items: stretch;
-}
-
-.bank-main{
-  flex: 1;
-  min-width: 0;
-}
-
-.bank-box-fill{ width: 100%; }
-
 .category-box{
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px;
   background: var(--card);
-}
-
-.category-box--sidebar{
-  width: 280px;
 }
 
 .category-box__header{
@@ -173,108 +156,6 @@ body{
   font-weight:800;
   font-variant-numeric: tabular-nums;
 }
-
-/* =============================================================================
-   Bank Totals (Desktop Cards)
-   ============================================================================= */
-
-#bankTotals{
-  display:grid;
-  gap:12px;
-}
-
-.bank-card{
-  border:1px solid #e7e7e7;
-  border-radius:16px;
-  padding:14px;
-  background: var(--card);
-  margin-bottom: 12px; /* keep your bank info spacing */
-}
-
-.bank-card__head{
-  display:flex;
-  justify-content:space-between;
-  align-items:baseline;
-  gap:12px;
-}
-
-.bank-card__title{
-  font-size:18px;
-  font-weight:700;
-}
-
-.bank-card__meta{
-  font-size:13px;
-  opacity:0.65;
-  margin-top:4px;
-}
-
-.bank-card__total{
-  font-size:32px;
-  font-weight:800;
-  letter-spacing:-0.4px;
-  text-align:right;
-  font-variant-numeric: tabular-nums;
-}
-
-.bank-sublist{
-  list-style:none;
-  padding:0;
-  margin:14px 0 0;
-  display:grid;
-  gap:8px;
-}
-
-/* =============================================================================
-   Account Pills
-   ============================================================================= */
-
-.account-pill{
-  width:100%;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:10px;
-  padding:10px 12px;
-  border:1px solid #eee;
-  border-radius:12px;
-  background:#fafafa;
-  cursor:pointer;
-}
-
-.account-pill:hover{ background:#f3f3f3; }
-.account-pill span:last-child{ font-variant-numeric: tabular-nums; }
-
-/* =============================================================================
-   Bank Totals Accordion (kept, desktop-safe)
-   ============================================================================= */
-
-.bank-accordion__header{
-  width:100%;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:12px;
-  border-radius:14px;
-  border:1px solid rgba(0,0,0,0.12);
-  background:#fff;
-  cursor:pointer;
-  font-weight:800;
-}
-
-.bank-accordion__meta{
-  font-weight:700;
-  opacity:0.75;
-  margin-left:8px;
-  font-size:12px;
-}
-
-.bank-accordion__panel{
-  margin-top:8px;
-  padding-left:6px;
-}
-
-.bank-accordion__panel[hidden]{ display:none; }
 
 /* =============================================================================
    Transactions List (Desktop)
@@ -1952,342 +1833,6 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
 }
 
 /* =============================================================================
-   Sidebar stack (desktop)
-   ============================================================================= */
-
-.sidebar-stack{
-  width: 280px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-#monthBudgetMount .category-box{
-  width: 100%;
-}
-
-/* Non-clickable pills (for KPI summaries) */
-.category-pill.is-static{
-  cursor: default;
-}
-.category-pill.is-static:hover{
-  opacity: 1;
-}
-
-/* Month Budget (Home sidebar) */
-.month-budget__top{
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.mb-kpi{
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mb-label{
-  font-size: 11px;
-  font-weight: 800;
-  opacity: 0.65;
-  letter-spacing: 0.3px;
-}
-
-.mb-value{
-  font-size: 26px;
-  font-weight: 900;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.mb-meta{
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 700;
-  opacity: 0.6;
-  line-height: 1.3;
-  text-align: left;
-  white-space: normal;
-}
-
-.mb-bar{
-  margin-top: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.08);
-  overflow: hidden;
-}
-
-.mb-bar__fill{
-  height: 100%;
-  width: 0%;
-  background: rgba(0,0,0,0.75);
-  border-radius: 999px;
-  transition: width .25s ease;
-}
-
-.mb-bar__fill.over{
-  background: rgba(0,0,0,0.90);
-}
-
-/* ============================
-   Upcoming (Home) — REAL DOM
-   .mini-calendar[data-upcoming-body] contains day cards built with inline styles
-   ============================ */
-
-/* Horizontal scrolling across day cards stays on the strip */
-.mini-calendar[data-upcoming-body]{
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-/* Day card container (direct child of the strip) */
-.mini-calendar[data-upcoming-body] > div{
-  display: flex;
-  flex-direction: column;
-  overflow: visible;      /* prevent any inner horizontal scroll bleed */
-}
-
-/* Header row (first child inside the day card) */
-.mini-calendar[data-upcoming-body] > div > div:first-child{
-  flex: 0 0 auto;
-}
-
-/* Body (second child inside the day card) — show everything */
-.mini-calendar[data-upcoming-body] > div > div:nth-child(2){
-  overflow: visible !important;     /* no scroll, no clipping */
-  max-height: none !important;      /* override inline max-height:84px */
-}
-
-
-/* Make sure nothing inside can force horizontal overflow */
-.mini-calendar[data-upcoming-body] > div > div:nth-child(2) *{
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ============================
-   Upcoming day modal
-   ============================ */
-.upc-modal.hidden{ display:none; }
-
-.upc-modal{
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-}
-
-.upc-backdrop{
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.35);
-}
-
-.upc-card{
-  position: absolute;
-  left: 50%;
-  top: 10%;
-  transform: translateX(-50%);
-  width: min(720px, calc(100% - 24px));
-  max-height: 80%;
-  background: #fff;
-  border-radius: 16px;
-  border: 1px solid rgba(0,0,0,0.12);
-  overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
-}
-
-.upc-head{
-  display:flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(0,0,0,0.08);
-}
-
-.upc-title{ font-weight: 900; text-transform: uppercase; }
-.upc-sub{ font-size: 12px; opacity: .65; font-weight: 700; }
-
-.upc-close{
-  border: 1px solid rgba(0,0,0,0.15);
-  background: #fff;
-  border-radius: 10px;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.upc-body{
-  padding: 10px 14px;
-  overflow: auto;
-  max-height: calc(80vh - 58px);
-}
-
-.upc-section{
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(0,0,0,0.08);
-}
-.upc-section:last-child{ border-bottom:none; }
-
-.upc-section-head{
-  display:flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-  font-weight: 900;
-  margin-bottom: 8px;
-}
-
-.upc-muted{ opacity:.6; font-weight: 800; }
-
-.upc-row{
-  display:flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 0;
-}
-
-.upc-left{
-  min-width: 0;
-  font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.upc-right{
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  font-weight: 900;
-}
-/* Upcoming mini-calendar day cards + modal */
-.upcoming-day-card{
-  border: 1px solid #eee;
-  border-radius: 12px;
-  padding: 10px;
-  min-height: 86px;
-  cursor: pointer;
-}
-
-.upcoming-day-card__head{
-  display:flex;
-  justify-content:space-between;
-  align-items:baseline;
-  gap:8px;
-}
-
-.upcoming-day-card__dow{ font-weight:700; }
-.upcoming-day-card__md{ opacity:.75; font-size:.9em; }
-
-.upcoming-day-card__list{
-  margin-top: 8px;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-}
-
-.upcoming-day-card__line{
-  display:flex;
-  justify-content:space-between;
-  gap:8px;
-  font-size:.9em;
-}
-
-.upcoming-day-card__empty{ opacity:.35; }
-.upcoming-day-card__more{ opacity:.6; font-size:.85em; }
-
-/* Modal */
-.upcoming-day-backdrop{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.35);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  z-index: 2000;
-}
-
-.upcoming-day-modal{
-  background: #fff;
-  border-radius: 16px;
-  width: min(560px, 100%);
-  max-height: 80vh;
-  overflow: auto;
-  border: 1px solid rgba(0,0,0,0.12);
-  box-shadow: 0 18px 50px rgba(0,0,0,0.18);
-}
-
-.upcoming-day-modal__head{
-  position: sticky;
-  top: 0;
-  background: #fff;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(0,0,0,0.08);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-}
-
-.upcoming-day-modal__title{
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.upcoming-day-modal__close{
-  appearance:none;
-  border: 1px solid rgba(0,0,0,0.14);
-  background:#fff;
-  border-radius: 999px;
-  width: 34px;
-  height: 34px;
-  cursor:pointer;
-}
-
-.upcoming-day-modal__body{
-  padding: 12px 14px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-
-.upcoming-day-row{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:flex-start;
-  padding: 10px 10px;
-  border: 1px solid rgba(0,0,0,0.06);
-  border-radius: 12px;
-  background: #fafafa;
-}
-
-.upcoming-day-row__merchant{
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.upcoming-day-row__sub{
-  margin-top: 3px;
-  font-size: 12px;
-  font-weight: 700;
-  opacity: .65;
-}
-
-.upcoming-day-row__amt{
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-
-
-/* =============================================================================
    Transaction Inspect modal
    ============================================================================= */
 .tx-inspect.hidden{ display:none; }
@@ -2648,46 +2193,6 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   height: 100%;
   object-fit: contain;
   display: block;
-}
-
-/* =============================
-   Home Layout Customize
-   ============================= */
-.customize-btn{
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 9999;
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.12);
-  background: #fff;
-}
-
-.customize-btn--done{
-  background: #111;
-  color: #fff;
-}
-
-body.is-customizing .home-section,
-body.is-customizing #sidebarStack > [data-sidebar-section],
-body.is-customizing .bank-type-block{
-  outline: 2px dashed rgba(0,0,0,0.25);
-  outline-offset: 6px;
-}
-
-body.is-customizing .bank-type-block,
-body.is-customizing .home-section,
-body.is-customizing #sidebarStack > [data-sidebar-section]{
-  cursor: grab;
-}
-
-body.is-customizing .account-pill{
-  cursor: grab;
 }
 
 /* ================================
@@ -4797,6 +4302,132 @@ body.page-spending .chart-canvas-box{
 :root:not([data-theme]) .tx-row.is-pending:hover{
   background: var(--pending-hover) !important;
 }
+
+/* Shared upcoming day modal layout (Home + Account) */
+.upcoming-day-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 10002;
+}
+
+.upcoming-day-modal{
+  border-radius: 16px;
+  width: min(560px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  border: 1px solid rgba(0,0,0,0.12);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.18);
+}
+
+.upcoming-day-modal__head{
+  position: sticky;
+  top: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.upcoming-day-modal__title{
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.upcoming-day-modal__body{
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.upcoming-day-row{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 12px;
+}
+
+.upcoming-day-row__merchant{
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.upcoming-day-row__sub{
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .65;
+}
+
+.upcoming-day-row__amt{
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Account page: upcoming day cards should match Home transaction card feel */
+body.page-account .upcoming-day-card{
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-height: 86px;
+  cursor: pointer;
+}
+
+body.page-account .upcoming-day-card:hover{
+  background: var(--surface-hover, rgba(255,255,255,0.06)) !important;
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border)) !important;
+}
+
+body.page-account .upcoming-day-card__head{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+body.page-account .upcoming-day-card__dow{ font-weight: 800; }
+body.page-account .upcoming-day-card__md{
+  color: var(--muted) !important;
+  font-size: .9em;
+}
+
+body.page-account .upcoming-day-card__list{
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+body.page-account .upcoming-day-card__line{
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: .9em;
+}
+
+body.page-account .upcoming-day-card__cat{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.page-account .upcoming-day-card__empty,
+body.page-account .upcoming-day-card__more{
+  color: var(--muted) !important;
+}
 /* ============================
    Notifications: POPUP modal
    ============================ */
@@ -5483,122 +5114,6 @@ body.page-budget .budget-actions{
   gap: 8px;
   flex-wrap: nowrap;
 }
-/* ===== Month budget card (Home) two-column layout ===== */
-body.page-home #monthBudget .mb-grid{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-body.page-home #monthBudget .mb-col{
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-body.page-home #monthBudget .mb-col--today{
-  padding-left: 10px;
-  border-left: 1px solid rgba(0,0,0,0.08);
-}
-
-body.page-home #monthBudget .mb-today-row{
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-body.page-home #monthBudget .mb-today-value{
-  font-size: 18px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-body.page-home #monthBudget .mb-today-meta{
-  font-size: 11px;
-  opacity: .65;
-  line-height: 1.2;
-}
-
-/* Daily bar: "full = no spending", drains as you spend */
-body.page-home #monthBudget .mb-bar--daily{
-  background: rgba(0,0,0,0.10);
-}
-/* =============================================================================
-   HOME — Month budget card (desktop/tablet)
-   Put this at the VERY BOTTOM of base.css
-   ============================================================================= */
-
-body.page-home #monthBudget .month-budget__top{
-  /* Two columns: left = month, right = today */
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-  column-gap: 14px;
-  row-gap: 6px;
-  align-items: start;
-}
-
-/* Left column content */
-body.page-home #monthBudget .mb-kpi{ grid-column: 1; }
-body.page-home #monthBudget .mb-meta{ grid-column: 1; margin-top: 0; }
-body.page-home #monthBudget .mb-goal{ grid-column: 1; margin-top: 2px !important; }
-
-/* Right column content (Today block) */
-body.page-home #monthBudget .mb-daily{
-  grid-column: 2;
-  grid-row: 1 / span 3;
-
-  /* override the inline flex row style cleanly */
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
-
-  margin-top: 0 !important;
-  padding-left: 14px;
-  border-left: 1px solid var(--border);
-}
-
-body.page-home #monthBudget .mb-daily > div{
-  min-width: 0;
-}
-
-body.page-home #monthBudget #mbDaily{
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-body.page-home #monthBudget #mbDailyMeta{
-  line-height: 1.25;
-}
-
-/* Recalc button: never overflow / never wrap */
-body.page-home #monthBudget #mbRecalcDaily{
-  white-space: nowrap;
-  flex: 0 0 auto;
-  align-self: center;
-}
-
-/* Tighten the month bar spacing a bit */
-body.page-home #monthBudget .mb-bar{
-  margin-top: 8px;
-}
-
-/* If you have a daily bar element/class, make it look right */
-body.page-home #monthBudget .mb-bar--daily{
-  margin-top: 8px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.08);
-  overflow: hidden;
-}
-
-body.page-home #monthBudget .mb-bar--daily .mb-bar__fill{
-  height: 100%;
-  border-radius: 999px;
-}
 /* Recurring controls: single horizontal row */
 body.page-recurring .category-box > div{
   display: flex;
@@ -5607,173 +5122,6 @@ body.page-recurring .category-box > div{
   gap: 10px;
 }
 
-/* =============================================================================
-   HOME — Month budget card
-   Desktop: STACKED (month section, then daily section)
-   ============================================================================= */
-
-/* Make sure the generic ".category-box > div" never breaks this layout */
-body.page-home #monthBudget .mb-grid{
-  display: grid !important;
-  grid-template-columns: 1fr !important; /* <- stacked on desktop */
-  gap: 12px;
-  margin-top: 8px;
-  align-items: start;
-}
-
-body.page-home #monthBudget .mb-col{
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-#mbDailyMeta,
-#mbMeta{
-  white-space: pre-line;
-}
-
-/* Daily section becomes a second block underneath */
-body.page-home #monthBudget .mb-col--today{
-  padding-left: 0 !important;
-  border-left: 0 !important;
-
-  border-top: 1px solid rgba(0,0,0,0.10);
-  padding-top: 10px;
-  margin-top: 2px;
-}
-
-/* Keep the "Today left" row clean */
-body.page-home #monthBudget .mb-today-row{
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-body.page-home #monthBudget #mbRecalcDaily{
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
-/* Bars should never shrink weirdly */
-body.page-home #monthBudget .mb-bar,
-body.page-home #monthBudget .mb-bar--daily{
-  width: 100%;
-}
-/* =============================================================================
-   HOME — Month budget card (FINAL OVERRIDES)
-   Desktop/tablet: STACKED (month section then daily section)
-   Fix typography + alignment so it stops looking “random”
-   ============================================================================= */
-body.page-home #monthBudget .mb-grid{
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 14px !important;
-  margin-top: 10px !important;
-  align-items: start !important;
-}
-
-body.page-home #monthBudget .mb-col{
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 8px !important;
-  min-width: 0 !important;
-}
-
-/* Daily block under month block on desktop */
-body.page-home #monthBudget .mb-col--today{
-  padding-left: 0 !important;
-  border-left: 0 !important;
-
-  border-top: 1px solid rgba(0,0,0,0.10) !important;
-  padding-top: 12px !important;
-  margin-top: 2px !important;
-}
-
-/* --- Typography (consistent scale) --- */
-body.page-home #monthBudget .mb-label{
-  font-size: 11px !important;
-  font-weight: 900 !important;
-  letter-spacing: .02em !important;
-  text-transform: uppercase !important;
-  opacity: .65 !important;
-  line-height: 1.1 !important;
-}
-
-body.page-home #monthBudget .mb-value{
-  font-size: 30px !important;
-  font-weight: 950 !important;
-  line-height: 1.05 !important;
-  font-variant-numeric: tabular-nums !important;
-  margin-top: 2px !important;
-}
-
-body.page-home #monthBudget .mb-meta{
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  opacity: .65 !important;
-  line-height: 1.25 !important;
-  margin-top: 2px !important;
-}
-
-body.page-home #monthBudget .mb-goal{
-  font-size: 14px !important;
-  font-weight: 850 !important;
-  line-height: 1.2 !important;
-  margin-top: 2px !important;
-}
-
-/* Today row: big number + button aligned nicely */
-body.page-home #monthBudget .mb-today-row{
-  display: flex !important;
-  align-items: baseline !important;
-  justify-content: space-between !important;
-  gap: 12px !important;
-}
-
-body.page-home #monthBudget .mb-today-value{
-  font-size: 22px !important;
-  font-weight: 950 !important;
-  line-height: 1.05 !important;
-  font-variant-numeric: tabular-nums !important;
-  white-space: nowrap !important;
-}
-
-body.page-home #monthBudget .mb-today-meta{
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  opacity: .65 !important;
-  line-height: 1.25 !important;
-}
-
-/* Recalc button: match the card typography */
-body.page-home #monthBudget #mbRecalcDaily{
-  height: 30px !important;
-  padding: 0 10px !important;
-  border-radius: 999px !important;
-  font-size: 12px !important;
-  font-weight: 900 !important;
-  white-space: nowrap !important;
-}
-
-/* Bars: consistent height + spacing */
-body.page-home #monthBudget .mb-bar{
-  margin-top: 8px !important;
-  height: 10px !important;
-  border-radius: 999px !important;
-  overflow: hidden !important;
-  background: rgba(0,0,0,0.10) !important;
-}
-
-body.page-home #monthBudget .mb-bar__fill{
-  height: 100% !important;
-  border-radius: 999px !important;
-}
-
-/* Daily bar should look “drain down” (fill width is set in JS) */
-body.page-home #monthBudget .mb-bar--daily{
-  margin-top: 8px !important;
-}
 /* Budget: keep "Savings goal" + "As of" on ONE line */
 body.page-budget .budget-row--head{
   flex-wrap: nowrap !important;

@@ -2,68 +2,22 @@
 <html lang="en">
 <head>
   <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
-
-  <!-- add this <style> block in <head> (after your CSS links) -->
-<style>
-  /* Categories table + pie chart side-by-side (stacks on mobile) */
-  .spent-flex{display:flex; gap:12px; align-items:stretch;}
-  .spent-left{flex:1 1 auto; min-width:0;}
-  .spent-chart{
-  flex: 0 0 340px;   /* wider column */
-  max-width: 340px;
-  display: flex;
-}
-
-  .spent-chart .budget-chart-box{height:100%;}
-
-  .budget-chart-box{
-    border: 1px solid var(--border, rgba(255,255,255,0.12));
-    border-radius: 14px;
-    padding: 10px;
-    background: var(--card, rgba(0,0,0,0.08));
-  }
-
-  /* Square-ish box */
-  .budget-chart-box.is-square{
-  width: 100%;
-  height: 100%;        /* 🔥 fill available height */
-  min-height: 280px;  /* safety */
-}
-
-  .budget-chart-box canvas{width:100% !important; height:100% !important; display:block;}
-
-  /* Color chip in the category cell */
-  .cat-chip{display:flex; align-items:center; gap:10px;}
-  .cat-swatch{width:10px; height:10px; border-radius:999px; flex:0 0 auto;}
-
-  @media (max-width: 700px){
-    .spent-flex{flex-direction:column;}
-    .spent-chart{flex:1 1 auto; max-width:none; width:100%;}
-    .budget-chart-box.is-square{max-height:none;}
-  }
-  /* Number badge next to category */
-.cat-num{
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 900;
-  color: #fff;
-  flex: 0 0 auto;
-}
-
-</style>
-
-
-  <meta charset="utf-8" />
+<meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <title>Budget</title>
 
-  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/cards/card.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/tables/table.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/budget/budget.css?v={{ BUILD_ID }}">
+  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
 
 <body class="page-budget">
@@ -294,10 +248,13 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/static/profile.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/shared/state.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/shared/auth.js?v={{ BUILD_ID }}" defer></script>
   <script src="/static/shared/format.js?v={{ BUILD_ID }}" defer></script>
   <script src="/static/shared/dates.js?v={{ BUILD_ID }}" defer></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
-  <script type="module" src="/static/budget.js"></script>
+  <script type="module" src="/static/pages/budget/budget.js?v={{ BUILD_ID }}"></script>
 
 </body>
 </html>
+
