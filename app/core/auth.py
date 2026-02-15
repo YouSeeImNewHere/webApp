@@ -4,6 +4,7 @@ import base64
 import json
 import secrets
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -30,6 +31,8 @@ from app.core.config import (
 
 router = APIRouter()
 _PUSH_PROCESS_LOCK = threading.Lock()
+_OAUTH_TABLES_LOCK = threading.Lock()
+_OAUTH_TABLES_READY = False
 
 # Public endpoints (no login required)
 PUBLIC_EXACT = {
@@ -71,38 +74,81 @@ def _google_redirect_uri() -> str:
     return "http://localhost:8000/gmail/oauth/callback"
 
 
-def ensure_google_oauth_table():
-    with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS gmail_oauth_tokens (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                google_email TEXT,
-                access_token TEXT NOT NULL,
-                refresh_token TEXT,
-                token_type TEXT,
-                scope TEXT,
-                expires_at TIMESTAMPTZ,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            )
-            """
-        )
-        conn.commit()
+def _is_transient_admin_shutdown_error(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return "terminating connection due to administrator command" in s
+
+
+def _run_db_with_retry(fn):
+    for i in range(2):
+        try:
+            return fn()
+        except Exception as e:
+            if i == 0 and _is_transient_admin_shutdown_error(e):
+                time.sleep(0.35)
+                continue
+            raise
+
+
+def _ensure_oauth_tables():
+    global _OAUTH_TABLES_READY
+    if _OAUTH_TABLES_READY:
+        return
+    with _OAUTH_TABLES_LOCK:
+        if _OAUTH_TABLES_READY:
+            return
+
+        def _create():
+            with with_db_cursor() as (conn, cur):
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS gmail_oauth_tokens (
+                        id INTEGER PRIMARY KEY DEFAULT 1,
+                        google_email TEXT,
+                        access_token TEXT NOT NULL,
+                        refresh_token TEXT,
+                        token_type TEXT,
+                        scope TEXT,
+                        expires_at TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS gmail_push_state (
+                        id INTEGER PRIMARY KEY DEFAULT 1,
+                        last_history_id TEXT,
+                        google_email TEXT,
+                        last_processed_count INTEGER NOT NULL DEFAULT 0,
+                        last_error TEXT,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                conn.commit()
+
+        _run_db_with_retry(_create)
+        _OAUTH_TABLES_READY = True
 
 
 def _get_google_tokens():
-    ensure_google_oauth_table()
-    with with_db_cursor() as (_, cur):
-        cur.execute(
-            """
-            SELECT id, google_email, access_token, refresh_token, token_type, scope, expires_at
-            FROM gmail_oauth_tokens
-            WHERE id = 1
-            LIMIT 1
-            """
-        )
-        return cur.fetchone()
+    _ensure_oauth_tables()
+
+    def _query():
+        with with_db_cursor() as (_, cur):
+            cur.execute(
+                """
+                SELECT id, google_email, access_token, refresh_token, token_type, scope, expires_at
+                FROM gmail_oauth_tokens
+                WHERE id = 1
+                LIMIT 1
+                """
+            )
+            return cur.fetchone()
+
+    return _run_db_with_retry(_query)
 
 
 def _save_google_tokens(
@@ -114,50 +160,41 @@ def _save_google_tokens(
     expires_at: datetime | None,
     google_email: str | None,
 ):
-    ensure_google_oauth_table()
-    with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            INSERT INTO gmail_oauth_tokens
-                (id, google_email, access_token, refresh_token, token_type, scope, expires_at, updated_at)
-            VALUES
-                (1, %s, %s, %s, %s, %s, %s, now())
-            ON CONFLICT (id) DO UPDATE SET
-                google_email = EXCLUDED.google_email,
-                access_token = EXCLUDED.access_token,
-                refresh_token = COALESCE(EXCLUDED.refresh_token, gmail_oauth_tokens.refresh_token),
-                token_type = EXCLUDED.token_type,
-                scope = EXCLUDED.scope,
-                expires_at = EXCLUDED.expires_at,
-                updated_at = now()
-            """,
-            (google_email, access_token, refresh_token, token_type, scope, expires_at),
-        )
-        conn.commit()
+    _ensure_oauth_tables()
 
-
-def ensure_gmail_push_state_table():
-    with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS gmail_push_state (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                last_history_id TEXT,
-                google_email TEXT,
-                last_processed_count INTEGER NOT NULL DEFAULT 0,
-                last_error TEXT,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    def _write():
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                INSERT INTO gmail_oauth_tokens
+                    (id, google_email, access_token, refresh_token, token_type, scope, expires_at, updated_at)
+                VALUES
+                    (1, %s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT (id) DO UPDATE SET
+                    google_email = EXCLUDED.google_email,
+                    access_token = EXCLUDED.access_token,
+                    refresh_token = COALESCE(EXCLUDED.refresh_token, gmail_oauth_tokens.refresh_token),
+                    token_type = EXCLUDED.token_type,
+                    scope = EXCLUDED.scope,
+                    expires_at = EXCLUDED.expires_at,
+                    updated_at = now()
+                """,
+                (google_email, access_token, refresh_token, token_type, scope, expires_at),
             )
-            """
-        )
-        conn.commit()
+            conn.commit()
+
+    _run_db_with_retry(_write)
 
 
 def _get_last_history_id() -> str | None:
-    ensure_gmail_push_state_table()
-    with with_db_cursor() as (_, cur):
-        cur.execute("SELECT last_history_id FROM gmail_push_state WHERE id = 1 LIMIT 1")
-        row = cur.fetchone()
+    _ensure_oauth_tables()
+
+    def _query():
+        with with_db_cursor() as (_, cur):
+            cur.execute("SELECT last_history_id FROM gmail_push_state WHERE id = 1 LIMIT 1")
+            return cur.fetchone()
+
+    row = _run_db_with_retry(_query)
     if not row:
         return None
     return row.get("last_history_id")
@@ -170,22 +207,26 @@ def _save_push_state(
     processed_count: int = 0,
     last_error: str | None = None,
 ):
-    ensure_gmail_push_state_table()
-    with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            INSERT INTO gmail_push_state (id, last_history_id, google_email, last_processed_count, last_error, updated_at)
-            VALUES (1, %s, %s, %s, %s, now())
-            ON CONFLICT (id) DO UPDATE SET
-                last_history_id = EXCLUDED.last_history_id,
-                google_email = EXCLUDED.google_email,
-                last_processed_count = EXCLUDED.last_processed_count,
-                last_error = EXCLUDED.last_error,
-                updated_at = now()
-            """,
-            (last_history_id, google_email, int(processed_count), last_error),
-        )
-        conn.commit()
+    _ensure_oauth_tables()
+
+    def _write():
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                INSERT INTO gmail_push_state (id, last_history_id, google_email, last_processed_count, last_error, updated_at)
+                VALUES (1, %s, %s, %s, %s, now())
+                ON CONFLICT (id) DO UPDATE SET
+                    last_history_id = EXCLUDED.last_history_id,
+                    google_email = EXCLUDED.google_email,
+                    last_processed_count = EXCLUDED.last_processed_count,
+                    last_error = EXCLUDED.last_error,
+                    updated_at = now()
+                """,
+                (last_history_id, google_email, int(processed_count), last_error),
+            )
+            conn.commit()
+
+    _run_db_with_retry(_write)
 
 
 def _refresh_google_access_token_if_needed():
@@ -474,10 +515,14 @@ def gmail_oauth_status():
 
 @router.post("/gmail/oauth/disconnect")
 def gmail_oauth_disconnect():
-    ensure_google_oauth_table()
-    with with_db_cursor() as (conn, cur):
-        cur.execute("DELETE FROM gmail_oauth_tokens WHERE id = 1")
-        conn.commit()
+    _ensure_oauth_tables()
+
+    def _delete():
+        with with_db_cursor() as (conn, cur):
+            cur.execute("DELETE FROM gmail_oauth_tokens WHERE id = 1")
+            conn.commit()
+
+    _run_db_with_retry(_delete)
     return {"ok": True, "connected": False}
 
 
@@ -495,17 +540,21 @@ def gmail_watch_renew(request: Request):
 
 @router.get("/gmail/push/state")
 def gmail_push_state():
-    ensure_gmail_push_state_table()
-    with with_db_cursor() as (_, cur):
-        cur.execute(
-            """
-            SELECT last_history_id, google_email, last_processed_count, last_error, updated_at
-            FROM gmail_push_state
-            WHERE id = 1
-            LIMIT 1
-            """
-        )
-        row = cur.fetchone()
+    _ensure_oauth_tables()
+
+    def _query():
+        with with_db_cursor() as (_, cur):
+            cur.execute(
+                """
+                SELECT last_history_id, google_email, last_processed_count, last_error, updated_at
+                FROM gmail_push_state
+                WHERE id = 1
+                LIMIT 1
+                """
+            )
+            return cur.fetchone()
+
+    row = _run_db_with_retry(_query)
     return {"ok": True, "state": row or {}}
 
 
