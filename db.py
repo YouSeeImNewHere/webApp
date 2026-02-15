@@ -1,5 +1,6 @@
 # db.py
 import os
+import time
 from dotenv import load_dotenv
 from contextlib import contextmanager
 from psycopg_pool import ConnectionPool
@@ -34,15 +35,42 @@ def get_conn():
         yield conn
 
 def query_db(sql: str, params=()):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            if cur.description:
-                return cur.fetchall()
-            return []
+    def _run():
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                if cur.description:
+                    return cur.fetchall()
+                return []
+    return run_db_retry(_run, retries=1)
 
 @contextmanager
 def with_db_cursor():
     with get_conn() as conn:
         with conn.cursor() as cur:
             yield conn, cur
+
+
+def is_transient_db_error(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return (
+        "terminating connection due to administrator command" in s
+        or "connection is closed" in s
+        or "server closed the connection unexpectedly" in s
+        or "could not receive data from server" in s
+        or "ssl connection has been closed unexpectedly" in s
+    )
+
+
+def run_db_retry(fn, retries: int = 1, sleep_seconds: float = 0.35):
+    last_exc = None
+    for attempt in range(retries + 1):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if attempt < retries and is_transient_db_error(e):
+                time.sleep(sleep_seconds)
+                continue
+            raise
+    raise last_exc

@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.routers.balances import latest_rates_map_pg
-from db import with_db_cursor, query_db
+from db import with_db_cursor, query_db, run_db_retry
 
 router = APIRouter()
 
@@ -60,63 +60,68 @@ def account_info(account_id: int):
 
 @router.get("/bank-info")
 def bank_info():
-    with with_db_cursor() as (conn, cur):
-        # Current rate (decimal) from interest_rates: 0.0425 means 4.25%
-        # Your app_postgres.py already defines latest_rates_map_pg()
-        rate_now = latest_rates_map_pg()
+    def _run():
+        with with_db_cursor() as (conn, cur):
+            # Current rate (decimal) from interest_rates: 0.0425 means 4.25%
+            # Your app_postgres.py already defines latest_rates_map_pg()
+            rate_now = latest_rates_map_pg()
 
-        # Be robust to schema (no hard requirement for optional columns/tables)
-        has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
-        has_notes = _pg_column_exists(cur, "accounts", "notes")  # only if you added it
-        has_card_benefits = _pg_table_exists(cur, "card_benefits")
+            # Be robust to schema (no hard requirement for optional columns/tables)
+            has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
+            has_notes = _pg_column_exists(cur, "accounts", "notes")  # only if you added it
+            has_card_benefits = _pg_table_exists(cur, "card_benefits")
 
-        # Build SELECT lists without requiring non-existent columns
-        account_select = """
-          SELECT id AS account_id,
-                 institution AS bank,
-                 name,
-                 LOWER(accountType) AS type
-        """
-        if has_notes:
-            account_select += ", notes"
-        account_select += """
-          FROM accounts
-          WHERE LOWER(accountType) != 'credit'
-          ORDER BY institution, name
-        """
+            # Build SELECT lists without requiring non-existent columns
+            account_select = """
+              SELECT id AS account_id,
+                     institution AS bank,
+                     name,
+                     LOWER(accountType) AS type
+            """
+            if has_notes:
+                account_select += ", notes"
+            account_select += """
+              FROM accounts
+              WHERE LOWER(accountType) != 'credit'
+              ORDER BY institution, name
+            """
 
-        card_select = """
-          SELECT id AS card_id,
-                 institution AS bank,
-                 name
-        """
-        if has_credit_limit:
-            card_select += ", credit_limit"
-        card_select += """
-          FROM accounts
-          WHERE LOWER(accountType) = 'credit'
-          ORDER BY institution, name
-        """
+            card_select = """
+              SELECT id AS card_id,
+                     institution AS bank,
+                     name
+            """
+            if has_credit_limit:
+                card_select += ", credit_limit"
+            card_select += """
+              FROM accounts
+              WHERE LOWER(accountType) = 'credit'
+              ORDER BY institution, name
+            """
 
-        cur.execute(account_select)
-        accounts = cur.fetchall()
+            cur.execute(account_select)
+            accounts = cur.fetchall()
 
-        cur.execute(card_select)
-        cards = cur.fetchall()
+            cur.execute(card_select)
+            cards = cur.fetchall()
 
-        benefits_rows = []
-        if has_card_benefits:
-            cur.execute(
-                """
-                SELECT
-                    card_id AS account_id,
-                    benefit_type AS category,
-                    rate AS cashback_percent
-                FROM card_benefits
-                ORDER BY card_id, benefit_type, start_date NULLS FIRST, end_date NULLS LAST
-                """
-            )
-            benefits_rows = cur.fetchall()
+            benefits_rows = []
+            if has_card_benefits:
+                cur.execute(
+                    """
+                    SELECT
+                        card_id AS account_id,
+                        benefit_type AS category,
+                        rate AS cashback_percent
+                    FROM card_benefits
+                    ORDER BY card_id, benefit_type, start_date NULLS FIRST, end_date NULLS LAST
+                    """
+                )
+                benefits_rows = cur.fetchall()
+
+        return rate_now, has_notes, has_credit_limit, accounts, cards, benefits_rows
+
+    rate_now, has_notes, has_credit_limit, accounts, cards, benefits_rows = run_db_retry(_run, retries=1)
 
     # Attach benefits by card
     by_card: Dict[int, List[Dict[str, Any]]] = {}
@@ -178,38 +183,42 @@ def bank_info_refresh():
 
 @router.get("/bank-totals")
 def bank_totals():
-    with with_db_cursor() as (conn, cur):
-        has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
+    def _run():
+        with with_db_cursor() as (conn, cur):
+            has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
 
-        accounts_sql = """
-          SELECT id, institution, name, LOWER(accountType) AS accounttype
-        """
-        if has_credit_limit:
-            accounts_sql += ", credit_limit"
-        accounts_sql += """
-          FROM accounts
-        """
+            accounts_sql = """
+              SELECT id, institution, name, LOWER(accountType) AS accounttype
+            """
+            if has_credit_limit:
+                accounts_sql += ", credit_limit"
+            accounts_sql += """
+              FROM accounts
+            """
 
-        cur.execute(accounts_sql)
-        accounts = cur.fetchall()
+            cur.execute(accounts_sql)
+            accounts = cur.fetchall()
 
-        cur.execute(
-            """
-            SELECT account_id, SUM(start) AS start_total
-            FROM "startingbalance"
-            GROUP BY account_id
-            """
-        )
-        starting_rows = cur.fetchall()
+            cur.execute(
+                """
+                SELECT account_id, SUM(start) AS start_total
+                FROM "startingbalance"
+                GROUP BY account_id
+                """
+            )
+            starting_rows = cur.fetchall()
 
-        cur.execute(
-            """
-            SELECT account_id, SUM(amount) AS trans_total
-            FROM transactions
-            GROUP BY account_id
-            """
-        )
-        tx_rows = cur.fetchall()
+            cur.execute(
+                """
+                SELECT account_id, SUM(amount) AS trans_total
+                FROM transactions
+                GROUP BY account_id
+                """
+            )
+            tx_rows = cur.fetchall()
+        return has_credit_limit, accounts, starting_rows, tx_rows
+
+    has_credit_limit, accounts, starting_rows, tx_rows = run_db_retry(_run, retries=1)
 
     starting = {int(r["account_id"]): float(r["start_total"] or 0) for r in starting_rows}
     tx_totals = {int(r["account_id"]): float(r["trans_total"] or 0) for r in tx_rows}
@@ -239,4 +248,3 @@ def bank_totals():
         by_type[k].sort(key=lambda x: x["total"], reverse=True)
 
     return {k: {"total": sum(x["total"] for x in lst), "accounts": lst} for k, lst in by_type.items()}
-
