@@ -14,6 +14,11 @@ NOTIF_SECRET = os.getenv("NOTIF_SECRET", "")
 WIDGET_SECRET = os.getenv("WIDGET_SECRET", "")  # set this in Render env vars
 SESSION_SECRET = (os.getenv("SESSION_SECRET", "") or "").strip()
 APP_PASSWORD = (os.getenv("APP_PASSWORD", "") or "").strip().strip('"').strip("'")
+WEBAPP_URL = (os.getenv("WEBAPP_URL", "") or "").strip().rstrip("/")
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID", "") or "").strip()
+GOOGLE_CLIENT_SECRET = (os.getenv("GOOGLE_CLIENT_SECRET", "") or "").strip()
+GOOGLE_OAUTH_REDIRECT_URI = (os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "") or "").strip()
+GOOGLE_PUBSUB_TOPIC = (os.getenv("GOOGLE_PUBSUB_TOPIC", "") or "").strip()
 
 # Environment flags
 IS_RENDER = bool(os.getenv("RENDER")) or bool(os.getenv("RENDER_SERVICE_ID"))

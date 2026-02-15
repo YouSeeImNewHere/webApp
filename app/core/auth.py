@@ -1,18 +1,48 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+import base64
+import json
+import secrets
+import threading
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
+
+import requests
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.requests import Request
 from starlette.responses import RedirectResponse, JSONResponse, HTMLResponse
 
-from app.core.config import WIDGET_SECRET, SESSION_SECRET, APP_PASSWORD, IS_RENDER
+from db import with_db_cursor
+from app.core.config import (
+    WIDGET_SECRET,
+    SESSION_SECRET,
+    APP_PASSWORD,
+    NOTIF_SECRET,
+    IS_RENDER,
+    WEBAPP_URL,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_OAUTH_REDIRECT_URI,
+    GOOGLE_PUBSUB_TOPIC,
+)
 
 router = APIRouter()
+_PUSH_PROCESS_LOCK = threading.Lock()
 
 # Public endpoints (no login required)
-PUBLIC_EXACT = {"/", "/__ping", "/login", "/favicon.ico", "/__whoami", "/health"}
+PUBLIC_EXACT = {
+    "/",
+    "/__ping",
+    "/login",
+    "/favicon.ico",
+    "/__whoami",
+    "/health",
+    "/gmail/push",
+    "/gmail/oauth/callback",
+    "/gmail/watch/renew",
+}
 PUBLIC_PREFIXES = {"/static/"}
 
 
@@ -26,6 +56,528 @@ def _is_authed(request: Request) -> bool:
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+def _require_google_env():
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise RuntimeError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set")
+
+
+def _google_redirect_uri() -> str:
+    if GOOGLE_OAUTH_REDIRECT_URI:
+        return GOOGLE_OAUTH_REDIRECT_URI
+    if WEBAPP_URL:
+        return f"{WEBAPP_URL}/gmail/oauth/callback"
+    return "http://localhost:8000/gmail/oauth/callback"
+
+
+def ensure_google_oauth_table():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gmail_oauth_tokens (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                google_email TEXT,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT,
+                token_type TEXT,
+                scope TEXT,
+                expires_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        conn.commit()
+
+
+def _get_google_tokens():
+    ensure_google_oauth_table()
+    with with_db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT id, google_email, access_token, refresh_token, token_type, scope, expires_at
+            FROM gmail_oauth_tokens
+            WHERE id = 1
+            LIMIT 1
+            """
+        )
+        return cur.fetchone()
+
+
+def _save_google_tokens(
+    *,
+    access_token: str,
+    refresh_token: str | None,
+    token_type: str | None,
+    scope: str | None,
+    expires_at: datetime | None,
+    google_email: str | None,
+):
+    ensure_google_oauth_table()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO gmail_oauth_tokens
+                (id, google_email, access_token, refresh_token, token_type, scope, expires_at, updated_at)
+            VALUES
+                (1, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (id) DO UPDATE SET
+                google_email = EXCLUDED.google_email,
+                access_token = EXCLUDED.access_token,
+                refresh_token = COALESCE(EXCLUDED.refresh_token, gmail_oauth_tokens.refresh_token),
+                token_type = EXCLUDED.token_type,
+                scope = EXCLUDED.scope,
+                expires_at = EXCLUDED.expires_at,
+                updated_at = now()
+            """,
+            (google_email, access_token, refresh_token, token_type, scope, expires_at),
+        )
+        conn.commit()
+
+
+def ensure_gmail_push_state_table():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gmail_push_state (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                last_history_id TEXT,
+                google_email TEXT,
+                last_processed_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        conn.commit()
+
+
+def _get_last_history_id() -> str | None:
+    ensure_gmail_push_state_table()
+    with with_db_cursor() as (_, cur):
+        cur.execute("SELECT last_history_id FROM gmail_push_state WHERE id = 1 LIMIT 1")
+        row = cur.fetchone()
+    if not row:
+        return None
+    return row.get("last_history_id")
+
+
+def _save_push_state(
+    *,
+    last_history_id: str | None,
+    google_email: str | None,
+    processed_count: int = 0,
+    last_error: str | None = None,
+):
+    ensure_gmail_push_state_table()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO gmail_push_state (id, last_history_id, google_email, last_processed_count, last_error, updated_at)
+            VALUES (1, %s, %s, %s, %s, now())
+            ON CONFLICT (id) DO UPDATE SET
+                last_history_id = EXCLUDED.last_history_id,
+                google_email = EXCLUDED.google_email,
+                last_processed_count = EXCLUDED.last_processed_count,
+                last_error = EXCLUDED.last_error,
+                updated_at = now()
+            """,
+            (last_history_id, google_email, int(processed_count), last_error),
+        )
+        conn.commit()
+
+
+def _refresh_google_access_token_if_needed():
+    row = _get_google_tokens()
+    if not row:
+        return None, "not_connected"
+
+    access_token = row.get("access_token") or ""
+    refresh_token = row.get("refresh_token") or ""
+    expires_at = row.get("expires_at")
+    now_utc = datetime.now(timezone.utc)
+
+    if access_token and expires_at:
+        try:
+            expires_utc = expires_at.astimezone(timezone.utc)
+        except Exception:
+            expires_utc = expires_at.replace(tzinfo=timezone.utc)
+        if expires_utc > (now_utc + timedelta(seconds=120)):
+            return access_token, None
+
+    if not refresh_token:
+        return None, "token_expired_no_refresh_token"
+
+    _require_google_env()
+    token_resp = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        timeout=20,
+    )
+    if token_resp.status_code != 200:
+        return None, f"refresh_failed_http_{token_resp.status_code}"
+
+    td = token_resp.json()
+    new_access = td.get("access_token") or ""
+    if not new_access:
+        return None, "refresh_missing_access_token"
+
+    expires_in = int(td.get("expires_in") or 3600)
+    new_expires = now_utc + timedelta(seconds=max(0, expires_in - 60))
+    _save_google_tokens(
+        access_token=new_access,
+        refresh_token=td.get("refresh_token") or refresh_token,
+        token_type=td.get("token_type") or row.get("token_type") or "Bearer",
+        scope=td.get("scope") or row.get("scope"),
+        expires_at=new_expires,
+        google_email=row.get("google_email"),
+    )
+    return new_access, None
+
+
+def _gmail_history_message_ids(access_token: str, start_history_id: str):
+    message_ids: set[str] = set()
+    page_token = None
+    latest_history_id = start_history_id
+
+    while True:
+        params = {
+            "startHistoryId": start_history_id,
+            "historyTypes": "messageAdded",
+            "maxResults": 500,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        resp = requests.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/history",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params=params,
+            timeout=20,
+        )
+
+        if resp.status_code == 404:
+            return None, latest_history_id, "stale_history_id"
+        if resp.status_code != 200:
+            return None, latest_history_id, f"history_list_failed_http_{resp.status_code}"
+
+        data = resp.json() or {}
+        latest_history_id = str(data.get("historyId") or latest_history_id)
+
+        for h in data.get("history") or []:
+            for added in h.get("messagesAdded") or []:
+                msg = added.get("message") or {}
+                mid = msg.get("id")
+                if mid:
+                    message_ids.add(str(mid))
+
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+
+    return sorted(message_ids), latest_history_id, None
+
+
+def _trigger_event_processing():
+    if not _PUSH_PROCESS_LOCK.acquire(blocking=False):
+        print("gmail push: processing already in progress; skipping duplicate trigger")
+        return
+
+    def _run():
+        try:
+            from emails import emailFetch
+
+            emailFetch.run()
+        except Exception as e:
+            print("gmail push: emailFetch.run failed:", repr(e))
+        finally:
+            _PUSH_PROCESS_LOCK.release()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _is_notif_secret_authorized(request: Request) -> bool:
+    provided = (request.headers.get("x-notif-secret", "") or "").strip()
+    expected = (NOTIF_SECRET or "").strip()
+    return bool(expected) and provided == expected
+
+
+def _start_gmail_watch():
+    if not GOOGLE_PUBSUB_TOPIC:
+        return JSONResponse(
+            {"ok": False, "error": "GOOGLE_PUBSUB_TOPIC not set"},
+            status_code=500,
+        )
+
+    access_token, err = _refresh_google_access_token_if_needed()
+    if not access_token:
+        return JSONResponse({"ok": False, "error": err}, status_code=401)
+
+    resp = requests.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={
+            "topicName": GOOGLE_PUBSUB_TOPIC,
+            "labelIds": ["INBOX"],
+            "labelFilterBehavior": "INCLUDE",
+        },
+        timeout=20,
+    )
+    if resp.status_code != 200:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "gmail_watch_failed",
+                "status": resp.status_code,
+                "body": resp.text[:500],
+            },
+            status_code=502,
+        )
+
+    data = resp.json()
+    watch_history_id = str(data.get("historyId") or "")
+    if watch_history_id:
+        _save_push_state(
+            last_history_id=watch_history_id,
+            google_email=(_get_google_tokens() or {}).get("google_email"),
+            processed_count=0,
+            last_error=None,
+        )
+    return {
+        "ok": True,
+        "historyId": watch_history_id,
+        "expiration": data.get("expiration"),
+    }
+
+
+@router.get("/gmail/oauth/start")
+def gmail_oauth_start(request: Request, next: str = "/settings"):
+    try:
+        _require_google_env()
+    except RuntimeError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    state = secrets.token_urlsafe(24)
+    request.session["google_oauth_state"] = state
+    request.session["google_oauth_next"] = next if next.startswith("/") else "/settings"
+
+    scopes = [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/gmail.readonly",
+    ]
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": _google_redirect_uri(),
+        "response_type": "code",
+        "scope": " ".join(scopes),
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": "consent",
+        "state": state,
+    }
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return RedirectResponse(url=auth_url, status_code=302)
+
+
+@router.get("/gmail/oauth/callback")
+def gmail_oauth_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None):
+    if error:
+        return JSONResponse({"ok": False, "error": f"oauth_error:{error}"}, status_code=400)
+    if not code:
+        return JSONResponse({"ok": False, "error": "missing_code"}, status_code=400)
+
+    expected_state = request.session.get("google_oauth_state")
+    if not expected_state or expected_state != state:
+        return JSONResponse({"ok": False, "error": "invalid_oauth_state"}, status_code=400)
+
+    try:
+        _require_google_env()
+    except RuntimeError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    token_resp = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": _google_redirect_uri(),
+            "grant_type": "authorization_code",
+        },
+        timeout=20,
+    )
+    if token_resp.status_code != 200:
+        return JSONResponse(
+            {"ok": False, "error": "token_exchange_failed", "status": token_resp.status_code, "body": token_resp.text[:400]},
+            status_code=502,
+        )
+
+    td = token_resp.json()
+    access_token = td.get("access_token") or ""
+    if not access_token:
+        return JSONResponse({"ok": False, "error": "missing_access_token"}, status_code=502)
+
+    expires_in = int(td.get("expires_in") or 3600)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in - 60))
+    google_email = None
+    try:
+        profile_resp = requests.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=20,
+        )
+        if profile_resp.status_code == 200:
+            google_email = (profile_resp.json() or {}).get("email")
+    except Exception:
+        google_email = None
+
+    _save_google_tokens(
+        access_token=access_token,
+        refresh_token=td.get("refresh_token"),
+        token_type=td.get("token_type") or "Bearer",
+        scope=td.get("scope"),
+        expires_at=expires_at,
+        google_email=google_email,
+    )
+
+    request.session["google_oauth_state"] = None
+    request.session["google_email"] = google_email
+    next_url = request.session.get("google_oauth_next") or "/settings"
+    return RedirectResponse(url=next_url, status_code=302)
+
+
+@router.get("/gmail/oauth/status")
+def gmail_oauth_status():
+    row = _get_google_tokens()
+    if not row:
+        return {"ok": True, "connected": False}
+
+    exp = row.get("expires_at")
+    expires_iso = exp.astimezone(timezone.utc).isoformat() if exp else None
+    return {
+        "ok": True,
+        "connected": True,
+        "email": row.get("google_email"),
+        "scope": row.get("scope"),
+        "expires_at": expires_iso,
+        "has_refresh_token": bool(row.get("refresh_token")),
+    }
+
+
+@router.post("/gmail/oauth/disconnect")
+def gmail_oauth_disconnect():
+    ensure_google_oauth_table()
+    with with_db_cursor() as (conn, cur):
+        cur.execute("DELETE FROM gmail_oauth_tokens WHERE id = 1")
+        conn.commit()
+    return {"ok": True, "connected": False}
+
+
+@router.post("/gmail/watch/start")
+def gmail_watch_start():
+    return _start_gmail_watch()
+
+
+@router.post("/gmail/watch/renew")
+def gmail_watch_renew(request: Request):
+    if not _is_notif_secret_authorized(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    return _start_gmail_watch()
+
+
+@router.get("/gmail/push/state")
+def gmail_push_state():
+    ensure_gmail_push_state_table()
+    with with_db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT last_history_id, google_email, last_processed_count, last_error, updated_at
+            FROM gmail_push_state
+            WHERE id = 1
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+    return {"ok": True, "state": row or {}}
+
+
+# ---------------------------------------------------------
+# Gmail Push Webhook (Pub/Sub -> FastAPI)
+# ---------------------------------------------------------
+@router.post("/gmail/push")
+async def gmail_push(request: Request):
+    try:
+        envelope = await request.json()
+    except Exception:
+        return {"status": "invalid_json"}
+
+    if "message" not in envelope:
+        return {"status": "no_message"}
+
+    msg = envelope["message"]
+    data_raw = msg.get("data")
+    if not data_raw:
+        return {"status": "no_data"}
+
+    data = base64.b64decode(data_raw).decode("utf-8")
+    payload = json.loads(data)
+
+    history_id = str(payload.get("historyId") or "")
+    email = payload.get("emailAddress")
+
+    print("Gmail push received")
+    print("History ID:", history_id)
+    print("Email:", email)
+
+    if not history_id:
+        return {"status": "missing_history_id"}
+
+    access_token, err = _refresh_google_access_token_if_needed()
+    if not access_token:
+        _save_push_state(last_history_id=history_id, google_email=email, processed_count=0, last_error=err)
+        return {"status": "token_error", "error": err}
+
+    start_history_id = _get_last_history_id()
+    if not start_history_id:
+        # First push after enabling watch: set checkpoint and wait for next event.
+        _save_push_state(last_history_id=history_id, google_email=email, processed_count=0, last_error=None)
+        return {"status": "initialized", "history_id": history_id}
+
+    message_ids, latest_history_id, hist_err = _gmail_history_message_ids(access_token, start_history_id)
+    if hist_err == "stale_history_id":
+        # History window rolled over; reset checkpoint and continue from now.
+        _save_push_state(last_history_id=history_id, google_email=email, processed_count=0, last_error=hist_err)
+        return {"status": "reset_checkpoint", "reason": hist_err, "history_id": history_id}
+    if hist_err:
+        _save_push_state(last_history_id=start_history_id, google_email=email, processed_count=0, last_error=hist_err)
+        return {"status": "history_error", "error": hist_err}
+
+    message_ids = message_ids or []
+    next_history = str(latest_history_id or history_id)
+    _save_push_state(
+        last_history_id=next_history,
+        google_email=email,
+        processed_count=len(message_ids),
+        last_error=None,
+    )
+
+    if message_ids:
+        print(f"gmail push: {len(message_ids)} new message(s) since history {start_history_id}")
+        _trigger_event_processing()
+
+    return {
+        "status": "ok",
+        "processed_count": len(message_ids),
+        "last_history_id": next_history,
+    }
 
 
 class RequireLoginMiddleware(BaseHTTPMiddleware):
@@ -121,6 +673,9 @@ def login_page(next: str = "/"):
           </form>
 
           <div class="hint">This site is private.</div>
+          <div class="hint" style="margin-top:12px;">
+            Gmail setup: <a href="/gmail/oauth/start?next=/settings">Connect Google account</a>
+          </div>
         </div>
       </body>
     </html>
