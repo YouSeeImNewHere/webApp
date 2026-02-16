@@ -64,7 +64,20 @@
     </div>
 
     <div class="setup-card">
-      <h2>Step 3: Finish</h2>
+      <h2>Step 3: Notifications (Optional)</h2>
+      <p class="setup-muted">Enter your personal Pushover user key. This key is saved to your user only.</p>
+      <div class="setup-row">
+        <input id="pushoverUserKey" placeholder="Pushover User Key" />
+      </div>
+      <div class="setup-row">
+        <button id="savePushoverKeyBtn" type="button">Save Pushover Key</button>
+        <button id="sendPushoverTestBtn" type="button" class="secondary">Send Test Notification</button>
+      </div>
+      <div id="pushoverResult" class="setup-muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="setup-card">
+      <h2>Step 4: Finish</h2>
       <button id="completeBtn" type="button">Mark Wizard Complete</button>
       <p class="setup-muted" style="margin-top:8px;">You can reopen this page anytime at <span class="setup-mono">/setup</span>.</p>
     </div>

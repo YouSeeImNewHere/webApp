@@ -5,6 +5,7 @@ import { mountUpcomingCard } from "/static/upcomingCard.js";
 let chart = null;
 let accountId = null;
 const TX_MODE = window.TX_MODE || "prod";
+let latestAccountRows = [];
 
 
 const ACCOUNT_CHART_IDS = {
@@ -133,6 +134,24 @@ function escHtml(s){
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function parseAnyDateToMs(x) {
+  if (!x) return 0;
+  const s = String(x);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return parseISODateLocal(s).getTime();
+
+  if (s.includes("/")) {
+    const parts = s.split("/");
+    const mm = Number(parts[0] || 1) - 1;
+    const dd = Number(parts[1] || 1);
+    let yy = Number(parts[2] || 1970);
+    if (yy < 100) yy += 2000;
+    return new Date(yy, mm, dd).getTime();
+  }
+
+  return 0;
 }
 
 function firstDayOfMonth(y,m){ return new Date(y,m,1); }
@@ -332,6 +351,7 @@ async function loadAccountTransactions(accountId){
 
   const payload = await res.json(); // ✅ only once
   const data = payload.transactions || [];
+  latestAccountRows = Array.isArray(data) ? data : [];
 
   list.innerHTML = "";
 
@@ -340,7 +360,7 @@ async function loadAccountTransactions(accountId){
     return;
   }
 
-  const rows = Array.isArray(data) ? data : [];
+  const rows = latestAccountRows;
 
   // split pending vs posted
   const pending = [];
@@ -394,6 +414,10 @@ async function loadAccountTransactions(accountId){
     const shownBal =
       (balanceOverride != null) ? balanceOverride :
       (row.balance_after != null ? row.balance_after : null);
+    const roundupCents = Number(row.roundup_cents || 0);
+    const roundupBadge = roundupCents > 0
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      : "";
 
     wrap.innerHTML = `
       <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
@@ -408,28 +432,11 @@ async function loadAccountTransactions(accountId){
         <div class="tx-amt">${money(row.amount)}</div>
         <div class="tx-bal">${shownBal == null ? "" : money(shownBal)}</div>
       </div>
+      ${roundupBadge}
     `;
 
     return wrap;
   }
-function parseAnyDateToMs(x) {
-  if (!x) return 0;
-  const s = String(x);
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return parseISODateLocal(s).getTime();
-
-  if (s.includes("/")) {
-    const parts = s.split("/");
-    const mm = Number(parts[0] || 1) - 1;
-    const dd = Number(parts[1] || 1);
-    let yy = Number(parts[2] || 1970);
-    if (yy < 100) yy += 2000;
-    return new Date(yy, mm, dd).getTime();
-  }
-
-  return 0;
-}
-
 // Base balance = most recent POSTED row balance (posted is newest-first from backend)
 const basePostedBalance =
   (posted.length && posted[0].balance_after != null)
@@ -490,6 +497,131 @@ if (pending.length) {
   });
 
   if (typeof window.attachTxInspect === "function") window.attachTxInspect(list);
+}
+
+function normalizeCsvField(v) {
+  const s = String(v ?? "").trim();
+  if (!s || s.toLowerCase() === "unknown") return "";
+  return s;
+}
+
+function csvCell(v) {
+  const s = String(v ?? "");
+  if (s.includes('"') || s.includes(",") || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function asMoneyNumber(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : "";
+}
+
+function buildExportRowsWithVisibleRunning(rows) {
+  const pending = [];
+  const posted = [];
+
+  for (const r of (rows || [])) {
+    const isPending = String(r.status || "").toLowerCase() === "pending";
+    (isPending ? pending : posted).push(r);
+  }
+
+  const basePostedBalance =
+    (posted.length && posted[0].balance_after != null)
+      ? Number(posted[0].balance_after)
+      : null;
+
+  const pendingChrono = [...pending].sort((a, b) => {
+    const ad = parseAnyDateToMs(a.effectiveDate || a.dateISO || a.postedDate || a.purchaseDate);
+    const bd = parseAnyDateToMs(b.effectiveDate || b.dateISO || b.postedDate || b.purchaseDate);
+    if (ad !== bd) return ad - bd;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
+
+  const balAfterById = new Map();
+  let running = basePostedBalance;
+  for (const row of pendingChrono) {
+    if (running == null) {
+      balAfterById.set(String(row.id ?? ""), null);
+      continue;
+    }
+    running = running - Number(row.amount || 0);
+    balAfterById.set(String(row.id ?? ""), running);
+  }
+
+  const pendingDisplay = [...pending].sort((a, b) => {
+    const ad = parseAnyDateToMs(a.effectiveDate || a.dateISO || a.postedDate || a.purchaseDate);
+    const bd = parseAnyDateToMs(b.effectiveDate || b.dateISO || b.postedDate || b.purchaseDate);
+    if (ad !== bd) return bd - ad;
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  });
+
+  const out = [];
+  for (const row of pendingDisplay) {
+    out.push({ row, running_total: balAfterById.get(String(row.id ?? "")) });
+  }
+  for (const row of posted) {
+    out.push({ row, running_total: row.balance_after });
+  }
+  return out;
+}
+
+async function downloadAccountCsv() {
+  const start = document.getElementById("a-start")?.value || "";
+  const end = document.getElementById("a-end")?.value || "";
+  if (!start || !end || !accountId) return;
+
+  let rows = latestAccountRows || [];
+
+  if (TX_MODE !== "test") {
+    try {
+      const res = await fetch(
+        `/account-transactions-range?account_id=${accountId}&start=${start}&end=${end}&limit=5000`,
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const payload = await res.json();
+        rows = Array.isArray(payload?.transactions) ? payload.transactions : rows;
+      }
+    } catch (_e) {
+      // Fall back to currently loaded rows.
+    }
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    alert("No transactions found in this range.");
+    return;
+  }
+
+  const ordered = buildExportRowsWithVisibleRunning(rows);
+  const header = ["status", "purchase date", "posted date", "time", "merchant", "cost", "running total"];
+  const lines = [header.join(",")];
+
+  for (const item of ordered) {
+    const row = item.row || {};
+    const line = [
+      normalizeCsvField(row.status),
+      normalizeCsvField(row.purchaseDate),
+      normalizeCsvField(row.postedDate),
+      normalizeCsvField(row.time),
+      normalizeCsvField(row.merchant),
+      asMoneyNumber(row.amount),
+      asMoneyNumber(item.running_total),
+    ].map(csvCell).join(",");
+    lines.push(line);
+  }
+
+  const csv = `${lines.join("\n")}\n`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `account_${accountId}_${start}_to_${end}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function setActiveQuickButton(container, btn){
@@ -558,6 +690,11 @@ initChartControls(ACCOUNT_CHART_IDS, async () => {
   await loadAccountChart(accountId);
   await loadAccountTransactions(accountId);
 });
+
+  const exportBtn = document.getElementById("accountCsvExportBtn");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", downloadAccountCsv);
+  }
 
 
   // 6) wire update button

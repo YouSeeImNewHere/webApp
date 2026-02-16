@@ -29,3 +29,26 @@ body.page-account .account-title-switcher__select{
     height: 34px;
   }
 }
+
+body.page-account .account-tx-header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.page-account .account-tx-export-btn{
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+body.page-account .account-tx-export-btn:hover{
+  opacity: 0.9;
+}

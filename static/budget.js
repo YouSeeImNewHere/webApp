@@ -632,6 +632,44 @@ bindSafeRowClick();
     }
   }
 
+  async function loadRoundupSettings() {
+    const cb = $("roundupEnabled");
+    const status = $("roundupStatus");
+    if (!cb) return;
+    try {
+      const j = await fetchJSON("/settings/round-ups", { cache: "no-store" });
+      cb.checked = !!j.enabled;
+      if (status) status.textContent = "";
+    } catch (e) {
+      console.error(e);
+      if (status) status.textContent = "Failed to load round-up setting.";
+    }
+  }
+
+  async function saveRoundupSettings() {
+    const cb = $("roundupEnabled");
+    const status = $("roundupStatus");
+    if (!cb) return;
+    if (status) status.textContent = "Saving...";
+    try {
+      await fetchJSON("/settings/round-ups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !!cb.checked }),
+      });
+      if (status) status.textContent = "Saved";
+      await load();
+      await loadDayLimit(true);
+      setTimeout(() => {
+        if (status && status.textContent === "Saved") status.textContent = "";
+      }, 1200);
+    } catch (e) {
+      console.error(e);
+      if (status) status.textContent = "Save failed";
+      alert("Round-up save failed: " + e.message);
+    }
+  }
+
     async function loadDayLimit(forceRecalc = false) {
       const dl = await fetchJSON(`/day-limit${forceRecalc ? "?recalc=1" : ""}`);
 
@@ -1357,6 +1395,8 @@ async function openSpentBreakdown() {
     initMonth();
 
     $("sgSave").addEventListener("click", onSaveSavingsGoal);
+    const ru = $("roundupEnabled");
+    if (ru) ru.addEventListener("change", saveRoundupSettings);
 
     $("addGroupBtn").addEventListener("click", () => {
       const host = $("groupRows");
@@ -1442,6 +1482,7 @@ async function openSpentBreakdown() {
     }
 try {
           await load();
+          await loadRoundupSettings();
           await loadDayLimit(false);
 
           const btn = $("recalcTodayBtn");

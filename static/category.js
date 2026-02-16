@@ -259,6 +259,10 @@ async function loadCategoryTransactions(category) {
     const transferText = row.transfer_peer
       ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`)
       : "";
+    const roundupCents = Number(row.roundup_cents || 0);
+    const roundupBadge = roundupCents > 0
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      : "";
 
     // Match Home date logic: postedDate -> purchaseDate -> dateISO
     const effectiveDate =
@@ -282,6 +286,7 @@ async function loadCategoryTransactions(category) {
   <div class="tx-amt">${money(row.amount)}</div>
   <div class="tx-bal">${money(runningById.get(String(row.id ?? "")) ?? 0)}</div>
 </div>
+      ${roundupBadge}
 
     `;
 

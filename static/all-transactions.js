@@ -63,6 +63,10 @@ function renderAppend(list){
     const amtNum = Number(row.amount || 0);
     const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
     const effectiveDate = getEffectiveDate(row);
+    const roundupCents = Number(row.roundup_cents || 0);
+    const roundupBadge = roundupCents > 0
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      : "";
 
     wrap.innerHTML = `
       <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
@@ -75,6 +79,7 @@ function renderAppend(list){
         <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
       </div>
       <div class="tx-amt">${money(row.amount)}</div>
+      ${roundupBadge}
     `;
 
     el.appendChild(wrap);

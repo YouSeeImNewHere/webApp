@@ -65,6 +65,7 @@ def ensure_tenancy_tables():
                 id BIGSERIAL PRIMARY KEY,
                 google_sub TEXT UNIQUE,
                 email TEXT NOT NULL,
+                pushover_user_key TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
                 tenant_id BIGINT REFERENCES tenants(id),
                 is_owner BOOLEAN NOT NULL DEFAULT FALSE,
@@ -73,6 +74,7 @@ def ensure_tenancy_tables():
             )
             """
         )
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS pushover_user_key TEXT")
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique ON users ((lower(email)))")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users (tenant_id)")
         cur.execute(
@@ -228,6 +230,48 @@ def get_user_by_email(email: str | None):
         )
         row = cur.fetchone()
     return dict(row) if row else None
+
+
+def get_user_pushover_key_by_email(email: str | None) -> str | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    e = (email or "").strip().lower()
+    if not e:
+        return None
+    with with_db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT pushover_user_key
+            FROM users
+            WHERE lower(email) = lower(%s)
+            LIMIT 1
+            """,
+            (e,),
+        )
+        row = cur.fetchone()
+    key = (row or {}).get("pushover_user_key")
+    return (str(key).strip() if key else None) or None
+
+
+def set_user_pushover_key_by_email(email: str | None, user_key: str | None) -> bool:
+    if not MULTI_TENANT_ENABLED:
+        return False
+    e = (email or "").strip().lower()
+    if not e:
+        return False
+    key = (user_key or "").strip() or None
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            UPDATE users
+            SET pushover_user_key = %s
+            WHERE lower(email) = lower(%s)
+            """,
+            (key, e),
+        )
+        changed = int(cur.rowcount or 0) > 0
+        conn.commit()
+    return changed
 
 
 def list_pending_users():

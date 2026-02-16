@@ -14,6 +14,12 @@ from db import with_db_cursor, query_db
 from app.core.config import WIDGET_SECRET, CREDIT_UTILIZATION_CAP, MULTI_TENANT_ENABLED
 from app.core.time import today_local, now_local
 from app.core.tenancy import current_tenant_id
+from app.core.roundups import (
+    ROUNDUP_CATEGORY_DEFAULT,
+    get_roundup_settings,
+    is_roundup_eligible_tx,
+    roundup_amount_from_spend,
+)
 
 # Import the underlying route helpers we bundle into page payloads.
 from app.routers.transactions import transactions, transactions_all, account_transactions
@@ -527,7 +533,53 @@ def _category_totals_month_display(year: int, month: int):
         """,
         ((int(tid), month_start, month_end) if tid else (month_start, month_end)),
     )
-    return [{"category": r["category"], "spent": float(r["total"] or 0.0)} for r in rows]
+    out = [{"category": r["category"], "spent": float(r["total"] or 0.0)} for r in rows]
+
+    cfg = get_roundup_settings()
+    if bool(cfg.get("enabled", False)):
+        ru_cat = str(cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT)
+        spend_rows = query_db(
+            f"""
+            WITH base AS (
+              SELECT
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+                t.amount::double precision AS amount,
+                LOWER(TRIM(COALESCE(t.category,''))) AS category,
+                LOWER(a.accountType) AS accountType
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            ),
+            norm AS (
+              SELECT
+                *,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT amount, category, accountType
+            FROM norm
+            WHERE d IS NOT NULL
+              AND d >= %s AND d <= %s
+            """,
+            ((int(tid), int(tid), month_start, month_end) if tid else (month_start, month_end)),
+        )
+        ru_total = 0.0
+        for r in spend_rows:
+            amt = float(r.get("amount") or 0.0)
+            category = (r.get("category") or "").strip().lower()
+            account_type = (r.get("accounttype") or "").strip().lower()
+            if is_roundup_eligible_tx(amt, account_type, category):
+                ru_total += roundup_amount_from_spend(amt)
+        if ru_total > 0:
+            out.append({"category": ru_cat, "spent": round(ru_total, 2)})
+
+    out.sort(key=lambda x: float(x.get("spent") or 0.0), reverse=True)
+    return out
 
 def _ensure_daily_limit_snapshot_pg(tid: int | None = None):
     with with_db_cursor() as (conn, cur):
@@ -626,6 +678,9 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
 
     spent_today = 0.0
     cat_spent: dict[str, float] = {}
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_norm = _norm_cat(str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT))
 
     for r in tx_rows:
         category = (r["category"] or "").strip().lower()
@@ -634,10 +689,16 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
             continue
 
         amt = float(r["amount"] or 0.0)
-        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
+        account_type = (r["accounttype"] or "").lower()
+        if account_type in ("checking", "credit") and amt > 0:
             spent_today += amt
             if category:
                 cat_spent[category] = cat_spent.get(category, 0.0) + amt
+            if roundup_enabled and is_roundup_eligible_tx(amt, account_type, category):
+                ru = roundup_amount_from_spend(amt)
+                if ru > 0:
+                    spent_today += ru
+                    cat_spent[roundup_norm] = cat_spent.get(roundup_norm, 0.0) + ru
 
     # Budgeted categories for this month
     groups = _get_budget_groups_for_month(year, month)
@@ -875,6 +936,81 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
     end_excl = end_date + timedelta(days=1)
 
     cat = (category or "").strip()
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_cat = str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT).strip() or ROUNDUP_CATEGORY_DEFAULT
+
+    if roundup_enabled and cat.lower() == roundup_cat.lower():
+        rows = query_db(
+            f"""
+            WITH base AS (
+              SELECT
+                t.id,
+                CASE
+                  WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
+                  ELSE t.amount::double precision
+                END AS amount,
+                t.merchant,
+                TRIM(t.category) AS category,
+                a.institution AS bank,
+                a.name AS card,
+                LOWER(a.accountType) AS accountType,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'),
+                         NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              WHERE LOWER(a.accountType) IN ('checking','credit')
+                {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+                AND (
+                  (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
+                  OR
+                  (LOWER(a.accountType) = 'credit' AND t.amount::double precision <> 0)
+                )
+            ),
+            norm AS (
+              SELECT
+                *,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT id, d, amount, merchant, category, bank, card, accountType
+            FROM norm
+            WHERE d IS NOT NULL
+              AND d >= %s AND d < %s
+              AND LOWER(COALESCE(category,'')) NOT IN ('card payment','transfer')
+            ORDER BY d DESC, id DESC
+            LIMIT 500
+            """,
+            ((int(tid), int(tid), start_date, end_excl) if tid else (start_date, end_excl)),
+        )
+
+        out = []
+        for r in rows:
+            amt = float(r.get("amount") or 0.0)
+            account_type = (r.get("accounttype") or "").strip().lower()
+            category_lc = (r.get("category") or "").strip().lower()
+            if not is_roundup_eligible_tx(amt, account_type, category_lc):
+                continue
+            ru = roundup_amount_from_spend(amt)
+            if ru <= 0:
+                continue
+            out.append(
+                {
+                    "id": f"{r.get('id')}_roundup",
+                    "date": r["d"].isoformat() if r.get("d") else None,
+                    "amount": round(float(ru), 2),
+                    "merchant": r.get("merchant"),
+                    "category": roundup_cat,
+                    "bank": r.get("bank"),
+                    "card": r.get("card"),
+                }
+            )
+        return {"ok": True, "transactions": out}
 
     params = [start_date, end_excl]
 
@@ -1146,6 +1282,58 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
         ((int(tid), int(tid), start_date, end_excl) if tid else (start_date, end_excl)),
     )
 
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_cat = str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT).strip() or ROUNDUP_CATEGORY_DEFAULT
+    roundup_total = 0.0
+    if roundup_enabled:
+        roundup_rows = query_db(
+            f"""
+            WITH base AS (
+              SELECT
+                CASE
+                  WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
+                  ELSE t.amount::double precision
+                END AS amount,
+                LOWER(a.accountType) AS accountType,
+                LOWER(TRIM(COALESCE(t.category,''))) AS category_lc,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              WHERE LOWER(a.accountType) IN ('checking','credit')
+                {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+                AND (
+                  (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
+                  OR
+                  (LOWER(a.accountType) = 'credit' AND t.amount::double precision <> 0)
+                )
+            ),
+            norm AS (
+              SELECT
+                amount,
+                accountType,
+                category_lc,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT amount, accountType, category_lc
+            FROM norm
+            WHERE d IS NOT NULL AND d >= %s AND d < %s
+            """,
+            ((int(tid), int(tid), start_date, end_excl) if tid else (start_date, end_excl)),
+        )
+        for rr in roundup_rows:
+            amt = float(rr.get("amount") or 0.0)
+            account_type = (rr.get("accounttype") or "").strip().lower()
+            category_lc = (rr.get("category_lc") or "").strip().lower()
+            if is_roundup_eligible_tx(amt, account_type, category_lc):
+                roundup_total += roundup_amount_from_spend(amt)
+
     # Build norm->display map from actual transaction categories (stable + matches UI)
     norm_to_display: dict[str, str] = {}
     norm_to_total: dict[str, float] = {}
@@ -1168,6 +1356,10 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
     norm_to_display.setdefault("transfer", "Transfer")
     norm_to_total["card payment"] = float(row.get("total_card_payment") or 0.0)
     norm_to_total["transfer"] = float(row.get("total_transfer") or 0.0)
+    if roundup_enabled and roundup_total > 0:
+        roundup_norm = _norm_cat(roundup_cat)
+        norm_to_display.setdefault(roundup_norm, roundup_cat)
+        norm_to_total[roundup_norm] = norm_to_total.get(roundup_norm, 0.0) + float(roundup_total)
 
     # Unassigned is treated as its own included "category"
     unassigned_total = float(row.get("total_unassigned") or 0.0)
@@ -1204,7 +1396,8 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
         "total": float(total_free or 0.0),
 
         # Debug / transparency
-        "total_all": float(row.get("total_all") or 0),
+        "total_all": float((row.get("total_all") or 0) + roundup_total),
+        "roundups_total": float(roundup_total or 0.0),
 
         "excluded": excluded,
         "included": included,

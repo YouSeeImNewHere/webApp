@@ -10,6 +10,7 @@
 
   const statusEl = document.getElementById("status");
   const addResultEl = document.getElementById("addResult");
+  const pushoverResultEl = document.getElementById("pushoverResult");
 
   function pill(ok, label) {
     const cls = ok ? "ok" : "todo";
@@ -38,6 +39,7 @@
         <div>${pill(!!s.steps.accounts_added, "Accounts Added")}</div>
         <div>${pill(!!s.steps.starting_balances_added, "Starting Balances Added")}</div>
         <div>${pill(!!s.steps.transactions_imported, "Transactions Imported")}</div>
+        <div>${pill(!!s.steps.pushover_user_key_set, "Pushover User Key Saved")}</div>
         <div style="margin-top:8px;" class="muted">
           Accounts: ${s.counts.accounts} | Starting Balances: ${s.counts.starting_balances} | Transactions: ${s.counts.transactions}
         </div>
@@ -90,10 +92,47 @@
     }
   }
 
+  async function savePushoverUserKey() {
+    if (!pushoverResultEl) return;
+    pushoverResultEl.textContent = "";
+    const userKeyEl = document.getElementById("pushoverUserKey");
+    const user_key = (userKeyEl && userKeyEl.value ? userKeyEl.value : "").trim();
+    try {
+      const out = await api("/onboarding/pushover-key", {
+        method: "POST",
+        body: JSON.stringify({ user_key }),
+      });
+      pushoverResultEl.textContent = out.user_key_set ? "Pushover user key saved." : "Pushover user key cleared.";
+      await refreshStatus();
+    } catch (e) {
+      pushoverResultEl.textContent = `Save failed: ${e.message}`;
+    }
+  }
+
+  async function sendPushoverTest() {
+    if (!pushoverResultEl) return;
+    pushoverResultEl.textContent = "";
+    const userKeyEl = document.getElementById("pushoverUserKey");
+    const user_key = (userKeyEl && userKeyEl.value ? userKeyEl.value : "").trim();
+    try {
+      await api("/onboarding/pushover-test", {
+        method: "POST",
+        body: JSON.stringify({ user_key }),
+      });
+      pushoverResultEl.textContent = "Test notification sent.";
+    } catch (e) {
+      pushoverResultEl.textContent = `Test failed: ${e.message}`;
+    }
+  }
+
   document.getElementById("refreshBtn").addEventListener("click", refreshStatus);
   document.getElementById("addAccountBtn").addEventListener("click", addAccount);
   document.getElementById("completeBtn").addEventListener("click", markComplete);
   document.getElementById("accounttype").addEventListener("change", updateAccountFieldHints);
+  const savePushoverKeyBtn = document.getElementById("savePushoverKeyBtn");
+  if (savePushoverKeyBtn) savePushoverKeyBtn.addEventListener("click", savePushoverUserKey);
+  const sendPushoverTestBtn = document.getElementById("sendPushoverTestBtn");
+  if (sendPushoverTestBtn) sendPushoverTestBtn.addEventListener("click", sendPushoverTest);
 
   updateAccountFieldHints();
   refreshStatus();

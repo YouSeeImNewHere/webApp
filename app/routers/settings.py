@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from db import with_db_cursor, query_db
 from app.core.tenant_keys import scoped_key
+from app.core.roundups import get_roundup_settings, set_roundup_settings
 
 router = APIRouter()
 
@@ -37,6 +38,9 @@ class SavingsGoalIn(BaseModel):
 class DailyWeightsIn(BaseModel):
     weekday_points: float
     weekend_points: float
+
+class RoundUpSettingsIn(BaseModel):
+    enabled: bool
 
 # -----------------------------
 # Table ensure helpers (Postgres)
@@ -182,3 +186,22 @@ def set_daily_weights(body: DailyWeightsIn):
         )
         conn.commit()
     return {"ok": True, "weekday_points": weekday_points, "weekend_points": weekend_points}
+
+
+@router.get("/settings/round-ups")
+def get_roundups():
+    cfg = get_roundup_settings()
+    return {
+        "enabled": bool(cfg.get("enabled", False)),
+        "category": str(cfg.get("category") or "Round-ups"),
+    }
+
+
+@router.post("/settings/round-ups")
+def set_roundups(body: RoundUpSettingsIn):
+    cfg = set_roundup_settings(enabled=bool(body.enabled))
+    return {
+        "ok": True,
+        "enabled": bool(cfg.get("enabled", False)),
+        "category": str(cfg.get("category") or "Round-ups"),
+    }

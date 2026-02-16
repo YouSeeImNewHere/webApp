@@ -5,9 +5,16 @@ import re
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.core.time import today_local
+from app.core.roundups import (
+    ROUNDUP_CATEGORY_DEFAULT,
+    ROUNDUP_CATEGORY_NORM,
+    get_roundup_settings,
+    is_roundup_eligible_tx,
+    roundup_amount_from_spend,
+)
 from app.routers.analytics import _last_day_of_month, parse_iso
 from app.routers.budget_groups import _norm_cat, _get_budget_groups_for_month, _norm_name
 from app.routers.funds import _list_sinking_funds
@@ -15,10 +22,12 @@ from app.routers.les import LESPaychecksRequest, les_paychecks
 from app.routers.recurring import recurring_calendar
 from app.routers.savings_goal import get_savings_goal
 from app.routers.settings import _ensure_app_settings_pg
+from app.routers.notifications import create_notification
 from db import with_db_cursor, query_db
 from app.core.config import CATEGORY_RULES_TABLE, MULTI_TENANT_ENABLED
 from app.core.tenant_keys import scoped_key
-from app.core.tenancy import current_tenant_id
+from app.core.tenancy import current_tenant_id, get_user_pushover_key_by_email
+from app.core.pushover import send_pushover
 
 router = APIRouter()
 
@@ -163,16 +172,25 @@ def _compute_spent_free_for_day(day: date, tid: int | None = None) -> tuple[floa
 
     spent_today = 0.0
     cat_spent: dict[str, float] = {}
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_norm = _norm_cat(str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT))
 
     for r in tx_rows:
         category = (r["category"] or "").strip().lower()
         if category in ("card payment", "transfer", "cash withdrawal"):
             continue
         amt = float(r["amount"] or 0.0)
-        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
+        account_type = (r["accounttype"] or "").lower()
+        if account_type in ("checking", "credit") and amt > 0:
             spent_today += amt
             if category:
                 cat_spent[category] = cat_spent.get(category, 0.0) + amt
+            if roundup_enabled and is_roundup_eligible_tx(amt, account_type, category):
+                ru = roundup_amount_from_spend(amt)
+                if ru > 0:
+                    spent_today += ru
+                    cat_spent[roundup_norm] = cat_spent.get(roundup_norm, 0.0) + ru
 
     groups = _get_budget_groups_for_month(year, month)
     budgeted_cats = set()
@@ -236,7 +254,75 @@ def _compute_extra_saved_rollover_for_month(
     return float(balance)
 
 
-def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
+def _emit_over_budget_alerts(
+    *,
+    tid: int | None,
+    year: int,
+    month: int,
+    today: date,
+    groups: list[dict[str, Any]],
+    cat_spent: dict[str, float],
+    pushover_user_key: str | None = None,
+) -> None:
+    if not tid:
+        return
+    # Only alert for the current active month.
+    if year != today.year or month != today.month:
+        return
+
+    for g in (groups or []):
+        name = str(g.get("name") or "").strip()
+        if not name:
+            continue
+        if _norm_name(name) == "bills":
+            continue
+        try:
+            allocated = float(g.get("allocated") or 0.0)
+        except Exception:
+            allocated = 0.0
+        if allocated <= 0:
+            continue
+
+        g_spent = 0.0
+        for c in (g.get("categories") or []):
+            g_spent += float(cat_spent.get(_norm_cat(c), 0.0))
+
+        over = float(g_spent - allocated)
+        if over <= 0:
+            continue
+
+        dedupe_key = f"budget-over:{year:04d}-{month:02d}:{_norm_name(name)}"
+        subject = f'Budget over: "{name}" exceeded by ${over:.2f}'
+        body = (
+            f'{name} is over budget.\n'
+            f"Allocated: ${allocated:.2f}\n"
+            f"Spent: ${g_spent:.2f}\n"
+            f"Over by: ${over:.2f}"
+        )
+
+        try:
+            created = create_notification(
+                kind="budget_over",
+                dedupe_key=dedupe_key,
+                subject=subject,
+                sender="Budget",
+                body=body,
+                tenant_id=int(tid),
+            )
+            if created:
+                send_pushover(f'Budget Over: {name}', body, user_key=pushover_user_key)
+        except Exception:
+            # Never break budget response due to notification errors.
+            continue
+
+
+def _month_budget_home(
+    year: int,
+    month: int,
+    min_occ: int = 3,
+    include_stale: bool = False,
+    pushover_user_key: str | None = None,
+):
     tid = _require_tenant_id()
     today = today_local()
     month_start = date(year, month, 1)
@@ -358,6 +444,9 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
 
     spent_so_far = 0.0
     cat_spent: dict[str, float] = {}
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_norm = _norm_cat(str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT))
 
     for r in tx_rows:
         category = (r["category"] or "").strip().lower()
@@ -365,10 +454,16 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
             continue
 
         amt = float(r["amount"] or 0.0)
-        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
+        account_type = (r["accounttype"] or "").lower()
+        if account_type in ("checking", "credit") and amt > 0:
             spent_so_far += amt
             if category:
                 cat_spent[category] = cat_spent.get(category, 0.0) + amt
+            if roundup_enabled and is_roundup_eligible_tx(amt, account_type, category):
+                ru = roundup_amount_from_spend(amt)
+                if ru > 0:
+                    spent_so_far += ru
+                    cat_spent[roundup_norm] = cat_spent.get(roundup_norm, 0.0) + ru
 
     # 3) LES + savings goal (Home logic)
     pay_income = _les_pay_income_for_month(year, month) or 0.0
@@ -416,6 +511,16 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
     # spent_so_far includes budgeted categories — remove them so we don't double-count
     spent_free = spent_so_far - budgeted_spent_total
     safe_to_spend = free_spend_goal - spent_free
+
+    _emit_over_budget_alerts(
+        tid=tid,
+        year=year,
+        month=month,
+        today=today,
+        groups=list(groups or []),
+        cat_spent=cat_spent,
+        pushover_user_key=pushover_user_key,
+    )
 
     # Apply month-to-date rollover:
     # completed-day leftover is moved into extra-saved (not spendable in monthly safe),
@@ -1103,6 +1208,7 @@ def unknown_merchant_total_range(start: str, end: str):
 
 @router.get("/month-budget")
 def month_budget(
+    request: Request,
     year: int | None = None,
     month: int | None = None,
     min_occ: int = 3,
@@ -1111,16 +1217,26 @@ def month_budget(
     now = datetime.now()
     y = int(year or now.year)
     m = int(month or now.month)
-    return _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale)
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    user_key = get_user_pushover_key_by_email(session_email)
+    return _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale, pushover_user_key=user_key)
 
 @router.get("/page/budget")
-def page_budget(year: int | None = None, month: int | None = None, min_occ: int = 3, include_stale: bool = False):
+def page_budget(
+    request: Request,
+    year: int | None = None,
+    month: int | None = None,
+    min_occ: int = 3,
+    include_stale: bool = False,
+):
     tid = _require_tenant_id()
     now = datetime.now()
     y = int(year or now.year)
     m = int(month or now.month)
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    user_key = get_user_pushover_key_by_email(session_email)
 
-    mb = _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale)
+    mb = _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale, pushover_user_key=user_key)
 
     groups = _get_budget_groups_for_month(y, m)
 
@@ -1201,6 +1317,7 @@ def page_budget(year: int | None = None, month: int | None = None, min_occ: int 
         n = _norm_cat(c)
         # first one wins (stable enough, and matches how your app already thinks about categories)
         norm_to_display.setdefault(n, c)
+    norm_to_display.setdefault(ROUNDUP_CATEGORY_NORM, ROUNDUP_CATEGORY_DEFAULT)
 
     spent_items = [
         {"category": norm_to_display.get(k, k), "spent": float(v)}

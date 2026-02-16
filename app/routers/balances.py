@@ -14,6 +14,12 @@ from app.core.time import today_local
 from datetime import date as _date, timedelta as _timedelta
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
+from app.core.roundups import (
+    get_roundup_settings,
+    is_roundup_eligible_tx,
+    roundup_amount_from_spend,
+    roundup_cents_from_spend,
+)
 
 router = APIRouter()
 
@@ -29,6 +35,26 @@ def _require_tenant_id() -> int | None:
     if not tid:
         raise HTTPException(status_code=403, detail="tenant_required")
     return int(tid)
+
+
+def _annotate_roundups(rows: list[dict[str, Any]], fallback_account_type: str = "") -> None:
+    cfg = get_roundup_settings()
+    enabled = bool(cfg.get("enabled", False))
+    for r in rows:
+        amt = float(r.get("amount") or 0.0)
+        category = (r.get("category") or "").strip().lower()
+        account_type = (
+            str(r.get("account_type") or r.get("accounttype") or r.get("accountType") or fallback_account_type)
+            .strip()
+            .lower()
+        )
+        if enabled and is_roundup_eligible_tx(amt, account_type, category):
+            ru = roundup_amount_from_spend(amt)
+            r["roundup_amount"] = round(ru, 2)
+            r["roundup_cents"] = roundup_cents_from_spend(amt)
+        else:
+            r["roundup_amount"] = 0.0
+            r["roundup_cents"] = 0
 
 
 def latest_rates_map_pg() -> Dict[int, float]:
@@ -115,6 +141,7 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
     )
     rows = [dict(r) for r in rows]
     attach_transfer_peers_pg(rows)
+    _annotate_roundups(rows)
     return rows
 
 @router.get("/account-transactions")
@@ -158,7 +185,17 @@ def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)
         ((int(account_id), int(tid), int(account_id), int(limit)) if tid else (int(account_id), int(account_id), int(limit))),
     )
     rows = [dict(r) for r in rows]
+    account_type = ""
+    try:
+        at = query_db(
+            f"SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s {'AND tenant_id = %s' if tid else ''} LIMIT 1",
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
+        )
+        account_type = str((at[0].get("t") if at else "") or "")
+    except Exception:
+        account_type = ""
     attach_transfer_peers_pg(rows)
+    _annotate_roundups(rows, fallback_account_type=account_type)
     return rows
 
 from fastapi import Query
@@ -281,6 +318,7 @@ def transactions_all(
 
     rows = [dict(r) for r in rows]
     attach_transfer_peers_pg(rows)
+    _annotate_roundups(rows)
     return rows
 
 
@@ -409,6 +447,18 @@ def account_transactions_range(
     end_date = end_d.isoformat()
 
     with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'transactions'
+              AND lower(column_name) = 'time'
+            LIMIT 1
+            """
+        )
+        has_time_col = bool(cur.fetchone())
+
         # account type
         cur.execute(
             f"SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s {'AND tenant_id = %s' if tid else ''}",
@@ -482,6 +532,9 @@ def account_transactions_range(
                 amount::double precision AS amount,
                 TRIM(category) AS category,
                 COALESCE(NULLIF(TRIM(status), ''), 'posted') AS status,
+                TRIM(postedDate) AS "postedDate_raw",
+                TRIM(purchaseDate) AS "purchaseDate_raw",
+                {"TRIM(COALESCE(\"time\"::text, '')) AS time_raw," if has_time_col else "''::text AS time_raw,"}
                 COALESCE(
                   NULLIF(TRIM(postedDate), 'unknown'),
                   NULLIF(TRIM(purchaseDate), 'unknown')
@@ -498,6 +551,9 @@ def account_transactions_range(
                 amount,
                 category,
                 status,
+                "postedDate_raw",
+                "purchaseDate_raw",
+                time_raw,
                 raw_date,
                 CASE
                   WHEN raw_date IS NULL THEN NULL
@@ -523,6 +579,9 @@ def account_transactions_range(
                 amount,
                 category,
                 status,
+                "postedDate_raw",
+                "purchaseDate_raw",
+                time_raw,
                 raw_date AS "effectiveDate",
                 d AS "dateISO",
                 SUM(
@@ -542,6 +601,9 @@ def account_transactions_range(
               amount,
               category,
               status,
+              "postedDate_raw" AS "postedDate",
+              "purchaseDate_raw" AS "purchaseDate",
+              time_raw AS "time",
               (%s::double precision + (%s::double precision * running_sum))::double precision AS balance_after
             FROM with_running
             ORDER BY "dateISO" DESC, id DESC
@@ -576,6 +638,7 @@ def account_transactions_range(
             except Exception:
                 a = 0.0
             r["transfer_dir"] = "from" if a < 0 else "to"
+    _annotate_roundups(tx, fallback_account_type=acc_type)
 
     ending_balance = float(tx[0]["balance_after"]) if tx else float(starting_balance_at_range)
 

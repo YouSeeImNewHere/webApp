@@ -3,12 +3,19 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.config import MULTI_TENANT_ENABLED
-from app.core.tenancy import current_tenant_id, get_or_create_onboarding_state, set_onboarding_completed
+from app.core.tenancy import (
+    current_tenant_id,
+    get_or_create_onboarding_state,
+    set_onboarding_completed,
+    get_user_pushover_key_by_email,
+    set_user_pushover_key_by_email,
+)
+from app.core.pushover import send_pushover
 from db import query_db, with_db_cursor
 
 router = APIRouter()
@@ -38,15 +45,25 @@ class OnboardingAccountCreate(BaseModel):
     starting_date: str | None = None  # YYYY-MM-DD
 
 
+class OnboardingPushoverKeyBody(BaseModel):
+    user_key: str | None = None
+
+
+class OnboardingPushoverTestBody(BaseModel):
+    user_key: str | None = None
+
+
 @router.get("/setup")
 def setup_page():
     return FileResponse("static/pages/setup/setup.html")
 
 
 @router.get("/onboarding/status")
-def onboarding_status():
+def onboarding_status(request: Request):
     tid = _require_tenant_id()
     state = get_or_create_onboarding_state(tid)
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    pushover_user_key_set = bool(get_user_pushover_key_by_email(session_email))
 
     account_count = int(
         (query_db("SELECT COUNT(*)::int AS n FROM accounts WHERE tenant_id = %s", (tid,))[0] or {}).get("n") or 0
@@ -75,6 +92,7 @@ def onboarding_status():
             "accounts_added": account_count > 0,
             "starting_balances_added": sb_count > 0,
             "transactions_imported": tx_count > 0,
+            "pushover_user_key_set": pushover_user_key_set,
         },
         "counts": {
             "accounts": account_count,
@@ -86,8 +104,51 @@ def onboarding_status():
             "Add at least one account",
             "Add a starting balance for each account",
             "Run CSV import from Settings",
+            "Optionally save your Pushover user key",
         ],
     }
+
+
+@router.post("/onboarding/pushover-key")
+def onboarding_set_pushover_key(body: OnboardingPushoverKeyBody, request: Request):
+    _require_tenant_id()
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    if not session_email:
+        raise HTTPException(status_code=401, detail="google_auth_required")
+
+    user_key = (body.user_key or "").strip()
+    if user_key and len(user_key) > 128:
+        raise HTTPException(status_code=422, detail="user_key_too_long")
+
+    changed = set_user_pushover_key_by_email(session_email, user_key if user_key else None)
+    if not changed:
+        raise HTTPException(status_code=404, detail="user_not_found")
+
+    return {"ok": True, "user_key_set": bool(user_key)}
+
+
+@router.post("/onboarding/pushover-test")
+def onboarding_send_pushover_test(body: OnboardingPushoverTestBody, request: Request):
+    tid = _require_tenant_id()
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    if not session_email:
+        raise HTTPException(status_code=401, detail="google_auth_required")
+
+    input_key = (body.user_key or "").strip()
+    user_key = input_key or (get_user_pushover_key_by_email(session_email) or "")
+    if not user_key:
+        raise HTTPException(status_code=422, detail="pushover_user_key_required")
+    if len(user_key) > 128:
+        raise HTTPException(status_code=422, detail="user_key_too_long")
+
+    sent = send_pushover(
+        "WebApp Test Notification",
+        f"Test notification from setup wizard (tenant {int(tid)}).",
+        user_key=user_key,
+    )
+    if not sent:
+        raise HTTPException(status_code=502, detail="pushover_send_failed")
+    return {"ok": True, "sent": True}
 
 
 @router.post("/onboarding/complete")

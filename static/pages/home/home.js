@@ -1835,6 +1835,10 @@ function renderTxList(data){
     const sub = `${row.bank || ""}${row.card ? "  " + row.card : ""}`;
     const amtNum = Number(row.amount || 0);
     const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
+    const roundupCents = Number(row.roundup_cents || 0);
+    const roundupBadge = roundupCents > 0
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      : "";
 
     const effectiveDate =
       (row.postedDate && row.postedDate !== "unknown") ? row.postedDate :
@@ -1852,6 +1856,7 @@ function renderTxList(data){
         <div class="tx-sub">${(row.category || "").trim()}</div>
       </div>
       <div class="tx-amt">${money(row.amount)}</div>
+      ${roundupBadge}
     `;
     return wrap;
   }
@@ -2561,7 +2566,6 @@ const CSV_MAPPING_FIELD_LABELS = {
   csvMapPosted: "Posted date",
   csvMapAmount: "Amount",
   csvMapMerchant: "Merchant",
-  csvMapCategory: "Category",
   csvMapIndicator: "Credit/Debit indicator",
 };
 
@@ -2623,17 +2627,17 @@ function ensureCsvUploadModal() {
         </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="font-size:12px; font-weight:800;">Preset key (primary)
+            <select id="csvPresetKeySelect" style="width:100%; margin-top:4px;">
+              <option value="">Choose preset key</option>
+            </select>
+          </label>
           <label style="font-size:12px; font-weight:700;">Account
             <select id="csvAccountId" style="width:100%; margin-top:4px;"></select>
           </label>
-          <label style="font-size:12px; font-weight:700;">Institution preset key
-            <input id="csvInstitutionKey" type="text" list="csvPresetKeysList" placeholder="Type or pick a saved key" style="width:100%; margin-top:4px;" />
+          <label style="font-size:12px; font-weight:700;">Institution preset key (for save)
+            <input id="csvInstitutionKey" type="text" list="csvPresetKeysList" placeholder="Enter key to save/update preset" style="width:100%; margin-top:4px;" />
             <datalist id="csvPresetKeysList"></datalist>
-          </label>
-          <label style="font-size:12px; font-weight:700;">Saved preset keys
-            <select id="csvPresetKeySelect" style="width:100%; margin-top:4px;">
-              <option value="">Choose a saved key</option>
-            </select>
           </label>
           <label style="font-size:12px; font-weight:700;">Delimiter
             <select id="csvDelimiter" style="width:100%; margin-top:4px;">
@@ -2667,7 +2671,6 @@ function ensureCsvUploadModal() {
             <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
             <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
             <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
-            <label style="font-size:12px;">Category<select id="csvMapCategory" style="width:100%; margin-top:4px;"></select></label>
             <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
@@ -2714,7 +2717,7 @@ function ensureCsvUploadModal() {
     if (!picked) return;
     const keyInput = root.querySelector("#csvInstitutionKey");
     if (keyInput) keyInput.value = picked;
-    loadCsvPreset().catch(console.error);
+    loadCsvPresetByKey(picked).catch(console.error);
   });
   root.querySelector("#csvInstitutionKey")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -2797,7 +2800,6 @@ function buildCsvPresetPayload() {
     posted_col: csvGetSelectInt("csvMapPosted"),
     amount_col: csvGetSelectInt("csvMapAmount"),
     merchant_col: csvGetSelectInt("csvMapMerchant"),
-    category_col: csvGetSelectInt("csvMapCategory"),
     indicator_col: csvGetSelectInt("csvMapIndicator"),
     credit_indicator_value: String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"),
     invert_amount: !!document.getElementById("csvInvertAmount")?.checked,
@@ -2820,7 +2822,6 @@ function applyCsvPreset(preset) {
   setIf("csvMapPosted", preset.posted_col);
   setIf("csvMapAmount", preset.amount_col);
   setIf("csvMapMerchant", preset.merchant_col);
-  setIf("csvMapCategory", preset.category_col);
   setIf("csvMapIndicator", preset.indicator_col);
   setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
   const invert = document.getElementById("csvInvertAmount");
@@ -2844,32 +2845,52 @@ async function autoFillInstitutionAndLoadPreset() {
   await loadCsvPreset();
 }
 
-async function loadCsvPreset() {
+async function loadCsvPresetByKey(institutionKey, preferredAccountId = null) {
   const sub = document.getElementById("csvUploadSub");
-  const { accountId } = selectedCsvAccountMeta();
+  const key = String(institutionKey || "").trim().toLowerCase();
+  if (!key) return false;
+
+  const accountSel = document.getElementById("csvAccountId");
+  const allAccounts = (CSV_MODAL_STATE.accounts || []).map(a => Number(a.id)).filter(n => Number.isFinite(n) && n > 0);
+  const curr = Number(accountSel?.value || 0);
+  const pref = Number(preferredAccountId || curr || 0);
+  const ids = Array.from(new Set([pref, ...allAccounts].filter(n => n > 0)));
+
+  for (const aid of ids) {
+    try {
+      const q = `/csv/mapping-presets?account_id=${encodeURIComponent(aid)}&institution_key=${encodeURIComponent(key)}`;
+      const out = await apiGetJson(q, { cache: "no-store" });
+      if (out?.ok && out?.found && out?.preset) {
+        applyCsvPreset(out.preset);
+        CSV_MODAL_STATE.activePresetKey = key;
+        if (accountSel) accountSel.value = String(aid);
+        const keyInput = document.getElementById("csvInstitutionKey");
+        if (keyInput) keyInput.value = key;
+        syncCsvPresetKeySelect();
+        if (sub) sub.textContent = "Preset loaded.";
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  CSV_MODAL_STATE.activePreset = null;
+  CSV_MODAL_STATE.activePresetKey = "";
+  if (sub) sub.textContent = "No preset found for selected key.";
+  return false;
+}
+
+async function loadCsvPreset() {
   const keyInput = document.getElementById("csvInstitutionKey");
   const institution = String(keyInput?.value || "").trim().toLowerCase();
-  if (!accountId || !institution) {
+  if (!institution) {
     CSV_MODAL_STATE.activePreset = null;
     CSV_MODAL_STATE.activePresetKey = "";
     return;
   }
   if (keyInput) keyInput.value = institution;
-  try {
-    const q = `/csv/mapping-presets?account_id=${encodeURIComponent(accountId)}&institution_key=${encodeURIComponent(institution)}`;
-    const out = await apiGetJson(q, { cache: "no-store" });
-    if (out?.ok && out?.found && out?.preset) {
-      applyCsvPreset(out.preset);
-      CSV_MODAL_STATE.activePresetKey = institution;
-      if (sub) sub.textContent = "Preset loaded.";
-      syncCsvPresetKeySelect();
-    } else {
-      CSV_MODAL_STATE.activePreset = null;
-      CSV_MODAL_STATE.activePresetKey = "";
-    }
-  } catch (e) {
-    console.error(e);
-  }
+  await loadCsvPresetByKey(institution);
 }
 
 function renderCsvPresetKeyList(keys) {
@@ -2880,7 +2901,7 @@ function renderCsvPresetKeyList(keys) {
     dl.innerHTML = rows.map((k) => `<option value="${escapeHtml(String(k))}"></option>`).join("");
   }
   if (sel) {
-    sel.innerHTML = ['<option value="">Choose a saved key</option>']
+    sel.innerHTML = ['<option value="">Choose preset key</option>']
       .concat(rows.map((k) => `<option value="${escapeHtmlAttr(String(k))}">${escapeHtml(String(k))}</option>`))
       .join("");
   }
@@ -2888,9 +2909,7 @@ function renderCsvPresetKeyList(keys) {
 }
 
 async function loadCsvPresetKeys() {
-  const { accountId } = selectedCsvAccountMeta();
   const params = new URLSearchParams();
-  if (accountId) params.set("account_id", String(accountId));
   params.set("limit", "50");
 
   try {
@@ -2974,7 +2993,7 @@ function guessCsvColumn(columns, candidates) {
 }
 
 function populateCsvMappingSelects(columns) {
-  const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapMerchant", "csvMapCategory", "csvMapIndicator"];
+  const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapMerchant", "csvMapIndicator"];
   const opts = ['<option value="-1">Not mapped</option>']
     .concat((columns || []).map(c => `<option value="${c.index}">${escapeHtml(c.label)} (col ${c.index + 1})</option>`))
     .join("");
@@ -2987,7 +3006,6 @@ function populateCsvMappingSelects(columns) {
     csvMapPosted: ["posted date", "post date", "posting date"],
     csvMapAmount: ["amount", "transaction amount"],
     csvMapMerchant: ["description", "merchant", "payee", "transaction description"],
-    csvMapCategory: ["category"],
     csvMapIndicator: ["credit/debit", "credit debit", "indicator", "type"],
   };
   Object.entries(guesses).forEach(([id, terms]) => {
@@ -3087,10 +3105,8 @@ function appendCsvMappingFields(fd, accountId, requireAccount = true) {
   fd.append("credit_indicator_value", String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"));
   fd.append("invert_amount", document.getElementById("csvInvertAmount")?.checked ? "true" : "false");
   const posted = csvGetSelectInt("csvMapPosted");
-  const category = csvGetSelectInt("csvMapCategory");
   const indicator = csvGetSelectInt("csvMapIndicator");
   if (posted !== null) fd.append("posted_col", String(posted));
-  if (category !== null) fd.append("category_col", String(category));
   if (indicator !== null) fd.append("indicator_col", String(indicator));
 }
 

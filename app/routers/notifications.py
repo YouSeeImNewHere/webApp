@@ -64,6 +64,40 @@ class NotificationPush(BaseModel):
     sender: str = "System"
     body: str = ""
 
+
+def create_notification(
+    *,
+    kind: str,
+    dedupe_key: str,
+    subject: str,
+    sender: str = "System",
+    body: str = "",
+    tenant_id: int | None = None,
+) -> bool:
+    """
+    Insert a notification with dedupe semantics.
+    Returns True if created, False if deduped/no-op.
+    """
+    ensure_notifications_table_pg()
+    dkey = str(dedupe_key or "").strip()
+    if not dkey:
+        return False
+    if MULTI_TENANT_ENABLED and tenant_id:
+        dkey = f"t{int(tenant_id)}:{dkey}"
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO notifications (tenant_id, kind, dedupe_key, subject, sender, body, is_read, dismissed)
+            VALUES (%s, %s, %s, %s, %s, %s, FALSE, FALSE)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            """,
+            ((int(tenant_id), kind, dkey, subject, sender, body) if tenant_id else (None, kind, dkey, subject, sender, body)),
+        )
+        created = (cur.rowcount or 0) > 0
+        conn.commit()
+        return bool(created)
+
 def _to_local_display_pg(ts: Optional[object]) -> str:
     """
     Input is a TIMESTAMPTZ coming back as a python datetime (usually tz-aware).
@@ -99,25 +133,18 @@ def push_notification(payload: NotificationPush, x_notif_secret: str = Header(de
     if not (has_valid_secret or has_session_tenant):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    with with_db_cursor() as (conn, cur):
-        try:
-            dedupe_key = payload.dedupe_key
-            if MULTI_TENANT_ENABLED and tid:
-                dedupe_key = f"t{int(tid)}:{payload.dedupe_key}"
-            cur.execute(
-                """
-                INSERT INTO notifications (tenant_id, kind, dedupe_key, subject, sender, body, is_read, dismissed)
-                VALUES (%s, %s, %s, %s, %s, %s, FALSE, FALSE)
-                ON CONFLICT (dedupe_key) DO NOTHING
-                """,
-                ((int(tid), payload.kind, dedupe_key, payload.subject, payload.sender, payload.body) if tid else (None, payload.kind, dedupe_key, payload.subject, payload.sender, payload.body)),
-            )
-            created = (cur.rowcount or 0) > 0
-            conn.commit()
-            return {"ok": True, "created": bool(created)}
-        except Exception as e:
-            conn.rollback()
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        created = create_notification(
+            kind=payload.kind,
+            dedupe_key=payload.dedupe_key,
+            subject=payload.subject,
+            sender=payload.sender,
+            body=payload.body,
+            tenant_id=tid,
+        )
+        return {"ok": True, "created": bool(created)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/notifications")
 def list_notifications(limit: int = 200):
