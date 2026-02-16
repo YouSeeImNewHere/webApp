@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="format-detection" content="telephone=no">
+  <title>Workspace Setup</title>
+  <link href="/static/css/base.css" rel="stylesheet"/>
+  <link href="/static/css/mobile.css" rel="stylesheet"/>
+  <script src="/static/theme.js"></script>
+  <style>
+    body.setup-page { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f5f7fb; color: #121826; }
+    .setup-wrap { max-width: 840px; margin: calc(var(--topbar-h, 56px) + 16px) auto 90px; padding: 0 16px; }
+    .setup-card { background: #fff; border: 1px solid #dbe2f0; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    p, li { line-height: 1.4; }
+    .setup-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .setup-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .setup-page input, .setup-page select, .setup-page button { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #c6cfdf; border-radius: 8px; }
+    .setup-page button { cursor: pointer; background: #0b57d0; color: white; border: none; }
+    .setup-page button.secondary { background: #44516a; }
+    .setup-pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin-right: 8px; }
+    .ok { background: #dbf5e6; color: #095f35; }
+    .todo { background: #fff4dc; color: #7a4b00; }
+    .setup-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .setup-muted { color: #637089; }
+  </style>
+</head>
+<body class="setup-page" data-page-title="Setup Wizard">
+  <div class="setup-wrap">
+    <div class="setup-card">
+      <h1>Workspace Setup Wizard</h1>
+      <p class="setup-muted">Complete this once per tenant workspace.</p>
+      <div id="status"></div>
+      <div style="margin-top: 10px;">
+        <button class="secondary" id="refreshBtn" type="button">Refresh Status</button>
+      </div>
+    </div>
+
+    <div class="setup-card">
+      <h2>Step 1: Add Account</h2>
+      <div class="setup-row">
+        <input id="institution" placeholder="Institution (e.g. Navy Federal)" />
+        <input id="name" placeholder="Account Name (e.g. Active Duty Checking)" />
+      </div>
+      <div class="setup-row3">
+        <select id="accounttype">
+          <option value="checking">checking</option>
+          <option value="savings">savings</option>
+          <option value="credit">credit</option>
+          <option value="investment">investment</option>
+        </select>
+        <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional)" />
+        <input id="startingDate" type="date" />
+      </div>
+      <div class="setup-row">
+        <input id="creditLimit" type="number" step="0.01" placeholder="Credit Limit (credit only)" />
+        <input id="apyPercent" type="number" step="0.001" min="0" max="100" placeholder="APY % (checking/savings/investment)" />
+      </div>
+      <div class="setup-row">
+        <input id="interestPostDay" type="number" min="1" max="31" placeholder="Interest Post Day (optional)" />
+        <div></div>
+      </div>
+      <button id="addAccountBtn" type="button">Add Account</button>
+      <div id="addResult" class="setup-muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="setup-card">
+      <h2>Step 2: Import CSV Data</h2>
+      <p>Use your existing CSV importer in settings after accounts are added.</p>
+      <p class="setup-mono">Go to: <a href="/settings">/settings</a></p>
+      <p class="setup-muted">Import at least one transaction file for this tenant.</p>
+    </div>
+
+    <div class="setup-card">
+      <h2>Step 3: Finish</h2>
+      <button id="completeBtn" type="button">Mark Wizard Complete</button>
+      <p class="setup-muted" style="margin-top:8px;">You can reopen this page anytime at <span class="setup-mono">/setup</span>.</p>
+    </div>
+  </div>
+  <div id="sharedChrome"></div>
+  <script src="/static/setup.js"></script>
+  <script src="/static/shared/shared.js" defer></script>
+</body>
+</html>
