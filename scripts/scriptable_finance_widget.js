@@ -1,8 +1,8 @@
 // Scriptable Finance Widget (repo-managed)
 // Copy/paste this file into Scriptable.
 // Optimized to reduce backend/Neon CPU:
-// - Widget rendering uses local cache only.
-// - Network refresh happens when run from Shortcuts (no widget family).
+// - Widget rendering prefers local cache.
+// - Network refresh happens in Shortcut mode and periodically in widget mode.
 
 // ===== TOGGLE =====
 const WIDGET_ENABLED = true;
@@ -14,7 +14,7 @@ const ENDPOINT = "/widget/summary";
 
 const fm = FileManager.local();
 const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), "finance_widget_cache.json");
-const CACHE_TTL_MINUTES = 30; // acceptable staleness for widget rendering
+const WIDGET_NETWORK_REFRESH_MINUTES = 12 * 60; // at least twice daily
 
 function finish(widget, output = "Widget refreshed") {
   try { Script.setShortcutOutput(output); } catch (_) {}
@@ -33,6 +33,18 @@ function loadCache() {
 function cacheAgeMinutes(cache) {
   if (!cache || !cache.ts) return Infinity;
   return (Date.now() - cache.ts) / 60000;
+}
+
+function shouldDoPeriodicRefresh(cache) {
+  if (!cache || !cache.data) return true;
+  const age = cacheAgeMinutes(cache);
+  if (!Number.isFinite(age)) return true;
+  return age >= WIDGET_NETWORK_REFRESH_MINUTES;
+}
+
+function shouldMarkDailyRefresh(cache) {
+  if (!cache || !cache.data) return false;
+  return cacheAgeMinutes(cache) >= (24 * 60);
 }
 
 async function fetchFresh() {
@@ -277,20 +289,22 @@ if (!fam) {
   }
 }
 
-// Widget mode: use cache only (cheap). If no cache exists, try one network fetch.
+// Widget mode: prefer cache; do periodic network refresh.
 let payload = null;
 let usedCache = true;
 let cacheAgeMin = Infinity;
+let periodicRefresh = false;
+let dailyRefresh = false;
 
 const cache = loadCache();
-if (cache && cache.data && cacheAgeMinutes(cache) <= CACHE_TTL_MINUTES) {
+if (cache && cache.data) {
   payload = cache.data;
   cacheAgeMin = cacheAgeMinutes(cache);
-} else if (cache && cache.data) {
-  // stale but still usable
-  payload = cache.data;
-  cacheAgeMin = cacheAgeMinutes(cache);
-} else {
+}
+
+periodicRefresh = shouldDoPeriodicRefresh(cache);
+dailyRefresh = shouldMarkDailyRefresh(cache);
+if (!payload || periodicRefresh) {
   try {
     payload = await fetchFresh();
     usedCache = false;
@@ -443,7 +457,11 @@ kv("Checking", money2(totals.checking));
 kv("Savings", money2(totals.savings));
 
 w.addSpacer(8);
-const footer = w.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+const footer = w.addText(
+  usedCache
+    ? `Cache ${Math.round(cacheAgeMin)}m`
+    : (dailyRefresh ? "Live (daily)" : (periodicRefresh ? "Live (scheduled)" : "Live"))
+);
 footer.font = Font.systemFont(10);
 footer.textOpacity = 0.6;
 
