@@ -10,6 +10,7 @@ const WIDGET_ENABLED = true;
 // ===== CONFIG =====
 const BASE_URL = "https://webapp-pe3q.onrender.com";
 const SECRET = "398867"; // Must match server WIDGET_SECRET
+const TENANT_ID = ""; // Optional: set to "1" etc. if multi-tenant is enabled
 const ENDPOINT = "/widget/summary";
 
 const fm = FileManager.local();
@@ -47,11 +48,26 @@ function shouldMarkDailyRefresh(cache) {
   return cacheAgeMinutes(cache) >= (24 * 60);
 }
 
+function isValidPayload(payload) {
+  return !!(
+    payload &&
+    payload.ok === true &&
+    payload.today &&
+    typeof payload.today.remaining_today !== "undefined"
+  );
+}
+
 async function fetchFresh() {
   const req = new Request(BASE_URL + ENDPOINT);
-  req.headers = { "x-widget-secret": SECRET };
+  const headers = { "x-widget-secret": SECRET };
+  if (String(TENANT_ID || "").trim()) headers["x-tenant-id"] = String(TENANT_ID).trim();
+  req.headers = headers;
   req.timeoutInterval = 10;
-  return await req.loadJSON();
+  const payload = await req.loadJSON();
+  if (!isValidPayload(payload)) {
+    throw new Error("invalid_widget_payload");
+  }
+  return payload;
 }
 
 function colorGreen()  { return Color.dynamic(new Color("#34C759"), new Color("#30D158")); }
@@ -297,7 +313,7 @@ let periodicRefresh = false;
 let dailyRefresh = false;
 
 const cache = loadCache();
-if (cache && cache.data) {
+if (cache && isValidPayload(cache.data)) {
   payload = cache.data;
   cacheAgeMin = cacheAgeMinutes(cache);
 }

@@ -22,6 +22,7 @@ from app.core.tenancy import (
     get_user_by_email,
     set_current_tenant_id,
     reset_current_tenant_id,
+    get_owner_tenant_id,
     list_pending_users,
     approve_user,
 )
@@ -686,6 +687,18 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
             if path.startswith("/widget/"):
                 provided = request.headers.get("x-widget-secret", "")
                 if WIDGET_SECRET and provided == WIDGET_SECRET:
+                    if MULTI_TENANT_ENABLED:
+                        tenant_id = None
+                        raw_tid = (request.headers.get("x-tenant-id") or "").strip()
+                        if raw_tid.isdigit():
+                            parsed = int(raw_tid)
+                            if parsed > 0:
+                                tenant_id = parsed
+                        if not tenant_id:
+                            tenant_id = get_owner_tenant_id()
+                        if not tenant_id:
+                            return JSONResponse({"ok": False, "error": "tenant_required"}, status_code=403)
+                        set_current_tenant_id(int(tenant_id))
                     return await call_next(request)
                 return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
 
