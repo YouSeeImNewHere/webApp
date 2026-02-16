@@ -124,6 +124,139 @@ function progressBar(pct, width = 170, height = 12, label = "") {
   return ctx.getImage();
 }
 
+function dailyBarWithText(remaining, baseline, width = 170, height = 12) {
+  const b = Number(baseline || 0);
+  const r = Number(remaining || 0);
+  let pctRem = b > 0 ? (r / b) : 0;
+  pctRem = clamp01(pctRem);
+
+  let fillColor = colorGreen();
+  if (r < 0) fillColor = colorRed();
+  else if (pctRem < 0.3) fillColor = colorOrange();
+
+  const ctx = new DrawContext();
+  ctx.size = new Size(width, height);
+  ctx.opaque = false;
+  ctx.respectScreenScale = true;
+
+  const trackColor = new Color("#FFFFFF", 0.22);
+  const rad = height / 2;
+
+  function fillRounded(rect, radius) {
+    const p = new Path();
+    if (typeof p.addRoundedRect === "function") {
+      p.addRoundedRect(rect, radius, radius);
+      ctx.addPath(p);
+      ctx.fillPath();
+      return true;
+    }
+    return false;
+  }
+
+  ctx.setFillColor(trackColor);
+  const trackRect = new Rect(0, 0, width, height);
+  const roundedOk = fillRounded(trackRect, rad);
+
+  const fillW = Math.max(1, Math.floor(width * pctRem));
+  ctx.setFillColor(fillColor);
+  const fillRect = new Rect(0, 0, fillW, height);
+
+  if (roundedOk) fillRounded(fillRect, rad);
+  else {
+    ctx.fillRect(trackRect);
+    ctx.setFillColor(fillColor);
+    ctx.fillRect(fillRect);
+  }
+
+  const txt = money2(r);
+  const fs = 9;
+  ctx.setFont(Font.boldSystemFont(fs));
+  ctx.setTextAlignedCenter();
+  const textRect = new Rect(0, Math.round((height - fs) / 2) - 1, width, fs + 2);
+
+  ctx.setTextColor(new Color("#000000", 0.65));
+  const offsets = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+  for (const [dx, dy] of offsets) {
+    ctx.drawTextInRect(txt, new Rect(textRect.x + dx, textRect.y + dy, textRect.width, textRect.height));
+  }
+
+  ctx.setTextColor(new Color("#FFFFFF", 0.95));
+  ctx.drawTextInRect(txt, textRect);
+  return ctx.getImage();
+}
+
+function monthElapsedPct() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const fracDay = (now.getHours() + now.getMinutes() / 60) / 24;
+  return clamp01(((now.getDate() - 1) + fracDay) / daysInMonth);
+}
+
+function paceColorForRemaining(remaining, total) {
+  const r = Number(remaining || 0);
+  const t = Number(total || 0);
+  if (t <= 0) return colorGreen();
+  const elapsed = monthElapsedPct();
+  const expectedRemaining = t * (1 - elapsed);
+  const tol = Math.max(t * 0.05, 25);
+  if (r > expectedRemaining + tol) return colorGreen();
+  if (r < expectedRemaining - tol) return colorRed();
+  return colorOrange();
+}
+
+function remainingBarWithText(pctRemaining, fillColor, remainingText, width = 170, height = 12) {
+  pctRemaining = clamp01(pctRemaining);
+  const ctx = new DrawContext();
+  ctx.size = new Size(width, height);
+  ctx.opaque = false;
+  ctx.respectScreenScale = true;
+
+  const trackColor = new Color("#FFFFFF", 0.22);
+  const rad = height / 2;
+
+  function fillRounded(rect, radius) {
+    const p = new Path();
+    if (typeof p.addRoundedRect === "function") {
+      p.addRoundedRect(rect, radius, radius);
+      ctx.addPath(p);
+      ctx.fillPath();
+      return true;
+    }
+    return false;
+  }
+
+  ctx.setFillColor(trackColor);
+  const trackRect = new Rect(0, 0, width, height);
+  const roundedOk = fillRounded(trackRect, rad);
+
+  const fillW = Math.max(1, Math.floor(width * pctRemaining));
+  ctx.setFillColor(fillColor);
+  const fillRect = new Rect(0, 0, fillW, height);
+  if (roundedOk) fillRounded(fillRect, rad);
+  else {
+    ctx.fillRect(trackRect);
+    ctx.setFillColor(fillColor);
+    ctx.fillRect(fillRect);
+  }
+
+  if (remainingText) {
+    const fs = 9;
+    ctx.setFont(Font.boldSystemFont(fs));
+    ctx.setTextAlignedCenter();
+    const textRect = new Rect(0, Math.round((height - fs) / 2) - 1, width, fs + 2);
+    ctx.setTextColor(new Color("#000000", 0.65));
+    const offsets = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+    for (const [dx, dy] of offsets) {
+      ctx.drawTextInRect(remainingText, new Rect(textRect.x + dx, textRect.y + dy, textRect.width, textRect.height));
+    }
+    ctx.setTextColor(new Color("#FFFFFF", 0.95));
+    ctx.drawTextInRect(remainingText, textRect);
+  }
+  return ctx.getImage();
+}
+
 if (!WIDGET_ENABLED) {
   const w = new ListWidget();
   w.addText("Finance widget paused");
@@ -258,7 +391,7 @@ const barStack = left.addStack();
 const bar = barStack.addImage(progressBar(pct, 170, 12, money0(credit.available)));
 bar.imageSize = new Size(170, 12);
 
-left.addSpacer(3);
+left.addSpacer(4);
 const safeHead = left.addStack();
 safeHead.layoutHorizontally();
 safeHead.centerAlignContent();
@@ -269,13 +402,26 @@ safeHead.addSpacer();
 const safeTotal = safeHead.addText(money0(monthTotal));
 safeTotal.font = Font.boldSystemFont(12);
 
-const safeVal = left.addText(money2(safe));
-safeVal.font = Font.boldSystemFont(18);
-safeVal.textColor = colorGreen();
+const pctRemainingMonth = monthTotal > 0 ? (safe / monthTotal) : 0;
+const paceCol = paceColorForRemaining(safe, monthTotal);
+const safeBarStack = left.addStack();
+const safeBar = safeBarStack.addImage(remainingBarWithText(pctRemainingMonth, paceCol, money2(safe), 170, 12));
+safeBar.imageSize = new Size(170, 12);
 
-const daily = left.addText(`Daily left ${money2(leftToday)} / ${money0(baseline)}`);
-daily.font = Font.systemFont(11);
-daily.textOpacity = 0.8;
+left.addSpacer(4);
+const dlHead = left.addStack();
+dlHead.layoutHorizontally();
+dlHead.centerAlignContent();
+const dlLabel = dlHead.addText("DAILY LIMIT");
+dlLabel.font = Font.boldSystemFont(10);
+dlLabel.textOpacity = 0.55;
+dlHead.addSpacer();
+const dlBase = dlHead.addText(money0(baseline));
+dlBase.font = Font.boldSystemFont(12);
+
+const dlBarStack = left.addStack();
+const dlBar = dlBarStack.addImage(dailyBarWithText(leftToday, baseline, 170, 12));
+dlBar.imageSize = new Size(170, 12);
 
 row.addSpacer(16);
 const right = row.addStack();
