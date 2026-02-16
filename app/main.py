@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.core import auth
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
 from app.routers.csv_upload import router as csv_upload_router
 
 from db import open_pool, close_pool
@@ -9,6 +10,7 @@ from db import open_pool, close_pool
 from app.core.templates import templates  # ensure templates init
 from app.core.auth import add_auth_middlewares
 from app.core.config import BUILD_ID
+from app.core.tenancy import initialize_tenancy
 
 # Routers
 from app.routers import (
@@ -31,10 +33,23 @@ from app.routers import (
     interest_rates,
     transactions,
     page_payloads,
+    onboarding,
 )
 
 def create_app() -> FastAPI:
     app = FastAPI()
+
+    @app.middleware("http")
+    async def static_cache_control(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path or ""
+        if path.startswith("/static/"):
+            lower = path.lower()
+            if lower.endswith((".html", ".webmanifest")) or lower.endswith("/sw.js"):
+                response.headers["Cache-Control"] = "no-cache"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
     # Optional receipts router (kept identical to prior behavior)
     try:
@@ -51,6 +66,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def _startup():
         open_pool()
+        initialize_tenancy()
 
     @app.on_event("shutdown")
     def _shutdown():
@@ -79,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(interest_rates.router)
     app.include_router(transactions.router)
     app.include_router(page_payloads.router)
+    app.include_router(onboarding.router)
     app.include_router(auth.router)
     app.include_router(csv_upload_router)
 

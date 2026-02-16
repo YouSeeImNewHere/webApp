@@ -127,7 +127,7 @@ async function openExtraSavedBreakdown() {
   const subEl = document.getElementById("extraSavedSub");
   const bodyEl = document.getElementById("extraSavedBody");
 
-  if (subEl) subEl.textContent = "Loading…";
+  if (subEl) subEl.textContent = "Loading";
   if (bodyEl) bodyEl.innerHTML = "";
 
   try {
@@ -138,7 +138,7 @@ async function openExtraSavedBreakdown() {
     const total = Number(d.total_extra_saved || 0);
 
     if (subEl) {
-      subEl.textContent = `${fmtISOToShort(d.month_start)} → ${fmtISOToShort(d.today)} • Total: ${signMoney(total)}`;
+      subEl.textContent = `${fmtISOToShort(d.month_start)}  ${fmtISOToShort(d.today)}  Total: ${signMoney(total)}`;
     }
 
     if (!days.length) {
@@ -180,7 +180,7 @@ async function openExtraSavedBreakdown() {
     // optional: small explainer
     const note = `
       <div style="margin-top:10px; font-size:12px; opacity:.7;">
-        Leftover = baseline − spent free. Negative days reduce the total.
+        Leftover = baseline  spent free. Negative days reduce the total.
       </div>
     `;
 
@@ -506,13 +506,15 @@ function sortAccountsByOrder(accounts, orderList) {
   });
 }
 
-async function loadBankTotals() {
-  let data;
-  try {
-    data = await apiGetJson("/bank-totals");
-  } catch (err) {
-    console.error("bank-totals failed:", err);
-    return;
+async function loadBankTotals(dataOverride = null) {
+  let data = dataOverride;
+  if (!data) {
+    try {
+      data = await apiGetJson("/bank-totals");
+    } catch (err) {
+      console.error("bank-totals failed:", err);
+      return;
+    }
   }
 
   const container = document.getElementById("bankTotals");
@@ -561,21 +563,19 @@ function creditUsagePctText(balance, limit) {
 }
 
 async function loadHomePayload() {
-  const payload = await apiGetJson("/page/home?tx_limit=15", { cache: "no-store" });
+  const payload = await apiGetJson("/page/home?tx_limit=15");
 
-  // ✅ Recent transactions
+  //  Recent transactions
   if (Array.isArray(payload.transactions)) {
-    renderTxList(payload.transactions);   // <— this exists in your file
+    renderTxList(payload.transactions);   // < this exists in your file
   }
 
-  // ✅ Category totals (this month)
+  //  Category totals (this month)
   if (payload.category_totals_month) {
-    // easiest: reuse your existing loader for now
-    // (later we can add a render-from-payload function)
-    loadCategoryTotalsThisMonth();
+    loadCategoryTotalsThisMonth(payload.category_totals_month);
   }
 
-  // ✅ Unread badge
+  //  Unread badge
   if (payload.notifications_unread && typeof payload.notifications_unread.unread === "number") {
     // setUnreadBadge was missing in your earlier errors sometimes; guard it.
     if (typeof window.setUnreadBadge === "function") {
@@ -583,10 +583,9 @@ async function loadHomePayload() {
     }
   }
 
-  // ✅ Bank totals
+  //  Bank totals
   if (payload.bank_totals) {
-    // easiest: reuse existing loader for now
-    loadBankTotals();
+    loadBankTotals(payload.bank_totals);
   }
 
   return payload;
@@ -629,12 +628,12 @@ if (isCardBalances && creditSummary) {
 
   <span class="bank-accordion__right">
     <div class="bank-accordion__total">
-      ${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ▾
+      ${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} 
     </div>
 
     ${isCardBalances && showCreditSummary ? `
       <div class="bank-accordion__sub">
-  Limit ${money(creditSummary.capLimit)} • ${creditSummary.pctUsed}% used
+  Limit ${money(creditSummary.capLimit)}  ${creditSummary.pctUsed}% used
 </div>
 
     ` : ""}
@@ -686,7 +685,7 @@ pill.innerHTML = `
       const rightEl = btn.querySelector(".bank-accordion__right > div");
 if (rightEl) {
   rightEl.textContent =
-    `${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ${panel.hidden ? "▾" : "▴"}`;
+    `${isCardBalances ? formatCardBalance(displayTotal) : money(displayTotal)} ${panel.hidden ? "" : ""}`;
 }
 
     });
@@ -719,9 +718,9 @@ if (isCardBalances) {
     ${showCreditSummary ? `
       <div class="bank-card__subtotal">
         <span>Limit ${money(creditSummary.capLimit)}</span>
-<span class="dot">•</span>
+<span class="dot"></span>
 <span>Used ${money(creditSummary.usedSum)}</span>
-<span class="dot">•</span>
+<span class="dot"></span>
 <span>${creditSummary.pctUsed}% used</span>
 
       </div>
@@ -833,7 +832,7 @@ refreshMonthBudgetCard(false);
   }
 }
 
-window.bootHome = bootHome; // ✅ make it globally callable if other files want it
+window.bootHome = bootHome; //  make it globally callable if other files want it
 
 
 
@@ -1038,7 +1037,7 @@ if (isNet && showPotentialGrowth) {
 }
 
   if (DEBUG_SPENDING && currentChart().key === "spending") {
-  console.group("🧾 Spending chart – raw backend data");
+  console.group(" Spending chart  raw backend data");
   console.table(data.map(d => ({
     date: d.date,
     value: Number(d.value)
@@ -1048,7 +1047,7 @@ if (isNet && showPotentialGrowth) {
 
 
   const labels = data.map(d => formatMMMdd(d.date));
-  const values = data.map(d => Number(d.value)); // <— use unified key "value"
+  const values = data.map(d => Number(d.value)); // < use unified key "value"
 
   // ---- Breakdown block (top-left) ----
 if (currentChart().key === "spending") {
@@ -1075,7 +1074,7 @@ if (currentChart().key === "spending") {
     endValForGrowth = Number(potentialEOM);
   }
 
-  let growthStr = "—";
+  let growthStr = "";
   if (values.length >= 2 && Math.abs(startVal) > 1e-9) {
     const pct = ((endValForGrowth - startVal) / Math.abs(startVal)) * 100;
     growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
@@ -1089,7 +1088,7 @@ let running = 0;
 const cumulative = values.map(v => (running += (Number(v) || 0)));
 
 if (DEBUG_SPENDING && currentChart().key === "spending") {
-  console.group("📈 Spending chart – cumulative calculation");
+  console.group(" Spending chart  cumulative calculation");
   data.forEach((d, i) => {
     console.log(
       `${d.date}: daily=${money(values[i])}, cumulative=${money(cumulative[i])}`
@@ -1286,14 +1285,14 @@ async function loadMonthBudget() {
     j = await apiGetJson("/month-budget", { cache: "no-store" });
   } catch (err) {
     console.error("month-budget failed:", err);
-    safeEl.textContent = "—";
+    safeEl.textContent = "";
     metaEl.textContent = "Could not load";
     if (goalEl) goalEl.textContent = "";
     barFill.style.width = "0%";
     return;
   }
 
-  // ✅ backend is source of truth
+  //  backend is source of truth
   const income        = Number(j.expected_income ?? 0);
   const spent         = Number(j.spent_so_far ?? 0);
   const bills         = Number(j.bills_remaining ?? 0);
@@ -1333,9 +1332,9 @@ async function loadMonthBudget() {
   const dayText = daysLeft === 1 ? "day left" : "days left";
   metaEl.innerHTML =
     `${asOf}
-     <span class="mb-dot">•</span>
+     <span class="mb-dot"></span>
      <span class="mb-pill">${money(dailyLimit)}/day</span>
-     <span class="mb-dot">•</span>
+     <span class="mb-dot"></span>
      ${daysLeft} ${dayText}`;
 }
 
@@ -1395,13 +1394,15 @@ function formatCardBalance(n, { showLabel = false } = {}) {
   return money(0);
 }
 
-async function loadCategoryTotalsThisMonth() {
-  let payload;
-  try {
-    payload = await apiGetJson("/category-totals-month");
-  } catch (err) {
-    console.error("category-totals-month failed:", err);
-    return;
+async function loadCategoryTotalsThisMonth(payloadOverride = null) {
+  let payload = payloadOverride;
+  if (!payload) {
+    try {
+      payload = await apiGetJson("/category-totals-month");
+    } catch (err) {
+      console.error("category-totals-month failed:", err);
+      return;
+    }
   }
   const data = payload.categories || [];
   const unassignedAllTime = Number(payload.unassigned_all_time || 0);
@@ -1452,7 +1453,7 @@ renderUnassignedRow(ul, unassignedAllTime);
 }
 
 function renderUnassignedRow(ul, unassignedAllTime) {
-  // Remove any existing unassigned row so we can’t ever double-add
+  // Remove any existing unassigned row so we cant ever double-add
   ul.querySelectorAll(".unassigned-row").forEach(n => n.remove());
 
   const li = document.createElement("li");
@@ -1516,9 +1517,9 @@ function fillModalFromTx(tx) {
   document.getElementById("ruleTxAmount").textContent = money(tx.amount);
   document.getElementById("ruleTxDate").textContent = tx.postedDate;
 
-  // ✅ ADD THIS
+  //  ADD THIS
   document.getElementById("ruleTxAccount").textContent =
-    `${tx.bank || ""}${tx.card ? " • " + tx.card : ""}`;
+    `${tx.bank || ""}${tx.card ? "  " + tx.card : ""}`;
 
   // reset form
   document.getElementById("ruleCategory").value = "";
@@ -1537,7 +1538,7 @@ async function openRuleModal() {
   unassignedIndex = 0;
 
   if (!unassignedQueue.length) {
-    return alert("No unassigned transactions 🎉");
+    return alert("No unassigned transactions ");
   }
 
   openBackdrop(true);
@@ -1579,7 +1580,7 @@ async function saveRule() {
 
   // Refresh sidebar counts + bank totals if you want
   loadCategoryTotalsThisMonth();
-    // ✅ Refresh the modal queue so newly-categorized tx disappear
+    //  Refresh the modal queue so newly-categorized tx disappear
   await refreshUnassignedQueueAfterSave();
 
 }
@@ -1595,7 +1596,7 @@ mountChartCard("#homeChartMount", {
   breakdownLabel: "Net",
   breakdownValue: "$0",
 
-  // 👇 THIS is the key change
+  //  THIS is the key change
   growthToggleHtml: `
   <div id="nwPotentialWrap">
     <label style="display:flex; align-items:center; gap:8px; user-select:none;">
@@ -1644,7 +1645,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateBtn = document.getElementById("nw-chart-btn");
   const toggleBtn = document.getElementById("chartToggleBtn");
 
-  // ✅ If the home chart inputs aren't on this page, this isn't the home page.
+  //  If the home chart inputs aren't on this page, this isn't the home page.
   if (!startInput || !endInput) return;
 
   const today = new Date();
@@ -1793,7 +1794,7 @@ function renderTxList(data){
     }
 
     const merchant = (row.merchant || "").toUpperCase();
-    const sub = `${row.bank || ""}${row.card ? " • " + row.card : ""}`;
+    const sub = `${row.bank || ""}${row.card ? "  " + row.card : ""}`;
     const amtNum = Number(row.amount || 0);
     const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
 
@@ -1809,7 +1810,7 @@ function renderTxList(data){
       <div class="tx-date">${shortDate(effectiveDate)}</div>
       <div class="tx-main">
         <div class="tx-merchant">${merchant}</div>
-        <div class="tx-sub">${sub}${transferText ? " • " + transferText : ""}</div>
+        <div class="tx-sub">${sub}${transferText ? "  " + transferText : ""}</div>
         <div class="tx-sub">${(row.category || "").trim()}</div>
       </div>
       <div class="tx-amt">${money(row.amount)}</div>
@@ -1834,12 +1835,12 @@ let unassignedMode = localStorage.getItem("unassignedMode") || "freq";
 
 function initUnassignedToggle() {
   const toggleBtn = document.getElementById("unassignedToggle");
-  if (!toggleBtn) return; // ✅ prevents crash on pages without the button
+  if (!toggleBtn) return; //  prevents crash on pages without the button
 
   function setToggleLabel() {
     toggleBtn.textContent = (unassignedMode === "freq")
-      ? "Most recent ▾"
-      : "Most frequent ▾";
+      ? "Most recent "
+      : "Most frequent ";
   }
 
   async function loadUnassigned() {
@@ -1888,8 +1889,8 @@ async function refreshUnassignedQueueAfterSave() {
   unassignedQueue = await fetchUnassignedQueue();
 
   if (!unassignedQueue.length) {
-    // nothing left — keep modal open but show friendly state
-    document.getElementById("ruleTxMerchant").textContent = "No unassigned transactions 🎉";
+    // nothing left  keep modal open but show friendly state
+    document.getElementById("ruleTxMerchant").textContent = "No unassigned transactions ";
     const acct = document.getElementById("ruleTxAccount"); if (acct) acct.textContent = "";
     document.getElementById("ruleTxAmount").textContent = "";
     document.getElementById("ruleTxDate").textContent = "";
@@ -1916,7 +1917,7 @@ function setBreakdownUI(p) {
 
   if (!d || !b || !s || !c || !nw) return;
 
-  d.textContent  = p?.date ? formatMMMdd(p.date) : "—";
+  d.textContent  = p?.date ? formatMMMdd(p.date) : "";
   b.textContent  = money(p?.banks ?? 0);
   s.textContent  = money(p?.savings ?? 0);
   const cardsBal = Number((p?.cards_balance ?? p?.cards) || 0);
@@ -1942,7 +1943,7 @@ function setInlineGrowth(label, valueStr) {
   const v = document.getElementById("chartGrowthValue");
   if (!l || !v) return;
   l.textContent = label || "% Growth";
-  v.textContent = (valueStr == null ? "—" : String(valueStr));
+  v.textContent = (valueStr == null ? "" : String(valueStr));
 }
 
 function setInlineBreakdown(label, value) {
@@ -1989,7 +1990,7 @@ function isIncomeEvent(e) {
 function ellipsize(s, max = 14) {
   s = String(s || "").trim();
   if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
+  return s.slice(0, max - 1) + "";
 }
 
 async function renderUnknownMerchantRow(ul) {
@@ -2043,15 +2044,15 @@ function mountMonthBudgetCard(mountSel) {
   <aside class="category-box category-box--sidebar" aria-label="This month">
     <div class="category-box__header" style="display:flex; justify-content:space-between;">
       <span>This month</span>
-      <span id="mbRange" style="opacity:.7; font-size:.85em;">—</span>
+      <span id="mbRange" style="opacity:.7; font-size:.85em;"></span>
     </div>
 
     <ul class="category-box__list">
       <li id="mbIncomeRow" class="category-pill" role="button" tabindex="0" style="cursor:pointer;" title="View expected income breakdown">
         <span class="cat-name">Expected income</span>
         <span style="display:flex; align-items:center; gap:6px;">
-          <span id="mbIncome" class="cat-amt">—</span>
-          <span style="opacity:.45;">›</span>
+          <span id="mbIncome" class="cat-amt"></span>
+          <span style="opacity:.45;"></span>
         </span>
       </li>
 
@@ -2059,33 +2060,33 @@ function mountMonthBudgetCard(mountSel) {
     style="cursor:pointer;" title="View spent breakdown">
   <span class="cat-name">Spent so far</span>
   <span style="display:flex; align-items:center; gap:6px;">
-    <span id="mbSpent" class="cat-amt">—</span>
-    <span style="opacity:.45;">›</span>
+    <span id="mbSpent" class="cat-amt"></span>
+    <span style="opacity:.45;"></span>
   </span>
 </li>
 
 
       <li class="category-pill" style="border-top:1px dashed rgba(0,0,0,.15); padding-top:12px;">
         <span class="cat-name"><strong>Safe to spend</strong></span>
-        <span id="mbSafe" class="cat-amt"><strong>—</strong></span>
+        <span id="mbSafe" class="cat-amt"><strong></strong></span>
       </li>
     </ul>
 
-    <!-- 🔥 NEW: Daily limit (locked once/day) -->
+    <!--  NEW: Daily limit (locked once/day) -->
     <div style="margin-top:8px; font-size:11px; opacity:.65;">
-      <span id="mbSafeHint">Income − spent − remaining bills</span><br/>
+      <span id="mbSafeHint">Income  spent  remaining bills</span><br/>
 
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:6px;">
         <span style="opacity:.85;">Limit today:</span>
         <span style="display:flex; align-items:center; gap:8px;">
-          <span id="mbDaily" style="font-weight:800; opacity:.95;">—</span>
+          <span id="mbDaily" style="font-weight:800; opacity:.95;"></span>
           <button id="mbRecalcDaily" class="settings-btn" type="button" style="padding:6px 10px; font-size:12px;">
             Recalc
           </button>
         </span>
       </div>
 
-      <div id="mbDailyMeta" style="margin-top:4px; opacity:.6;">—</div>
+      <div id="mbDailyMeta" style="margin-top:4px; opacity:.6;"></div>
     </div>
   </aside>
 `;
@@ -2183,7 +2184,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
     }
 
 
-    // Keep your existing meta style: "Feb 07 • $45.71/day • 22 days left"
+    // Keep your existing meta style: "Feb 07  $45.71/day  22 days left"
     // BUT use the locked baseline from /day-limit, not the constantly-recomputed /month-budget daily_limit.
     function formatDdMmmFromISO(iso) {
   // expects "YYYY-MM-DD"
@@ -2210,9 +2211,9 @@ if (metaEl) {
 
   } catch (e) {
     console.error(e);
-    if (safeEl) safeEl.textContent = "—";
-    if (metaEl) metaEl.textContent = "—";
-    if (dailyEl) dailyEl.textContent = "—";
+    if (safeEl) safeEl.textContent = "";
+    if (metaEl) metaEl.textContent = "";
+    if (dailyEl) dailyEl.textContent = "";
     if (dailyMetaEl) dailyMetaEl.textContent = "";
   }
 }
@@ -2259,7 +2260,7 @@ function ensureIncomeInspectModal() {
       <div class="tx-inspect__head">
         <div>
           <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
-          <div id="incomeInspectSub" class="tx-inspect__sub">—</div>
+          <div id="incomeInspectSub" class="tx-inspect__sub"></div>
         </div>
         <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">✕</button>
       </div>
@@ -2354,7 +2355,7 @@ async function openIncomeBreakdown() {
   const bodyEl = document.getElementById("incomeInspectBody");
 
   if (titleEl) titleEl.textContent = "Expected income";
-  if (subEl) subEl.textContent = "Loading…";
+  if (subEl) subEl.textContent = "Loading";
   if (bodyEl) bodyEl.innerHTML = "";
 
   modal.classList.remove("hidden");
@@ -2385,18 +2386,18 @@ async function openIncomeBreakdown() {
     const interestTotal = interestEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
     const grandTotal = paycheckTotal + interestTotal;
 
-    if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(today)}`;
+    if (subEl) subEl.textContent = `${money(grandTotal)}  ${formatMonthYearLong(today)}`;
 
     const payList = payEvents
       .slice()
       .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date)}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Paycheck")} • ${money(e.amount)}</div>`)
+      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date)}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Paycheck")}  ${money(e.amount)}</div>`)
       .join("");
 
     const intList = interestEvents
       .slice()
       .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date || "")}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Interest")} • ${money(e.amount)}</div>`)
+      .map(e => `<div class="tx-kv__k">${escapeHtml(e.date || "")}</div><div class="tx-kv__v">${escapeHtml(e.merchant || "Interest")}  ${money(e.amount)}</div>`)
       .join("");
 
     let breakdownHtml = "";
@@ -2482,7 +2483,7 @@ function ensureExtraSavedModal() {
       <div class="tx-inspect__head">
         <div>
           <div id="extraSavedTitle" class="tx-inspect__title">Extra saved</div>
-          <div id="extraSavedSub" class="tx-inspect__sub">—</div>
+          <div id="extraSavedSub" class="tx-inspect__sub"></div>
         </div>
         <button class="tx-inspect__close" type="button" data-extra-close aria-label="Close">✕</button>
       </div>
@@ -2505,8 +2506,56 @@ function ensureExtraSavedModal() {
 }
 
 // =========================
-// CSV Upload Modal (runs /csv/ingest)
+// CSV Upload Modal (preview + mapped import)
 // =========================
+
+const CSV_MODAL_STATE = {
+  file: null,
+  columns: [],
+  accounts: [],
+  presetKeys: [],
+  activePreset: null,
+  activePresetKey: "",
+  dropGuardBound: false,
+};
+
+const CSV_MAPPING_FIELD_LABELS = {
+  csvMapPurchase: "Transaction date",
+  csvMapPosted: "Posted date",
+  csvMapAmount: "Amount",
+  csvMapMerchant: "Merchant",
+  csvMapCategory: "Category",
+  csvMapIndicator: "Credit/Debit indicator",
+};
+
+function csvSelectHasOption(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  const sval = String(val);
+  return Array.from(el.options || []).some(o => String(o.value) === sval);
+}
+
+function ensureCsvMappingOption(id, val) {
+  const el = document.getElementById(id);
+  if (!el || val === null || val === undefined) return;
+  if (csvSelectHasOption(id, val)) return;
+  const n = Number(val);
+  const colLabel = Number.isInteger(n) && n >= 0 ? `column ${n + 1}` : `value ${String(val)}`;
+  const friendly = CSV_MAPPING_FIELD_LABELS[id] || "Saved mapping";
+  const opt = document.createElement("option");
+  opt.value = String(val);
+  opt.textContent = `${friendly}: ${colLabel} (saved)`;
+  el.appendChild(opt);
+}
+
+function syncCsvPresetKeySelect() {
+  const keyInput = document.getElementById("csvInstitutionKey");
+  const sel = document.getElementById("csvPresetKeySelect");
+  if (!keyInput || !sel) return;
+  const key = String(keyInput.value || "").trim().toLowerCase();
+  const rows = Array.isArray(CSV_MODAL_STATE.presetKeys) ? CSV_MODAL_STATE.presetKeys : [];
+  sel.value = rows.includes(key) ? key : "";
+}
 
 function ensureCsvUploadModal() {
   let root = document.getElementById("csvUploadRoot");
@@ -2515,52 +2564,89 @@ function ensureCsvUploadModal() {
   root = document.createElement("div");
   root.id = "csvUploadRoot";
   root.className = "tx-inspect hidden";
-
-  // These are the EXACT filenames your postedDownload.py expects (without ".csv" is fine too).
-  // Keep these in sync with IMPORT_JOBS names/paths.
-  const expected = [
-    "amexCredit_72008",
-    "amexHYSA_3912",
-    "amexCredit_51007",
-    "capitalOne_9691",
-    "capitalOne_1047",
-    "capitalOne_8424",
-    "navyfcu_main_9338",
-    "navyfcu_bills_7613",
-    "discovery"
-  ];
-
-  const rowsHtml = expected.map(name => `
-    <div class="modal-row" style="display:grid; grid-template-columns: 180px 1fr; gap:10px; align-items:center;">
-      <div style="font-weight:700; opacity:.9;">${escapeHtml(name)}.csv</div>
-      <input type="file" accept=".csv,text/csv" data-csv-name="${escapeHtmlAttr(name)}" />
-    </div>
-  `).join("");
-
   root.innerHTML = `
     <div class="tx-inspect__backdrop" data-csv-close></div>
-
-    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="Import CSVs">
+    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="Import CSV">
       <div class="tx-inspect__head">
         <div>
-          <div class="tx-inspect__title">Import CSVs</div>
-          <div id="csvUploadSub" class="tx-inspect__sub">Uploads are processed then deleted on the server.</div>
+          <div class="tx-inspect__title">Import CSV</div>
+          <div id="csvUploadSub" class="tx-inspect__sub">Drop a CSV, preview it, map columns, then import.</div>
         </div>
         <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">✕</button>
       </div>
-
       <div class="tx-inspect__body">
-        <div style="opacity:.75; font-size:12px; margin-bottom:10px;">
-          Pick the downloaded CSV for each account. Any missing files will be skipped.
+        <div id="csvDropZone" style="border:1px dashed rgba(0,0,0,.25); border-radius:12px; padding:12px; margin-bottom:10px;">
+          <div style="font-weight:700;">Drag and drop CSV here</div>
+          <div style="opacity:.75; font-size:12px; margin-top:4px;">or choose a file manually</div>
+          <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+            <button id="csvPickFileBtn" class="settings-btn" type="button">Choose CSV</button>
+            <div id="csvPickedName" style="font-size:12px; opacity:.75;">No file selected</div>
+          </div>
+          <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none;" />
         </div>
 
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          ${rowsHtml}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="font-size:12px; font-weight:700;">Account
+            <select id="csvAccountId" style="width:100%; margin-top:4px;"></select>
+          </label>
+          <label style="font-size:12px; font-weight:700;">Institution preset key
+            <input id="csvInstitutionKey" type="text" list="csvPresetKeysList" placeholder="Type or pick a saved key" style="width:100%; margin-top:4px;" />
+            <datalist id="csvPresetKeysList"></datalist>
+          </label>
+          <label style="font-size:12px; font-weight:700;">Saved preset keys
+            <select id="csvPresetKeySelect" style="width:100%; margin-top:4px;">
+              <option value="">Choose a saved key</option>
+            </select>
+          </label>
+          <label style="font-size:12px; font-weight:700;">Delimiter
+            <select id="csvDelimiter" style="width:100%; margin-top:4px;">
+              <option value="auto">Auto-detect</option>
+              <option value=",">Comma</option>
+              <option value=";">Semicolon</option>
+              <option value="	">Tab</option>
+              <option value="|">Pipe</option>
+            </select>
+          </label>
+          <label style="font-size:12px; font-weight:700;">Header row
+            <input id="csvHeaderRow" type="number" min="1" value="1" style="width:100%; margin-top:4px;" />
+          </label>
+          <label style="font-size:12px; font-weight:700;">First data row
+            <input id="csvDataStartRow" type="number" min="1" value="2" style="width:100%; margin-top:4px;" />
+          </label>
         </div>
 
-        <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end;">
+        <div style="display:flex; gap:10px; margin-top:12px; justify-content:flex-end;">
+          <button id="csvPreviewBtn" class="settings-btn" type="button">Preview CSV</button>
+          <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
+          <button id="csvSavePresetBtn" class="settings-btn" type="button">Save preset</button>
           <button id="csvUploadCancel" class="settings-btn" type="button">Cancel</button>
-          <button id="csvUploadRun" class="settings-btn primary" type="button">Run import</button>
+          <button id="csvUploadRun" class="settings-btn primary" type="button">Import</button>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div style="font-weight:800; margin-bottom:6px;">Map columns</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <label style="font-size:12px;">Transaction date*<select id="csvMapPurchase" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Category<select id="csvMapCategory" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
+            <label style="font-size:12px;">Indicator value treated as credit
+              <input id="csvCreditIndicatorValue" type="text" value="credit" style="width:100%; margin-top:4px;" />
+            </label>
+            <label style="font-size:12px; display:flex; align-items:center; gap:8px; margin-top:18px;">
+              <input id="csvInvertAmount" type="checkbox" />
+              Invert all amounts
+            </label>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div style="font-weight:800; margin-bottom:6px;">Preview</div>
+          <div id="csvPreviewWrap" style="max-height:220px; overflow:auto; border:1px solid rgba(0,0,0,.12); border-radius:10px; padding:6px;"></div>
         </div>
 
         <div id="csvUploadMsg" style="margin-top:12px; font-size:12px; white-space:pre-wrap; opacity:.85;"></div>
@@ -2569,89 +2655,484 @@ function ensureCsvUploadModal() {
   `;
 
   document.body.appendChild(root);
-
-  // close handlers
-  root.addEventListener("click", (e) => {
-    if (e.target?.matches?.("[data-csv-close]")) closeCsvUploadModal();
+  root.addEventListener("click", (e) => { if (e.target?.matches?.("[data-csv-close]")) closeCsvUploadModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCsvUploadModal(); });
+  root.querySelector("#csvUploadCancel")?.addEventListener("click", closeCsvUploadModal);
+  root.querySelector("#csvPreviewBtn")?.addEventListener("click", refreshCsvPreview);
+  root.querySelector("#csvDryRunBtn")?.addEventListener("click", runCsvDryRun);
+  root.querySelector("#csvSavePresetBtn")?.addEventListener("click", saveCsvPreset);
+  root.querySelector("#csvUploadRun")?.addEventListener("click", runCsvIngestMapped);
+  root.querySelector("#csvPickFileBtn")?.addEventListener("click", () => root.querySelector("#csvFileInput")?.click());
+  root.querySelector("#csvFileInput")?.addEventListener("change", () => {
+    const f = root.querySelector("#csvFileInput")?.files?.[0];
+    if (!f) return;
+    setCsvFileForModal(f);
   });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeCsvUploadModal();
+  root.querySelector("#csvAccountId")?.addEventListener("change", autoFillInstitutionAndLoadPreset);
+  root.querySelector("#csvInstitutionKey")?.addEventListener("input", () => { syncCsvPresetKeySelect(); });
+  root.querySelector("#csvInstitutionKey")?.addEventListener("change", loadCsvPreset);
+  root.querySelector("#csvInstitutionKey")?.addEventListener("blur", loadCsvPreset);
+  root.querySelector("#csvPresetKeySelect")?.addEventListener("change", (e) => {
+    const picked = String(e?.target?.value || "").trim().toLowerCase();
+    if (!picked) return;
+    const keyInput = root.querySelector("#csvInstitutionKey");
+    if (keyInput) keyInput.value = picked;
+    loadCsvPreset().catch(console.error);
+  });
+  root.querySelector("#csvInstitutionKey")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadCsvPreset().catch(console.error);
+    }
   });
 
-  // buttons
-  const cancel = root.querySelector("#csvUploadCancel");
-  if (cancel) cancel.addEventListener("click", closeCsvUploadModal);
+  const drop = root.querySelector("#csvDropZone");
+  if (drop) {
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.style.background = "rgba(0,0,0,.03)"; });
+    drop.addEventListener("dragleave", () => { drop.style.background = ""; });
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.style.background = "";
+      const f = e.dataTransfer?.files?.[0];
+      if (!f) return;
+      CSV_MODAL_STATE.file = f;
+      const input = root.querySelector("#csvFileInput");
+      if (input) {
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        input.files = dt.files;
+      }
+      setCsvFileForModal(f);
+    });
+  }
 
-  const runBtn = root.querySelector("#csvUploadRun");
-  if (runBtn) runBtn.addEventListener("click", runCsvIngest);
-
+  if (!CSV_MODAL_STATE.dropGuardBound) {
+    CSV_MODAL_STATE.dropGuardBound = true;
+    const hasFiles = (e) => Array.from(e?.dataTransfer?.types || []).includes("Files");
+    window.addEventListener("dragover", (e) => {
+      const csvRoot = document.getElementById("csvUploadRoot");
+      if (!csvRoot || csvRoot.classList.contains("hidden")) return;
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+    });
+    window.addEventListener("drop", (e) => {
+      const csvRoot = document.getElementById("csvUploadRoot");
+      if (!csvRoot || csvRoot.classList.contains("hidden")) return;
+      if (!hasFiles(e)) return;
+      const inDropZone = !!e?.target?.closest?.("#csvDropZone");
+      if (!inDropZone) {
+        e.preventDefault();
+        const sub = document.getElementById("csvUploadSub");
+        if (sub) sub.textContent = "Drop files inside the CSV drop area.";
+      }
+    });
+  }
   return root;
 }
 
 function closeCsvUploadModal() {
-  const root = document.getElementById("csvUploadRoot");
-  if (root) root.classList.add("hidden");
+  document.getElementById("csvUploadRoot")?.classList.add("hidden");
 }
 
 function openCsvUploadModal() {
   const root = ensureCsvUploadModal();
   const msg = document.getElementById("csvUploadMsg");
+  const sub = document.getElementById("csvUploadSub");
+  const preview = document.getElementById("csvPreviewWrap");
+  CSV_MODAL_STATE.columns = [];
+  CSV_MODAL_STATE.activePreset = null;
+  CSV_MODAL_STATE.activePresetKey = "";
   if (msg) msg.textContent = "";
+  if (sub) sub.textContent = "Drop a CSV, preview it, map columns, then import.";
+  if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
+  populateCsvMappingSelects([]);
+  loadCsvAccounts().catch(console.error);
+  updateCsvPickedName();
   root.classList.remove("hidden");
 }
 
-async function runCsvIngest() {
+function buildCsvPresetPayload() {
+  return {
+    delimiter: document.getElementById("csvDelimiter")?.value || "auto",
+    header_row: Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1)),
+    data_start_row: Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2)),
+    purchase_col: csvGetSelectInt("csvMapPurchase"),
+    posted_col: csvGetSelectInt("csvMapPosted"),
+    amount_col: csvGetSelectInt("csvMapAmount"),
+    merchant_col: csvGetSelectInt("csvMapMerchant"),
+    category_col: csvGetSelectInt("csvMapCategory"),
+    indicator_col: csvGetSelectInt("csvMapIndicator"),
+    credit_indicator_value: String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"),
+    invert_amount: !!document.getElementById("csvInvertAmount")?.checked,
+  };
+}
+
+function applyCsvPreset(preset) {
+  if (!preset || typeof preset !== "object") return;
+  CSV_MODAL_STATE.activePreset = preset;
+  const setIf = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el || val === null || val === undefined) return;
+    if (id in CSV_MAPPING_FIELD_LABELS) ensureCsvMappingOption(id, val);
+    el.value = String(val);
+  };
+  setIf("csvDelimiter", preset.delimiter);
+  setIf("csvHeaderRow", preset.header_row);
+  setIf("csvDataStartRow", preset.data_start_row);
+  setIf("csvMapPurchase", preset.purchase_col);
+  setIf("csvMapPosted", preset.posted_col);
+  setIf("csvMapAmount", preset.amount_col);
+  setIf("csvMapMerchant", preset.merchant_col);
+  setIf("csvMapCategory", preset.category_col);
+  setIf("csvMapIndicator", preset.indicator_col);
+  setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
+  const invert = document.getElementById("csvInvertAmount");
+  if (invert && typeof preset.invert_amount === "boolean") invert.checked = preset.invert_amount;
+}
+
+function selectedCsvAccountMeta() {
+  const accountId = Number(document.getElementById("csvAccountId")?.value || 0);
+  const meta = (CSV_MODAL_STATE.accounts || []).find(a => Number(a.id) === accountId);
+  return { accountId, meta };
+}
+
+async function autoFillInstitutionAndLoadPreset() {
+  const keyInput = document.getElementById("csvInstitutionKey");
+  const { meta } = selectedCsvAccountMeta();
+  if (keyInput && !keyInput.value.trim() && meta?.institution) {
+    keyInput.value = String(meta.institution).trim().toLowerCase();
+  }
+  await loadCsvPresetKeys();
+  syncCsvPresetKeySelect();
+  await loadCsvPreset();
+}
+
+async function loadCsvPreset() {
+  const sub = document.getElementById("csvUploadSub");
+  const { accountId } = selectedCsvAccountMeta();
+  const keyInput = document.getElementById("csvInstitutionKey");
+  const institution = String(keyInput?.value || "").trim().toLowerCase();
+  if (!accountId || !institution) {
+    CSV_MODAL_STATE.activePreset = null;
+    CSV_MODAL_STATE.activePresetKey = "";
+    return;
+  }
+  if (keyInput) keyInput.value = institution;
+  try {
+    const q = `/csv/mapping-presets?account_id=${encodeURIComponent(accountId)}&institution_key=${encodeURIComponent(institution)}`;
+    const out = await apiGetJson(q, { cache: "no-store" });
+    if (out?.ok && out?.found && out?.preset) {
+      applyCsvPreset(out.preset);
+      CSV_MODAL_STATE.activePresetKey = institution;
+      if (sub) sub.textContent = "Preset loaded.";
+      syncCsvPresetKeySelect();
+    } else {
+      CSV_MODAL_STATE.activePreset = null;
+      CSV_MODAL_STATE.activePresetKey = "";
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function renderCsvPresetKeyList(keys) {
+  const dl = document.getElementById("csvPresetKeysList");
+  const sel = document.getElementById("csvPresetKeySelect");
+  const rows = Array.from(new Set((keys || []).map(k => String(k || "").trim().toLowerCase()).filter(Boolean)));
+  if (dl) {
+    dl.innerHTML = rows.map((k) => `<option value="${escapeHtml(String(k))}"></option>`).join("");
+  }
+  if (sel) {
+    sel.innerHTML = ['<option value="">Choose a saved key</option>']
+      .concat(rows.map((k) => `<option value="${escapeHtmlAttr(String(k))}">${escapeHtml(String(k))}</option>`))
+      .join("");
+  }
+  syncCsvPresetKeySelect();
+}
+
+async function loadCsvPresetKeys() {
+  const { accountId } = selectedCsvAccountMeta();
+  const params = new URLSearchParams();
+  if (accountId) params.set("account_id", String(accountId));
+  params.set("limit", "50");
+
+  try {
+    const out = await apiGetJson(`/csv/mapping-presets/keys?${params.toString()}`, { cache: "no-store" });
+    const keys = Array.isArray(out?.keys) ? out.keys : [];
+    CSV_MODAL_STATE.presetKeys = keys;
+    renderCsvPresetKeyList(keys);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function saveCsvPreset() {
+  const sub = document.getElementById("csvUploadSub");
+  const { accountId } = selectedCsvAccountMeta();
+  const keyInput = document.getElementById("csvInstitutionKey");
+  const institution = String(keyInput?.value || "").trim().toLowerCase();
+  if (!accountId || !institution) {
+    if (sub) sub.textContent = "Choose account and institution key before saving preset.";
+    return;
+  }
+  if (keyInput) keyInput.value = institution;
+  try {
+    await apiPostJson("/csv/mapping-presets", {
+      account_id: accountId,
+      institution_key: institution,
+      preset: buildCsvPresetPayload(),
+    });
+    await loadCsvPresetKeys();
+    CSV_MODAL_STATE.activePreset = buildCsvPresetPayload();
+    CSV_MODAL_STATE.activePresetKey = institution;
+    syncCsvPresetKeySelect();
+    if (sub) sub.textContent = "Preset saved.";
+  } catch (e) {
+    console.error(e);
+    if (sub) sub.textContent = `Preset save failed: ${e?.message || e}`;
+  }
+}
+
+function setCsvFileForModal(f) {
+  if (!f) return;
+  CSV_MODAL_STATE.file = f;
+  CSV_MODAL_STATE.columns = [];
+  const institution = String(document.getElementById("csvInstitutionKey")?.value || "").trim().toLowerCase();
+  updateCsvPickedName();
+  populateCsvMappingSelects([]);
+  if (CSV_MODAL_STATE.activePreset && CSV_MODAL_STATE.activePresetKey && CSV_MODAL_STATE.activePresetKey === institution) {
+    applyCsvPreset(CSV_MODAL_STATE.activePreset);
+  }
+  const preview = document.getElementById("csvPreviewWrap");
+  const sub = document.getElementById("csvUploadSub");
+  const msg = document.getElementById("csvUploadMsg");
+  if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
+  if (msg) msg.textContent = "";
+  if (sub) sub.textContent = "CSV selected. Click Preview CSV when ready.";
+}
+
+function updateCsvPickedName() {
+  const el = document.getElementById("csvPickedName");
+  if (!el) return;
+  const f = CSV_MODAL_STATE.file;
+  el.textContent = f ? `${f.name} (${Math.round(f.size / 1024)} KB)` : "No file selected";
+}
+
+function csvGetSelectInt(id) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const v = String(el.value || "").trim();
+  if (!v || v === "-1") return null;
+  const n = Number(v);
+  return Number.isInteger(n) ? n : null;
+}
+
+function guessCsvColumn(columns, candidates) {
+  const terms = candidates.map(s => s.toLowerCase());
+  for (const c of columns) {
+    const label = String(c.label || "").toLowerCase();
+    if (terms.some(t => label.includes(t))) return c.index;
+  }
+  return null;
+}
+
+function populateCsvMappingSelects(columns) {
+  const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapMerchant", "csvMapCategory", "csvMapIndicator"];
+  const opts = ['<option value="-1">Not mapped</option>']
+    .concat((columns || []).map(c => `<option value="${c.index}">${escapeHtml(c.label)} (col ${c.index + 1})</option>`))
+    .join("");
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+  const guesses = {
+    csvMapPurchase: ["transaction date", "trans date", "date"],
+    csvMapPosted: ["posted date", "post date", "posting date"],
+    csvMapAmount: ["amount", "transaction amount"],
+    csvMapMerchant: ["description", "merchant", "payee", "transaction description"],
+    csvMapCategory: ["category"],
+    csvMapIndicator: ["credit/debit", "credit debit", "indicator", "type"],
+  };
+  Object.entries(guesses).forEach(([id, terms]) => {
+    const guess = guessCsvColumn(columns || [], terms);
+    const el = document.getElementById(id);
+    if (el && guess !== null) el.value = String(guess);
+  });
+}
+
+function renderCsvPreview(previewRows, columns) {
+  const wrap = document.getElementById("csvPreviewWrap");
+  if (!wrap) return;
+  if (!columns?.length || !previewRows?.length) {
+    wrap.innerHTML = `<div style="opacity:.65; padding:6px;">No rows to preview.</div>`;
+    return;
+  }
+  const head = columns.map(c => `<th style="text-align:left; border-bottom:1px solid rgba(0,0,0,.15); padding:4px 6px;">${escapeHtml(c.label)}</th>`).join("");
+  const body = previewRows.map((r) => {
+    const cells = columns.map((c, i) => `<td style="padding:4px 6px; border-bottom:1px solid rgba(0,0,0,.06);">${escapeHtml((r.cells && r.cells[i]) || "")}</td>`).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+  wrap.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function loadCsvAccounts() {
+  const sel = document.getElementById("csvAccountId");
+  if (!sel) return;
+  try {
+    const info = await apiGetJson("/bank-info", { cache: "no-store" });
+    const rows = [];
+    for (const a of (info.accounts || [])) rows.push({ id: a.account_id, label: `${a.bank} - ${a.name}`, institution: a.bank });
+    for (const c of (info.credit_cards || [])) rows.push({ id: c.card_id, label: `${c.bank} - ${c.name} (credit)`, institution: c.bank });
+    CSV_MODAL_STATE.accounts = rows;
+    sel.innerHTML = rows.map(r => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join("");
+    await loadCsvPresetKeys();
+    await autoFillInstitutionAndLoadPreset();
+  } catch (e) {
+    console.error(e);
+    sel.innerHTML = `<option value="">Failed to load accounts</option>`;
+  }
+}
+
+async function refreshCsvPreview() {
+  const msg = document.getElementById("csvUploadMsg");
+  const sub = document.getElementById("csvUploadSub");
+  const btn = document.getElementById("csvPreviewBtn");
+  if (msg) msg.textContent = "";
+  if (!CSV_MODAL_STATE.file) {
+    if (sub) sub.textContent = "Pick a CSV first.";
+    return;
+  }
+  if (sub) sub.textContent = "Building preview...";
+  if (btn) btn.disabled = true;
+
+  try {
+    const fd = new FormData();
+    fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
+    fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
+    fd.append("has_header", "true");
+    fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
+    fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
+    fd.append("max_rows", "12");
+
+    const out = await apiPostForm("/csv/preview", fd);
+    if (!out?.ok) throw new Error("Preview failed");
+    CSV_MODAL_STATE.columns = Array.isArray(out.columns) ? out.columns : [];
+    populateCsvMappingSelects(CSV_MODAL_STATE.columns);
+    await loadCsvPreset();
+    renderCsvPreview(out.preview_rows || [], CSV_MODAL_STATE.columns);
+    if (sub) sub.textContent = `Preview loaded (${out.row_count || 0} rows).`;
+  } catch (e) {
+    console.error(e);
+    if (sub) sub.textContent = "Preview failed";
+    if (msg) msg.textContent = String(e?.message || e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function appendCsvMappingFields(fd, accountId, requireAccount = true) {
+  const purchaseCol = csvGetSelectInt("csvMapPurchase");
+  const amountCol = csvGetSelectInt("csvMapAmount");
+  const merchantCol = csvGetSelectInt("csvMapMerchant");
+  if ((requireAccount && !accountId) || purchaseCol === null || amountCol === null || merchantCol === null) {
+    throw new Error(requireAccount
+      ? "Map required fields: transaction date, amount, merchant, and account."
+      : "Map required fields: transaction date, amount, and merchant.");
+  }
+  if (requireAccount) fd.append("account_id", String(accountId));
+  fd.append("purchase_col", String(purchaseCol));
+  fd.append("amount_col", String(amountCol));
+  fd.append("merchant_col", String(merchantCol));
+  fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
+  fd.append("has_header", "true");
+  fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
+  fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
+  fd.append("credit_indicator_value", String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"));
+  fd.append("invert_amount", document.getElementById("csvInvertAmount")?.checked ? "true" : "false");
+  const posted = csvGetSelectInt("csvMapPosted");
+  const category = csvGetSelectInt("csvMapCategory");
+  const indicator = csvGetSelectInt("csvMapIndicator");
+  if (posted !== null) fd.append("posted_col", String(posted));
+  if (category !== null) fd.append("category_col", String(category));
+  if (indicator !== null) fd.append("indicator_col", String(indicator));
+}
+
+async function runCsvDryRun(fromPreview = false) {
+  const msg = document.getElementById("csvUploadMsg");
+  const sub = document.getElementById("csvUploadSub");
+  const btn = document.getElementById("csvDryRunBtn");
+  if (!fromPreview && msg) msg.textContent = "";
+  if (!CSV_MODAL_STATE.file) {
+    if (sub) sub.textContent = "Pick a CSV first.";
+    return;
+  }
+  const accountId = Number(document.getElementById("csvAccountId")?.value || 0);
+  if (!accountId) {
+    if (sub) sub.textContent = "Choose an account first.";
+    return;
+  }
+  if (sub) sub.textContent = fromPreview ? "Building compare preview..." : "Running dry run...";
+  if (btn) btn.disabled = true;
+
+  try {
+    const fd = new FormData();
+    fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
+    fd.append("account_id", String(accountId));
+    appendCsvMappingFields(fd, 0, false);
+
+    const out = await apiPostForm("/csv/ingest-mapped/dry-run", fd);
+    if (!out?.ok) throw new Error("Dry run failed");
+    const s = out.summary || {};
+    if (sub) sub.textContent = `Dry run: ${s.valid_rows || 0} valid, ${s.invalid_rows || 0} invalid (${s.total_rows || 0} total).`;
+    const compare = out.compare || null;
+    if (compare) {
+      openCsvDryRunCompareModal(compare, s);
+      if (!fromPreview && msg) msg.textContent = "Dry run compare opened.";
+    } else if (msg) {
+      const samples = Array.isArray(s.sample_errors) ? s.sample_errors.slice(0, 10) : [];
+      msg.textContent = samples.length ? JSON.stringify(samples, null, 2) : "No sample errors.";
+    }
+  } catch (e) {
+    console.error(e);
+    if (sub) sub.textContent = "Dry run failed";
+    if (msg) msg.textContent = String(e?.message || e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function runCsvIngestMapped() {
   const msg = document.getElementById("csvUploadMsg");
   const sub = document.getElementById("csvUploadSub");
   const runBtn = document.getElementById("csvUploadRun");
-
   if (msg) msg.textContent = "";
-  if (sub) sub.textContent = "Uploading…";
+
+  if (!CSV_MODAL_STATE.file) {
+    if (sub) sub.textContent = "Pick a CSV first.";
+    return;
+  }
+  const accountId = Number(document.getElementById("csvAccountId")?.value || 0);
+  if (!accountId) {
+    if (sub) sub.textContent = "Choose an account first.";
+    return;
+  }
+  if (sub) sub.textContent = "Importing...";
   if (runBtn) runBtn.disabled = true;
 
   try {
-    const inputs = Array.from(document.querySelectorAll('#csvUploadRoot input[type="file"][data-csv-name]'));
     const fd = new FormData();
+    fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
+    appendCsvMappingFields(fd, accountId);
 
-    let picked = 0;
-    for (const inp of inputs) {
-      const name = inp.getAttribute("data-csv-name");
-      const file = inp.files && inp.files[0];
-      if (!file) continue;
+    const out = await apiPostForm("/csv/ingest-mapped", fd);
+    if (!out?.ok) throw new Error("Import failed");
+    const errCount = Array.isArray(out.errors) ? out.errors.length : 0;
+    if (sub) sub.textContent = `Imported ${out.inserted || 0}, updated ${out.updated || 0}, skipped ${out.skipped || 0}${errCount ? `, ${errCount} row errors` : ""}.`;
+    if (msg) msg.textContent = errCount ? JSON.stringify(out.errors, null, 2) : "Import complete.";
 
-      picked += 1;
-      // IMPORTANT: these two lists must align by index
-      fd.append("target_names", name);
-      fd.append("files", file, file.name);
-    }
-
-    if (picked === 0) {
-      if (sub) sub.textContent = "Pick at least one CSV.";
-      if (runBtn) runBtn.disabled = false;
-      return;
-    }
-
-    let out;
-    try {
-      out = await apiPostForm("/csv/ingest", fd);
-    } catch (err) {
-      const detail = err?.message ? String(err.message) : "";
-      throw new Error(detail || "Upload failed");
-    }
-
-    if (!out.ok) {
-      const detail = out?.detail ? JSON.stringify(out.detail, null, 2) : JSON.stringify(out, null, 2);
-      throw new Error(detail || "Upload failed");
-    }
-
-    if (sub) sub.textContent = `Imported: ${Array.isArray(out.processed) ? out.processed.length : 0} file(s)`;
-    if (msg) msg.textContent = (out.stdout || "").trim() || "Done.";
-
-    // Refresh UI
     try { loadBankTotals(); } catch (_) {}
     try { loadData(); } catch (_) {}
     try { loadMonthBudget(); } catch (_) {}
-
   } catch (e) {
     console.error(e);
     if (sub) sub.textContent = "Import failed";
@@ -2661,6 +3142,153 @@ async function runCsvIngest() {
   }
 }
 
+function ensureCsvDryRunCompareModal() {
+  let root = document.getElementById("csvDryRunCompareRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "csvDryRunCompareRoot";
+  root.className = "tx-inspect hidden";
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-csv-dry-close></div>
+    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="CSV dry run comparison">
+      <div class="tx-inspect__head">
+        <div>
+          <div class="tx-inspect__title">CSV Dry Run Comparison</div>
+          <div id="csvDryRunCompareSub" class="tx-inspect__sub"></div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">✕</button>
+      </div>
+      <div id="csvDryRunCompareBody" class="tx-inspect__body csv-dryrun__body"></div>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-csv-dry-close]")) root.classList.add("hidden");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") root.classList.add("hidden");
+  });
+  return root;
+}
+
+function _csvDryMoney(n) {
+  return money(Number(n || 0));
+}
+
+function _csvDryRowsTable(rows, { showMatch = false, showId = false } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    return `<div class="csv-dryrun__empty">None</div>`;
+  }
+  const matchHead = showMatch ? `<th>Match</th>` : "";
+  const idHead = showId ? `<th>ID</th>` : "";
+  const body = list.map((r) => {
+    const date = escapeHtml(String(r.purchaseDate || ""));
+    const amt = _csvDryMoney(r.amount);
+    const merch = escapeHtml(String(r.merchant || ""));
+    const matchCell = showMatch
+      ? `<td class="csv-dryrun__mono">${escapeHtml(String(r.match_id || ""))}</td>`
+      : "";
+    const idCell = showId
+      ? `<td class="csv-dryrun__mono">${escapeHtml(String(r.id || ""))}</td>`
+      : "";
+    return `<tr><td>${date}</td><td class="csv-dryrun__num">${amt}</td><td>${merch}</td>${matchCell}${idCell}</tr>`;
+  }).join("");
+  return `
+    <div class="csv-dryrun__table-wrap">
+      <table class="csv-dryrun__table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="csv-dryrun__num">Amount</th>
+            <th>Merchant</th>
+            ${matchHead}
+            ${idHead}
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openCsvDryRunCompareModal(compare, summary) {
+  const root = ensureCsvDryRunCompareModal();
+  const sub = document.getElementById("csvDryRunCompareSub");
+  const body = document.getElementById("csvDryRunCompareBody");
+  if (!root || !sub || !body) return;
+
+  const s = summary || {};
+  const updExact = Array.isArray(compare?.would_update_exact) ? compare.would_update_exact : [];
+  const updTip = Array.isArray(compare?.would_update_tip) ? compare.would_update_tip : [];
+  const toInsert = Array.isArray(compare?.would_insert) ? compare.would_insert : [];
+  const matchedIds = new Set(
+    [...updExact, ...updTip]
+      .map(r => String(r?.match_id || "").trim())
+      .filter(Boolean)
+  );
+  const pendingAll = Array.isArray(compare?.pending) ? compare.pending : [];
+  const pending = pendingAll.filter(r => !matchedIds.has(String(r?.id || "").trim()));
+  const subLine = `Valid ${s.valid_rows || 0}  Invalid ${s.invalid_rows || 0}  Start ${compare?.import_start_date || "none"}  Pending ${pending.length}`;
+  sub.textContent = subLine;
+
+  const skippedBefore = Number(compare?.skipped_before_start || 0);
+  const skippedAfter = Number(compare?.skipped_after_end || 0);
+  const summaryCards = `
+    <div class="csv-dryrun__summary">
+      <div class="csv-dryrun__card">
+        <div class="csv-dryrun__k">Update exact</div>
+        <div class="csv-dryrun__v">${updExact.length}</div>
+      </div>
+      <div class="csv-dryrun__card csv-dryrun__card--tip">
+        <div class="csv-dryrun__k">Update tip</div>
+        <div class="csv-dryrun__v">${updTip.length}</div>
+      </div>
+      <div class="csv-dryrun__card">
+        <div class="csv-dryrun__k">Insert</div>
+        <div class="csv-dryrun__v">${toInsert.length}</div>
+      </div>
+      <div class="csv-dryrun__card">
+        <div class="csv-dryrun__k">Pending now</div>
+        <div class="csv-dryrun__v">${pending.length}</div>
+      </div>
+    </div>
+  `;
+
+  const skippedNoteParts = [];
+  if (skippedBefore > 0) skippedNoteParts.push(`Skipped before import start date: <strong>${skippedBefore}</strong>`);
+  if (skippedAfter > 0) skippedNoteParts.push(`Skipped after import end date: <strong>${skippedAfter}</strong>`);
+  const skippedNote = skippedNoteParts.length
+    ? `<div class="csv-dryrun__note">${skippedNoteParts.join("<br/>")}</div>`
+    : "";
+
+  body.innerHTML = `
+    ${summaryCards}
+    ${skippedNote}
+
+    <section class="csv-dryrun__section">
+      <header class="csv-dryrun__section-head"><h4>Will Update (Exact)</h4><span>${updExact.length}</span></header>
+      ${_csvDryRowsTable(updExact.slice(0, 250), { showMatch: true })}
+    </section>
+
+    <section class="csv-dryrun__section">
+      <header class="csv-dryrun__section-head"><h4>Will Update (Tip Adjust)</h4><span>${updTip.length}</span></header>
+      ${_csvDryRowsTable(updTip.slice(0, 250), { showMatch: true })}
+    </section>
+
+    <section class="csv-dryrun__section">
+      <header class="csv-dryrun__section-head"><h4>Will Insert</h4><span>${toInsert.length}</span></header>
+      ${_csvDryRowsTable(toInsert.slice(0, 250))}
+    </section>
+
+    <section class="csv-dryrun__section">
+      <header class="csv-dryrun__section-head"><h4>Current Pending Email Transactions</h4><span>${pending.length}</span></header>
+      ${_csvDryRowsTable(pending.slice(0, 500), { showId: true })}
+    </section>
+  `;
+  root.classList.remove("hidden");
+}
 
 function closeExtraSavedModal() {
   const root = document.getElementById("extraSavedRoot");
@@ -2710,7 +3338,7 @@ function ensureSpentInspectModal() {
       <div class="tx-inspect__head">
         <div>
           <div id="spentInspectTitle" class="tx-inspect__title">Spent so far</div>
-          <div id="spentInspectSub" class="tx-inspect__sub">—</div>
+          <div id="spentInspectSub" class="tx-inspect__sub"></div>
         </div>
         <button class="tx-inspect__close" type="button" data-spent-close aria-label="Close">✕</button>
       </div>
@@ -2746,7 +3374,7 @@ async function openSpentBreakdown() {
   const bodyEl  = document.getElementById("spentInspectBody");
 
   if (titleEl) titleEl.textContent = "Spent so far";
-  if (subEl) subEl.textContent = "Loading…";
+  if (subEl) subEl.textContent = "Loading";
   if (bodyEl) bodyEl.innerHTML = "";
 
   // current month range (local)
@@ -2761,7 +3389,7 @@ async function openSpentBreakdown() {
       { cache: "no-store" }
     );
 
-    if (subEl) subEl.textContent = `${d.start} → ${d.end} · Total: ${money(Number(d.total || 0))}`;
+    if (subEl) subEl.textContent = `${d.start}  ${d.end}  Total: ${money(Number(d.total || 0))}`;
 
     const excluded = Array.isArray(d.excluded) ? d.excluded : [];
     const included = Array.isArray(d.included) ? d.included : [];
@@ -2788,7 +3416,7 @@ async function openSpentBreakdown() {
           <span style="font-weight:750;">${escapeHtml(x.category)}</span>
           <span style="display:flex; align-items:center; gap:10px;">
             <span style="font-weight:800;">${money(Number(x.total || 0))}</span>
-            <span style="opacity:.45;">▾</span>
+            <span style="opacity:.45;"></span>
           </span>
         </button>
         <div data-spent-acc-pane="${escapeHtmlAttr(x.category)}" style="display:none; padding:10px 12px;"></div>
@@ -2822,7 +3450,7 @@ async function openSpentBreakdown() {
         if (pane.dataset.loaded === "1") return;
 
         pane.dataset.loaded = "1";
-        pane.innerHTML = `<div style="opacity:.7;">Loading…</div>`;
+        pane.innerHTML = `<div style="opacity:.7;">Loading</div>`;
 
         try {
           const txData = await apiGetJson(
@@ -2839,8 +3467,8 @@ async function openSpentBreakdown() {
           pane.innerHTML = tx.map(r => `
             <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.06);">
               <div style="min-width:0;">
-                <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.merchant || "—")}</div>
-                <div style="opacity:.65; font-size:12px;">${escapeHtml(r.date || "")}${(r.bank || r.card) ? " • " + escapeHtml(`${r.bank || ""}${r.card ? " • " + r.card : ""}`.trim()) : ""}</div>
+                <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.merchant || "")}</div>
+                <div style="opacity:.65; font-size:12px;">${escapeHtml(r.date || "")}${(r.bank || r.card) ? "  " + escapeHtml(`${r.bank || ""}${r.card ? "  " + r.card : ""}`.trim()) : ""}</div>
               </div>
               <div style="font-weight:800; white-space:nowrap;">${money(Number(r.amount || 0))}</div>
             </div>
@@ -2895,7 +3523,7 @@ function renderIncludedAccordion(included, { start, end }) {
         <span style="font-weight:750;">${escapeHtml(x.label)}</span>
         <span style="display:flex; align-items:center; gap:10px;">
           <span style="font-weight:800;">${money(x.total)}</span>
-          <span style="opacity:.45;">▾</span>
+          <span style="opacity:.45;"></span>
         </span>
       </button>
       <div data-spent-acc-pane="${escapeHtmlAttr(x.key)}" style="display:none; padding:10px 12px;"></div>
@@ -2920,13 +3548,13 @@ function renderTxMiniList(rows) {
     const amt = Number(r.amount || 0);
     const bank = r.bank || "";
     const card = r.card || "";
-    const sub = `${bank}${card ? " • " + card : ""}`.trim();
+    const sub = `${bank}${card ? "  " + card : ""}`.trim();
 
     return `
       <div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.06);">
         <div style="min-width:0;">
-          <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(m || "—")}</div>
-          <div style="opacity:.65; font-size:12px;">${escapeHtml(d)}${sub ? " • " + escapeHtml(sub) : ""}</div>
+          <div style="font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(m || "")}</div>
+          <div style="opacity:.65; font-size:12px;">${escapeHtml(d)}${sub ? "  " + escapeHtml(sub) : ""}</div>
         </div>
         <div style="font-weight:800; white-space:nowrap;">${money(amt)}</div>
       </div>
@@ -2951,7 +3579,7 @@ function ensureTxInspectModal() {
       <div class="tx-inspect__head">
         <div>
           <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
-          <div id="txInspectSub" class="tx-inspect__sub">—</div>
+          <div id="txInspectSub" class="tx-inspect__sub"></div>
         </div>
         <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">✕</button>
       </div>
@@ -2995,10 +3623,10 @@ async function openTxInspect(txId) {
 
     const merchant = tx.merchant || "(no merchant)";
     const amount = (typeof money === "function") ? money(tx.amount) : String(tx.amount ?? "");
-    const bankCard = `${tx.bank || ""}${tx.card ? " • " + tx.card : ""}`.trim();
+    const bankCard = `${tx.bank || ""}${tx.card ? "  " + tx.card : ""}`.trim();
 
     if (titleEl) titleEl.textContent = merchant;
-    if (subEl) subEl.textContent = `${amount}${bankCard ? " • " + bankCard : ""} • id ${tx.id ?? txId}`;
+    if (subEl) subEl.textContent = `${amount}${bankCard ? "  " + bankCard : ""}  id ${tx.id ?? txId}`;
 
     const entries = Object.entries(tx);
 
@@ -3037,3 +3665,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.attachTxInspect) window.attachTxInspect(txList);
 });
+
+

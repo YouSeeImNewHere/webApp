@@ -14,8 +14,19 @@ from app.routers.categories import get_category_from_db_pg
 from db import with_db_cursor, query_db
 from recurring import get_recurring, _norm_merchant, _amount_bucket, get_ignored_merchants_preview
 from app.core.time import today_local
+from app.core.tenancy import current_tenant_id
+from app.core.config import MULTI_TENANT_ENABLED
 
 router = APIRouter()
+
+
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    return int(tid)
 
 # =============================================================================
 # Recurring (Postgres) — ported from recurring.py
@@ -24,24 +35,33 @@ router = APIRouter()
 # -----------------------------
 # Transfer peer helpers (Postgres)
 # -----------------------------
-def _account_label_pg(account_id: int) -> str:
+def _account_label_pg(account_id: int, tenant_id: int | None = None) -> str:
+    params = [int(account_id)]
+    tenant_where = ""
+    if tenant_id is not None:
+        tenant_where = " AND tenant_id = %s"
+        params.append(int(tenant_id))
     rows = query_db(
-        "SELECT institution, name FROM accounts WHERE id = %s LIMIT 1",
-        (int(account_id),),
+        f"SELECT institution, name FROM accounts WHERE id = %s{tenant_where} LIMIT 1",
+        tuple(params),
     )
     if not rows:
         return f"Account {account_id}"
     r = rows[0]
     return f'{r["institution"]} {r["name"]}'.strip()
 
-def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | None:
+def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10, tenant_id: int | None = None) -> int | None:
     """
     Given a transfer tx_id, find the 'other side' transfer account within +/- window_days
     matching opposite sign and same abs(amount) cents, different account_id.
     """
     # 1) load the anchor tx (normalized date)
+    tenant_anchor_filter = " AND t.tenant_id = %s" if tenant_id is not None else ""
+    anchor_params = [int(tx_id)]
+    if tenant_id is not None:
+        anchor_params.append(int(tenant_id))
     anchor = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -50,7 +70,7 @@ def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | N
             LOWER(TRIM(COALESCE(t.category,''))) AS category,
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
-          WHERE t.id = %s
+          WHERE t.id = %s{tenant_anchor_filter}
         ),
         norm AS (
           SELECT
@@ -67,7 +87,7 @@ def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | N
         FROM norm
         LIMIT 1
         """,
-        (int(tx_id),),
+        tuple(anchor_params),
     )
     if not anchor:
         return None
@@ -92,8 +112,13 @@ def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | N
     d_max = d0 + timedelta(days=int(window_days))
 
     # 2) find the best opposite-sign peer in window
+    tenant_peer_filter = " AND t.tenant_id = %s" if tenant_id is not None else ""
+    peer_params = []
+    if tenant_id is not None:
+        peer_params.append(int(tenant_id))
+    peer_params.extend([d_min, d_max, aid, cents, sign, sign, d0])
     peer = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -103,6 +128,7 @@ def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | N
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
           WHERE LOWER(TRIM(COALESCE(t.category,''))) IN ('transfer','card payment')
+          {tenant_peer_filter}
         ),
         norm AS (
           SELECT
@@ -128,7 +154,7 @@ def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | N
         ORDER BY ABS(d - %s) ASC, id DESC
         LIMIT 1
         """,
-        (d_min, d_max, aid, cents, sign, sign, d0),
+        tuple(peer_params),
     )
     if not peer:
         return None
@@ -142,20 +168,24 @@ def _find_transfer_peer_account_pg(tx_id: int, window_days: int = 10) -> int | N
 # Interest rate helpers (Postgres)
 # =============================================================================
 
-def _get_rate_rows(cur, account_id: int) -> List[Tuple[date, float]]:
+def _get_rate_rows(cur, account_id: int, tenant_id: int | None = None) -> List[Tuple[date, float]]:
     """
     Postgres version:
       - reads effective-dated APR rows from interest_rates
       - returns sorted list[(effective_date: date, apr: float)]
     """
+    tenant_where = " AND tenant_id = %s" if tenant_id is not None else ""
+    params = [int(account_id)]
+    if tenant_id is not None:
+        params.append(int(tenant_id))
     cur.execute(
-        """
+        f"""
         SELECT effective_date, apr
         FROM interest_rates
-        WHERE account_id = %s
+        WHERE account_id = %s{tenant_where}
         ORDER BY effective_date ASC
         """,
-        (int(account_id),),
+        tuple(params),
     )
     rows = cur.fetchall() or []
 
@@ -294,7 +324,9 @@ def get_category_from_db(tx_ids):
     )
     return rows[0]["category"] if rows else None
 
-def _estimate_interest_for_account_month(cur, account_id: int, year: int, month: int) -> float:
+def _estimate_interest_for_account_month(
+    cur, account_id: int, year: int, month: int, tenant_id: int | None = None
+) -> float:
     """
     Postgres port of your sqlite _estimate_interest_for_account_month.
 
@@ -308,46 +340,59 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
       - _apr_for_day(rate_rows, d)
     """
     # interest_post_day
-    cur.execute("SELECT interest_post_day FROM accounts WHERE id = %s", (int(account_id),))
+    tenant_where = " AND tenant_id = %s" if tenant_id is not None else ""
+    params = [int(account_id)]
+    if tenant_id is not None:
+        params.append(int(tenant_id))
+    cur.execute(f"SELECT interest_post_day FROM accounts WHERE id = %s{tenant_where}", tuple(params))
     row = cur.fetchone()
     post_day = row["interest_post_day"] if row else None
 
     month_start, month_end, _post_date = _interest_cycle_window(year, month, post_day)
 
     # only checking/savings
-    cur.execute("SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s", (int(account_id),))
+    cur.execute(f"SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s{tenant_where}", tuple(params))
     row = cur.fetchone()
     acc_type = (row["t"] if row else "other") or "other"
     if acc_type not in ("checking", "savings"):
         return 0.0
 
-    rate_rows = _get_rate_rows(cur, account_id)
+    rate_rows = _get_rate_rows(cur, account_id, tenant_id=tenant_id)
     if not rate_rows:
         return 0.0
 
     # starting balance (Postgres table name: startingbalance)
     # Column name might be start or start depending on how pgloader created it.
     # If you get a column error here, change start -> start.
+    sb_where = " AND tenant_id = %s" if tenant_id is not None else ""
+    sb_params = [int(account_id)]
+    if tenant_id is not None:
+        sb_params.append(int(tenant_id))
     cur.execute(
-        """
+        f"""
         SELECT COALESCE(SUM(start), 0)::double precision AS s
         FROM startingbalance
-        WHERE account_id = %s
+        WHERE account_id = %s{sb_where}
         """,
-        (int(account_id),),
+        tuple(sb_params),
     )
     row = cur.fetchone()
     start_bal = float((row["s"] if row else 0.0) or 0.0)
 
     # Sum of amounts BEFORE month_start using effective date logic (posted else purchase)
+    tx_where = " AND tenant_id = %s" if tenant_id is not None else ""
+    tx_params = [int(account_id)]
+    if tenant_id is not None:
+        tx_params.append(int(tenant_id))
+    tx_params.append(month_start)
     cur.execute(
-        """
+        f"""
         WITH base AS (
           SELECT
             COALESCE(NULLIF(TRIM(postedDate),'unknown'), NULLIF(TRIM(purchaseDate),'unknown')) AS raw_date,
             amount::double precision AS amount
           FROM transactions
-          WHERE account_id = %s
+          WHERE account_id = %s{tx_where}
         ),
         norm AS (
           SELECT
@@ -364,7 +409,7 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
         FROM norm
         WHERE d IS NOT NULL AND d < %s
         """,
-        (int(account_id), month_start),
+        tuple(tx_params),
     )
     row = cur.fetchone()
     before_sum = float((row["s"] if row else 0.0) or 0.0)
@@ -373,14 +418,18 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
     bal = start_bal - before_sum
 
     # daily net within [month_start, month_end) (same half-open as your sqlite loop)
+    day_params = [int(account_id)]
+    if tenant_id is not None:
+        day_params.append(int(tenant_id))
+    day_params.extend([month_start, month_end])
     cur.execute(
-        """
+        f"""
         WITH base AS (
           SELECT
             COALESCE(NULLIF(TRIM(postedDate),'unknown'), NULLIF(TRIM(purchaseDate),'unknown')) AS raw_date,
             amount::double precision AS amount
           FROM transactions
-          WHERE account_id = %s
+          WHERE account_id = %s{tx_where}
         ),
         norm AS (
           SELECT
@@ -401,7 +450,7 @@ def _estimate_interest_for_account_month(cur, account_id: int, year: int, month:
         GROUP BY d
         ORDER BY d ASC
         """,
-        (int(account_id), month_start, month_end),
+        tuple(day_params),
     )
     rows = cur.fetchall() or []
     net_by_day = {r["d"]: float(r["net"] or 0.0) for r in rows if r.get("d") is not None}
@@ -430,12 +479,59 @@ def _interest_post_date(year: int, month: int, post_day: int | None) -> date:
     day = min(int(post_day), last_day)
     return date(year, month, day)
 
+
+_INCOME_CATEGORY_LABELS = {
+    "income",
+    "paycheck",
+    "interest",
+    "salary",
+    "direct deposit",
+    "direct_deposit",
+}
+_INCOME_MERCHANT_MARKERS = ("salary", "payroll", "dfas", "direct deposit", "mil pay")
+
+
+def _norm_label(s: str | None) -> str:
+    return re.sub(r"\s+", " ", str(s or "").strip().lower())
+
+
+def _is_income_pattern_event(
+    pattern: dict,
+    category_label: str | None,
+    merchant_label: str | None,
+    amount: float,
+) -> bool:
+    kind = _norm_label(pattern.get("kind"))
+    cadence = _norm_label(pattern.get("cadence"))
+    if kind == "paycheck" or cadence in ("paycheck", "interest"):
+        return True
+
+    cat = _norm_label(category_label)
+    if cat in _INCOME_CATEGORY_LABELS:
+        return True
+
+    tx_cats = {
+        _norm_label(t.get("category"))
+        for t in (pattern.get("tx") or [])
+        if _norm_label(t.get("category"))
+    }
+    if any(c in _INCOME_CATEGORY_LABELS for c in tx_cats):
+        return True
+
+    merch = _norm_label(merchant_label)
+    if any(tok in merch for tok in _INCOME_MERCHANT_MARKERS):
+        if float(amount or 0.0) <= 0 or cadence in ("weekly", "biweekly", "monthly", "quarterly"):
+            return True
+
+    return False
+
 # -----------------------------
 # Endpoints
 # -----------------------------
 @router.get("/recurring")
 def recurring(min_occ: int = 3, include_stale: bool = False):
-    groups = get_recurring(min_occ=min_occ, include_stale=include_stale)
+    tid = _require_tenant_id()
+    groups = get_recurring(min_occ=min_occ, include_stale=include_stale, tenant_id=tid)
 
     # decorate transfer patterns with "From A to B"
     for g in (groups or []):
@@ -455,7 +551,7 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
             except Exception:
                 continue
 
-            peer_aid = _find_transfer_peer_account_pg(tx_id, window_days=10)
+            peer_aid = _find_transfer_peer_account_pg(tx_id, window_days=10, tenant_id=tid)
             if not peer_aid:
                 continue
 
@@ -464,8 +560,8 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
             except Exception:
                 amt = 0.0
 
-            a_from = _account_label_pg(int(rep.get("account_id") or 0))
-            a_to = _account_label_pg(int(peer_aid))
+            a_from = _account_label_pg(int(rep.get("account_id") or 0), tenant_id=tid)
+            a_to = _account_label_pg(int(peer_aid), tenant_id=tid)
 
             label = f"From {a_from} to {a_to}" if amt > 0 else f"From {a_to} to {a_from}"
             p["merchant_display"] = label
@@ -478,42 +574,52 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
 
 @router.get("/recurring/ignore")
 def get_recurring_ignores():
-    merchants_rows = query_db("SELECT merchant FROM recurring_ignore_merchants ORDER BY merchant ASC")
-    categories_rows = query_db("SELECT category FROM recurring_ignore_categories ORDER BY category ASC")
+    tid = _require_tenant_id()
+    merchants_rows = query_db(
+        "SELECT merchant FROM recurring_ignore_merchants WHERE tenant_id = %s ORDER BY merchant ASC",
+        (tid,),
+    )
+    categories_rows = query_db(
+        "SELECT category FROM recurring_ignore_categories WHERE tenant_id = %s ORDER BY category ASC",
+        (tid,),
+    )
     merchants = [r["merchant"] for r in merchants_rows]
     categories = [r["category"] for r in categories_rows]
     return {"merchants": merchants, "categories": categories}
 
 @router.post("/recurring/ignore/merchant")
 def ignore_merchant(name: str):
+    tid = _require_tenant_id()
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
-            INSERT INTO recurring_ignore_merchants (merchant)
-            VALUES (%s)
+            INSERT INTO recurring_ignore_merchants (tenant_id, merchant)
+            VALUES (%s, %s)
             ON CONFLICT DO NOTHING
             """,
-            (name.upper(),),
+            (tid, name.upper()),
         )
         conn.commit()
     return {"ok": True}
 
 @router.post("/recurring/ignore/category")
 def ignore_category(name: str):
+    tid = _require_tenant_id()
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
-            INSERT INTO recurring_ignore_categories (category)
-            VALUES (%s)
+            INSERT INTO recurring_ignore_categories (tenant_id, category)
+            VALUES (%s, %s)
             ON CONFLICT DO NOTHING
             """,
-            (name.upper(),),
+            (tid, name.upper()),
         )
         conn.commit()
     return {"ok": True}
 
 @router.post("/recurring/ignore/pattern")
 def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
+    tid = _require_tenant_id()
     m_norm = _norm_merchant(merchant).upper()
     amt = float(amount)
     bucket = float(_amount_bucket(amt))
@@ -522,17 +628,18 @@ def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
-            INSERT INTO recurring_ignore_patterns (merchant_norm, amount_bucket, sign, account_id)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO recurring_ignore_patterns (tenant_id, merchant_norm, amount_bucket, sign, account_id)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
             """,
-            (m_norm, bucket, sign, int(account_id)),
+            (tid, m_norm, bucket, sign, int(account_id)),
         )
         conn.commit()
     return {"ok": True}
 
 @router.post("/recurring/override-cadence")
 def override_cadence(merchant: str, amount: float, cadence: str, account_id: int = -1):
+    tid = _require_tenant_id()
     cadence = (cadence or "").strip().lower()
     allowed = {"weekly", "biweekly", "monthly", "quarterly", "yearly", "irregular"}
     if cadence not in allowed:
@@ -546,19 +653,29 @@ def override_cadence(merchant: str, amount: float, cadence: str, account_id: int
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
-            INSERT INTO recurring_cadence_overrides
-              (merchant_norm, amount_bucket, sign, account_id, cadence)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (merchant_norm, amount_bucket, sign, account_id)
-            DO UPDATE SET cadence = EXCLUDED.cadence
+            DELETE FROM recurring_cadence_overrides
+            WHERE tenant_id = %s
+              AND merchant_norm = %s
+              AND amount_bucket = %s
+              AND sign = %s
+              AND account_id = %s
             """,
-            (m_norm, bucket, sign, int(account_id), cadence),
+            (tid, m_norm, bucket, sign, int(account_id)),
+        )
+        cur.execute(
+            """
+            INSERT INTO recurring_cadence_overrides
+              (tenant_id, merchant_norm, amount_bucket, sign, account_id, cadence)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (tid, m_norm, bucket, sign, int(account_id), cadence),
         )
         conn.commit()
     return {"ok": True}
 
 @router.post("/recurring/merchant-alias")
 def set_merchant_alias(alias: str, canonical: str):
+    tid = _require_tenant_id()
     a = _norm_merchant(alias).upper()
     c = _norm_merchant(canonical).upper()
     if not a or not c:
@@ -567,33 +684,45 @@ def set_merchant_alias(alias: str, canonical: str):
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
-            INSERT INTO merchant_aliases (alias, canonical)
-            VALUES (%s, %s)
-            ON CONFLICT (alias) DO UPDATE SET canonical = EXCLUDED.canonical
+            DELETE FROM merchant_aliases
+            WHERE tenant_id = %s AND alias = %s
             """,
-            (a, c),
+            (tid, a),
+        )
+        cur.execute(
+            """
+            INSERT INTO merchant_aliases (tenant_id, alias, canonical)
+            VALUES (%s, %s, %s)
+            """,
+            (tid, a, c),
         )
         conn.commit()
     return {"ok": True}
 
 @router.post("/recurring/merchant-alias/delete")
 def delete_merchant_alias(alias: str):
+    tid = _require_tenant_id()
     a = _norm_merchant(alias).upper()
     with with_db_cursor() as (conn, cur):
-        cur.execute("DELETE FROM merchant_aliases WHERE alias = %s", (a,))
+        cur.execute("DELETE FROM merchant_aliases WHERE alias = %s AND tenant_id = %s", (a, tid))
         conn.commit()
     return {"ok": True}
 
 @router.post("/recurring/unignore/merchant")
 def unignore_merchant(name: str):
+    tid = _require_tenant_id()
     with with_db_cursor() as (conn, cur):
-        cur.execute("DELETE FROM recurring_ignore_merchants WHERE merchant = %s", (name.upper(),))
+        cur.execute(
+            "DELETE FROM recurring_ignore_merchants WHERE merchant = %s AND tenant_id = %s",
+            (name.upper(), tid),
+        )
         conn.commit()
     return {"ok": True}
 
 @router.get("/recurring/ignored-preview")
 def recurring_ignored_preview(min_occ: int = 3, include_stale: bool = False):
-    return get_ignored_merchants_preview(min_occ=min_occ, include_stale=include_stale)
+    tid = _require_tenant_id()
+    return get_ignored_merchants_preview(min_occ=min_occ, include_stale=include_stale, tenant_id=tid)
 
 @router.get("/recurring/calendar")
 def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
@@ -602,13 +731,14 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
     - uses get_recurring() output
     - excludes kind == "paycheck"
     """
+    tid = _require_tenant_id()
     if month < 1 or month > 12:
         return {"ok": False, "error": "month must be 1..12"}
 
     month_start = date(year, month, 1)
     month_end = date(year, month, _last_day_of_month(year, month))
 
-    groups = get_recurring(min_occ=min_occ, include_stale=include_stale)
+    groups = get_recurring(min_occ=min_occ, include_stale=include_stale, tenant_id=tid)
 
     events = []
     for g in (groups or []):
@@ -665,6 +795,9 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
 
             amt = float(p.get("amount") or 0.0)
             aid = int(p.get("account_id") or -1)
+            if _is_income_pattern_event(p, cat_label, merch_label, amt):
+                continue
+
             for d in occs:
                 events.append({
                     "date": d.isoformat(),
@@ -674,6 +807,7 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
                     "amount": amt,
                     "cadence": cadence,
                     "account_id": aid,
+                    "kind": _norm_label(p.get("kind")),
                 })
 
     # ---- INTEREST EVENTS (estimated) ----
@@ -683,13 +817,15 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
         SELECT id, institution, name, LOWER(accountType) AS accounttype, interest_post_day
         FROM accounts
         WHERE LOWER(accountType) IN ('checking', 'savings')
-        """
+          AND tenant_id = %s
+        """,
+        (tid,),
     )
 
     with with_db_cursor() as (conn, cur):
         for a in acct_rows:
             aid = int(a["id"])
-            est = _estimate_interest_for_account_month(cur, aid, year, month)
+            est = _estimate_interest_for_account_month(cur, aid, year, month, tenant_id=tid)
 
             if abs(est) < 0.01:
                 continue
@@ -714,4 +850,3 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
         "end": month_end.isoformat(),
         "events": events,
     }
-

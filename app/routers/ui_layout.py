@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.routers.settings import _ensure_ui_layout_table_pg, SaveLayoutBody
+from app.core.tenant_keys import scoped_key
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -18,10 +19,7 @@ router = APIRouter()
 def get_ui_layout(key: str):
     _ensure_ui_layout_table_pg()
 
-    rows = query_db(
-        "SELECT layout_json FROM ui_layout WHERE key = %s LIMIT 1",
-        (key,),
-    )
+    rows = query_db("SELECT layout_json FROM ui_layout WHERE key = %s LIMIT 1", (scoped_key(key),))
     if not rows:
         return {"key": key, "layout": {}}
 
@@ -45,9 +43,8 @@ def save_ui_layout(body: SaveLayoutBody):
             DO UPDATE SET layout_json = EXCLUDED.layout_json,
                           updated_at = now()
             """,
-            (body.key, json.dumps(body.layout)),
+            (scoped_key(body.key), json.dumps(body.layout)),
         )
         conn.commit()
 
     return {"key": body.key, "layout": body.layout}
-

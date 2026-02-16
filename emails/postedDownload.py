@@ -658,7 +658,37 @@ def upsert_csv_row(
         delete_withdrawal_key(pending_id)
         return ("updated", pending_id)
 
-    # 2) Tip adjust: update only Pending+email rows (amount increases)
+    # 2) Fuzzy pending-email match: same account + amount, purchaseDate within +/- 4 days.
+    pending_match = find_existing_match_pending_email(
+        cur,
+        LOOKUP_TABLE,
+        account_id=account_id,
+        amount=float(amount),
+        purchase_d=purchase_d,
+        merchant=merchant,
+        window_days=4,
+    )
+    if pending_match:
+        existing_id = pending_match[0]
+        _copy_row_from_lookup_if_missing(cur, existing_id)
+        cur.execute(
+            f"""
+            UPDATE {WRITE_TABLE}
+            SET postedDate   = %s,
+                purchaseDate = %s,
+                status       = %s,
+                merchant     = %s,
+                source       = %s,
+                amount       = %s,
+                category     = %s
+            WHERE id = %s
+            """,
+            (posted, purchase, "Posted", merchant, "CSV", float(amount), cat, existing_id),
+        )
+        delete_withdrawal_key(existing_id)
+        return ("updated", existing_id)
+
+    # 3) Tip adjust: update only Pending+email rows (amount increases)
     if allow_tip_adjust:
         tip_match = find_tip_adjust_match_pending_email(
             cur,
@@ -689,7 +719,7 @@ def upsert_csv_row(
             delete_withdrawal_key(existing_id)
             return ("updated", existing_id)
 
-    # 3) ALWAYS INSERT (duplicates become _1, _2, ...)
+    # 4) ALWAYS INSERT (duplicates become _1, _2, ...)
     tx_id = next_seq_id(cur, WRITE_TABLE, base)
 
     payload = {

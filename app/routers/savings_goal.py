@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.routers.settings import _ensure_app_settings_pg, SavingsGoalIn
+from app.core.tenant_keys import scoped_key
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -19,7 +20,7 @@ def get_savings_goal():
 
     rows = query_db(
         "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
-        ("savings_goal",),
+        (scoped_key("savings_goal"),),
     )
     if not rows:
         return {"mode": "percent", "value": 0}
@@ -65,9 +66,8 @@ def set_savings_goal(body: SavingsGoalIn):
             DO UPDATE SET value_json = EXCLUDED.value_json,
                           updated_at = now()
             """,
-            ("savings_goal", payload),
+            (scoped_key("savings_goal"), payload),
         )
         conn.commit()
 
     return {"ok": True}
-

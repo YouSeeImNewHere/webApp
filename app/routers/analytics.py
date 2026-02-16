@@ -17,7 +17,8 @@ from app.core.analytics_helpers import (
 from app.core.date_parse import parse_iso, parse_posted_date
 
 from db import with_db_cursor, query_db
-from app.core.config import ISO_DATE_RE
+from app.core.config import ISO_DATE_RE, MULTI_TENANT_ENABLED
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -71,6 +72,7 @@ def _last_day_of_month(y: int, m: int) -> int:
 # -----------------------------------------------------------------------------
 @router.get("/net-worth")
 def net_worth(start: str, end: str):
+    _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
@@ -132,6 +134,7 @@ def net_worth(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/savings")
 def savings(start: str, end: str):
+    _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
@@ -149,6 +152,7 @@ def savings(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/investments")
 def investments(start: str, end: str):
+    _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
@@ -166,11 +170,12 @@ def investments(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/spending")
 def spending(start: str, end: str):
+    tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
@@ -179,6 +184,7 @@ def spending(start: str, end: str):
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -196,7 +202,7 @@ def spending(start: str, end: str):
         WHERE d IS NOT NULL
           AND d BETWEEN %s AND %s
         """,
-        (start_date, end_date),
+        ((int(tid), int(tid), start_date, end_date) if tid else (start_date, end_date)),
     )
 
     daily: Dict[date, float] = {}
@@ -231,11 +237,12 @@ def spending(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/spending-debug")
 def spending_debug(start: str, end: str):
+    tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -248,6 +255,7 @@ def spending_debug(start: str, end: str):
             a.name AS account
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -266,7 +274,7 @@ def spending_debug(start: str, end: str):
           AND d BETWEEN %s AND %s
         ORDER BY d DESC, id DESC
         """,
-        (start_date, end_date),
+        ((int(tid), int(tid), start_date, end_date) if tid else (start_date, end_date)),
     )
 
     out = []
@@ -299,20 +307,28 @@ def spending_debug(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/category-totals-month")
 def category_totals_month():
+    tid = _require_tenant_id()
     today = today_local()
     first = today.replace(day=1)
     next_month = date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
 
+    # Keep this count aligned with /unassigned so the badge and modal agree.
     unassigned = query_db(
-        """
+        f"""
         SELECT COUNT(*)::int AS c
-        FROM transactions
-        WHERE category IS NULL OR TRIM(category) = ''
-        """
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        WHERE (t.category IS NULL OR TRIM(t.category) = '')
+          AND t.merchant IS NOT NULL
+          AND TRIM(t.merchant) <> ''
+          AND LOWER(TRIM(t.merchant)) <> 'unknown'
+          {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+        """,
+        ((int(tid), int(tid)) if tid else ()),
     )[0]["c"]
 
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             TRIM(category) AS category,
@@ -322,6 +338,7 @@ def category_totals_month():
           WHERE t.amount::double precision > 0
             AND t.category IS NOT NULL
             AND TRIM(t.category) <> ''
+            {"AND t.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -341,7 +358,7 @@ def category_totals_month():
         GROUP BY category
         ORDER BY total DESC
         """,
-        (first, next_month),
+        ((int(tid), first, next_month) if tid else (first, next_month)),
     )
 
     return {
@@ -357,11 +374,12 @@ def category_totals_month():
 # -----------------------------------------------------------------------------
 @router.get("/category-trend")
 def category_trend(category: str, period: str = "1m"):
+    tid = _require_tenant_id()
     cat = (category or "").strip().lower()
 
     if cat == "unknown merchant":
         rows = query_db(
-            """
+            f"""
             WITH base AS (
               SELECT
                 t.amount::double precision AS amount,
@@ -373,6 +391,7 @@ def category_trend(category: str, period: str = "1m"):
               JOIN accounts a ON a.id = t.account_id
               WHERE t.amount::double precision > 0
                 AND LOWER(a.accountType) IN ('checking','credit')
+                {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
             ),
             norm AS (
               SELECT
@@ -394,11 +413,12 @@ def category_trend(category: str, period: str = "1m"):
               AND category NOT IN ('card payment','transfer')
             GROUP BY d
             ORDER BY d ASC
-            """
+            """,
+            ((int(tid), int(tid)) if tid else ()),
         )
     else:
         rows = query_db(
-            """
+            f"""
             WITH base AS (
               SELECT
                 t.amount::double precision AS amount,
@@ -406,6 +426,7 @@ def category_trend(category: str, period: str = "1m"):
                 COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
               FROM transactions t
               WHERE LOWER(TRIM(COALESCE(t.category,''))) = LOWER(TRIM(%s))
+                {"AND t.tenant_id = %s" if tid else ""}
             ),
             norm AS (
               SELECT
@@ -424,7 +445,7 @@ def category_trend(category: str, period: str = "1m"):
             GROUP BY d
             ORDER BY d ASC
             """,
-            (category,),
+            ((category, int(tid)) if tid else (category,)),
         )
 
     daily = [{"date": r["d"].isoformat(), "amount": float(r["total"] or 0)} for r in rows if r.get("d")]
@@ -435,11 +456,12 @@ def category_trend(category: str, period: str = "1m"):
 # -----------------------------------------------------------------------------
 @router.get("/category-transactions")
 def category_transactions(category: str, start: str, end: str, limit: int = 500):
+    tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -455,6 +477,7 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
           WHERE TRIM(t.category) = TRIM(%s)
+            {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -484,7 +507,7 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
         ORDER BY d DESC, id DESC
         LIMIT %s
         """,
-        (category, start_date, end_date, int(limit)),
+        ((category, int(tid), int(tid), start_date, end_date, int(limit)) if tid else (category, start_date, end_date, int(limit))),
     )
     return [dict(r) for r in rows]
 
@@ -493,8 +516,9 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
 # -----------------------------------------------------------------------------
 @router.get("/category-totals-lifetime")
 def category_totals_lifetime():
+    tid = _require_tenant_id()
     rows = query_db(
-        """
+        f"""
         SELECT
           TRIM(category) AS category,
           SUM(amount::double precision) AS total
@@ -502,9 +526,11 @@ def category_totals_lifetime():
         WHERE category IS NOT NULL
           AND TRIM(category) <> ''
           AND amount::double precision > 0
+          {"AND tenant_id = %s" if tid else ""}
         GROUP BY TRIM(category)
         ORDER BY total DESC
-        """
+        """,
+        ((int(tid),) if tid else ()),
     )
     return [{"category": r["category"], "total": float(r["total"] or 0)} for r in rows]
 
@@ -513,11 +539,12 @@ def category_totals_lifetime():
 # -----------------------------------------------------------------------------
 @router.get("/category-totals-range")
 def category_totals_range(start: str, end: str):
+    tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             TRIM(t.category) AS category,
@@ -529,6 +556,7 @@ def category_totals_range(start: str, end: str):
             AND t.category IS NOT NULL
             AND TRIM(t.category) <> ''
             AND LOWER(TRIM(t.category)) NOT IN ('card payment','transfer')
+            {"AND t.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -549,8 +577,15 @@ def category_totals_range(start: str, end: str):
         GROUP BY category
         ORDER BY total DESC
         """,
-        (start_date, end_date),
+        ((int(tid), start_date, end_date) if tid else (start_date, end_date)),
     )
 
     return [{"category": r["category"], "total": float(r["total"] or 0)} for r in rows]
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    return int(tid)
 

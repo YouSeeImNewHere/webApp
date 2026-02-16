@@ -11,17 +11,28 @@ from urllib.parse import urlencode
 import requests
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse, JSONResponse, HTMLResponse
 
 from db import with_db_cursor
+from app.core.tenancy import (
+    register_google_user,
+    get_user_by_email,
+    set_current_tenant_id,
+    reset_current_tenant_id,
+    list_pending_users,
+    approve_user,
+)
 from app.core.config import (
     WIDGET_SECRET,
     SESSION_SECRET,
     APP_PASSWORD,
     NOTIF_SECRET,
     IS_RENDER,
+    MULTI_TENANT_ENABLED,
+    OWNER_GOOGLE_EMAIL,
     WEBAPP_URL,
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
@@ -54,6 +65,28 @@ def _is_authed(request: Request) -> bool:
         return bool(request.session.get("authed"))
     except Exception:
         return False
+
+
+def _needs_google_identity(request: Request) -> bool:
+    if not MULTI_TENANT_ENABLED:
+        return False
+    return not bool((request.session.get("google_email") or "").strip())
+
+
+def _is_oauth_bootstrap_path(path: str) -> bool:
+    return path in {
+        "/gmail/oauth/start",
+        "/gmail/oauth/callback",
+        "/gmail/oauth/status",
+    }
+
+
+def _is_owner_request(request: Request) -> bool:
+    if not MULTI_TENANT_ENABLED:
+        return True
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    owner_email = (OWNER_GOOGLE_EMAIL or "").strip().lower()
+    return bool(owner_email) and session_email == owner_email
 
 
 @router.get("/health")
@@ -469,6 +502,7 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
     expires_in = int(td.get("expires_in") or 3600)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in - 60))
     google_email = None
+    google_sub = None
     try:
         profile_resp = requests.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
@@ -476,9 +510,12 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
             timeout=20,
         )
         if profile_resp.status_code == 200:
-            google_email = (profile_resp.json() or {}).get("email")
+            profile = profile_resp.json() or {}
+            google_email = profile.get("email")
+            google_sub = profile.get("id")
     except Exception:
         google_email = None
+        google_sub = None
 
     _save_google_tokens(
         access_token=access_token,
@@ -488,6 +525,17 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
         expires_at=expires_at,
         google_email=google_email,
     )
+    user_row = register_google_user(google_sub=google_sub, email=google_email)
+
+    # Auto-start Gmail watch for new/returning approved users so incoming mail
+    # triggers fetch processing without a manual Settings click.
+    should_auto_watch = (not MULTI_TENANT_ENABLED) or bool((user_row or {}).get("status") == "approved")
+    if should_auto_watch:
+        try:
+            _start_gmail_watch()
+            _trigger_event_processing()
+        except Exception as e:
+            print("gmail oauth callback: auto watch start failed:", repr(e))
 
     request.session["google_oauth_state"] = None
     request.session["google_email"] = google_email
@@ -632,33 +680,61 @@ async def gmail_push(request: Request):
 class RequireLoginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        tenant_token = set_current_tenant_id(None)
 
-        # Widget endpoints: allow header-based auth (Shortcut/Scriptable)
-        if path.startswith("/widget/"):
-            provided = request.headers.get("x-widget-secret", "")
-            if WIDGET_SECRET and provided == WIDGET_SECRET:
+        try:
+            # Widget endpoints: allow header-based auth (Shortcut/Scriptable)
+            if path.startswith("/widget/"):
+                provided = request.headers.get("x-widget-secret", "")
+                if WIDGET_SECRET and provided == WIDGET_SECRET:
+                    return await call_next(request)
+                return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+            # Always allow these
+            if path in PUBLIC_EXACT:
                 return await call_next(request)
-            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
 
-        # Always allow these
-        if path in PUBLIC_EXACT:
+            # Allow /static/* assets, but block direct access to html pages unless authed
+            if any(path.startswith(p) for p in PUBLIC_PREFIXES):
+                if path.lower().endswith(".html") and not _is_authed(request):
+                    return RedirectResponse(url=f"/login?next={path}", status_code=302)
+                return await call_next(request)
+
+            # Everything else requires auth
+            if not _is_authed(request):
+                accept = request.headers.get("accept", "")
+                if "text/html" in accept:
+                    return RedirectResponse(url=f"/login?next={path}", status_code=302)
+                return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+            # After app-password auth, require Google identity for multi-tenant access.
+            if _needs_google_identity(request) and path != "/gmail/oauth/start":
+                accept = request.headers.get("accept", "")
+                if "text/html" in accept:
+                    return RedirectResponse(url=f"/gmail/oauth/start?next={path}", status_code=302)
+                return JSONResponse({"ok": False, "error": "google_auth_required"}, status_code=401)
+
+            # Allow OAuth bootstrap endpoints before tenant mapping exists.
+            if _is_oauth_bootstrap_path(path):
+                return await call_next(request)
+
+            # Multi-tenant gate: every authed user must be approved and mapped to a tenant.
+            if MULTI_TENANT_ENABLED:
+                session_email = (request.session.get("google_email") or "").strip().lower()
+                user = get_user_by_email(session_email)
+                if not user:
+                    return JSONResponse({"ok": False, "error": "user_not_registered"}, status_code=403)
+                if user.get("status") != "approved":
+                    return JSONResponse({"ok": False, "error": "user_pending_approval"}, status_code=403)
+                tenant_id = user.get("tenant_id")
+                if not tenant_id:
+                    return JSONResponse({"ok": False, "error": "tenant_not_assigned"}, status_code=403)
+                set_current_tenant_id(int(tenant_id))
+
             return await call_next(request)
+        finally:
+            reset_current_tenant_id(tenant_token)
 
-        # Allow /static/* assets, but block direct access to html pages unless authed
-        if any(path.startswith(p) for p in PUBLIC_PREFIXES):
-            if path.lower().endswith(".html") and not _is_authed(request):
-                return RedirectResponse(url=f"/login?next={path}", status_code=302)
-            return await call_next(request)
-
-        # Everything else requires auth
-        if _is_authed(request):
-            return await call_next(request)
-
-        accept = request.headers.get("accept", "")
-        if "text/html" in accept:
-            return RedirectResponse(url=f"/login?next={path}", status_code=302)
-
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
 
 
 @router.get("/favicon.ico")
@@ -722,9 +798,7 @@ def login_page(next: str = "/"):
           </form>
 
           <div class="hint">This site is private.</div>
-          <div class="hint" style="margin-top:12px;">
-            Gmail setup: <a href="/gmail/oauth/start?next=/settings">Connect Google account</a>
-          </div>
+          <div class="hint" style="margin-top:12px;">After password, Google sign-in starts automatically.</div>
         </div>
       </body>
     </html>
@@ -759,6 +833,13 @@ async def login(request: Request):
         return JSONResponse({"ok": False, "error": "bad_password"}, status_code=401)
 
     request.session["authed"] = True
+    if "google_email" in request.session:
+        request.session.pop("google_email", None)
+    request.session["app_password_ok"] = True
+    if MULTI_TENANT_ENABLED:
+        next_url = next_url if next_url.startswith("/") else "/"
+        oauth_start = f"/gmail/oauth/start?next={next_url}"
+        return RedirectResponse(url=oauth_start, status_code=302)
 
     # If it was a form submit, always redirect
     if "application/x-www-form-urlencoded" in ct or "multipart/form-data" in ct:
@@ -777,6 +858,32 @@ def __whoami(request: Request):
         "cookies": dict(request.cookies),
         "session": dict(request.session),
     }
+
+
+@router.get("/admin/pending-users")
+def admin_pending_users(request: Request):
+    if not _is_authed(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not _is_owner_request(request):
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    rows = list_pending_users()
+    return {"ok": True, "items": rows}
+
+
+class ApproveUserBody(BaseModel):
+    workspace_name: str | None = None
+
+
+@router.post("/admin/pending-users/{user_id}/approve")
+def admin_approve_user(user_id: int, request: Request, body: ApproveUserBody | None = None):
+    if not _is_authed(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not _is_owner_request(request):
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    row = approve_user(user_id=int(user_id), workspace_name=(body.workspace_name if body else None))
+    if not row:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    return {"ok": True, "user": row}
 
 
 @router.post("/logout")

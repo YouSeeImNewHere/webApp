@@ -16,7 +16,9 @@ from app.routers.recurring import recurring_calendar
 from app.routers.savings_goal import get_savings_goal
 from app.routers.settings import _ensure_app_settings_pg
 from db import with_db_cursor, query_db
-from app.core.config import CATEGORY_RULES_TABLE
+from app.core.config import CATEGORY_RULES_TABLE, MULTI_TENANT_ENABLED
+from app.core.tenant_keys import scoped_key
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -45,7 +47,36 @@ class RuleTestBody(BaseModel):
 # -----------------------------
 # Helpers
 # -----------------------------
+_INCOME_CATEGORY_LABELS = {
+    "income",
+    "paycheck",
+    "interest",
+    "salary",
+    "direct deposit",
+    "direct_deposit",
+}
+_INCOME_MERCHANT_MARKERS = ("salary", "payroll", "dfas", "direct deposit", "mil pay")
+
+
+def _event_is_income(e: dict, amount: float, etype: str, cadence: str, category: str, merchant: str) -> bool:
+    kind = str(e.get("kind") or "").lower().strip()
+    if etype == "income" or kind == "paycheck" or cadence in ("paycheck", "interest"):
+        return True
+
+    cat_norm = _norm_cat(category or "")
+    if cat_norm in _INCOME_CATEGORY_LABELS:
+        return True
+
+    merch = str(merchant or "").lower()
+    if any(tok in merch for tok in _INCOME_MERCHANT_MARKERS):
+        if float(amount or 0.0) <= 0 or cadence in ("weekly", "biweekly", "monthly", "quarterly"):
+            return True
+
+    return False
+
+
 def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
+    tid = _require_tenant_id()
     today = today_local()
     month_start = date(year, month, 1)
     month_end = date(year, month, _last_day_of_month(year, month))
@@ -89,7 +120,14 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         category = str(e.get("category") or "").strip()
         merchant = str(e.get("merchant") or "")
 
-        is_income = (etype == "income") or (cadence in ("paycheck", "interest"))
+        is_income = _event_is_income(
+            e,
+            amount=amt,
+            etype=etype,
+            cadence=cadence,
+            category=category,
+            merchant=merchant,
+        )
 
         if is_income:
             try:
@@ -97,7 +135,7 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
             except Exception:
                 aid = -1
             if aid == spendable_account_id:
-                income_expected += max(0.0, amt)
+                income_expected += abs(amt)
             continue
 
         # Skip internal transfers in bill projections
@@ -127,7 +165,7 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
 
     # 2) Actual spending so far + per-category spend map
     tx_rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
@@ -136,6 +174,7 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -153,7 +192,7 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         WHERE d IS NOT NULL
           AND d BETWEEN %s AND %s
         """,
-        (month_start, today),
+        ((int(tid), int(tid), month_start, today) if tid else (month_start, today)),
     )
 
     spent_so_far = 0.0
@@ -315,7 +354,7 @@ def _get_savings_goal_cfg():
 
     rows = query_db(
         "SELECT value_json FROM app_settings WHERE key=%s LIMIT 1",
-        ("savings_goal",),
+        (scoped_key("savings_goal"),),
     )
     if not rows:
         return "percent", 0.0
@@ -348,7 +387,7 @@ def _compute_monthly_savings_goal(total_income: float) -> float:
     return max(0.0, value)
 
 def _get_default_les_profile():
-    rows = query_db("SELECT profile_json FROM les_profile WHERE key='default' LIMIT 1")
+    rows = query_db("SELECT profile_json FROM les_profile WHERE key=%s LIMIT 1", (scoped_key("default"),))
     if not rows:
         return None
 
@@ -407,15 +446,17 @@ def _recent_merchants(limit: int = 50) -> List[Dict[str, Any]]:
     Returns merchants with counts from *recent-ish* transactions.
     Uses Postgres date parsing on your string dates (MM/DD/YY or MM/DD/YYYY).
     """
+    tid = _require_tenant_id()
     limit = max(1, min(int(limit), 200))
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             TRIM(COALESCE(merchant,'')) AS merchant,
             COALESCE(NULLIF(TRIM(postedDate),'unknown'), NULLIF(TRIM(purchaseDate),'unknown')) AS raw_date
           FROM transactions
           WHERE merchant IS NOT NULL AND TRIM(merchant) <> ''
+            {"AND tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -435,11 +476,12 @@ def _recent_merchants(limit: int = 50) -> List[Dict[str, Any]]:
         ORDER BY COUNT(*) DESC
         LIMIT %s
         """,
-        (limit,),
+        ((int(tid), limit) if tid else (limit,)),
     )
     return [dict(r) for r in rows]
 
 def _rule_match_count(pattern: str, flags: str) -> int:
+    tid = _require_tenant_id()
     op = _pg_regex_operator(flags)
     rows = query_db(
         f"""
@@ -447,9 +489,10 @@ def _rule_match_count(pattern: str, flags: str) -> int:
         FROM transactions
         WHERE merchant IS NOT NULL
           AND TRIM(merchant) <> ''
+          {"AND tenant_id = %s" if tid else ""}
           AND merchant {op} %s
         """,
-        (pattern,),
+        ((int(tid), pattern) if tid else (pattern,)),
     )
     return int(rows[0]["n"]) if rows else 0
 
@@ -458,6 +501,7 @@ def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
     Apply rule only to transactions with empty/NULL category.
     Returns rows updated.
     """
+    tid = _require_tenant_id()
     op = _pg_regex_operator(flags)
     with with_db_cursor() as (conn, cur):
         cur.execute(
@@ -467,9 +511,10 @@ def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
             WHERE (category IS NULL OR TRIM(category) = '')
               AND merchant IS NOT NULL
               AND TRIM(merchant) <> ''
+              {"AND tenant_id = %s" if tid else ""}
               AND merchant {op} %s
             """,
-            (category, pattern),
+            ((category, int(tid), pattern) if tid else (category, pattern)),
         )
         updated = int(cur.rowcount or 0)
         conn.commit()
@@ -480,6 +525,7 @@ def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
     Force override category for all matching transactions.
     Returns rows updated.
     """
+    tid = _require_tenant_id()
     op = _pg_regex_operator(flags)
     with with_db_cursor() as (conn, cur):
         cur.execute(
@@ -488,9 +534,10 @@ def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
             SET category = %s
             WHERE merchant IS NOT NULL
               AND TRIM(merchant) <> ''
+              {"AND tenant_id = %s" if tid else ""}
               AND merchant {op} %s
             """,
-            (category, pattern),
+            ((category, int(tid), pattern) if tid else (category, pattern)),
         )
         updated = int(cur.rowcount or 0)
         conn.commit()
@@ -669,12 +716,13 @@ def test_rule(body: RuleTestBody):
 # -----------------------------------------------------------------------------
 @router.get("/unknown-merchant-total-month")
 def unknown_merchant_total_month():
+    tid = _require_tenant_id()
     today = today_local()
     first = today.replace(day=1)
     next_month = date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
 
     row = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.amount::double precision AS amount,
@@ -684,6 +732,7 @@ def unknown_merchant_total_month():
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -707,7 +756,7 @@ def unknown_merchant_total_month():
           AND merchant = 'unknown'
           AND category NOT IN ('card payment','transfer')
         """,
-        (first, next_month),
+        ((int(tid), int(tid), first, next_month) if tid else (first, next_month)),
     )[0]
 
     return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
@@ -717,11 +766,12 @@ def unknown_merchant_total_month():
 # -----------------------------------------------------------------------------
 @router.get("/unknown-merchant-total-range")
 def unknown_merchant_total_range(start: str, end: str):
+    tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
     row = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.amount::double precision AS amount,
@@ -731,6 +781,7 @@ def unknown_merchant_total_range(start: str, end: str):
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -754,7 +805,7 @@ def unknown_merchant_total_range(start: str, end: str):
           AND merchant = 'unknown'
           AND category NOT IN ('card payment','transfer')
         """,
-        (start_date, end_date),
+        ((int(tid), int(tid), start_date, end_date) if tid else (start_date, end_date)),
     )[0]
 
     return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
@@ -778,6 +829,7 @@ def month_budget(
 
 @router.get("/page/budget")
 def page_budget(year: int | None = None, month: int | None = None, min_occ: int = 3, include_stale: bool = False):
+    tid = _require_tenant_id()
     now = datetime.now()
     y = int(year or now.year)
     m = int(month or now.month)
@@ -836,20 +888,23 @@ def page_budget(year: int | None = None, month: int | None = None, min_occ: int 
     # categories spent list (sorted desc), for the read-only section
     # cat_spent keys are normalized (lowercased). Map them back to canonical display names.
     canon_rows = query_db(
-        """
+        f"""
         SELECT category FROM (
           SELECT DISTINCT TRIM(category) AS category
           FROM transactions
           WHERE category IS NOT NULL AND TRIM(category) <> ''
+            {"AND tenant_id = %s" if tid else ""}
 
           UNION
 
           SELECT DISTINCT TRIM(category) AS category
           FROM "categoryrules"
           WHERE category IS NOT NULL AND TRIM(category) <> ''
+            {"AND tenant_id = %s" if tid else ""}
         ) u
         ORDER BY LOWER(category) ASC
-        """
+        """,
+        ((int(tid), int(tid)) if tid else ()),
     )
 
     norm_to_display = {}
@@ -875,4 +930,10 @@ def page_budget(year: int | None = None, month: int | None = None, min_occ: int 
         "spent_categories": spent_items,
         "savings_goal_cfg": get_savings_goal(),  # re-use existing endpoint logic
     }
-
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    return int(tid)

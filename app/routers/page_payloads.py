@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Optional, Dict, Any, List
 from datetime import date, datetime, timedelta
+from copy import deepcopy
+import time
 
 from fastapi import APIRouter, HTTPException, Query, Header
 from fastapi.responses import FileResponse
@@ -9,8 +11,9 @@ from pydantic import BaseModel
 
 from db import with_db_cursor, query_db
 
-from app.core.config import WIDGET_SECRET, CREDIT_UTILIZATION_CAP
+from app.core.config import WIDGET_SECRET, CREDIT_UTILIZATION_CAP, MULTI_TENANT_ENABLED
 from app.core.time import today_local, now_local
+from app.core.tenancy import current_tenant_id
 
 # Import the underlying route helpers we bundle into page payloads.
 from app.routers.transactions import transactions, transactions_all, account_transactions
@@ -22,9 +25,20 @@ from app.routers.budget_groups import _get_budget_groups_for_month, _norm_cat, _
 
 router = APIRouter()
 
+WIDGET_SUMMARY_CACHE_TTL_SEC = 90
+_WIDGET_SUMMARY_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+
 # =============================================================================
 # Page payload endpoints (one request per page)
 # =============================================================================
+
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    return int(tid)
 
 def _call_optional(fn, *args, **kwargs):
     """
@@ -135,9 +149,11 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
     """
     limit = max(1, min(int(limit or 25), 500))
     mode = (mode or "freq").strip().lower()
+    tid = _require_tenant_id()
+    tenant_where = "AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""
 
     # shared normalization: postedDate/purchaseDate are strings like MM/DD/YY or MM/DD/YYYY (or 'unknown')
-    base_cte = """
+    base_cte = f"""
       WITH base AS (
         SELECT
           t.id,
@@ -148,6 +164,7 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
           a.name        AS card
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
+        {tenant_where}
         WHERE (t.category IS NULL OR TRIM(t.category) = '')
           AND t.merchant IS NOT NULL
           AND TRIM(t.merchant) <> ''
@@ -181,7 +198,7 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
             ORDER BY d DESC NULLS LAST, id DESC
             LIMIT %s
             """,
-            (limit,),
+            ((int(tid), int(tid), limit) if tid else (limit,)),
         )
         return [dict(r) for r in rows]
 
@@ -201,7 +218,7 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
         ORDER BY usage_count DESC, d DESC NULLS LAST, id DESC
         LIMIT %s
         """,
-        (limit,),
+        ((int(tid), int(tid), limit) if tid else (limit,)),
     )
     return [dict(r) for r in rows]
 
@@ -210,6 +227,12 @@ def widget_summary(x_widget_secret: str = Header(default="")):
     #Simple protection so the widget can fetch data without a login session/cookies
     if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    now_ts = time.time()
+    cached_ts = float(_WIDGET_SUMMARY_CACHE.get("ts") or 0.0)
+    cached_data = _WIDGET_SUMMARY_CACHE.get("data")
+    if cached_data and (now_ts - cached_ts) < WIDGET_SUMMARY_CACHE_TTL_SEC:
+        return deepcopy(cached_data)
 
     bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
     n = now_local()
@@ -232,7 +255,7 @@ def widget_summary(x_widget_secret: str = Header(default="")):
     available = max(0.0, cap_limit - used_sum)
     pct_used = int(round((used_sum / cap_limit) * 100)) if cap_limit > 0 else 0
 
-    return {
+    payload = {
         "ok": True,
 
         "credit": {
@@ -263,6 +286,9 @@ def widget_summary(x_widget_secret: str = Header(default="")):
         },
         "meta": {"cron": "OK"}
     }
+    _WIDGET_SUMMARY_CACHE["ts"] = now_ts
+    _WIDGET_SUMMARY_CACHE["data"] = payload
+    return deepcopy(payload)
 
 def _ensure_budget_tables_pg():
     with with_db_cursor() as (conn, cur):
@@ -374,11 +400,12 @@ def category_page():
     return FileResponse("static/category.html")
 
 def _category_totals_month_display(year: int, month: int):
+    tid = _require_tenant_id()
     # month range
     month_start = date(year, month, 1)
     month_end = date(year, month, _last_day_of_month(year, month))
 
-    base_cte = """
+    base_cte = f"""
       WITH base AS (
         SELECT
           COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
@@ -387,6 +414,7 @@ def _category_totals_month_display(year: int, month: int):
         FROM transactions t
         WHERE t.category IS NOT NULL
           AND TRIM(t.category) <> ''
+          {"AND t.tenant_id = %s" if tid else ""}
       ),
       norm AS (
         SELECT
@@ -414,19 +442,59 @@ def _category_totals_month_display(year: int, month: int):
         GROUP BY category
         ORDER BY total DESC
         """,
-        (month_start, month_end),
+        ((int(tid), month_start, month_end) if tid else (month_start, month_end)),
     )
     return [{"category": r["category"], "spent": float(r["total"] or 0.0)} for r in rows]
 
-def _ensure_daily_limit_snapshot_pg():
+def _ensure_daily_limit_snapshot_pg(tid: int | None = None):
     with with_db_cursor() as (conn, cur):
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS daily_limit_snapshot (
-          day DATE PRIMARY KEY,
-          baseline DOUBLE PRECISION NOT NULL,
-          computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-        """)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_limit_snapshot (
+              tenant_id BIGINT NOT NULL,
+              day DATE NOT NULL,
+              baseline DOUBLE PRECISION NOT NULL,
+              computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """
+        )
+        cur.execute("ALTER TABLE daily_limit_snapshot ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_limit_snapshot_tenant_day ON daily_limit_snapshot(tenant_id, day)"
+        )
+        if tid:
+            cur.execute("UPDATE daily_limit_snapshot SET tenant_id = %s WHERE tenant_id IS NULL", (int(tid),))
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'daily_limit_snapshot_pkey'
+                  AND conrelid = 'daily_limit_snapshot'::regclass
+              ) THEN
+                ALTER TABLE daily_limit_snapshot DROP CONSTRAINT daily_limit_snapshot_pkey;
+              END IF;
+            END $$;
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'daily_limit_snapshot_tenant_day_pkey'
+                  AND conrelid = 'daily_limit_snapshot'::regclass
+              ) THEN
+                ALTER TABLE daily_limit_snapshot
+                ADD CONSTRAINT daily_limit_snapshot_tenant_day_pkey PRIMARY KEY (tenant_id, day);
+              END IF;
+            END $$;
+            """
+        )
         conn.commit()
 
 def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
@@ -440,10 +508,11 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
     """
     year = day.year
     month = day.month
+    tid = _require_tenant_id()
 
     # Pull tx rows for *that day*
     tx_rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
@@ -452,6 +521,7 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -468,7 +538,7 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
         FROM norm
         WHERE d = %s
         """,
-        (day,),
+        ((int(tid), int(tid), day) if tid else (day,)),
     )
 
     spent_today = 0.0
@@ -509,12 +579,16 @@ def day_limit(recalc: int = 0):
       remaining_today = baseline - spent_free_today
     Use ?recalc=1 to force a new baseline for today.
     """
-    _ensure_daily_limit_snapshot_pg()
+    tid = _require_tenant_id()
+    _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
 
     # Get or compute today's baseline
-    row = query_db("SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s", (today,))
+    row = query_db(
+        "SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s AND tenant_id=%s",
+        (today, int(tid)),
+    )
     if recalc or not row:
         mb = _month_budget_home(today.year, today.month)
         baseline = float(mb.get("daily_limit") or 0.0)
@@ -522,16 +596,19 @@ def day_limit(recalc: int = 0):
         with with_db_cursor() as (conn, cur):
             cur.execute(
                 """
-                INSERT INTO daily_limit_snapshot(day, baseline, computed_at)
-                VALUES (%s, %s, now())
-                ON CONFLICT (day)
+                INSERT INTO daily_limit_snapshot(day, baseline, computed_at, tenant_id)
+                VALUES (%s, %s, now(), %s)
+                ON CONFLICT (tenant_id, day)
                 DO UPDATE SET baseline=EXCLUDED.baseline, computed_at=now()
                 """,
-                (today, baseline),
+                (today, baseline, int(tid)),
             )
             conn.commit()
 
-        row = query_db("SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s", (today,))
+        row = query_db(
+            "SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s AND tenant_id=%s",
+            (today, int(tid)),
+        )
 
     baseline = float(row[0]["baseline"])
     computed_at = row[0]["computed_at"]
@@ -559,7 +636,8 @@ def extra_saved():
     from the 1st of the month through today.
     Only positive leftover days count.
     """
-    _ensure_daily_limit_snapshot_pg()
+    tid = _require_tenant_id()
+    _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
     month_start = date(today.year, today.month, 1)
@@ -569,10 +647,10 @@ def extra_saved():
         """
         SELECT day, baseline
         FROM daily_limit_snapshot
-        WHERE day >= %s AND day <= %s
+        WHERE day >= %s AND day <= %s AND tenant_id = %s
         ORDER BY day ASC
         """,
-        (month_start, today),
+        (month_start, today, int(tid)),
     )
 
     total_extra = 0.0
@@ -604,7 +682,8 @@ def extra_saved_detail():
 
     IMPORTANT: includes negative days (overspent days reduce the total).
     """
-    _ensure_daily_limit_snapshot_pg()
+    tid = _require_tenant_id()
+    _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
     month_start = date(today.year, today.month, 1)
@@ -613,10 +692,10 @@ def extra_saved_detail():
         """
         SELECT day, baseline, computed_at
         FROM daily_limit_snapshot
-        WHERE day >= %s AND day <= %s
+        WHERE day >= %s AND day <= %s AND tenant_id = %s
         ORDER BY day ASC
         """,
-        (month_start, today),
+        (month_start, today, int(tid)),
     )
 
     days = []
@@ -658,6 +737,7 @@ def extra_saved_detail():
 # -----------------------------------------------------------------------------
 @router.get("/spent-so-far-transactions")
 def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
+    tid = _require_tenant_id()
     today = today_local()
     month_start = date(today.year, today.month, 1)
 
@@ -696,6 +776,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
           WHERE LOWER(a.accountType) IN ('checking','credit')
+            {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
             AND (
               (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
               OR
@@ -722,7 +803,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
         ORDER BY d DESC, id DESC
         LIMIT 500
         """,
-        tuple(params),
+        tuple(([int(tid), int(tid)] if tid else []) + params),
     )
 
     out = []
@@ -748,6 +829,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
 # -----------------------------------------------------------------------------
 @router.get("/spent-so-far-breakdown")
 def spent_so_far_breakdown(start: str = "", end: str = ""):
+    tid = _require_tenant_id()
     """
     Returns a breakdown of *free* spending (what counts toward "Spent so far"),
     plus everything excluded (card payment/transfer + any categories inside budget
@@ -817,7 +899,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
 
     # --- Pull totals ---
     row = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             -- keep the original signed amount for transfer/card-payment math
@@ -835,6 +917,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
           WHERE LOWER(a.accountType) IN ('checking','credit')
+            {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
             AND (
               (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
               OR
@@ -886,12 +969,12 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
           END),0)::double precision AS total_unassigned
         FROM scoped
         """,
-        (start_date, end_excl),
+        ((int(tid), int(tid), start_date, end_excl) if tid else (start_date, end_excl)),
     )[0]
 
     # Totals per explicit category (excluding null/empty). We'll decide included vs excluded in Python.
     cats = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             CASE
@@ -903,6 +986,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
           WHERE LOWER(a.accountType) IN ('checking','credit')
+            {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
             AND (
               (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
               OR
@@ -930,7 +1014,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
         GROUP BY category_trim
         ORDER BY total DESC
         """,
-        (start_date, end_excl),
+        ((int(tid), int(tid), start_date, end_excl) if tid else (start_date, end_excl)),
     )
 
     # Build norm->display map from actual transaction categories (stable + matches UI)

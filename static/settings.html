@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 
 <html>
 <head>
@@ -35,7 +35,7 @@
       </label>
 
       <div class="settings-muted" style="margin:0;">
-        Tip: “System” follows your device theme.
+        Tip: System follows your device theme.
       </div>
     </div>
   </div>
@@ -63,10 +63,23 @@
 <button class="settings-btn" id="resetHomeLayoutBtn" type="button">Reset layout to default</button>
 </div>
 <div class="settings-muted">
-          Tip: tap “Customize Home Layout”, drag cards/sections around, then press “Done”.
+          Tip: tap Customize Home Layout, drag cards/sections around, then press Done.
         </div>
 <div class="settings-muted" id="layoutMsg"></div>
 </div>
+</section>
+
+<section class="settings-section">
+  <h2 class="settings-section-title">Workspace</h2>
+  <div class="settings-card">
+    <div class="settings-row" style="justify-content:space-between;">
+      <div>
+        <div style="font-weight:950;">Setup wizard</div>
+        <div class="settings-muted" style="margin:4px 0 0 0;">Open the onboarding wizard anytime.</div>
+      </div>
+      <a class="settings-btn primary" href="/setup">View Setup Wizard</a>
+    </div>
+  </div>
 </section>
 
   <section class="settings-section">
@@ -102,7 +115,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const msg = document.getElementById("layoutMsg");
       msg.textContent = "Resetting...";
       await LayoutStore.save("home", {});
-      msg.textContent = "Reset ✅";
+      msg.textContent = "Reset ";
       setTimeout(() => (msg.textContent = ""), 1500);
     });
   }
@@ -125,3 +138,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
 </body>
 </html>
+

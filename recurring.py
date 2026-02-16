@@ -5,6 +5,8 @@ from datetime import datetime, date
 from typing import Optional, Dict, Any, List, Tuple
 
 from db import query_db  # your Postgres helper
+from app.core.tenancy import current_tenant_id
+from app.core.config import MULTI_TENANT_ENABLED
 
 # -----------------------------
 # Helpers (same behavior as sqlite version)
@@ -150,7 +152,57 @@ def _amount_bucket(a: float) -> float:
     return round(a / 25.0) * 25
 
 
-def _max_date_in_db() -> Optional[date]:
+_INCOME_CATEGORY_LABELS = {
+    "income",
+    "paycheck",
+    "interest",
+    "salary",
+    "direct deposit",
+    "direct_deposit",
+}
+_INCOME_MERCHANT_MARKERS = ("salary", "payroll", "dfas", "direct deposit", "mil pay")
+
+
+def _norm_label(s: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", str(s or "").strip().lower())
+
+
+def _is_income_pattern(
+    items: List[Dict[str, Any]],
+    merchant_norm: str,
+    cadence: str,
+    sign: int,
+) -> bool:
+    cadence_n = _norm_label(cadence)
+    if cadence_n in ("paycheck", "interest"):
+        return True
+
+    cats = {
+        _norm_label(it.get("category"))
+        for it in (items or [])
+        if _norm_label(it.get("category"))
+    }
+    if any(c in _INCOME_CATEGORY_LABELS for c in cats):
+        return True
+
+    merch = _norm_label(merchant_norm)
+    if any(tok in merch for tok in _INCOME_MERCHANT_MARKERS):
+        if int(sign) <= 0 or cadence_n in ("weekly", "biweekly", "monthly", "quarterly"):
+            return True
+
+    return False
+
+
+def _resolve_tenant_id(tenant_id: int | None) -> int | None:
+    if tenant_id is not None:
+        return int(tenant_id)
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    return int(tid) if tid else None
+
+
+def _max_date_in_db(tenant_id: int | None = None) -> Optional[date]:
     """
     Postgres version of _max_date_in_db:
     Uses the same date field used for recurring detection:
@@ -158,8 +210,9 @@ def _max_date_in_db() -> Optional[date]:
 
     We normalize via SQL (to_date) then MAX().
     """
+    tid = _resolve_tenant_id(tenant_id)
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             COALESCE(
@@ -167,6 +220,7 @@ def _max_date_in_db() -> Optional[date]:
               NULLIF(TRIM(postedDate),'unknown')
             ) AS raw_date
           FROM transactions
+          {"WHERE tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -182,6 +236,8 @@ def _max_date_in_db() -> Optional[date]:
         SELECT MAX(d) AS max_d
         FROM norm
         """
+        ,
+        ((tid,) if tid else ()),
     )
     if not rows:
         return None
@@ -195,15 +251,22 @@ def _max_date_in_db() -> Optional[date]:
 # Main API (Postgres)
 # =============================================================================
 
-def get_recurring(min_occ: int = 3, include_stale: bool = False):
+def get_recurring(min_occ: int = 3, include_stale: bool = False, tenant_id: int | None = None):
+    tid = _resolve_tenant_id(tenant_id)
     # 1) Load ignore lists + aliases + overrides (all Postgres)
     ignored_merchants = {
         (r["merchant"] or "").upper().strip()
-        for r in query_db("SELECT merchant FROM recurring_ignore_merchants")
+        for r in query_db(
+            f"SELECT merchant FROM recurring_ignore_merchants {'WHERE tenant_id = %s' if tid else ''}",
+            ((tid,) if tid else ()),
+        )
     }
 
     alias_map: Dict[str, str] = {}
-    for r in query_db("SELECT alias, canonical FROM merchant_aliases"):
+    for r in query_db(
+        f"SELECT alias, canonical FROM merchant_aliases {'WHERE tenant_id = %s' if tid else ''}",
+        ((tid,) if tid else ()),
+    ):
         a = (r.get("alias") or "").upper().strip()
         c = (r.get("canonical") or "").upper().strip()
         if a and c:
@@ -211,15 +274,20 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
 
     ignored_categories = {
         (r["category"] or "").upper().strip()
-        for r in query_db("SELECT category FROM recurring_ignore_categories")
+        for r in query_db(
+            f"SELECT category FROM recurring_ignore_categories {'WHERE tenant_id = %s' if tid else ''}",
+            ((tid,) if tid else ()),
+        )
     }
 
     ignored_patterns = set()
     for r in query_db(
-        """
+        f"""
         SELECT merchant_norm, amount_bucket, sign, account_id
         FROM recurring_ignore_patterns
-        """
+        {"WHERE tenant_id = %s" if tid else ""}
+        """,
+        ((tid,) if tid else ()),
     ):
         ignored_patterns.add((
             (r.get("merchant_norm") or "").upper(),
@@ -230,10 +298,12 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
 
     cadence_overrides: Dict[Tuple[str, float, int, int], str] = {}
     for r in query_db(
-        """
+        f"""
         SELECT merchant_norm, amount_bucket, sign, account_id, cadence
         FROM recurring_cadence_overrides
-        """
+        {"WHERE tenant_id = %s" if tid else ""}
+        """,
+        ((tid,) if tid else ()),
     ):
         cadence_overrides[(
             (r.get("merchant_norm") or "").upper(),
@@ -244,7 +314,7 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
 
     # 2) Pull transactions (same filter semantics as sqlite version)
     tx_rows = query_db(
-        """
+        f"""
         SELECT
           id,
           account_id,
@@ -263,10 +333,12 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
           AND merchant IS NOT NULL
           AND TRIM(merchant) <> ''
           AND amount IS NOT NULL
-        """
+          {"AND tenant_id = %s" if tid else ""}
+        """,
+        ((tid,) if tid else ()),
     )
 
-    as_of = _max_date_in_db()
+    as_of = _max_date_in_db(tenant_id=tid)
 
     groups = defaultdict(list)
 
@@ -352,7 +424,7 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
                 active = False
 
         common_gap = Counter(deltas).most_common(1)[0][0] if deltas else None
-        kind = "paycheck" if sign > 0 and cadence in ("weekly", "biweekly") else "recurring"
+        kind = "paycheck" if _is_income_pattern(items, m_norm, cadence, sign) else "recurring"
 
         tx_list = [{
             "id": it.get("id"),
@@ -428,27 +500,36 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False):
     return grouped
 
 
-def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False):
+def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False, tenant_id: int | None = None):
     """
     Returns recurring groups ONLY for merchants currently ignored.
     (Same as sqlite behavior.)
     """
+    tid = _resolve_tenant_id(tenant_id)
     ignored_merchants = {
         (r["merchant"] or "").upper().strip()
-        for r in query_db("SELECT merchant FROM recurring_ignore_merchants")
+        for r in query_db(
+            f"SELECT merchant FROM recurring_ignore_merchants {'WHERE tenant_id = %s' if tid else ''}",
+            ((tid,) if tid else ()),
+        )
     }
 
     ignored_categories = {
         (r["category"] or "").upper().strip()
-        for r in query_db("SELECT category FROM recurring_ignore_categories")
+        for r in query_db(
+            f"SELECT category FROM recurring_ignore_categories {'WHERE tenant_id = %s' if tid else ''}",
+            ((tid,) if tid else ()),
+        )
     }
 
     ignored_patterns = set()
     for r in query_db(
-        """
+        f"""
         SELECT merchant_norm, amount_bucket, sign, account_id
         FROM recurring_ignore_patterns
-        """
+        {"WHERE tenant_id = %s" if tid else ""}
+        """,
+        ((tid,) if tid else ()),
     ):
         ignored_patterns.add((
             (r.get("merchant_norm") or "").upper(),
@@ -459,10 +540,12 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False)
 
     cadence_overrides: Dict[Tuple[str, float, int, int], str] = {}
     for r in query_db(
-        """
+        f"""
         SELECT merchant_norm, amount_bucket, sign, account_id, cadence
         FROM recurring_cadence_overrides
-        """
+        {"WHERE tenant_id = %s" if tid else ""}
+        """,
+        ((tid,) if tid else ()),
     ):
         cadence_overrides[(
             (r.get("merchant_norm") or "").upper(),
@@ -472,7 +555,7 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False)
         )] = (r.get("cadence") or "").lower().strip()
 
     tx_rows = query_db(
-        """
+        f"""
         SELECT
           id,
           account_id,
@@ -491,10 +574,12 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False)
           AND merchant IS NOT NULL
           AND TRIM(merchant) <> ''
           AND amount IS NOT NULL
-        """
+          {"AND tenant_id = %s" if tid else ""}
+        """,
+        ((tid,) if tid else ()),
     )
 
-    as_of = _max_date_in_db()
+    as_of = _max_date_in_db(tenant_id=tid)
     groups = defaultdict(list)
 
     for r in tx_rows:
@@ -589,7 +674,7 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False)
             "occurrences": len(items),
             "first_seen": dates[0].isoformat(),
             "last_seen": dates[-1].isoformat(),
-            "kind": "paycheck" if sign > 0 and cadence in ("weekly", "biweekly") else "recurring",
+            "kind": "paycheck" if _is_income_pattern(items, m_norm, cadence, sign) else "recurring",
             "active": active,
             "days_since_last": int(days_since),
             "cycle_days": int(cycle_days) if cycle_days else None,

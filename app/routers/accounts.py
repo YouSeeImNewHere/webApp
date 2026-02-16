@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.routers.balances import latest_rates_map_pg
 from db import with_db_cursor, query_db, run_db_retry
+from app.core.config import MULTI_TENANT_ENABLED
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -48,18 +50,34 @@ def _to_float_or_zero(x: Any) -> float:
     except Exception:
         return 0.0
 
+
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    return int(tid)
+
 @router.get("/account/{account_id}")
 def account_info(account_id: int):
+    tid = _require_tenant_id()
     sql = """
       SELECT id, institution, name, LOWER(accountType) AS accounttype
       FROM accounts
       WHERE id = %s
     """
-    rows = query_db(sql, (int(account_id),))
+    params: tuple = (int(account_id),)
+    if tid:
+        sql += " AND tenant_id = %s"
+        params = (int(account_id), int(tid))
+    rows = query_db(sql, params)
     return rows[0] if rows else {"error": "Account not found"}
 
 @router.get("/bank-info")
 def bank_info():
+    tid = _require_tenant_id()
+
     def _run():
         with with_db_cursor() as (conn, cur):
             # Current rate (decimal) from interest_rates: 0.0425 means 4.25%
@@ -85,6 +103,8 @@ def bank_info():
               WHERE LOWER(accountType) != 'credit'
               ORDER BY institution, name
             """
+            if tid:
+                account_select = account_select.replace("ORDER BY institution, name", "AND tenant_id = %s ORDER BY institution, name")
 
             card_select = """
               SELECT id AS card_id,
@@ -98,11 +118,13 @@ def bank_info():
               WHERE LOWER(accountType) = 'credit'
               ORDER BY institution, name
             """
+            if tid:
+                card_select = card_select.replace("ORDER BY institution, name", "AND tenant_id = %s ORDER BY institution, name")
 
-            cur.execute(account_select)
+            cur.execute(account_select, (int(tid),) if tid else ())
             accounts = cur.fetchall()
 
-            cur.execute(card_select)
+            cur.execute(card_select, (int(tid),) if tid else ())
             cards = cur.fetchall()
 
             benefits_rows = []
@@ -183,6 +205,8 @@ def bank_info_refresh():
 
 @router.get("/bank-totals")
 def bank_totals():
+    tid = _require_tenant_id()
+
     def _run():
         with with_db_cursor() as (conn, cur):
             has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
@@ -195,26 +219,50 @@ def bank_totals():
             accounts_sql += """
               FROM accounts
             """
+            if tid:
+                accounts_sql += " WHERE tenant_id = %s"
 
-            cur.execute(accounts_sql)
+            cur.execute(accounts_sql, (int(tid),) if tid else ())
             accounts = cur.fetchall()
 
-            cur.execute(
-                """
-                SELECT account_id, SUM(start) AS start_total
-                FROM "startingbalance"
-                GROUP BY account_id
-                """
-            )
+            if tid:
+                cur.execute(
+                    """
+                    SELECT account_id, SUM(start) AS start_total
+                    FROM "startingbalance"
+                    WHERE tenant_id = %s
+                    GROUP BY account_id
+                    """,
+                    (int(tid),),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT account_id, SUM(start) AS start_total
+                    FROM "startingbalance"
+                    GROUP BY account_id
+                    """
+                )
             starting_rows = cur.fetchall()
 
-            cur.execute(
-                """
-                SELECT account_id, SUM(amount) AS trans_total
-                FROM transactions
-                GROUP BY account_id
-                """
-            )
+            if tid:
+                cur.execute(
+                    """
+                    SELECT account_id, SUM(amount) AS trans_total
+                    FROM transactions
+                    WHERE tenant_id = %s
+                    GROUP BY account_id
+                    """,
+                    (int(tid),),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT account_id, SUM(amount) AS trans_total
+                    FROM transactions
+                    GROUP BY account_id
+                    """
+                )
             tx_rows = cur.fetchall()
         return has_credit_limit, accounts, starting_rows, tx_rows
 

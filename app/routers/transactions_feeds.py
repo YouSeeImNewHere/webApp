@@ -7,7 +7,8 @@ from datetime import datetime, date, timedelta
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.core.config import MAX_TRANSFER_WINDOW_DAYS
+from app.core.config import MAX_TRANSFER_WINDOW_DAYS, MULTI_TENANT_ENABLED
+from app.core.tenancy import current_tenant_id
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -15,6 +16,13 @@ router = APIRouter()
 # =============================================================================
 # Transactions feeds (Postgres)
 # =============================================================================
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    return int(tid)
 
 def _is_transfer_like(cat: Optional[str]) -> bool:
     c = (cat or "").strip().lower()
@@ -34,9 +42,13 @@ def attach_transfer_peers_pg(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     """
     if not rows:
         return rows
+    tid = _require_tenant_id()
 
     # Build account display map
-    acct_rows = query_db("SELECT id, institution, name FROM accounts")
+    acct_rows = query_db(
+        "SELECT id, institution, name FROM accounts" + (" WHERE tenant_id = %s" if tid else ""),
+        ((int(tid),) if tid else ()),
+    )
     acct_name = {int(a["id"]): f'{a["institution"]} — {a["name"]}' for a in acct_rows}
 
     # Work only on candidates in the current payload that have dateISO
@@ -71,7 +83,7 @@ def attach_transfer_peers_pg(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     max_d = max(c["date"] for c in cands) + timedelta(days=MAX_TRANSFER_WINDOW_DAYS)
 
     peer_rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -81,6 +93,7 @@ def attach_transfer_peers_pg(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
           WHERE LOWER(TRIM(COALESCE(t.category,''))) IN ('transfer','card payment')
+            {"AND t.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -96,7 +109,7 @@ def attach_transfer_peers_pg(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         FROM norm
         WHERE d IS NOT NULL AND d BETWEEN %s AND %s
         """,
-        (min_d, max_d),
+        ((int(tid), min_d, max_d) if tid else (min_d, max_d)),
     )
 
     peers = []
@@ -164,16 +177,27 @@ class TxCategoryUpdate(BaseModel):
 @router.post("/transaction/{tx_id}/category")
 def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
     category = (body.category or "").strip()
+    tid = _require_tenant_id()
 
     with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            UPDATE transactions
-            SET category = %s
-            WHERE id = %s
-            """,
-            (category, tx_id),
-        )
+        if tid:
+            cur.execute(
+                """
+                UPDATE transactions
+                SET category = %s
+                WHERE id = %s AND tenant_id = %s
+                """,
+                (category, tx_id, int(tid)),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE transactions
+                SET category = %s
+                WHERE id = %s
+                """,
+                (category, tx_id),
+            )
         if (cur.rowcount or 0) == 0:
             conn.rollback()
             raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
@@ -187,9 +211,13 @@ def transaction_delete(tx_id: str):
     """
     Permanently deletes a transaction by id.
     """
+    tid = _require_tenant_id()
     with with_db_cursor() as (conn, cur):
         try:
-            cur.execute("DELETE FROM transactions WHERE id = %s", (tx_id,))
+            if tid:
+                cur.execute("DELETE FROM transactions WHERE id = %s AND tenant_id = %s", (tx_id, int(tid)))
+            else:
+                cur.execute("DELETE FROM transactions WHERE id = %s", (tx_id,))
             if (cur.rowcount or 0) == 0:
                 conn.rollback()
                 raise HTTPException(
@@ -203,4 +231,3 @@ def transaction_delete(tx_id: str):
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
-

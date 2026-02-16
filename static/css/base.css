@@ -1908,6 +1908,130 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   word-break: break-word;
 }
 
+/* CSV dry-run compare modal */
+.csv-dryrun__body{
+  display: grid;
+  gap: 12px;
+}
+
+.csv-dryrun__summary{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.csv-dryrun__card{
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.csv-dryrun__card--tip{
+  background: #fff8ef;
+  border-color: rgba(205, 120, 0, .25);
+}
+
+.csv-dryrun__k{
+  font-size: 11px;
+  opacity: .7;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.csv-dryrun__v{
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+
+.csv-dryrun__note{
+  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(0,0,0,.2);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.csv-dryrun__section{
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.csv-dryrun__section-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+  background: #f7f7f7;
+}
+
+.csv-dryrun__section-head h4{
+  margin: 0;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.csv-dryrun__section-head span{
+  font-size: 12px;
+  font-weight: 900;
+  opacity: .75;
+}
+
+.csv-dryrun__table-wrap{
+  max-height: 230px;
+  overflow: auto;
+}
+
+.csv-dryrun__table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.csv-dryrun__table th,
+.csv-dryrun__table td{
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  text-align: left;
+  vertical-align: top;
+}
+
+.csv-dryrun__table thead th{
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+  font-weight: 900;
+}
+
+.csv-dryrun__num{
+  text-align: right !important;
+  white-space: nowrap;
+}
+
+.csv-dryrun__mono{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+}
+
+.csv-dryrun__empty{
+  padding: 12px;
+  opacity: .65;
+  font-size: 12px;
+}
+
+@media (max-width: 900px){
+  .csv-dryrun__summary{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* =============================================================================
    "Spent so far" breakdown (inside tx-inspect modal)
    ============================================================================= */

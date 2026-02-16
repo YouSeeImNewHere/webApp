@@ -6,8 +6,9 @@ from fastapi.responses import FileResponse
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from db import with_db_cursor
-from app.core.config import BUILD_ID
+from app.core.config import BUILD_ID, MULTI_TENANT_ENABLED
 from app.core.templates import templates
+from app.core.tenancy import current_tenant_id, get_or_create_onboarding_state
 
 router = APIRouter()
 
@@ -23,6 +24,17 @@ def ping():
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    if MULTI_TENANT_ENABLED:
+        tid = current_tenant_id()
+        if tid:
+            state = get_or_create_onboarding_state(int(tid))
+            if not bool(state.get("wizard_completed")):
+                with with_db_cursor() as (_, cur):
+                    cur.execute("SELECT COUNT(*)::int AS n FROM accounts WHERE tenant_id = %s", (int(tid),))
+                    row = cur.fetchone() or {}
+                if int(row.get("n") or 0) == 0:
+                    return RedirectResponse(url="/setup", status_code=302)
+
     resp = templates.TemplateResponse(
         "pages/home/home.html",
         {
@@ -49,9 +61,10 @@ def account_page():
 @router.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
     """Return *all* columns for a single transaction, plus account metadata (Postgres)."""
+    tid = current_tenant_id() if MULTI_TENANT_ENABLED else None
     with with_db_cursor() as (conn, cur):
         cur.execute(
-            """
+            f"""
             SELECT
               t.*,
               a.institution AS bank,
@@ -60,9 +73,10 @@ def transaction_detail(tx_id: str):
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             WHERE t.id = %s
+              {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
             LIMIT 1
             """,
-            (tx_id,),
+            ((tx_id, int(tid), int(tid)) if tid else (tx_id,)),
         )
         row = cur.fetchone()
 

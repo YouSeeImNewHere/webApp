@@ -12,6 +12,8 @@ from app.routers.transactions_feeds import attach_transfer_peers_pg
 from db import with_db_cursor, query_db
 from app.core.time import today_local
 from datetime import date as _date, timedelta as _timedelta
+from app.core.config import MULTI_TENANT_ENABLED
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -20,15 +22,26 @@ router = APIRouter()
 # Ported from balances.py
 # =============================================================================
 
+def _require_tenant_id() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    return int(tid)
+
+
 def latest_rates_map_pg() -> Dict[int, float]:
     """
     Returns {account_id: apr} for the most recent effective_date per account.
     Postgres equivalent of latest_rates_map(). :contentReference[oaicite:5]{index=5}
     """
+    tid = _require_tenant_id()
     rows = query_db(
-        """
+        f"""
         SELECT r.account_id::int AS account_id, r.apr::double precision AS apr
         FROM interest_rates r
+        JOIN accounts a ON a.id = r.account_id
         JOIN (
           SELECT account_id, MAX(effective_date) AS max_eff
           FROM interest_rates
@@ -36,7 +49,9 @@ def latest_rates_map_pg() -> Dict[int, float]:
         ) last
           ON last.account_id = r.account_id
          AND last.max_eff = r.effective_date
-        """
+        {"WHERE a.tenant_id = %s" if tid else ""}
+        """,
+        ((int(tid),) if tid else ()),
     )
 
     out: Dict[int, float] = {}
@@ -49,8 +64,9 @@ def latest_rates_map_pg() -> Dict[int, float]:
 
 @router.get("/transactions")
 def transactions(limit: int = Query(15, ge=1, le=1000)):
+    tid = _require_tenant_id()
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -67,6 +83,7 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -94,7 +111,7 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
         ORDER BY d DESC NULLS LAST, id DESC
         LIMIT %s
         """,
-        (int(limit),),
+        ((int(tid), int(tid), int(limit)) if tid else (int(limit),)),
     )
     rows = [dict(r) for r in rows]
     attach_transfer_peers_pg(rows)
@@ -102,8 +119,9 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
 
 @router.get("/account-transactions")
 def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)):
+    tid = _require_tenant_id()
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.id,
@@ -113,6 +131,7 @@ def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)
             TRIM(t.category) AS category
           FROM transactions t
           WHERE t.account_id = %s
+            {"AND t.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -126,21 +145,17 @@ def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)
         )
         SELECT
           id,
-          account_id,
           raw_date AS postedDate,
           merchant,
           amount,
-          status,
-          bank,
-          card,
-          account_type AS "accountType",
           category,
-          d AS "dateISO"
+          d AS "dateISO",
+          %s::int AS account_id
         FROM norm
         ORDER BY d DESC NULLS LAST, id DESC
         LIMIT %s
         """,
-        (int(account_id), int(account_id), int(limit)),
+        ((int(account_id), int(tid), int(account_id), int(limit)) if tid else (int(account_id), int(account_id), int(limit))),
     )
     rows = [dict(r) for r in rows]
     attach_transfer_peers_pg(rows)
@@ -165,6 +180,7 @@ def transactions_all(
     amt_max: float | None = None,
     amt_abs: int = 1,
 ):
+    tid = _require_tenant_id()
 
     """
     Paginated feed with server-side filtering for All Transactions page.
@@ -239,6 +255,7 @@ def transactions_all(
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -259,7 +276,7 @@ def transactions_all(
         ORDER BY d DESC NULLS LAST, id DESC
         LIMIT %s OFFSET %s
         """,
-        tuple(params + [int(limit), int(offset)]),
+        tuple(([int(tid), int(tid)] if tid else []) + params + [int(limit), int(offset)]),
     )
 
     rows = [dict(r) for r in rows]
@@ -284,34 +301,40 @@ def account_series(account_id: int, start: str, end: str):
       - credit display value is (-bal)
     """
 
+    tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
 
     with with_db_cursor() as (conn, cur):
         # starting balance for this account
         cur.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(start), 0)::double precision AS s
             FROM startingbalance
             WHERE account_id = %s
+              {"AND tenant_id = %s" if tid else ""}
             """,
-            (int(account_id),),
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
         )
         bal = float((cur.fetchone() or {}).get("s") or 0.0)
 
         # account type
-        cur.execute("SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s", (int(account_id),))
+        cur.execute(
+            f"SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s {'AND tenant_id = %s' if tid else ''}",
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
+        )
         row = cur.fetchone()
         acc_type = (row["t"] if row else "other") or "other"
 
         # pull both postedDate and purchaseDate (stored as strings in your schema)
         cur.execute(
-            """
+            f"""
             SELECT posteddate, purchasedate, amount
             FROM transactions
             WHERE account_id = %s
+              {"AND tenant_id = %s" if tid else ""}
             """,
-            (int(account_id),),
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
         )
         rows = cur.fetchall() or []
 
@@ -377,6 +400,7 @@ def account_transactions_range(
     end: str,
     limit: int = Query(500, ge=1, le=5000),
 ):
+    tid = _require_tenant_id()
     start_d = parse_iso(start)   # python date
     end_d = parse_iso(end)       # python date
 
@@ -387,8 +411,8 @@ def account_transactions_range(
     with with_db_cursor() as (conn, cur):
         # account type
         cur.execute(
-            "SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s",
-            (int(account_id),),
+            f"SELECT LOWER(accountType) AS t FROM accounts WHERE id = %s {'AND tenant_id = %s' if tid else ''}",
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
         )
         row = cur.fetchone()
         acc_type = (row["t"] if row else "other") or "other"
@@ -400,19 +424,20 @@ def account_transactions_range(
 
         # starting balance from table
         cur.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(start), 0)::double precision AS s
             FROM startingbalance
             WHERE account_id = %s
+              {"AND tenant_id = %s" if tid else ""}
             """,
-            (int(account_id),),
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
         )
         row = cur.fetchone()
         start_bal = float((row["s"] if row else 0.0) or 0.0)
 
         # roll forward all transactions BEFORE start_date (effective date = posted else purchase)
         cur.execute(
-            """
+            f"""
             WITH base AS (
               SELECT
                 COALESCE(
@@ -422,6 +447,7 @@ def account_transactions_range(
                 amount::double precision AS amount
               FROM transactions
               WHERE account_id = %s
+                {"AND tenant_id = %s" if tid else ""}
             ),
             norm AS (
               SELECT
@@ -438,7 +464,7 @@ def account_transactions_range(
             FROM norm
             WHERE d IS NOT NULL AND d < %s::date
             """,
-            (int(account_id), start_date),
+            ((int(account_id), int(tid), start_date) if tid else (int(account_id), start_date)),
         )
         row = cur.fetchone()
         before_sum = float((row["s"] if row else 0.0) or 0.0)
@@ -447,7 +473,7 @@ def account_transactions_range(
 
         # now fetch range tx and compute running balance inside range
         cur.execute(
-            """
+            f"""
             WITH base AS (
               SELECT
                 id,
@@ -462,6 +488,7 @@ def account_transactions_range(
                 ) AS raw_date
               FROM transactions
               WHERE account_id = %s
+                {"AND tenant_id = %s" if tid else ""}
             ),
             norm AS (
               SELECT
@@ -517,6 +544,7 @@ def account_transactions_range(
             (
                 int(account_id),
                 int(account_id),
+                *(([int(tid)] if tid else [])),
                 start_date,
                 end_date,
                 int(limit),
@@ -561,4 +589,3 @@ def account_transactions_range(
         "ending_balance": float(ending_balance),
         "transactions": tx,
     }
-

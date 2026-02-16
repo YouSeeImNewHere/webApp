@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.routers.settings import _ensure_les_profile_table_pg
+from app.core.tenant_keys import scoped_key
 from db import with_db_cursor, query_db
 import json
 
@@ -18,10 +19,7 @@ router = APIRouter()
 def get_les_profile(key: str = "default"):
     _ensure_les_profile_table_pg()
 
-    rows = query_db(
-        "SELECT profile_json FROM les_profile WHERE key = %s LIMIT 1",
-        (key,),
-    )
+    rows = query_db("SELECT profile_json FROM les_profile WHERE key = %s LIMIT 1", (scoped_key(key),))
     if not rows:
         return {"key": key, "profile": {}}
 
@@ -49,9 +47,8 @@ def save_les_profile(body: SaveLESProfileBody):
             DO UPDATE SET profile_json = EXCLUDED.profile_json,
                           updated_at = now()
             """,
-            (body.key, json.dumps(body.profile)),
+            (scoped_key(body.key), json.dumps(body.profile)),
         )
         conn.commit()
 
     return {"key": body.key, "profile": body.profile}
-

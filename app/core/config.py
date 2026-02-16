@@ -19,6 +19,8 @@ GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID", "") or "").strip()
 GOOGLE_CLIENT_SECRET = (os.getenv("GOOGLE_CLIENT_SECRET", "") or "").strip()
 GOOGLE_OAUTH_REDIRECT_URI = (os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "") or "").strip()
 GOOGLE_PUBSUB_TOPIC = (os.getenv("GOOGLE_PUBSUB_TOPIC", "") or "").strip()
+MULTI_TENANT_ENABLED = (os.getenv("MULTI_TENANT_ENABLED", "false") or "").lower() in ("1", "true", "yes")
+OWNER_GOOGLE_EMAIL = (os.getenv("OWNER_GOOGLE_EMAIL", "") or "").strip().lower()
 
 # Environment flags
 IS_RENDER = bool(os.getenv("RENDER")) or bool(os.getenv("RENDER_SERVICE_ID"))

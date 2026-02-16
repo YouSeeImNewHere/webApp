@@ -1,6 +1,15 @@
 from typing import List, Dict, Any, Optional, Callable
 from datetime import date as _date, timedelta as _timedelta
 from db import query_db
+from app.core.config import MULTI_TENANT_ENABLED
+from app.core.tenancy import current_tenant_id
+
+
+def _tenant_id_or_none() -> int | None:
+    if not MULTI_TENANT_ENABLED:
+        return None
+    tid = current_tenant_id()
+    return int(tid) if tid else None
 
 
 def load_starting_balances_pg() -> Dict[int, float]:
@@ -8,12 +17,15 @@ def load_starting_balances_pg() -> Dict[int, float]:
     StartingBalance table -> {account_id: sum(start)}.
     Matches sqlite logic. :contentReference[oaicite:1]{index=1}
     """
+    tid = _tenant_id_or_none()
     rows = query_db(
-        """
+        f"""
         SELECT account_id::int AS account_id, COALESCE(SUM(start), 0)::double precision AS total_start
         FROM startingbalance
+        {"WHERE tenant_id = %s" if tid else ""}
         GROUP BY account_id
-        """
+        """,
+        ((int(tid),) if tid else ()),
     )
     return {int(r["account_id"]): float(r["total_start"] or 0.0) for r in rows}
 
@@ -24,8 +36,9 @@ def load_transactions_pg() -> List[Dict[str, Any]]:
     Rule preserved: use postedDate if present else purchaseDate; skip unknown/broken.
     :contentReference[oaicite:3]{index=3}
     """
+    tid = _tenant_id_or_none()
     rows = query_db(
-        """
+        f"""
         WITH base AS (
           SELECT
             t.account_id::int AS account_id,
@@ -37,6 +50,7 @@ def load_transactions_pg() -> List[Dict[str, Any]]:
             ) AS raw_date
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -55,7 +69,8 @@ def load_transactions_pg() -> List[Dict[str, Any]]:
         FROM norm
         WHERE d IS NOT NULL
         ORDER BY d ASC, account_id ASC
-        """
+        """,
+        ((int(tid), int(tid)) if tid else ()),
     )
 
     tx: List[Dict[str, Any]] = []
@@ -86,7 +101,11 @@ def load_account_type_map_pg() -> Dict[int, str]:
     accounts -> {id: lower(accountType)}.
     Matches sqlite logic. :contentReference[oaicite:2]{index=2}
     """
-    rows = query_db("SELECT id::int AS id, LOWER(accounttype) AS t FROM accounts")
+    tid = _tenant_id_or_none()
+    rows = query_db(
+        f"SELECT id::int AS id, LOWER(accounttype) AS t FROM accounts {'WHERE tenant_id = %s' if tid else ''}",
+        ((int(tid),) if tid else ()),
+    )
     return {int(r["id"]): (r["t"] or "other") for r in rows}
 
 def apply_transaction(current_totals: Dict[int, float], account_id: int, amount: float, account_type: Optional[str]) -> None:

@@ -55,6 +55,7 @@
     const modalClose = $("notifModalClose");
     const modalOk = $("notifModalOk");
     const modalDismiss = $("notifModalDismiss");
+    let modalApprove = $("notifModalApprove");
 
     // If the top bar isn't on this page (or hasn't been injected yet), skip for now.
     if (!btn || !badge || !overlay || !panel || !listHost) return;
@@ -62,6 +63,56 @@
     window.__notifTopbarBound = true;
 
     let selectedId = null;
+    let selectedPendingUserId = null;
+
+    function ensureApproveButton(){
+      if (modalApprove) return modalApprove;
+      if (!modalDismiss || !modalDismiss.parentElement) return null;
+      const b = document.createElement("button");
+      b.id = "notifModalApprove";
+      b.className = "settings-btn hidden";
+      b.type = "button";
+      b.textContent = "Approve";
+      modalDismiss.parentElement.insertBefore(b, modalDismiss);
+      modalApprove = b;
+      return modalApprove;
+    }
+
+    function setApproveButtonForUser(userId){
+      const b = ensureApproveButton();
+      if (!b) return;
+      if (userId) {
+        b.classList.remove("hidden");
+        b.disabled = false;
+      } else {
+        b.classList.add("hidden");
+        b.disabled = false;
+      }
+    }
+
+    function parsePendingSignupBody(body){
+      const text = String(body || "");
+      const idMatch = text.match(/User ID:\s*(\d+)/i);
+      const emailMatch = text.match(/Email:\s*([^\s]+)/i);
+      return {
+        userId: idMatch ? Number(idMatch[1]) : null,
+        email: emailMatch ? emailMatch[1] : null,
+      };
+    }
+
+    async function resolvePendingUserIdFromEmail(email){
+      if (!email) return null;
+      try{
+        const data = await api("/admin/pending-users", { method:"GET" });
+        const items = Array.isArray(data.items) ? data.items : [];
+        const wanted = String(email).trim().toLowerCase();
+        const match = items.find((x) => String(x.email || "").trim().toLowerCase() === wanted);
+        return match ? Number(match.id) : null;
+      }catch(_e){
+        return null;
+      }
+    }
+
         function openModal(){
           if (!modal) return;
           modal.classList.remove("hidden");
@@ -73,6 +124,8 @@
           modal.classList.add("hidden");
           modal.setAttribute("aria-hidden", "true");
           selectedId = null;
+          selectedPendingUserId = null;
+          setApproveButtonForUser(null);
         }
 
     function setOpen(open){
@@ -155,6 +208,16 @@
         if (modalTitle) modalTitle.textContent = data.subject || "(no subject)";
         if (modalMeta)  modalMeta.textContent  = (data.sender || "") + (data.created_at_local ? (" • " + data.created_at_local) : "");
         if (modalBody)  modalBody.textContent  = data.body || "";
+        if (data.kind === "user_signup_pending") {
+          const parsed = parsePendingSignupBody(data.body || "");
+          selectedPendingUserId = parsed.userId || null;
+          if (!selectedPendingUserId && parsed.email) {
+            selectedPendingUserId = await resolvePendingUserIdFromEmail(parsed.email);
+          }
+        } else {
+          selectedPendingUserId = null;
+        }
+        setApproveButtonForUser(selectedPendingUserId);
 
         openModal();
 
@@ -228,6 +291,26 @@
       }
       closeModal();
       await refresh();
+    });
+
+    const modalApproveBtn = ensureApproveButton();
+    modalApproveBtn && modalApproveBtn.addEventListener("click", async () => {
+      if (!selectedId || !selectedPendingUserId) return;
+      const notifId = selectedId;
+      const userId = selectedPendingUserId;
+      modalApproveBtn.disabled = true;
+      try{
+        await api("/admin/pending-users/" + encodeURIComponent(userId) + "/approve", {
+          method:"POST",
+          body: JSON.stringify({}),
+        });
+        await api("/notifications/" + encodeURIComponent(notifId) + "/dismiss", { method:"POST" }).catch(()=>{});
+        closeModal();
+        await refresh();
+      }catch(e){
+        console.error("approve failed:", e);
+        modalApproveBtn.disabled = false;
+      }
     });
 
     // initial badge + periodic refresh

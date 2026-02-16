@@ -46,6 +46,8 @@ def _ensure_app_settings_pg():
             );
             """
         )
+        cur.execute("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_app_settings_tenant_id ON app_settings(tenant_id)")
         conn.commit()
 
 def _ensure_ui_layout_table_pg():
@@ -59,6 +61,8 @@ def _ensure_ui_layout_table_pg():
             );
             """
         )
+        cur.execute("ALTER TABLE ui_layout ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ui_layout_tenant_id ON ui_layout(tenant_id)")
         conn.commit()
 
 def _ensure_les_profile_table_pg():
@@ -72,6 +76,8 @@ def _ensure_les_profile_table_pg():
             );
             """
         )
+        cur.execute("ALTER TABLE les_profile ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_les_profile_tenant_id ON les_profile(tenant_id)")
         conn.commit()
 
 def _ensure_interest_rates_table_pg():
@@ -89,6 +95,8 @@ def _ensure_interest_rates_table_pg():
             );
             """
         )
+        cur.execute("ALTER TABLE interest_rates ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_interest_rates_tenant_id ON interest_rates(tenant_id)")
         # helpful uniqueness to prevent dupes per account/day
         cur.execute(
             """
@@ -106,4 +114,3 @@ def _ensure_interest_rates_table_pg():
             """
         )
         conn.commit()
-
