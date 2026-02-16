@@ -33,6 +33,99 @@ function qs(name){
   return new URLSearchParams(window.location.search).get(name);
 }
 
+async function initAccountSwitcher(currentAccountId){
+  const topTitle = await waitForTopBarTitle();
+  if (!topTitle) return;
+
+  topTitle.classList.add("account-title-switcher");
+  topTitle.textContent = "";
+
+  const sel = document.createElement("select");
+  sel.id = "accountSwitchSelect";
+  sel.className = "account-title-switcher__select";
+  sel.setAttribute("aria-label", "Switch account");
+  topTitle.appendChild(sel);
+
+  sel.innerHTML = `<option value="">Loading accounts...</option>`;
+  sel.disabled = true;
+
+  try {
+    const res = await fetch("/bank-info", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+
+    const fromAccounts = Array.isArray(payload?.accounts)
+      ? payload.accounts.map(a => ({
+          id: Number(a.account_id),
+          label: `${a.bank || ""} - ${a.name || ""}`.trim(),
+          group: "Accounts",
+        }))
+      : [];
+
+    const fromCards = Array.isArray(payload?.credit_cards)
+      ? payload.credit_cards.map(c => ({
+          id: Number(c.card_id),
+          label: `${c.bank || ""} - ${c.name || ""}`.trim(),
+          group: "Cards",
+        }))
+      : [];
+
+    const items = [...fromAccounts, ...fromCards]
+      .filter(x => Number.isFinite(x.id) && x.id > 0)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    if (!items.length) {
+      sel.innerHTML = `<option value="">No accounts found</option>`;
+      sel.disabled = true;
+      return;
+    }
+
+    const groups = new Map();
+    for (const it of items) {
+      if (!groups.has(it.group)) groups.set(it.group, []);
+      groups.get(it.group).push(it);
+    }
+
+    sel.innerHTML = "";
+    for (const [groupName, groupItems] of groups.entries()) {
+      const og = document.createElement("optgroup");
+      og.label = groupName;
+      for (const it of groupItems) {
+        const opt = document.createElement("option");
+        opt.value = String(it.id);
+        opt.textContent = it.label || `Account ${it.id}`;
+        if (Number(it.id) === Number(currentAccountId)) opt.selected = true;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+
+    sel.disabled = false;
+    sel.addEventListener("change", () => {
+      const next = Number(sel.value || 0);
+      if (!next || next === Number(currentAccountId)) return;
+      window.location.href = `/account?account_id=${encodeURIComponent(String(next))}`;
+    });
+  } catch (err) {
+    console.error("account switcher load failed:", err);
+    sel.innerHTML = `<option value="">Account switch unavailable</option>`;
+    sel.disabled = true;
+  }
+}
+
+function waitForTopBarTitle(timeoutMs = 2500){
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      const el = document.getElementById("topBarTitle");
+      if (el) return resolve(el);
+      if (Date.now() - started > timeoutMs) return resolve(null);
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
 function escHtml(s){
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -407,6 +500,7 @@ function setActiveQuickButton(container, btn){
 window.addEventListener("load", async () => {
   accountId = Number(qs("account_id"));
   if (!accountId) return alert("Missing account_id");
+  await initAccountSwitcher(accountId);
 mountUpcomingCard("#upcomingMount", { daysAhead: 30, accountId });
   // 1) mount the shared card FIRST
 mountChartCard("#chartMount", {

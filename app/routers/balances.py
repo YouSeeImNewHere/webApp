@@ -525,7 +525,12 @@ def account_transactions_range(
                 status,
                 raw_date AS "effectiveDate",
                 d AS "dateISO",
-                SUM(amount) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
+                SUM(
+                  CASE
+                    WHEN LOWER(COALESCE(status, 'posted')) = 'pending' THEN 0
+                    ELSE amount
+                  END
+                ) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
               FROM in_range
             )
             SELECT

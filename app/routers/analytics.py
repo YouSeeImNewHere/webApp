@@ -377,7 +377,7 @@ def category_trend(category: str, period: str = "1m"):
     tid = _require_tenant_id()
     cat = (category or "").strip().lower()
 
-    if cat == "unknown merchant":
+    if cat in ("unknown merchant", "unknown merchants"):
         rows = query_db(
             f"""
             WITH base AS (
@@ -459,6 +459,64 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
+    cat_norm = (category or "").strip().lower()
+
+    if cat_norm in ("unknown merchant", "unknown merchants"):
+        rows = query_db(
+            f"""
+            WITH base AS (
+              SELECT
+                t.id,
+                t.postedDate AS postedDate_raw,
+                t.purchaseDate AS purchaseDate_raw,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS postedDate,
+                t.merchant,
+                t.amount::double precision AS amount,
+                TRIM(t.category) AS category,
+                LOWER(TRIM(COALESCE(t.category,''))) AS category_lc,
+                a.institution AS bank,
+                a.name AS card,
+                LOWER(a.accountType) AS accountType,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              WHERE LOWER(TRIM(COALESCE(t.merchant,''))) = 'unknown'
+                {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            ),
+            norm AS (
+              SELECT
+                *,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT DISTINCT
+              id,
+              postedDate,
+              merchant,
+              amount,
+              category,
+              bank,
+              card,
+              d AS "dateISO",
+              postedDate_raw,
+              purchaseDate_raw
+            FROM norm
+            WHERE d IS NOT NULL
+              AND d BETWEEN %s AND %s
+              AND amount > 0
+              AND accountType IN ('checking','credit')
+              AND category_lc NOT IN ('card payment','transfer')
+            ORDER BY d DESC, id DESC
+            LIMIT %s
+            """,
+            ((int(tid), int(tid), start_date, end_date, int(limit)) if tid else (start_date, end_date, int(limit))),
+        )
+        return [dict(r) for r in rows]
 
     rows = query_db(
         f"""
@@ -588,4 +646,3 @@ def _require_tenant_id() -> int | None:
     if not tid:
         raise HTTPException(status_code=403, detail="tenant_required")
     return int(tid)
-

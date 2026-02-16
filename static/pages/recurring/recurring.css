@@ -1,0 +1,6 @@
+/* Calendar day modal: category header + merchant rows */
+.occ-group { margin-bottom: 10px; }
+.occ-sublist { margin-top: 6px; padding-left: 10px; border-left: 2px solid rgba(0,0,0,0.06); }
+.occ-tx--sub { padding: 6px 0; }
+.occ-tx--sub .occ-merchant { font-size: 12px; font-weight: 600; }
+.occ-tx--sub .occ-meta { font-size: 11px; opacity: 0.75; }

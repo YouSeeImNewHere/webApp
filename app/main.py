@@ -45,7 +45,15 @@ def create_app() -> FastAPI:
         path = request.url.path or ""
         if path.startswith("/static/"):
             lower = path.lower()
-            if lower.endswith((".html", ".webmanifest")) or lower.endswith("/sw.js"):
+            query = request.url.query or ""
+            has_build_version = ("v=" in query)
+            is_versioned_partial = (
+                has_build_version
+                and (lower.startswith("/static/partials/") or lower == "/static/shared/shared.html")
+            )
+            if is_versioned_partial:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            elif lower.endswith((".html", ".webmanifest")) or lower.endswith("/sw.js"):
                 response.headers["Cache-Control"] = "no-cache"
             else:
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"

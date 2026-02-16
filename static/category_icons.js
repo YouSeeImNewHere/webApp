@@ -7,6 +7,18 @@ function normalizeCategoryKey(cat) {
 }
 
 const DEFAULT_CATEGORY_ICON = "/static/icons/categories/default.svg";
+const AVAILABLE_CATEGORY_ICONS = new Set([
+  "bills",
+  "cash-withdrawal",
+  "default",
+  "food",
+  "games",
+  "parking",
+  "shopping",
+  "snack",
+  "transportation",
+  "travel",
+]);
 
 /**
  * Assumes icon filenames use kebab-case:
@@ -15,9 +27,9 @@ const DEFAULT_CATEGORY_ICON = "/static/icons/categories/default.svg";
  */
 function categoryIconUrl(category) {
   const key = normalizeCategoryKey(category);
-  return key
-    ? `/static/icons/categories/${key}.svg`
-    : DEFAULT_CATEGORY_ICON;
+  if (!key) return DEFAULT_CATEGORY_ICON;
+  if (!AVAILABLE_CATEGORY_ICONS.has(key)) return DEFAULT_CATEGORY_ICON;
+  return `/static/icons/categories/${key}.svg`;
 }
 
 /**

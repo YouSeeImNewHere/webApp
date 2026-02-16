@@ -40,7 +40,7 @@ class OnboardingAccountCreate(BaseModel):
 
 @router.get("/setup")
 def setup_page():
-    return FileResponse("static/setup.html")
+    return FileResponse("static/pages/setup/setup.html")
 
 
 @router.get("/onboarding/status")

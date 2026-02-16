@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from db import with_db_cursor
+from db import with_db_cursor, query_db
+from app.core.tenant_keys import scoped_key
 
 router = APIRouter()
 
@@ -31,6 +33,10 @@ class SaveLESProfileBody(BaseModel):
 class SavingsGoalIn(BaseModel):
     mode: str  # "percent" | "amount"
     value: float
+
+class DailyWeightsIn(BaseModel):
+    weekday_points: float
+    weekend_points: float
 
 # -----------------------------
 # Table ensure helpers (Postgres)
@@ -114,3 +120,65 @@ def _ensure_interest_rates_table_pg():
             """
         )
         conn.commit()
+
+
+def _coerce_points(v: object, default: float) -> float:
+    try:
+        x = float(v)
+    except Exception:
+        return default
+    if x <= 0:
+        return default
+    if x > 10:
+        return 10.0
+    return x
+
+
+@router.get("/settings/daily-weights")
+def get_daily_weights():
+    _ensure_app_settings_pg()
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
+        (scoped_key("daily_weights"),),
+    )
+    if not rows:
+        return {"weekday_points": 1.0, "weekend_points": 2.0}
+
+    try:
+        j = json.loads(rows[0].get("value_json") or "{}")
+    except Exception:
+        j = {}
+
+    weekday_points = _coerce_points(j.get("weekday_points"), 1.0)
+    weekend_points = _coerce_points(j.get("weekend_points"), 2.0)
+    return {"weekday_points": weekday_points, "weekend_points": weekend_points}
+
+
+@router.post("/settings/daily-weights")
+def set_daily_weights(body: DailyWeightsIn):
+    weekday_points = _coerce_points(body.weekday_points, -1.0)
+    weekend_points = _coerce_points(body.weekend_points, -1.0)
+    if weekday_points <= 0 or weekend_points <= 0:
+        raise HTTPException(status_code=422, detail="points must be > 0")
+
+    payload = json.dumps(
+        {
+            "weekday_points": float(weekday_points),
+            "weekend_points": float(weekend_points),
+        }
+    )
+
+    _ensure_app_settings_pg()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO app_settings(key, value_json, updated_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (key)
+            DO UPDATE SET value_json = EXCLUDED.value_json,
+                          updated_at = now()
+            """,
+            (scoped_key("daily_weights"), payload),
+        )
+        conn.commit()
+    return {"ok": True, "weekday_points": weekday_points, "weekend_points": weekend_points}

@@ -1,31 +1,21 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="format-detection" content="telephone=no">
   <title>Workspace Setup</title>
-  <link href="/static/css/base.css" rel="stylesheet"/>
-  <link href="/static/css/mobile.css" rel="stylesheet"/>
-  <script src="/static/theme.js"></script>
-  <style>
-    body.setup-page { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f5f7fb; color: #121826; }
-    .setup-wrap { max-width: 840px; margin: calc(var(--topbar-h, 56px) + 16px) auto 90px; padding: 0 16px; }
-    .setup-card { background: #fff; border: 1px solid #dbe2f0; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
-    p, li { line-height: 1.4; }
-    .setup-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    .setup-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    .setup-page input, .setup-page select, .setup-page button { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #c6cfdf; border-radius: 8px; }
-    .setup-page button { cursor: pointer; background: #0b57d0; color: white; border: none; }
-    .setup-page button.secondary { background: #44516a; }
-    .setup-pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin-right: 8px; }
-    .ok { background: #dbf5e6; color: #095f35; }
-    .todo { background: #fff4dc; color: #7a4b00; }
-    .setup-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .setup-muted { color: #637089; }
-  </style>
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/setup/setup.css?v={{ BUILD_ID }}">
+  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
 <body class="setup-page" data-page-title="Setup Wizard">
   <div class="setup-wrap">
@@ -80,7 +70,7 @@
     </div>
   </div>
   <div id="sharedChrome"></div>
-  <script src="/static/setup.js"></script>
-  <script src="/static/shared/shared.js" defer></script>
+  <script src="/static/pages/setup/setup.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 </body>
 </html>

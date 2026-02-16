@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/spending/spending.css?v={{ BUILD_ID }}">
+  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
+</head>
+
+<body class="page-spending" data-page-title="Spending">
+  <div class="page-container">
+    <div id="chartMount"></div>
+
+    <section style="margin-top:18px;">
+      <div class="category-box">
+        <div class="category-box__header">Categories</div>
+        <div id="spendingCategoryList" class="category-box__list"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/category_icons.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/txInspect.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/profile.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/dates.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/chartControls.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/chartCard.js?v={{ BUILD_ID }}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/shared/format.js?v={{ BUILD_ID }}"></script>
+  <script type="module" src="/static/pages/spending/spending.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+</body>
+</html>

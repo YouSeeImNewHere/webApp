@@ -10,6 +10,10 @@
 // - Test regex against recent merchants
 
 let _categories = [];
+const RULES_PAGE_SIZE = 50;
+let _rulesOffset = 0;
+let _rulesHasMore = false;
+let _rulesLoading = false;
 
 function esc(s) {
   return String(s ?? "")
@@ -33,7 +37,7 @@ function isMobileRules() {
 }
 
 function ensureCardsHost() {
-  let host = document.getElementById("rulesCards");
+  const host = document.getElementById("rulesCards");
   if (!host) return null;
   return host;
 }
@@ -92,7 +96,7 @@ function renderTestResults(data) {
         <div class="test-row ${r.matched ? "hit" : "miss"}">
           <div class="test-merchant">${esc(r.merchant)}</div>
           <div class="test-count mono">x${esc(r.count)}</div>
-          <div class="test-badge">${r.matched ? "MATCH" : "—"}</div>
+          <div class="test-badge">${r.matched ? "MATCH" : "-"}</div>
         </div>
       `
         )
@@ -130,306 +134,287 @@ async function runTest() {
   }
 }
 
-async function loadRules() {
-  setStatus("Loading rules…");
+function getRuleFilters() {
+  return {
+    ruleId: (document.getElementById("ruleSearchId")?.value || "").trim(),
+    keyword: (document.getElementById("ruleSearchKeyword")?.value || "").trim(),
+    category: (document.getElementById("ruleSearchCategory")?.value || "").trim(),
+  };
+}
 
+function updateLoadMoreButton() {
+  const btn = document.getElementById("rulesLoadMoreBtn");
+  if (!btn) return;
+  btn.hidden = !_rulesHasMore;
+  btn.disabled = _rulesLoading;
+}
+
+function clearRulesView() {
   const tbody = document.querySelector("#rulesTable tbody");
   const cardsHost = document.getElementById("rulesCards");
-
-  // Helpers (inline so this function is copy/paste safe)
-  const isMobile = () =>
-    window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
-
-  // Clear both render targets
   if (tbody) tbody.innerHTML = "";
   if (cardsHost) cardsHost.innerHTML = "";
+}
 
-  // Show/hide the right container
-  if (cardsHost) cardsHost.hidden = !isMobile();
+function getRenderTargets() {
+  const tbody = document.querySelector("#rulesTable tbody");
+  const cardsHost = document.getElementById("rulesCards");
+  const mobile = isMobileRules();
+  if (cardsHost) cardsHost.hidden = !mobile;
+  return { tbody, cardsHost, mobile };
+}
 
-  try {
-    const res = await fetch("/category-rules/list?include_inactive=1&with_counts=1", {
-      cache: "no-store",
-    });
-    const rules = await res.json();
+async function fetchRulesPage(offset, limit) {
+  const f = getRuleFilters();
+  const p = new URLSearchParams();
+  p.set("include_inactive", "1");
+  p.set("with_counts", "1");
+  p.set("offset", String(offset));
+  p.set("limit", String(limit));
+  if (f.ruleId) p.set("rule_id", f.ruleId);
+  if (f.keyword) p.set("keyword", f.keyword);
+  if (f.category) p.set("category", f.category);
 
-    if (!Array.isArray(rules)) {
-      setStatus("Failed to load rules", true);
-      return;
-    }
+  const res = await fetch(`/category-rules/list?${p.toString()}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to load rules");
+  return await res.json();
+}
 
-    for (const r of rules) {
-      const id = r.id;
-      const isActive = !!r.is_active;
-      const matchCount = Number(r.match_count || 0);
+function attachRuleHandlers({ root, id, pattern, flags }) {
+  const input = root.querySelector("input.settings-input");
+  const saveBtn = root.querySelector(".save-btn");
+  const testBtn = root.querySelector(".test-btn");
+  const delBtn = root.querySelector(".delete-btn");
+  const activeToggle = root.querySelector(".active-toggle");
+  const reapplyToggle = root.querySelector(".reapply-toggle");
 
-      // =========================
-      // MOBILE: card layout
-      // =========================
-      if (isMobile() && cardsHost) {
-        const card = document.createElement("div");
-        card.className = "rule-card";
-        card.innerHTML = `
-          <div class="rule-regex">${esc(r.pattern)}</div>
+  if (saveBtn && input) {
+    saveBtn.onclick = async () => {
+      const reapply = !!(reapplyToggle && reapplyToggle.checked);
+      saveBtn.disabled = true;
 
-          <div class="rule-row">
-            <div class="rule-field">
-              <label>Category</label>
-              <input
-                class="settings-input"
-                list="categoryOptions"
-                value="${esc(r.category)}"
-              />
-            </div>
+      try {
+        const resp = await fetch(`/category-rules/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            category: input.value,
+            reapply_existing: reapply,
+          }),
+        });
 
-            <div class="rule-meta">
-              <div>
-                <span class="settings-muted" style="margin:0;">Matches</span>
-                <span class="pill mono" style="margin-left:8px;">${esc(matchCount)}</span>
-              </div>
+        const data = await resp.json();
+        if (!resp.ok || data?.ok === false) {
+          setStatus(data?.error || "Save failed", true);
+          return;
+        }
 
-              <label class="switch" title="Enable/disable rule" style="margin:0;">
-                <input type="checkbox" class="active-toggle" ${isActive ? "checked" : ""} />
-                <span class="slider"></span>
-              </label>
-            </div>
+        setStatus(
+          reapply
+            ? `Saved + re-applied (${data?.applied || 0} transactions)`
+            : "Saved"
+        );
 
-            <div class="rule-toggles">
-              <label class="toggle">
-                <input type="checkbox" class="reapply-toggle" />
-                <span>Re-apply to existing</span>
-              </label>
-            </div>
-
-            <div class="rule-actions">
-              <button class="settings-btn small save-btn">Save</button>
-              <button class="settings-btn small test-btn">Test</button>
-              <button class="settings-btn small danger delete-btn">Delete</button>
-            </div>
-          </div>
-        `;
-
-        const input = card.querySelector("input.settings-input");
-        const saveBtn = card.querySelector(".save-btn");
-        const testBtn = card.querySelector(".test-btn");
-        const delBtn  = card.querySelector(".delete-btn");
-        const activeToggle = card.querySelector(".active-toggle");
-        const reapplyToggle = card.querySelector(".reapply-toggle");
-
-        // Save (optionally re-apply)
-        saveBtn.onclick = async () => {
-          const reapply = !!reapplyToggle.checked;
-          saveBtn.disabled = true;
-
-          try {
-            const resp = await fetch(`/category-rules/${id}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                category: input.value,
-                reapply_existing: reapply,
-              }),
-            });
-
-            const data = await resp.json();
-            if (!resp.ok || data?.ok === false) {
-              setStatus(data?.error || "Save failed", true);
-              return;
-            }
-
-            setStatus(
-              reapply
-                ? `Saved + re-applied (${data?.applied || 0} transactions)`
-                : "Saved"
-            );
-
-            await loadRules();
-          } catch (e) {
-            setStatus("Save failed", true);
-          } finally {
-            saveBtn.disabled = false;
-          }
-        };
-
-        // Active toggle
-        activeToggle.onchange = async (ev) => {
-          const desired = !!ev.target.checked;
-          try {
-            const resp = await fetch(`/category-rules/${id}/active`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ is_active: desired }),
-            });
-            const data = await resp.json();
-            if (!resp.ok || data?.ok === false) {
-              setStatus(data?.error || "Failed to update rule", true);
-              ev.target.checked = !desired;
-              return;
-            }
-            setStatus(desired ? "Rule enabled" : "Rule disabled");
-          } catch (e) {
-            setStatus("Failed to update rule", true);
-            ev.target.checked = !desired;
-          }
-        };
-
-        // Test
-        testBtn.onclick = () => {
-          openTestModal({ pattern: r.pattern, flags: r.flags || "i", ruleId: id });
-        };
-
-        // Delete
-        delBtn.onclick = async () => {
-          delBtn.disabled = true;
-          try {
-            const resp = await fetch(`/category-rules/${id}`, { method: "DELETE" });
-            const data = await resp.json();
-            if (!resp.ok || data?.ok === false) {
-              setStatus(data?.error || "Delete failed", true);
-              return;
-            }
-            card.remove();
-            setStatus("Rule deleted");
-          } catch (e) {
-            setStatus("Delete failed", true);
-          } finally {
-            delBtn.disabled = false;
-          }
-        };
-
-        cardsHost.appendChild(card);
-        continue; // skip desktop row
+        await loadRules(true);
+      } catch (e) {
+        setStatus("Save failed", true);
+      } finally {
+        saveBtn.disabled = false;
       }
+    };
+  }
 
-      // =========================
-      // DESKTOP: table layout
-      // =========================
-      if (!tbody) continue;
+  if (activeToggle) {
+    activeToggle.onchange = async (ev) => {
+      const desired = !!ev.target.checked;
+      try {
+        const resp = await fetch(`/category-rules/${id}/active`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_active: desired }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data?.ok === false) {
+          setStatus(data?.error || "Failed to update rule", true);
+          ev.target.checked = !desired;
+          return;
+        }
+        setStatus(desired ? "Rule enabled" : "Rule disabled");
+      } catch (e) {
+        setStatus("Failed to update rule", true);
+        ev.target.checked = !desired;
+      }
+    };
+  }
 
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${esc(r.pattern)}</td>
-        <td>
-          <input
-            class="settings-input"
-            list="categoryOptions"
-            value="${esc(r.category)}"
-            data-id="${esc(r.id)}"
-          />
-          <div class="rule-subrow">
+  if (testBtn) {
+    testBtn.onclick = () => {
+      openTestModal({ pattern, flags: flags || "i", ruleId: id });
+    };
+  }
+
+  if (delBtn) {
+    delBtn.onclick = async () => {
+      delBtn.disabled = true;
+      try {
+        const resp = await fetch(`/category-rules/${id}`, { method: "DELETE" });
+        const data = await resp.json();
+        if (!resp.ok || data?.ok === false) {
+          setStatus(data?.error || "Delete failed", true);
+          return;
+        }
+        root.remove();
+        setStatus("Rule deleted");
+      } catch (e) {
+        setStatus("Delete failed", true);
+      } finally {
+        delBtn.disabled = false;
+      }
+    };
+  }
+}
+
+function renderRulesChunk(rules) {
+  const { tbody, cardsHost, mobile } = getRenderTargets();
+
+  for (const r of rules) {
+    const id = r.id;
+    const isActive = !!r.is_active;
+    const matchCount = Number(r.match_count || 0);
+
+    if (mobile && cardsHost) {
+      const card = document.createElement("div");
+      card.className = "rule-card";
+      card.innerHTML = `
+        <div class="rule-regex">#${esc(r.id)} - ${esc(r.pattern)}</div>
+        <div class="rule-row">
+          <div class="rule-field">
+            <label>Category</label>
+            <input
+              class="settings-input"
+              list="categoryOptions"
+              value="${esc(r.category)}"
+            />
+          </div>
+
+          <div class="rule-meta">
+            <div>
+              <span class="settings-muted" style="margin:0;">Matches</span>
+              <span class="pill mono" style="margin-left:8px;">${esc(matchCount)}</span>
+            </div>
+
+            <label class="switch" title="Enable/disable rule" style="margin:0;">
+              <input type="checkbox" class="active-toggle" ${isActive ? "checked" : ""} />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="rule-toggles">
             <label class="toggle">
               <input type="checkbox" class="reapply-toggle" />
               <span>Re-apply to existing</span>
             </label>
           </div>
-        </td>
-        <td><span class="pill mono">${esc(matchCount)}</span></td>
-        <td>
-          <label class="switch" title="Enable/disable rule">
-            <input type="checkbox" class="active-toggle" ${isActive ? "checked" : ""} />
-            <span class="slider"></span>
-          </label>
-        </td>
-        <td>
+
           <div class="rule-actions">
             <button class="settings-btn small save-btn">Save</button>
             <button class="settings-btn small test-btn">Test</button>
             <button class="settings-btn small danger delete-btn">Delete</button>
           </div>
-        </td>
+        </div>
       `;
 
-      // Save (optionally re-apply)
-      tr.querySelector(".save-btn").onclick = async () => {
-        const input = tr.querySelector("input.settings-input");
-        const reapply = tr.querySelector(".reapply-toggle").checked;
-        const btn = tr.querySelector(".save-btn");
-        btn.disabled = true;
-
-        try {
-          const resp = await fetch(`/category-rules/${id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              category: input.value,
-              reapply_existing: !!reapply,
-            }),
-          });
-
-          const data = await resp.json();
-          if (!resp.ok || data?.ok === false) {
-            setStatus(data?.error || "Save failed", true);
-            return;
-          }
-
-          setStatus(
-            reapply
-              ? `Saved + re-applied (${data?.applied || 0} transactions)`
-              : "Saved"
-          );
-
-          await loadRules();
-        } catch (e) {
-          setStatus("Save failed", true);
-        } finally {
-          btn.disabled = false;
-        }
-      };
-
-      // Active toggle
-      tr.querySelector(".active-toggle").onchange = async (ev) => {
-        const desired = !!ev.target.checked;
-        try {
-          const resp = await fetch(`/category-rules/${id}/active`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ is_active: desired }),
-          });
-          const data = await resp.json();
-          if (!resp.ok || data?.ok === false) {
-            setStatus(data?.error || "Failed to update rule", true);
-            ev.target.checked = !desired;
-            return;
-          }
-          setStatus(desired ? "Rule enabled" : "Rule disabled");
-        } catch (e) {
-          setStatus("Failed to update rule", true);
-          ev.target.checked = !desired;
-        }
-      };
-
-      // Test
-      tr.querySelector(".test-btn").onclick = () => {
-        openTestModal({ pattern: r.pattern, flags: r.flags || "i", ruleId: id });
-      };
-
-      // Delete
-      tr.querySelector(".delete-btn").onclick = async () => {
-        const btn = tr.querySelector(".delete-btn");
-        btn.disabled = true;
-        try {
-          const resp = await fetch(`/category-rules/${id}`, { method: "DELETE" });
-          const data = await resp.json();
-          if (!resp.ok || data?.ok === false) {
-            setStatus(data?.error || "Delete failed", true);
-            return;
-          }
-          tr.remove();
-          setStatus("Rule deleted");
-        } catch (e) {
-          setStatus("Delete failed", true);
-        } finally {
-          btn.disabled = false;
-        }
-      };
-
-      tbody.appendChild(tr);
+      attachRuleHandlers({ root: card, id, pattern: r.pattern, flags: r.flags });
+      cardsHost.appendChild(card);
+      continue;
     }
 
-    setStatus(`Loaded ${rules.length} rules`);
+    if (!tbody) continue;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">#${esc(r.id)} - ${esc(r.pattern)}</td>
+      <td>
+        <input
+          class="settings-input"
+          list="categoryOptions"
+          value="${esc(r.category)}"
+          data-id="${esc(r.id)}"
+        />
+        <div class="rule-subrow">
+          <label class="toggle">
+            <input type="checkbox" class="reapply-toggle" />
+            <span>Re-apply to existing</span>
+          </label>
+        </div>
+      </td>
+      <td><span class="pill mono">${esc(matchCount)}</span></td>
+      <td>
+        <label class="switch" title="Enable/disable rule">
+          <input type="checkbox" class="active-toggle" ${isActive ? "checked" : ""} />
+          <span class="slider"></span>
+        </label>
+      </td>
+      <td>
+        <div class="rule-actions">
+          <button class="settings-btn small save-btn">Save</button>
+          <button class="settings-btn small test-btn">Test</button>
+          <button class="settings-btn small danger delete-btn">Delete</button>
+        </div>
+      </td>
+    `;
+
+    attachRuleHandlers({ root: tr, id, pattern: r.pattern, flags: r.flags });
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadRules(reset = false) {
+  if (_rulesLoading) return;
+
+  if (reset) {
+    _rulesOffset = 0;
+    _rulesHasMore = false;
+    clearRulesView();
+  }
+
+  _rulesLoading = true;
+  updateLoadMoreButton();
+  setStatus(_rulesOffset === 0 ? "Loading rules..." : "Loading more...");
+
+  try {
+    const payload = await fetchRulesPage(_rulesOffset, RULES_PAGE_SIZE);
+    const rules = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload.rows) ? payload.rows : []);
+
+    _rulesHasMore = !Array.isArray(payload) && !!payload?.has_more;
+
+    if (_rulesOffset === 0 && !rules.length) {
+      setStatus("No matching rules");
+      updateLoadMoreButton();
+      return;
+    }
+
+    renderRulesChunk(rules);
+    _rulesOffset += rules.length;
+    setStatus(`Loaded ${_rulesOffset}${_rulesHasMore ? "+" : ""} rule(s)`);
   } catch (e) {
     setStatus("Failed to load rules", true);
+  } finally {
+    _rulesLoading = false;
+    updateLoadMoreButton();
   }
+}
+
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
 }
 
 function initModal() {
@@ -451,13 +436,39 @@ function initModal() {
 }
 
 function initToolbar() {
-  const btn = document.getElementById("refreshRulesBtn");
-  if (btn) btn.onclick = loadRules;
+  const refreshBtn = document.getElementById("refreshRulesBtn");
+  if (refreshBtn) {
+    refreshBtn.onclick = () => loadRules(true);
+  }
+
+  const loadMoreBtn = document.getElementById("rulesLoadMoreBtn");
+  if (loadMoreBtn) {
+    loadMoreBtn.onclick = () => loadRules(false);
+  }
+
+  const onSearch = debounce(() => loadRules(true), 250);
+  ["ruleSearchId", "ruleSearchKeyword", "ruleSearchCategory"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", onSearch);
+    el.addEventListener("change", onSearch);
+  });
+
+  const host = ensureCardsHost();
+  if (host) {
+    const mm = window.matchMedia("(max-width: 900px)");
+    const onModeChange = () => loadRules(true);
+    if (typeof mm.addEventListener === "function") {
+      mm.addEventListener("change", onModeChange);
+    } else if (typeof mm.addListener === "function") {
+      mm.addListener(onModeChange);
+    }
+  }
 }
 
 (async function boot() {
   initModal();
   initToolbar();
   await fetchCategories();
-  await loadRules();
+  await loadRules(true);
 })();

@@ -80,7 +80,7 @@ function renderSpendingCategoryList(rows) {
 
     const catForLink = r._linkCategory || r.category;
     btn.onclick = () => {
-      location.href = `/static/category.html?c=${encodeURIComponent(catForLink)}`;
+      location.href = `/static/pages/category/category.html?c=${encodeURIComponent(catForLink)}`;
     };
 
     wrap.appendChild(btn);

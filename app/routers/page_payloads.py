@@ -22,6 +22,8 @@ from app.routers.notifications import unread_count
 from app.routers.accounts import bank_totals, account_info
 from app.routers.category_rules import _month_budget_home
 from app.routers.budget_groups import _get_budget_groups_for_month, _norm_cat, _norm_name
+from app.routers.recurring import recurring_calendar
+from app.routers.les import les_paychecks, LESPaychecksRequest, LESProfileModel
 
 router = APIRouter()
 
@@ -313,6 +315,87 @@ class BudgetCatUpsert(BaseModel):
     allocated: float = 0.0
     cap: float | None = None
 
+
+class HomeUpcomingPayloadRequest(BaseModel):
+    days_ahead: int = 30
+    account_id: Optional[int] = None
+    min_occ: int = 3
+    include_stale: bool = False
+    profile: Optional[LESProfileModel] = None
+
+
+def _iter_months_between(start_d: date, end_d: date):
+    y, m = int(start_d.year), int(start_d.month)
+    end_y, end_m = int(end_d.year), int(end_d.month)
+    while (y < end_y) or (y == end_y and m <= end_m):
+        yield y, m
+        if m == 12:
+            y += 1
+            m = 1
+        else:
+            m += 1
+
+
+def _dedupe_upcoming_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for e in events or []:
+        key = "|".join(
+            [
+                str(e.get("date") or ""),
+                str(e.get("pay_target") or ""),
+                str(e.get("merchant") or ""),
+                str(e.get("cadence") or ""),
+                str(float(e.get("amount") or 0.0)),
+                str(int(e.get("account_id") or 0)),
+            ]
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+    return out
+
+
+@router.post("/page/home/upcoming")
+def page_home_upcoming(req: HomeUpcomingPayloadRequest):
+    days_ahead = max(1, min(int(req.days_ahead or 30), 120))
+    start_d = today_local()
+    end_d = start_d + timedelta(days=days_ahead - 1)
+
+    events: list[dict[str, Any]] = []
+    for y, m in _iter_months_between(start_d, end_d):
+        cal = recurring_calendar(year=int(y), month=int(m), min_occ=int(req.min_occ), include_stale=bool(req.include_stale))
+        events.extend(list((cal or {}).get("events") or []))
+
+        if req.profile:
+            pay = les_paychecks(LESPaychecksRequest(year=int(y), month=int(m), profile=req.profile))
+            events.extend(list((pay or {}).get("events") or []))
+
+    aid_filter = int(req.account_id) if (req.account_id is not None) else None
+    filtered: list[dict[str, Any]] = []
+    for e in events:
+        d_raw = str(e.get("date") or "").strip()
+        try:
+            d = datetime.strptime(d_raw, "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if d < start_d or d > end_d:
+            continue
+        if aid_filter is not None and int(e.get("account_id") or -1) != aid_filter:
+            continue
+        filtered.append(dict(e))
+
+    out = _dedupe_upcoming_events(filtered)
+    out.sort(key=lambda e: (str(e.get("date") or ""), str(e.get("merchant") or ""), abs(float(e.get("amount") or 0.0))))
+    return {
+        "ok": True,
+        "start": start_d.isoformat(),
+        "end": end_d.isoformat(),
+        "days_ahead": days_ahead,
+        "events": out,
+    }
+
 @router.get("/budget/categories")
 def budget_categories(year: int, month: int):
     _ensure_budget_tables_pg()
@@ -397,7 +480,7 @@ def _ensure_budget_group_tables_pg():
 @router.get("/category")
 def category_page():
     """Category detail page (reads category from ?c=...)."""
-    return FileResponse("static/category.html")
+    return FileResponse("static/pages/category/category.html")
 
 def _category_totals_month_display(year: int, month: int):
     tid = _require_tenant_id()
@@ -571,6 +654,94 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
     spent_free = spent_today - spent_budgeted
     return spent_today, spent_budgeted, spent_free
 
+def _compute_extra_saved_rollover(
+    tid: int,
+    year: int,
+    month: int,
+    today: date,
+    fallback_today_baseline: float = 0.0,
+) -> tuple[float, list[dict[str, Any]], int]:
+    """
+    Rollover rules:
+      - Completed days (d < today): move full (baseline - spent_free) into extra-saved.
+      - Today:
+          * positive leftover is NOT added yet (only at end of day)
+          * overspend (negative leftover) reduces extra-saved immediately
+      - extra-saved is floored at 0 (never negative)
+    """
+    month_start = date(year, month, 1)
+
+    rows = query_db(
+        """
+        SELECT day, baseline, computed_at
+        FROM daily_limit_snapshot
+        WHERE day >= %s AND day <= %s AND tenant_id = %s
+        ORDER BY day ASC
+        """,
+        (month_start, today, int(tid)),
+    )
+
+    by_day: dict[date, dict[str, Any]] = {}
+    for r in rows:
+        d = r["day"]
+        by_day[d] = {
+            "baseline": float(r.get("baseline") or 0.0),
+            "computed_at": r.get("computed_at"),
+        }
+
+    # If today's snapshot does not exist yet, use today's computed baseline.
+    if today not in by_day:
+        by_day[today] = {
+            "baseline": float(fallback_today_baseline or 0.0),
+            "computed_at": None,
+        }
+
+    balance = 0.0
+    days_counted = 0
+    out_days: list[dict[str, Any]] = []
+
+    dcur = month_start
+    while dcur <= today:
+        item = by_day.get(dcur)
+        if not item:
+            dcur += timedelta(days=1)
+            continue
+
+        baseline = float(item.get("baseline") or 0.0)
+        spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(dcur)
+        leftover = baseline - spent_free
+
+        # Apply rollover rules.
+        if dcur < today:
+            applied = leftover
+        else:
+            applied = leftover if leftover < 0 else 0.0
+
+        balance = max(0.0, balance + applied)
+        days_counted += 1
+
+        computed_at = item.get("computed_at")
+        out_days.append(
+            {
+                "day": dcur.isoformat(),
+                "baseline": round(baseline, 2),
+                "spent_today_total": round(float(spent_today or 0.0), 2),
+                "spent_today_budgeted": round(float(spent_budgeted or 0.0), 2),
+                "spent_today_free": round(float(spent_free or 0.0), 2),
+                "leftover": round(float(leftover or 0.0), 2),
+                "applied_to_extra_saved": round(float(applied or 0.0), 2),
+                "extra_saved_after_day": round(float(balance or 0.0), 2),
+                "computed_at": (
+                    computed_at.isoformat()
+                    if hasattr(computed_at, "isoformat")
+                    else (str(computed_at) if computed_at is not None else None)
+                ),
+            }
+        )
+        dcur += timedelta(days=1)
+
+    return balance, out_days, days_counted
+
 @router.get("/day-limit")
 def day_limit(recalc: int = 0):
     """
@@ -632,40 +803,25 @@ def day_limit(recalc: int = 0):
 @router.get("/extra-saved")
 def extra_saved():
     """
-    Sum of leftover free spending (baseline - spent_free)
-    from the 1st of the month through today.
-    Only positive leftover days count.
+    Extra-saved rollover bank:
+      - Completed days add full leftover (baseline - spent_free)
+      - Today's positive leftover is not added yet
+      - Today's overspend reduces extra-saved immediately
+      - Bank is floored at zero
     """
     tid = _require_tenant_id()
     _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
-    month_start = date(today.year, today.month, 1)
-
-    # Pull all stored baselines this month
-    rows = query_db(
-        """
-        SELECT day, baseline
-        FROM daily_limit_snapshot
-        WHERE day >= %s AND day <= %s AND tenant_id = %s
-        ORDER BY day ASC
-        """,
-        (month_start, today, int(tid)),
+    mb = _month_budget_home(today.year, today.month)
+    fallback_today_baseline = float((mb or {}).get("daily_limit") or 0.0)
+    total_extra, _, days_counted = _compute_extra_saved_rollover(
+        tid=int(tid),
+        year=today.year,
+        month=today.month,
+        today=today,
+        fallback_today_baseline=fallback_today_baseline,
     )
-
-    total_extra = 0.0
-    days_counted = 0
-
-    for r in rows:
-        d = r["day"]
-        baseline = float(r["baseline"] or 0.0)
-
-        _, _, spent_free = _compute_spent_free_for_day(d)
-        leftover = baseline - spent_free
-
-        total_extra += leftover
-
-        days_counted += 1
 
     return {
         "ok": True,
@@ -676,53 +832,26 @@ def extra_saved():
 @router.get("/extra-saved-detail")
 def extra_saved_detail():
     """
-    Day-by-day breakdown of:
-      leftover = baseline - spent_free
-    from the 1st of the month through today.
-
-    IMPORTANT: includes negative days (overspent days reduce the total).
+    Day-by-day rollover breakdown for extra-saved.
+    Includes:
+      - leftover (baseline - spent_free)
+      - applied_to_extra_saved (what actually changed the bank that day)
+      - extra_saved_after_day
     """
     tid = _require_tenant_id()
     _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
     month_start = date(today.year, today.month, 1)
-
-    rows = query_db(
-        """
-        SELECT day, baseline, computed_at
-        FROM daily_limit_snapshot
-        WHERE day >= %s AND day <= %s AND tenant_id = %s
-        ORDER BY day ASC
-        """,
-        (month_start, today, int(tid)),
+    mb = _month_budget_home(today.year, today.month)
+    fallback_today_baseline = float((mb or {}).get("daily_limit") or 0.0)
+    total, days, _ = _compute_extra_saved_rollover(
+        tid=int(tid),
+        year=today.year,
+        month=today.month,
+        today=today,
+        fallback_today_baseline=fallback_today_baseline,
     )
-
-    days = []
-    total = 0.0
-
-    for r in rows:
-        d = r["day"]
-        baseline = float(r["baseline"] or 0.0)
-
-        spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(d)
-        leftover = baseline - spent_free
-
-        total += leftover
-
-        days.append({
-            "day": d.isoformat(),
-            "baseline": round(baseline, 2),
-            "spent_today_total": round(float(spent_today or 0.0), 2),
-            "spent_today_budgeted": round(float(spent_budgeted or 0.0), 2),
-            "spent_today_free": round(float(spent_free or 0.0), 2),
-            "leftover": round(float(leftover or 0.0), 2),
-            "computed_at": (
-                r["computed_at"].isoformat()
-                if hasattr(r["computed_at"], "isoformat")
-                else str(r["computed_at"])
-            ),
-        })
 
     return {
         "ok": True,

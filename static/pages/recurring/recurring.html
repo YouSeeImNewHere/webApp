@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Recurring</title>
+
+  <link rel="stylesheet" href="/static/styles/tokens.css">
+  <link rel="stylesheet" href="/static/styles/theme.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/styles/utilities.css">
+  <link rel="stylesheet" href="/static/components/modal/modal.css">
+  <link rel="stylesheet" href="/static/components/toast/toast.css">
+  <link rel="stylesheet" href="/static/components/cards/card.css">
+  <link rel="stylesheet" href="/static/components/tables/table.css">
+  <link rel="stylesheet" href="/static/css/mobile.css">
+  <link rel="stylesheet" href="/static/pages/recurring/recurring.css">
+
+  <script src="/static/theme.js"></script>
+  <script src="/static/globalLoading.js"></script>
+</head>
+<body class="page-recurring" data-page-title="Recurring">
+  <div class="page-container">
+
+    <div class="cal-box">
+      <div class="cal-head">
+        <button id="calPrev" class="cal-nav" type="button">&#9664;</button>
+        <div class="cal-title" id="calTitle">Month YYYY</div>
+        <button id="calNext" class="cal-nav" type="button">&#9654;</button>
+      </div>
+
+      <div id="calSummary">
+        <span id="calTopOut">Out: $0.00</span>
+        <span class="cal-summary-sep">&#8226;</span>
+        <span id="calTopIn">In: $0.00</span>
+      </div>
+
+      <div class="cal-weekdays">
+        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+      </div>
+
+      <div id="calGrid" class="cal-grid"></div>
+
+      <div id="calDayModal" class="occ-modal hidden">
+        <div class="occ-backdrop" onclick="closeCalDayModal()"></div>
+        <div class="occ-card" role="dialog" aria-modal="true">
+          <div class="occ-head">
+            <div>
+              <div id="calDayTitle" class="occ-title"></div>
+              <div id="calDaySub" class="occ-sub"></div>
+            </div>
+            <button class="occ-close" onclick="closeCalDayModal()">&#10005;</button>
+          </div>
+          <div id="calDayBody" class="occ-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    <div class="category-box">
+      <div class="category-box__header">Recurring</div>
+      <label style="display:flex; gap:6px; align-items:center;">
+        <input id="includeStale" type="checkbox">
+        Include stale
+      </label>
+      <div style="padding:12px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <label>
+            Min occurrences:
+            <input id="minOcc" type="number" value="3" min="2" max="20" style="width:70px;">
+          </label>
+          <button id="reloadRecurring" type="button">Refresh</button>
+          <button id="reviewIgnored" type="button">Review ignored</button>
+        </div>
+      </div>
+      <div id="recurringList" class="tx-list"></div>
+    </div>
+  </div>
+
+  <div id="occModal" class="occ-modal hidden">
+    <div class="occ-backdrop" onclick="closeOccModal()"></div>
+    <div class="occ-card" role="dialog" aria-modal="true">
+      <div class="occ-head">
+        <div>
+          <div id="occTitle" class="occ-title"></div>
+          <div id="occSub" class="occ-sub"></div>
+        </div>
+        <button class="occ-close" onclick="closeOccModal()">&#10005;</button>
+      </div>
+      <div id="occBody" class="occ-body"></div>
+    </div>
+  </div>
+
+  <div id="ignoredModal" class="occ-modal hidden">
+    <div class="occ-backdrop" onclick="closeIgnoredModal()"></div>
+    <div class="occ-card" role="dialog" aria-modal="true">
+      <div class="occ-head">
+        <div>
+          <div class="occ-title">Ignored merchants</div>
+          <div class="occ-sub">Click a merchant to unignore, or review what it would have matched.</div>
+        </div>
+        <button class="occ-close" onclick="closeIgnoredModal()">&#10005;</button>
+      </div>
+      <div id="ignoredBody" class="occ-body"></div>
+    </div>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/category_icons.js"></script>
+  <script src="/static/profile.js"></script>
+  <script src="/static/shared/state.js"></script>
+  <script src="/static/shared/auth.js"></script>
+  <script src="/static/shared/dates.js"></script>
+  <script src="/static/shared/format.js"></script>
+  <script type="module" src="/static/pages/recurring/recurring.js"></script>
+  <script src="/static/shared/shared.js" defer></script>
+</body>
+</html>

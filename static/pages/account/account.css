@@ -1,0 +1,31 @@
+/* Top bar account switcher (replaces title text on account page) */
+body.page-account .top-title.account-title-switcher{
+  pointer-events: auto !important;
+  max-width: min(560px, calc(100% - 180px));
+}
+
+body.page-account .account-title-switcher__select{
+  width: 100%;
+  min-width: 180px;
+  max-width: 560px;
+  height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+@media (max-width: 900px){
+  body.page-account .top-title.account-title-switcher{
+    max-width: calc(100% - 140px);
+  }
+
+  body.page-account .account-title-switcher__select{
+    min-width: 140px;
+    font-size: 12px;
+    height: 34px;
+  }
+}

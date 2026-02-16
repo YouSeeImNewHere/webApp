@@ -26,7 +26,9 @@
     window.location.assign(`/login?next=${next}`);
   }
 
-  function handleAuthFailure(res) {
+  function handleAuthFailure(res, options) {
+    const opts = options || {};
+    if (opts.skipAuthRedirect) return false;
     if (res && res.status === 401 && window.location.pathname !== "/login") {
       redirectToLogin();
       return true;
@@ -154,7 +156,7 @@
   async function apiFetch(url, options) {
     const opts = Object.assign({ credentials: "same-origin" }, options || {});
     const res = await fetch(url, opts);
-    handleAuthFailure(res);
+    handleAuthFailure(res, opts);
     return res;
   }
 

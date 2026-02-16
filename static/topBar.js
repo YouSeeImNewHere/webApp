@@ -2,14 +2,16 @@
 (async function () {
   const host = document.getElementById("topBar");
   if (!host) return;
-
-  // 1) Inject shared top bar markup
-  const res = await fetch("/static/partials/top-bar.html", { cache: "no-store" });
-  if (!res.ok) {
-    console.error("Failed to load top bar:", res.status);
-    return;
+  // If shared.html already contains top bar markup, skip fetch.
+  if (!host.querySelector("#topBarTitle")) {
+    const v = (window.BUILD_ID ? `?v=${encodeURIComponent(window.BUILD_ID)}` : "");
+    const res = await fetch(`/static/partials/top-bar.html${v}`, { cache: "force-cache" });
+    if (!res.ok) {
+      console.error("Failed to load top bar:", res.status);
+      return;
+    }
+    host.innerHTML = await res.text();
   }
-  host.innerHTML = await res.text();
 
   // 2) Title: prefer body[data-page-title], else document.title, else fallback
   const titleEl = host.querySelector("#topBarTitle");
@@ -22,10 +24,10 @@
   // These are the pages you can access from bottom tabs (NO back button)
   const tabPaths = new Set([
     "/", // Home
-    "/static/spending.html",
-    "/static/all-transactions.html",
-    "/static/recurring.html",
-    "/static/receipts.html",
+    "/static/pages/spending/spending.html",
+    "/static/pages/all-transactions/all-transactions.html",
+    "/static/pages/recurring/recurring.html",
+    "/static/pages/receipts/receipts.html",
   ]);
 
   const backBtn = host.querySelector("#topBarBack");

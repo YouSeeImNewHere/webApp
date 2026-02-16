@@ -81,13 +81,13 @@ if (t) t.textContent = category;
 
   const labels = filtered.map(p => formatMMMdd(p.date));
 
-  const values = filtered.map(p => Number(p.amount || 0));
-const cumulative = [];
-let running = 0;
-for (const v of values) {
-  running += v;
-  cumulative.push(running);
-}
+  const dailyValues = filtered.map(p => Number(p.amount || 0));
+  const cumulative = [];
+  let running = 0;
+  for (const v of dailyValues) {
+    running += v;
+    cumulative.push(running);
+  }
 
   // % Growth
   let growthStr = "—";
@@ -118,18 +118,25 @@ for (const v of values) {
     data: {
       labels,
       datasets: [{
-        label: `${category}`,
+        label: "Total spent",
         data: cumulative,
         tension: 0.2,
         pointRadius: 0,
         pointHitRadius: 12,
         pointHoverRadius: 4
-      }]
+      }, {
+        label: "Spent that day",
+        data: dailyValues,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }],
     },
     options: {
       responsive: true,
   maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: true } },
       interaction: { mode: "index", intersect: false },
       scales: {
         y: { ticks: { callback: v => Number(v).toLocaleString() } }
@@ -154,13 +161,13 @@ async function loadTrend(category, period) {
     return formatMMMdd(p.date);
   });
 
-  const values = series.map(p => Number(p.amount || 0));
-const cumulative = [];
-let running = 0;
-for (const v of values) {
-  running += v;
-  cumulative.push(running);
-}
+  const dailyValues = series.map(p => Number(p.amount || 0));
+  const cumulative = [];
+  let running = 0;
+  for (const v of dailyValues) {
+    running += v;
+    cumulative.push(running);
+  }
 
   const canvas = document.getElementById("catChart");
   if (!canvas) return;
@@ -173,13 +180,20 @@ for (const v of values) {
     data: {
       labels,
       datasets: [{
-        label: `${category}`,
+        label: "Total spent",
         data: cumulative,
         tension: 0.2,
         pointRadius: 0,
         pointHitRadius: 12,
         pointHoverRadius: 4
-      }]
+      }, {
+        label: "Spent that day",
+        data: dailyValues,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }],
     },
     options: {
       responsive: true,

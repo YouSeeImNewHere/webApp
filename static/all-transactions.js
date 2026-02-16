@@ -1,4 +1,4 @@
-import { money } from "/static/shared/format.module.js";
+﻿import { money } from "/static/shared/format.module.js";
 import { shortDate } from "/static/shared/dates.module.js";
 
 function parseNum(x){
@@ -27,6 +27,13 @@ let LAST_REQ_KEY = "";
 function setStatus(msg){
   const el = document.getElementById("txStatus");
   if (el) el.textContent = msg || "";
+}
+
+function updateLoadMoreButton(){
+  const btn = document.getElementById("txLoadMoreBtn");
+  if (!btn) return;
+  btn.hidden = DONE;
+  btn.disabled = LOADING || DONE;
 }
 
 function clearList(){
@@ -73,7 +80,7 @@ function renderAppend(list){
     el.appendChild(wrap);
   });
 
-  if (typeof window.attachTxInspect === 'function') window.attachTxInspect(el);
+  if (typeof window.attachTxInspect === "function") window.attachTxInspect(el);
 }
 
 function buildQueryParams(){
@@ -81,8 +88,8 @@ function buildQueryParams(){
   const card = (document.getElementById("qCard")?.value || "").trim();
   const category = (document.getElementById("qCategory")?.value || "").trim();
 
-  const start = (document.getElementById("dateFrom")?.value || "").trim(); // YYYY-MM-DD
-  const end = (document.getElementById("dateTo")?.value || "").trim();     // YYYY-MM-DD
+  const start = (document.getElementById("dateFrom")?.value || "").trim();
+  const end = (document.getElementById("dateTo")?.value || "").trim();
 
   const mode = (document.getElementById("amtMode")?.value || "any").trim();
   const a = parseNum(document.getElementById("amtA")?.value);
@@ -113,7 +120,6 @@ function buildQueryParams(){
   if (merchant) params.set("merchant", merchant);
   if (card) params.set("card", card);
   if (category) params.set("category", category);
-
   if (start) params.set("start", start);
   if (end) params.set("end", end);
 
@@ -126,9 +132,7 @@ function buildQueryParams(){
 }
 
 function currentRequestKey(){
-  // Used to detect filter changes between loads
   const p = buildQueryParams();
-  // normalize offset out of key for "same filter"
   p.delete("offset");
   return p.toString();
 }
@@ -137,15 +141,14 @@ async function loadNextPage(){
   if (LOADING || DONE) return;
 
   const reqKey = currentRequestKey();
-
-  // If filters changed between page loads, don't continue the old stream
   if (LAST_REQ_KEY && LAST_REQ_KEY !== reqKey){
     return;
   }
   LAST_REQ_KEY = reqKey;
 
   LOADING = true;
-  setStatus(OFFSET === 0 ? "Loading…" : "Loading more…");
+  updateLoadMoreButton();
+  setStatus(OFFSET === 0 ? "Loading..." : "Loading more...");
 
   try{
     const params = buildQueryParams();
@@ -167,6 +170,7 @@ async function loadNextPage(){
     OFFSET += rows.length;
   } finally {
     LOADING = false;
+    updateLoadMoreButton();
   }
 }
 
@@ -177,6 +181,7 @@ function resetAndReload(){
   LAST_REQ_KEY = currentRequestKey();
   clearList();
   setStatus("");
+  updateLoadMoreButton();
   loadNextPage().catch(err => {
     console.error(err);
     setStatus("Failed to load transactions.");
@@ -191,19 +196,12 @@ function debounce(fn, ms){
   };
 }
 
-function initInfiniteScroll(){
-  const sentinel = document.getElementById("txSentinel");
-  if (!sentinel) return;
-
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries){
-      if (e.isIntersecting){
-        loadNextPage().catch(err => console.error(err));
-      }
-    }
-  }, { root: null, rootMargin: "800px 0px", threshold: 0.01 });
-
-  io.observe(sentinel);
+function initLoadMoreButton(){
+  const btn = document.getElementById("txLoadMoreBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    loadNextPage().catch(err => console.error(err));
+  });
 }
 
 function initFilters(){
@@ -221,8 +219,8 @@ function initFilters(){
   if (clearBtn){
     clearBtn.addEventListener("click", () => {
       const qMerchant = document.getElementById("qMerchant");
-const qCard = document.getElementById("qCard");
-const qCategory = document.getElementById("qCategory");
+      const qCard = document.getElementById("qCard");
+      const qCategory = document.getElementById("qCategory");
       const dateFrom = document.getElementById("dateFrom");
       const dateTo = document.getElementById("dateTo");
       const amtMode = document.getElementById("amtMode");
@@ -231,8 +229,8 @@ const qCategory = document.getElementById("qCategory");
       const amtAbs = document.getElementById("amtAbs");
 
       if (qMerchant) qMerchant.value = "";
-if (qCard) qCard.value = "";
-if (qCategory) qCategory.value = "";
+      if (qCard) qCard.value = "";
+      if (qCategory) qCategory.value = "";
       if (dateFrom) dateFrom.value = "";
       if (dateTo) dateTo.value = "";
       if (amtMode) amtMode.value = "any";
@@ -244,7 +242,6 @@ if (qCategory) qCategory.value = "";
     });
   }
 
-  // show/hide amtB depending on mode
   const amtModeEl = document.getElementById("amtMode");
   const amtBEl = document.getElementById("amtB");
   if (amtModeEl && amtBEl){
@@ -259,7 +256,8 @@ if (qCategory) qCategory.value = "";
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  initInfiniteScroll();
+  initLoadMoreButton();
   initFilters();
   resetAndReload();
 });
+

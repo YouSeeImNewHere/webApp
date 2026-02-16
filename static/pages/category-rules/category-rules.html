@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
@@ -6,11 +6,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <title>Category Rules</title>
 
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
-<link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/category-rules/category-rules.css?v={{ BUILD_ID }}">
 
-  <!-- ensure theme applies on this page too -->
-  <script src="/static/theme.js"></script>
+  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
 
 <body class="page-category-rules" data-page-title="Category Rules">
@@ -24,9 +30,12 @@
       <div class="settings-card">
         <div class="rules-toolbar">
           <button id="refreshRulesBtn" class="settings-btn small">Refresh</button>
+          <input id="ruleSearchId" class="settings-input mono" style="max-width:120px;" placeholder="Rule ID" />
+          <input id="ruleSearchKeyword" class="settings-input" style="max-width:240px;" placeholder="Keywords / regex" />
+          <input id="ruleSearchCategory" class="settings-input" style="max-width:180px;" placeholder="Category" />
           <span id="rulesStatus" class="settings-muted" style="margin:0;"></span>
         </div>
-<div id="rulesCards" class="rules-cards" hidden></div>
+        <div id="rulesCards" class="rules-cards" hidden></div>
 
         <table class="settings-table rules-table" id="rulesTable">
           <thead>
@@ -41,12 +50,15 @@
           <tbody></tbody>
         </table>
 
+        <div style="display:flex; justify-content:center; margin-top:12px;">
+          <button id="rulesLoadMoreBtn" class="settings-btn small" hidden>Load more</button>
+        </div>
+
         <datalist id="categoryOptions"></datalist>
       </div>
     </section>
   </div>
 
-  <!-- Test modal -->
   <div id="ruleTestModal" class="modal-overlay" hidden>
     <div class="modal">
       <div class="modal-head">
@@ -77,11 +89,10 @@
       </div>
     </div>
   </div>
-  <!-- Shared chrome (top bar + bottom tabs + notif modal) -->
+
   <div id="sharedChrome"></div>
 
-  <script src="/static/categoryRules.js"></script>
+  <script src="/static/pages/category-rules/category-rules.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
-
 </body>
 </html>

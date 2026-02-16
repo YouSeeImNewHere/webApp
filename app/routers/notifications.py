@@ -90,7 +90,13 @@ def push_notification(payload: NotificationPush, x_notif_secret: str = Header(de
     ensure_notifications_table_pg()
     tid = _require_tenant_id(for_secret_push=True)
 
-    if not NOTIF_SECRET or x_notif_secret != NOTIF_SECRET:
+    # Allow either:
+    # 1) Server-to-server secret pushes, or
+    # 2) Authenticated in-app pushes (session tenant present).
+    # Home uses in-app pushes for credit-usage notifications.
+    has_session_tenant = bool(current_tenant_id())
+    has_valid_secret = bool(NOTIF_SECRET) and (x_notif_secret == NOTIF_SECRET)
+    if not (has_valid_secret or has_session_tenant):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     with with_db_cursor() as (conn, cur):

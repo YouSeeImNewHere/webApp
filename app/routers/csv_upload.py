@@ -28,6 +28,17 @@ STOP_TOKENS = {
     "debit", "dc", "credit", "pos", "purchase", "card", "visa", "mastercard",
     "auth", "pending", "ach", "transaction",
 }
+MERCHANT_NOISE_TOKENS = {
+    "xx", "xxx", "xxxx", "intl", "online", "store", "retail",
+}
+US_STATE_CODES = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga",
+    "hi", "id", "il", "in", "ia", "ks", "ky", "la", "me", "md",
+    "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj",
+    "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc",
+    "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy",
+    "dc",
+}
 PAYMENT_GENERIC_TOKENS = {
     "payment", "pay", "thank", "thanks", "thankyou", "you",
     "mobile", "autopay", "online", "electronic", "transfer",
@@ -150,12 +161,29 @@ def _merchant_tokens(s: str) -> list[str]:
     for t in s.split():
         if t in STOP_TOKENS:
             continue
+        if t in MERCHANT_NOISE_TOKENS:
+            continue
         if len(t) < 2:
             continue
         if t.isdigit():
             continue
+        if len(t) == 2 and t in US_STATE_CODES:
+            continue
+        if len(t) >= 5 and t.endswith("s"):
+            t = t[:-1]
         toks.append(t)
     return toks
+
+
+def _merchant_token_subset_match(a: str, b: str, min_shared: int = 2) -> bool:
+    A = set(_merchant_tokens(a))
+    B = set(_merchant_tokens(b))
+    if not A or not B:
+        return False
+    shared = len(A & B)
+    if shared < int(min_shared):
+        return False
+    return A <= B or B <= A
 
 
 def _merchants_similar(a: str, b: str, min_overlap: float = 0.6) -> bool:
@@ -170,6 +198,18 @@ def _merchants_similar(a: str, b: str, min_overlap: float = 0.6) -> bool:
         return False
     overlap = shared / min(len(A), len(B))
     return overlap >= min_overlap
+
+
+def _merchant_core_overlap_match(a: str, b: str, min_shared: int = 2) -> bool:
+    A = set(_merchant_tokens(a))
+    B = set(_merchant_tokens(b))
+    if not A or not B:
+        return False
+    shared_tokens = A & B
+    if len(shared_tokens) < int(min_shared):
+        return False
+    # Require at least one meaningful shared token so generic overlaps do not over-match.
+    return any(len(t) >= 4 for t in shared_tokens)
 
 
 def _is_generic_payment_merchant(s: str) -> bool:
@@ -265,9 +305,9 @@ def _find_pending_email_match_by_amount_date(
           {purchase_expr} AS purchase_d
         FROM transactions
         WHERE {account_col} = %s
-          AND {amount_col} = %s
-          AND COALESCE({status_col}, '') = 'Pending'
-          AND COALESCE({source_col}, '') = 'email'
+          AND ABS(({amount_col})::double precision - %s::double precision) < 0.005
+          AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'pending'
+          AND LOWER(TRIM(COALESCE({source_col}, ''))) = 'email'
           AND {purchase_expr} BETWEEN %s::date AND %s::date
           {tenant_pred}
         ORDER BY {purchase_expr} DESC NULLS LAST, {id_col} DESC
@@ -296,7 +336,12 @@ def _find_pending_email_match_by_amount_date(
         if db_is_weak and not csv_is_weak:
             return str(c.get("id") or "")
 
+        if _merchant_token_subset_match(db_clean, csv_clean):
+            return str(c.get("id") or "")
+
         if _merchants_similar(db_clean, csv_clean):
+            return str(c.get("id") or "")
+        if _merchant_core_overlap_match(db_clean, csv_clean):
             return str(c.get("id") or "")
 
     return None
@@ -337,8 +382,8 @@ def _find_pending_email_candidates_by_date(
           {purchase_expr} AS purchase_d
         FROM transactions
         WHERE {account_col} = %s
-          AND COALESCE({status_col}, '') = 'Pending'
-          AND COALESCE({source_col}, '') = 'email'
+          AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'pending'
+          AND LOWER(TRIM(COALESCE({source_col}, ''))) = 'email'
           AND {purchase_expr} BETWEEN %s::date AND %s::date
           {tenant_pred}
         ORDER BY {purchase_expr} DESC NULLS LAST, {id_col} DESC
@@ -346,6 +391,66 @@ def _find_pending_email_candidates_by_date(
         tuple(params),
     )
     return [dict(r) for r in (cur.fetchall() or [])]
+
+
+def _find_pending_email_match_by_id_base(
+    cur,
+    *,
+    account_id: int,
+    tx_id_base: str,
+    merchant: str,
+    tenant_id: int | None,
+    id_col: str | None,
+    account_col: str | None,
+    merchant_col: str | None,
+    status_col: str | None,
+    source_col: str | None,
+    tenant_col: str | None,
+) -> str | None:
+    if not (tx_id_base and id_col and account_col and merchant_col and status_col and source_col):
+        return None
+    tenant_pred = f"AND {tenant_col} = %s" if (tenant_id and tenant_col) else ""
+    params: list[Any] = [int(account_id), str(tx_id_base), str(tx_id_base) + "_%"]
+    if tenant_pred:
+        params.append(int(tenant_id))
+    cur.execute(
+        f"""
+        SELECT
+          {id_col} AS id,
+          {merchant_col} AS merchant
+        FROM transactions
+        WHERE {account_col} = %s
+          AND ({id_col} = %s OR {id_col} LIKE %s)
+          AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'pending'
+          AND LOWER(TRIM(COALESCE({source_col}, ''))) = 'email'
+          {tenant_pred}
+        ORDER BY {id_col} ASC
+        """,
+        tuple(params),
+    )
+    rows = [dict(r) for r in (cur.fetchall() or [])]
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return str(rows[0].get("id") or "")
+
+    csv_clean = _clean_spaces(merchant or "").lower()
+    strong: list[str] = []
+    for r in rows:
+        rid = str(r.get("id") or "")
+        r_merch = _clean_spaces(str(r.get("merchant") or "")).lower()
+        if not rid:
+            continue
+        if _merchant_token_subset_match(r_merch, csv_clean) or _merchants_similar(r_merch, csv_clean) or _merchant_core_overlap_match(r_merch, csv_clean):
+            strong.append(rid)
+    if len(strong) == 1:
+        return strong[0]
+
+    for r in rows:
+        rid = str(r.get("id") or "")
+        if rid.endswith("_0"):
+            return rid
+    return None
 
 
 def _find_tip_adjust_pending_email_match(
@@ -415,6 +520,7 @@ def _pick_pending_update_target(
     status_col: str | None,
     source_col: str | None,
     tenant_col: str | None,
+    tx_id_base: str | None = None,
     window_days: int = 4,
     exclude_ids: set[str] | None = None,
 ) -> tuple[str | None, str | None]:
@@ -437,6 +543,23 @@ def _pick_pending_update_target(
     )
     if exact_id and (not exclude_ids or exact_id not in exclude_ids):
         return exact_id, "exact"
+
+    if tx_id_base:
+        by_id_base = _find_pending_email_match_by_id_base(
+            cur,
+            account_id=account_id,
+            tx_id_base=str(tx_id_base),
+            merchant=merchant,
+            tenant_id=tenant_id,
+            id_col=id_col,
+            account_col=account_col,
+            merchant_col=merchant_col,
+            status_col=status_col,
+            source_col=source_col,
+            tenant_col=tenant_col,
+        )
+        if by_id_base and (not exclude_ids or by_id_base not in exclude_ids):
+            return by_id_base, "id_base"
 
     candidates = _find_pending_email_candidates_by_date(
         cur,
@@ -497,8 +620,8 @@ def _list_pending_email_rows(
           {merchant_col} AS merchant
         FROM transactions
         WHERE {account_col} = %s
-          AND COALESCE({status_col}, '') = 'Pending'
-          AND COALESCE({source_col}, '') = 'email'
+          AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'pending'
+          AND LOWER(TRIM(COALESCE({source_col}, ''))) = 'email'
           {tenant_pred}
         ORDER BY {purchase_expr} DESC NULLS LAST, {id_col} DESC
         LIMIT %s
@@ -506,6 +629,141 @@ def _list_pending_email_rows(
         tuple(params),
     )
     return [dict(r) for r in (cur.fetchall() or [])]
+
+
+def _find_posted_csv_candidates_for_pending(
+    cur,
+    *,
+    account_id: int,
+    amount: float,
+    purchase_date,
+    tenant_id: int | None,
+    id_col: str | None,
+    account_col: str | None,
+    amount_col: str | None,
+    purchase_col: str | None,
+    merchant_col: str | None,
+    status_col: str | None,
+    source_col: str | None,
+    tenant_col: str | None,
+    window_days: int = 2,
+) -> list[dict[str, Any]]:
+    if not (id_col and account_col and amount_col and purchase_col and merchant_col and status_col and source_col and purchase_date):
+        return []
+    purchase_expr = _date_from_text_expr(purchase_col)
+    start_d = purchase_date - timedelta(days=int(window_days))
+    end_d = purchase_date + timedelta(days=int(window_days))
+    tenant_pred = f"AND {tenant_col} = %s" if (tenant_id and tenant_col) else ""
+    params: list[Any] = [int(account_id), float(amount), start_d, end_d]
+    if tenant_pred:
+        params.append(int(tenant_id))
+    cur.execute(
+        f"""
+        SELECT
+          {id_col} AS id,
+          {merchant_col} AS merchant,
+          {purchase_col} AS purchase_raw,
+          {purchase_expr} AS purchase_d
+        FROM transactions
+        WHERE {account_col} = %s
+          AND ABS(({amount_col})::double precision - %s::double precision) < 0.005
+          AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'posted'
+          AND LOWER(TRIM(COALESCE({source_col}, ''))) = 'csv'
+          AND {purchase_expr} BETWEEN %s::date AND %s::date
+          {tenant_pred}
+        ORDER BY {purchase_expr} DESC NULLS LAST, {id_col} DESC
+        """,
+        tuple(params),
+    )
+    return [dict(r) for r in (cur.fetchall() or [])]
+
+
+def _reconcile_existing_pending_duplicates(
+    cur,
+    *,
+    account_id: int,
+    tenant_id: int | None,
+    id_col: str | None,
+    account_col: str | None,
+    amount_col: str | None,
+    purchase_col: str | None,
+    merchant_col: str | None,
+    status_col: str | None,
+    source_col: str | None,
+    tenant_col: str | None,
+    limit: int = 600,
+    window_days: int = 2,
+) -> int:
+    pending_rows = _list_pending_email_rows(
+        cur,
+        account_id=account_id,
+        tenant_id=tenant_id,
+        id_col=id_col,
+        account_col=account_col,
+        amount_col=amount_col,
+        purchase_col=purchase_col,
+        merchant_col=merchant_col,
+        status_col=status_col,
+        source_col=source_col,
+        tenant_col=tenant_col,
+        limit=limit,
+    )
+    removed = 0
+    for p in pending_rows:
+        pending_id = str(p.get("id") or "")
+        pending_merchant = str(p.get("merchant") or "")
+        pending_amount = p.get("amount")
+        pending_date = _parse_date(str(p.get("purchaseDate") or p.get("purchasedate") or ""))
+        if not pending_id or pending_amount is None or not pending_date:
+            continue
+        candidates = _find_posted_csv_candidates_for_pending(
+            cur,
+            account_id=account_id,
+            amount=float(pending_amount),
+            purchase_date=pending_date,
+            tenant_id=tenant_id,
+            id_col=id_col,
+            account_col=account_col,
+            amount_col=amount_col,
+            purchase_col=purchase_col,
+            merchant_col=merchant_col,
+            status_col=status_col,
+            source_col=source_col,
+            tenant_col=tenant_col,
+            window_days=window_days,
+        )
+        matched: list[tuple[str, int]] = []
+        p_clean = _clean_spaces(pending_merchant).lower()
+        for c in candidates:
+            c_id = str(c.get("id") or "")
+            c_clean = _clean_spaces(str(c.get("merchant") or "")).lower()
+            c_date = c.get("purchase_d")
+            if not c_id:
+                continue
+            if _merchant_token_subset_match(p_clean, c_clean) or _merchants_similar(p_clean, c_clean) or _merchant_core_overlap_match(p_clean, c_clean):
+                day_gap = 9999
+                try:
+                    if c_date:
+                        day_gap = abs((c_date - pending_date).days)
+                except Exception:
+                    pass
+                matched.append((c_id, int(day_gap)))
+        if not matched:
+            continue
+        matched.sort(key=lambda x: x[1])
+        _best_id, best_gap = matched[0]
+        if len(matched) > 1 and matched[1][1] == best_gap:
+            # Ambiguous nearest posted row; skip to avoid deleting a legit pending row.
+            continue
+
+        where = [f"{id_col} = %s"]
+        vals: list[Any] = [pending_id]
+        if tenant_id and tenant_col:
+            where.append(f"{tenant_col} = %s")
+            vals.append(int(tenant_id))
+        cur.execute(f"DELETE FROM transactions WHERE {' AND '.join(where)}", tuple(vals))
+        removed += 1
+    return removed
 
 
 def _require_tenant_id_or_none() -> int | None:
@@ -551,14 +809,16 @@ def _make_base_id(account_id: int, purchase_mmddyy: str, amount: float) -> str:
 
 
 def _next_tx_id(cur, base: str) -> str:
-    cur.execute("SELECT 1 FROM transactions WHERE id = %s LIMIT 1", (base,))
-    if cur.fetchone() is None:
-        return base
-    cur.execute("SELECT id FROM transactions WHERE id LIKE %s", (base + "_%",))
+    cur.execute("SELECT id FROM transactions WHERE id = %s OR id LIKE %s", (base, base + "_%"))
     rows = cur.fetchall() or []
+    if not rows:
+        return f"{base}_0"
     max_n = 0
     for r in rows:
         tx_id = str(r.get("id") or "")
+        if tx_id == base:
+            max_n = max(max_n, 0)
+            continue
         try:
             n = int(tx_id.rsplit("_", 1)[-1])
             max_n = max(max_n, n)
@@ -925,6 +1185,7 @@ async def ingest_csv_mapped_dry_run(
                 amount = float(entry["amount"])
                 merchant = str(entry["merchant"])
                 purchase_dt = entry.get("purchase_date")
+                tx_id_base = _make_base_id(int(acc_id), purchase_dt.strftime("%m/%d/%y"), amount) if purchase_dt else None
                 match_id, match_kind = _pick_pending_update_target(
                     cur,
                     account_id=int(acc_id),
@@ -940,6 +1201,7 @@ async def ingest_csv_mapped_dry_run(
                     status_col=status_col_name,
                     source_col=source_col_name,
                     tenant_col=tenant_col_name,
+                    tx_id_base=tx_id_base,
                     window_days=4,
                     exclude_ids=reserved_pending_ids,
                 )
@@ -1112,6 +1374,7 @@ async def ingest_csv_mapped(
     tid = _require_tenant_id_or_none()
     inserted = 0
     updated = 0
+    reconciled = 0
     errors: list[dict[str, Any]] = list(mapped["summary"]["sample_errors"])
 
     with with_db_cursor() as (conn, cur):
@@ -1177,6 +1440,7 @@ async def ingest_csv_mapped(
                 status_col=status_col_name,
                 source_col=source_col_name,
                 tenant_col=tenant_col_name,
+                tx_id_base=_make_base_id(int(account_id), purchase_mmddyy, amount),
                 window_days=4,
             )
             if pending_match_id:
@@ -1247,6 +1511,21 @@ async def ingest_csv_mapped(
                 if len(errors) < 25:
                     errors.append({"row_number": row_no, "error": str(e)})
 
+        reconciled = _reconcile_existing_pending_duplicates(
+            cur,
+            account_id=int(account_id),
+            tenant_id=tid,
+            id_col=tx_id_col,
+            account_col=account_col_name,
+            amount_col=amount_col_name,
+            purchase_col=purchase_col_name,
+            merchant_col=merchant_col_name,
+            status_col=status_col_name,
+            source_col=source_col_name,
+            tenant_col=tenant_col_name,
+            limit=600,
+            window_days=2,
+        )
         conn.commit()
 
     skipped = int(mapped["summary"]["invalid_rows"]) + max(0, int(mapped["summary"]["valid_rows"]) - inserted - updated)
@@ -1254,6 +1533,7 @@ async def ingest_csv_mapped(
         "ok": True,
         "inserted": inserted,
         "updated": updated,
+        "reconciled_pending_duplicates": int(reconciled),
         "skipped": skipped,
         "errors": errors,
         "delimiter": used_delim,

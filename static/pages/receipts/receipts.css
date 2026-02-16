@@ -1,0 +1,32 @@
+.wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+.row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.card { background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:14px; margin:12px 0; }
+.grid { display:grid; grid-template-columns: 1fr auto; gap:10px; align-items:center; }
+.pill { padding:4px 10px; border-radius:999px; border:1px solid #ddd; font-size:12px; }
+.muted { color:#666; font-size:13px; }
+.btn { padding:8px 12px; border-radius:10px; border:1px solid #ddd; background:#f7f7f7; cursor:pointer; }
+.btn.primary { background:#111; color:#fff; border-color:#111; }
+.modalBack { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding:20px; }
+.modal { background:#fff; border-radius:16px; width:min(1000px, 100%); max-height:90vh; overflow:auto; padding:16px; }
+.two { display:grid; grid-template-columns: 1.1fr .9fr; gap:14px; }
+img.preview { width:100%; border:1px solid #eee; border-radius:12px; }
+.cand { border:1px solid #eee; border-radius:12px; padding:10px; margin:8px 0; cursor:pointer; }
+.cand:hover { background:#fafafa; }
+input { width:100%; padding:8px 10px; border-radius:10px; border:1px solid #ddd; }
+
+.form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+.form-grid .span2{ grid-column: 1 / -1; }
+.section-title{ font-weight:800; margin:0 0 8px 0; }
+.cand-list{ max-height: 320px; overflow:auto; border:1px solid #eee; border-radius:12px; padding:10px; background:#fff; }
+.actions-row{ display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+
+@media (max-width: 900px) {
+  .wrap { margin: 12px auto; padding: 0 10px; }
+  .modalBack { padding: 0; }
+  .modal { width: 100%; max-height: 100vh; height: 100vh; border-radius: 0; padding: 12px; }
+  .two { grid-template-columns: 1fr; }
+  .form-grid{ grid-template-columns: 1fr; }
+  img.preview { max-height: 52vh; object-fit: contain; background: #fff; }
+  .row { gap: 10px; }
+  .row .btn { flex: 1; }
+}

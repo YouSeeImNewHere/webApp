@@ -572,7 +572,7 @@ renderSpentPie(items, spentMap);
 
   const go = () => {
     if (!category) return;
-    window.location.href = `/static/category.html?c=${encodeURIComponent(category)}`;
+    window.location.href = `/static/pages/category/category.html?c=${encodeURIComponent(category)}`;
   };
 
   row.addEventListener("click", go);

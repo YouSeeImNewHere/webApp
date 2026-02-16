@@ -14,9 +14,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <title>All Transactions</title>
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/mobile.css">
-  <script src="/static/theme.js"></script>
+
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/all-transactions/all-transactions.css?v={{ BUILD_ID }}">
+  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
+
   <script src="/static/shared/format.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/dates.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
@@ -24,46 +33,26 @@
 
 <body class="page-alltx" data-page-title="All Transactions">
   <div class="page-container">
-
     <div style="max-width:900px;margin:0 auto;">
-      <!-- FILTER BAR -->
-      <div
-        style="
-          display:flex;
-          flex-direction:column;
-          gap:10px;
-          margin-bottom:12px;
-        "
-      >
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
         <div id="qGrid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            Merchant
+            <input id="qMerchant" placeholder="e.g. Amazon" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
+          </label>
 
-  <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
-    Merchant
-    <input id="qMerchant" placeholder="e.g. Amazon"
-      style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
-  </label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            Card
+            <input id="qCard" placeholder="e.g. Chase Freedom" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
+          </label>
 
-  <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
-    Card
-    <input id="qCard" placeholder="e.g. Chase Freedom"
-      style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
-  </label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
+            Category
+            <input id="qCategory" placeholder="e.g. Groceries" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
+          </label>
+        </div>
 
-  <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
-    Category
-    <input id="qCategory" placeholder="e.g. Groceries"
-      style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14); font-weight:700;" />
-  </label>
-</div>
-
-
-        <div
-          style="
-            display:grid;
-            grid-template-columns: 1fr 1fr;
-            gap:10px;
-          "
-        >
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
           <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
             From
             <input id="dateFrom" type="date" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
@@ -75,16 +64,7 @@
           </label>
         </div>
 
-        <div
-  id="amtGrid"
-  style="
-    display:grid;
-    grid-template-columns: 1.2fr 1fr 1fr;
-    gap:10px;
-    align-items:end;
-  "
->
-
+        <div id="amtGrid" style="display:grid; grid-template-columns: 1.2fr 1fr 1fr; gap:10px; align-items:end;">
           <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
             Amount filter
             <select id="amtMode" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);">
@@ -98,14 +78,12 @@
 
           <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
             Value
-            <input id="amtA" inputmode="decimal" placeholder="e.g. 25.00"
-              style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
+            <input id="amtA" inputmode="decimal" placeholder="e.g. 25.00" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
           </label>
 
           <label style="display:flex; flex-direction:column; gap:6px; font-weight:700;">
             And
-            <input id="amtB" inputmode="decimal" placeholder="e.g. 100.00"
-              style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
+            <input id="amtB" inputmode="decimal" placeholder="e.g. 100.00" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,0.14);" />
           </label>
         </div>
 
@@ -115,40 +93,31 @@
             ABS (treat -50 and +50 the same)
           </label>
 
-          <button
-            id="clearFilters"
-            style="
-              margin-left:auto;
-              padding:10px 12px;
-              border-radius:12px;
-              border:1px solid rgba(0,0,0,0.14);
-              font-weight:900;
-              cursor:pointer;
-              background:transparent;
-            "
-          >
+          <button id="clearFilters" style="margin-left:auto; padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,0.14); font-weight:900; cursor:pointer; background:transparent;">
             Clear
           </button>
         </div>
       </div>
 
       <div id="allTxList" class="tx-list"></div>
-      <div id="txSentinel" style="height:1px;"></div>
+      <div style="display:flex; justify-content:center; margin-top:10px;">
+        <button id="txLoadMoreBtn" class="settings-btn small" type="button" hidden>Load more</button>
+      </div>
       <div id="txStatus" style="padding:10px; opacity:0.75;"></div>
     </div>
   </div>
-
 
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/static/sw.js").catch(console.error);
     }
   </script>
+
   <div id="sharedChrome"></div>
 
-  <script src="/static/profile.js"></script>
-  <script src="/static/txInspect.js"></script>
-  <script src="/static/category_icons.js"></script>
-  <script type="module" src="/static/all-transactions.js"></script>
+  <script src="/static/profile.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/txInspect.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/category_icons.js?v={{ BUILD_ID }}"></script>
+  <script type="module" src="/static/pages/all-transactions/all-transactions.js?v={{ BUILD_ID }}"></script>
 </body>
 </html>

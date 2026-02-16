@@ -23,7 +23,8 @@ const API_CACHE_RULES = [
   { prefix: "/spending", ttlMs: 5 * 60 * 1000 },
 ];
 
-function handleAuthFailure(res) {
+function handleAuthFailure(res, options = {}) {
+  if (options && options.skipAuthRedirect) return false;
   if (res && res.status === 401 && window.location.pathname !== "/login") {
     redirectToLogin();
     return true;
@@ -146,7 +147,7 @@ async function fetchWithStaleFallback(url, options = {}) {
 export async function apiFetch(url, options = {}) {
   const opts = Object.assign({ credentials: "same-origin" }, options || {});
   const res = await fetch(url, opts);
-  handleAuthFailure(res);
+  handleAuthFailure(res, opts);
   return res;
 }
 

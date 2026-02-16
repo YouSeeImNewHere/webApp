@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from fastapi import APIRouter, Request, HTTPException, Form
 from fastapi.responses import FileResponse
 from starlette.responses import HTMLResponse, RedirectResponse
@@ -16,6 +17,46 @@ router = APIRouter()
 # Pages / Static routes (ported from pages.py)
 # =============================================================================
 # Serve /static/*
+
+
+def _match_category_rule_for_transaction(
+    merchant: str | None,
+    category: str | None,
+):
+    merchant_text = (merchant or "").strip()
+    category_text = (category or "").strip()
+    if not merchant_text or not category_text:
+        return None
+
+    rows = with_db_cursor()
+    with rows as (_, cur):
+        cur.execute(
+            """
+            SELECT id, pattern, COALESCE(flags, 'i') AS flags
+            FROM categoryrules
+            WHERE COALESCE(is_active, TRUE) = TRUE
+              AND TRIM(COALESCE(category, '')) = TRIM(%s)
+            ORDER BY id DESC
+            """,
+            (category_text,),
+        )
+        rules = cur.fetchall() or []
+
+    for r in rules:
+        pattern = (r.get("pattern") or "").strip()
+        if not pattern:
+            continue
+        flags = (r.get("flags") or "i").lower()
+        py_flags = re.IGNORECASE if ("i" in flags) else 0
+        try:
+            if re.search(pattern, merchant_text, py_flags):
+                return {
+                    "id": int(r["id"]),
+                    "pattern": pattern,
+                }
+        except re.error:
+            continue
+    return None
 
 
 @router.get("/__ping")
@@ -52,11 +93,11 @@ def home(request: Request):
 
 @router.get("/settings")
 def settings_page():
-    return FileResponse("static/settings.html")
+    return FileResponse("static/pages/settings/settings.html")
 
 @router.get("/account")
 def account_page():
-    return FileResponse("static/account.html")
+    return FileResponse("static/pages/account/account.html")
 
 @router.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
@@ -84,8 +125,16 @@ def transaction_detail(tx_id: str):
         # txInspect.js throws on !res.ok, so make it a real 404
         raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
 
-    return {"ok": True, "transaction": dict(row)}
+    tx = dict(row)
+    matched_rule = _match_category_rule_for_transaction(
+        merchant=tx.get("merchant"),
+        category=tx.get("category"),
+    )
+    tx["category_rule_id"] = matched_rule["id"] if matched_rule else None
+    tx["category_rule_pattern"] = matched_rule["pattern"] if matched_rule else None
+
+    return {"ok": True, "transaction": tx}
 
 @router.get("/receipts-page")
 def receipts_page():
-    return FileResponse(os.path.join("static", "receipts.html"))
+    return FileResponse(os.path.join("static", "pages", "receipts", "receipts.html"))

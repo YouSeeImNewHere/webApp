@@ -8,6 +8,27 @@ import { isoLocal, formatWeekdayShort, formatDateLong, formatMMDD } from "/stati
 //   mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
 //   mountUpcomingCard("#upcomingMount", { daysAhead: 30, accountId: 5 });
 
+  function getSharedRequestCache() {
+    if (typeof window === "undefined") return new Map();
+    if (!(window.__financeRequestCache instanceof Map)) {
+      window.__financeRequestCache = new Map();
+    }
+    return window.__financeRequestCache;
+  }
+
+  function withSharedCache(key, loader) {
+    const cache = getSharedRequestCache();
+    if (cache.has(key)) return cache.get(key);
+    const p = Promise.resolve()
+      .then(loader)
+      .catch((err) => {
+        cache.delete(key);
+        throw err;
+      });
+    cache.set(key, p);
+    return p;
+  }
+
   function addDays(d, n) {
     const x = new Date(d);
     x.setDate(x.getDate() + n);
@@ -49,48 +70,32 @@ import { isoLocal, formatWeekdayShort, formatDateLong, formatMMDD } from "/stati
   }
 
 
-// ---------------- Paychecks (LES) ----------------
-// Pulls paycheck events from /les/paychecks using the saved Profile (localStorage via profile.js).
+// ---------------- Upcoming payload ----------------
+// Pulls merged recurring + paycheck events from /page/home/upcoming.
 function getProfile() {
   return window.Profile?.get?.() || null;
 }
 
-async function fetchPaychecks(year, month) {
-  const profile0 = getProfile();
-  if (!profile0) return [];
-  if (!profile0?.paygrade) {
-    console.warn("LES profile missing paygrade; skipping paycheck calc.");
-    return [];
-  }
-
-  // Normalize a few fields so the backend always understands them
-  const profile = { ...profile0 };
-  if (profile.paygrade != null) {
-    profile.paygrade = String(profile.paygrade)
-      .toUpperCase()
-      .replace(/\s+/g, "")
-      .replace("E-", "E")
-      .replace("-", "");
-  }
-  if (profile.service_start != null) {
-    profile.service_start = String(profile.service_start);
-  }
-  if (profile.bah_override === "") profile.bah_override = null;
-
-  const res = await fetch("/les/paychecks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ year, month, profile }),
+async function fetchUpcomingWindow({ daysAhead = 30, accountId = null } = {}) {
+  const profile = getProfile();
+  const payload = {
+    days_ahead: Math.max(1, Number(daysAhead) || 30),
+    min_occ: 3,
+    include_stale: false,
+    account_id: (accountId == null ? null : Number(accountId)),
+    profile: (profile && profile.paygrade) ? profile : null,
+  };
+  const key = `page-home-upcoming:${payload.days_ahead}:${payload.account_id ?? "all"}:${payload.profile ? "p1" : "p0"}`;
+  return withSharedCache(key, async () => {
+    const res = await fetch("/page/home/upcoming", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return { events: [] };
+    const data = await res.json().catch(() => ({}));
+    return { events: Array.isArray(data?.events) ? data.events : [] };
   });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("Paycheck calc failed:", res.status, txt);
-    return [];
-  }
-
-  const data = await res.json().catch(() => null);
-  return Array.isArray(data?.events) ? data.events : [];
 }
 
 function dedupeEvents(evts) {
@@ -111,27 +116,6 @@ function dedupeEvents(evts) {
   }
   return out;
 }
-
-
-  async function fetchRecurringCalendarMonth(year, month, { minOcc = 3, includeStale = "false" } = {}) {
-    const res = await fetch(
-      `/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) return { events: [] };
-    return await res.json();
-  }
-
-  function computeMonthsBetween(startDate, endDate) {
-    const months = [];
-    let cur = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-    const endMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-    while (cur <= endMonth) {
-      months.push({ y: cur.getFullYear(), m: cur.getMonth() + 1 });
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
-    }
-    return months;
-  }
 
   function buildCardHTML() {
     return `
@@ -334,17 +318,9 @@ function dedupeEvents(evts) {
     const endD = addDays(today, Math.max(1, Number(daysAhead) || 30) - 1);
     const endIso = isoLocal(endD);
 
-    const months = computeMonthsBetween(today, endD);
-
     let events = [];
-    for (const mm of months) {
-  const json = await fetchRecurringCalendarMonth(mm.y, mm.m, { minOcc: 3, includeStale: "false" });
-  if (Array.isArray(json?.events)) events = events.concat(json.events);
-
-  // ✅ Add DFAS paycheck events (if Profile is set)
-  const pay = await fetchPaychecks(mm.y, mm.m);
-  if (pay.length) events = events.concat(pay);
-}
+    const out = await fetchUpcomingWindow({ daysAhead, accountId });
+    events = Array.isArray(out?.events) ? out.events : [];
 
     if (accountId != null) {
       const aid = Number(accountId);

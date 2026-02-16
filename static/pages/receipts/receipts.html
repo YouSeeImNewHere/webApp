@@ -1,51 +1,23 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <title>Receipts</title>
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/mobile.css">
-  <style>
-    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-    .card { background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:14px; margin:12px 0; }
-    .grid { display:grid; grid-template-columns: 1fr auto; gap:10px; align-items:center; }
-    .pill { padding:4px 10px; border-radius:999px; border:1px solid #ddd; font-size:12px; }
-    .muted { color:#666; font-size:13px; }
-    .btn { padding:8px 12px; border-radius:10px; border:1px solid #ddd; background:#f7f7f7; cursor:pointer; }
-    .btn.primary { background:#111; color:#fff; border-color:#111; }
-    .modalBack { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; padding:20px; }
-    .modal { background:#fff; border-radius:16px; width:min(1000px, 100%); max-height:90vh; overflow:auto; padding:16px; }
-    .two { display:grid; grid-template-columns: 1.1fr .9fr; gap:14px; }
-    img.preview { width:100%; border:1px solid #eee; border-radius:12px; }
-    .cand { border:1px solid #eee; border-radius:12px; padding:10px; margin:8px 0; cursor:pointer; }
-    .cand:hover { background:#fafafa; }
-    input { width:100%; padding:8px 10px; border-radius:10px; border:1px solid #ddd; }
 
-    /* Verify modal layout tightening */
-    .form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    .form-grid .span2{ grid-column: 1 / -1; }
-    .section-title{ font-weight:800; margin:0 0 8px 0; }
-    .cand-list{ max-height: 320px; overflow:auto; border:1px solid #eee; border-radius:12px; padding:10px; background:#fff; }
-    .actions-row{ display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
-
-    /* Mobile: stack preview + form, make modal feel native */
-    @media (max-width: 900px) {
-      .wrap { margin: 12px auto; padding: 0 10px; }
-      .modalBack { padding: 0; }
-      .modal { width: 100%; max-height: 100vh; height: 100vh; border-radius: 0; padding: 12px; }
-      .two { grid-template-columns: 1fr; }
-      .form-grid{ grid-template-columns: 1fr; }
-      img.preview { max-height: 52vh; object-fit: contain; background: #fff; }
-      .row { gap: 10px; }
-      .row .btn { flex: 1; }
-    }
-  </style>
-  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/receipts/receipts.css?v={{ BUILD_ID }}">
+  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
-<body>
+<body class="page-receipts" data-page-title="Receipts">
   <div class="wrap">
     <div class="card" style="margin-top:0;">
       <div class="row" style="justify-content:space-between;">
@@ -61,7 +33,7 @@
     </div>
 
     <div class="row card">
-      <input id="q" placeholder="Search merchant or filename…" style="flex:1; min-width:260px;">
+      <input id="q" placeholder="Search merchant or filename..." style="flex:1; min-width:260px;">
       <button class="btn" id="refreshBtn">Refresh</button>
     </div>
 
@@ -102,14 +74,12 @@
               <div id="addrBox" class="muted" style="white-space:pre-line;"></div>
             </div>
 
-
             <div class="card" style="margin:12px 0 0 0; background:#fafafa;">
               <div class="section-title" style="margin:0 0 8px 0;">Items</div>
               <div id="itemsBox" class="card" style="margin:0; background:#fff;">
                 <div class="muted">No items parsed.</div>
               </div>
             </div>
-
 
             <div class="actions-row" style="margin-top:12px;">
               <span class="muted" id="mConf" style="margin-right:auto;"></span>
@@ -137,7 +107,6 @@
             </div>
           </details>
 
-
           <div class="card" style="margin-top:12px;">
             <div class="section-title">Suggested transactions</div>
             <div class="muted" style="margin-bottom:8px;">Click one to attach this receipt.</div>
@@ -145,15 +114,13 @@
           </div>
         </div>
       </div>
-
     </div>
   </div>
-<!-- Shared chrome (top bar + bottom tabs + notif modal) -->
-<div id="sharedChrome"></div>
 
-  <script src="/static/profile.js"></script>
-  <script src="/static/receipts.js"></script>
+  <div id="sharedChrome"></div>
+
+  <script src="/static/profile.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/pages/receipts/receipts.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
-
 </body>
 </html>

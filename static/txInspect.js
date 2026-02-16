@@ -126,7 +126,7 @@
       "purchaseDate","postedDate","dateISO","time",
       "merchant","amount",
       "bank","card","accountType","account_id",
-      "category","subcategory",
+      "category","category_rule_id","category_rule_pattern","subcategory",
       "where","source",
       "transfer_peer",
       "notes"

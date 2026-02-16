@@ -41,6 +41,40 @@ const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
 // =============================
 let UI_LAYOUT = null;
 
+function getSharedRequestCache() {
+  if (typeof window === "undefined") return new Map();
+  if (!(window.__financeRequestCache instanceof Map)) {
+    window.__financeRequestCache = new Map();
+  }
+  return window.__financeRequestCache;
+}
+
+function withSharedCache(key, loader) {
+  const cache = getSharedRequestCache();
+  if (cache.has(key)) return cache.get(key);
+  const p = Promise.resolve()
+    .then(loader)
+    .catch((err) => {
+      cache.delete(key);
+      throw err;
+    });
+  cache.set(key, p);
+  return p;
+}
+
+async function fetchRecurringCalendarMonthCached(year, month, { minOcc = 3, includeStale = "false" } = {}) {
+  const key = `recurring-calendar:${Number(year)}-${Number(month)}:min_occ=${Number(minOcc)}:include_stale=${String(includeStale)}`;
+  return withSharedCache(key, async () => {
+    try {
+      return await apiGetJson(
+        `/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${encodeURIComponent(includeStale)}`,
+      );
+    } catch (_) {
+      return { events: [] };
+    }
+  });
+}
+
 function loadJsonCache(key) {
   try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
 }
@@ -180,7 +214,7 @@ async function openExtraSavedBreakdown() {
     // optional: small explainer
     const note = `
       <div style="margin-top:10px; font-size:12px; opacity:.7;">
-        Leftover = baseline  spent free. Negative days reduce the total.
+        Leftover = baseline minus spent free. Completed-day leftover is added; overspend pulls from extra saved (never below zero).
       </div>
     `;
 
@@ -356,7 +390,12 @@ function initBankSortablesOnly() {
     const inst = new Sortable(ul, {
       animation: 150,
       handle: ".account-pill",
-      draggable: "li",
+      draggable: "li[data-account-id]",
+      forceFallback: true,
+      fallbackOnBody: true,
+      delayOnTouchOnly: true,
+      delay: 120,
+      touchStartThreshold: 4,
       onEnd: async () => {
         const ids = Array.from(ul.querySelectorAll("li[data-account-id]"))
           .map(li => li.dataset.accountId)
@@ -399,7 +438,11 @@ function isoDayLocal() {
 
 async function pushNotif({ kind, dedupe_key, subject, sender, body }) {
   try {
-    await apiPostJson("/notifications/push", { kind, dedupe_key, subject, sender, body });
+    await apiPostJson(
+      "/notifications/push",
+      { kind, dedupe_key, subject, sender, body },
+      { skipAuthRedirect: true },
+    );
   } catch (e) {
     console.warn("pushNotif failed:", e);
   }
@@ -549,7 +592,7 @@ async function loadBankTotals(dataOverride = null) {
   }
 
   if (document.body.classList.contains("is-customizing")) {
-    window.LayoutUI?.initBankSortables?.();
+    initBankSortablesOnly();
   }
 }
 
@@ -790,14 +833,11 @@ async function bootHome() {
     }
 
     setChartHeaderUI();
-refreshMonthBudgetCard(false);
+    refreshMonthBudgetCard(false);
 
     // kick these off immediately (parallel)
-    setChartHeaderUI();
     const tasks = [
       Promise.resolve().then(() => loadHomePayload()),
-      Promise.resolve().then(() => loadChart()),
-      Promise.resolve().then(() => mountUpcomingCard("#upcomingMount", { daysAhead: 30 })),
       Promise.resolve().then(() => { try { mountMonthBudgetCard("#monthBudgetMount"); } catch (_) {} }),
     ];
 
@@ -807,16 +847,16 @@ refreshMonthBudgetCard(false);
       if (r.status === "rejected") console.warn("Home task failed:", r.reason);
     }
 
-    // optional: log failures
-    for (const r of results) {
-      if (r.status === "rejected") console.warn("Home task failed:", r.reason);
-    }
-
-    try { mountMonthBudgetCard("#monthBudgetMount"); } catch(_) {}
-
     bindIncomeRowClick();
     bindSpentRowClick();
     bindExtraSavedRowClick();
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(() => { mountUpcomingCard("#upcomingMount", { daysAhead: 30 }).catch(() => {}); }, { timeout: 1200 });
+    } else {
+      window.requestAnimationFrame(() => {
+        setTimeout(() => { mountUpcomingCard("#upcomingMount", { daysAhead: 30 }).catch(() => {}); }, 0);
+      });
+    }
   } catch (err) {
     console.error("bootHome failed:", err);
 
@@ -828,7 +868,13 @@ refreshMonthBudgetCard(false);
     bindSpentRowClick();
     loadCategoryTotalsThisMonth();
     loadData();
-    mountUpcomingCard("#upcomingMount", { daysAhead: 30 });
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(() => { mountUpcomingCard("#upcomingMount", { daysAhead: 30 }).catch(() => {}); }, { timeout: 1200 });
+    } else {
+      window.requestAnimationFrame(() => {
+        setTimeout(() => { mountUpcomingCard("#upcomingMount", { daysAhead: 30 }).catch(() => {}); }, 0);
+      });
+    }
   }
 }
 
@@ -980,15 +1026,7 @@ if (isNet && showPotentialGrowth) {
     //  - /les/paychecks (paychecks are computed, not stored as recurring rows)
     const [payOut, calJson] = await Promise.all([
       fetchPaychecksForMonth(y, m).catch(() => ({ events: [], breakdown: null })),
-      (async () => {
-        try {
-          return await apiGetJson(
-            `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`,
-          );
-        } catch (_) {
-          return { events: [] };
-        }
-      })()
+      fetchRecurringCalendarMonthCached(y, m, { minOcc, includeStale })
     ]);
 
     const payEvents = Array.isArray(payOut?.events) ? payOut.events : [];
@@ -1436,7 +1474,7 @@ async function loadCategoryTotalsThisMonth(payloadOverride = null) {
   `;
 
   btn.addEventListener("click", () => {
-    window.location.href = `/static/category.html?c=${encodeURIComponent(row.category)}`;
+    window.location.href = `/static/pages/category/category.html?c=${encodeURIComponent(row.category)}`;
   });
 
   li.appendChild(btn);
@@ -2014,7 +2052,7 @@ async function renderUnknownMerchantRow(ul) {
 
   btn.innerHTML = `
     <span class="cat-left">
-      <span class="cat-name">Unknown merchant</span>
+      <span class="cat-name">Unknown merchants</span>
       <span class="cat-badge" title="${c} transactions">${c}</span>
     </span>
     <span class="cat-amt">${money(t)}</span>
@@ -2022,8 +2060,8 @@ async function renderUnknownMerchantRow(ul) {
 
   // optional click behavior (for now just show a hint)
   btn.addEventListener("click", () => {
-  window.location.href = `/static/category.html?c=${encodeURIComponent("Unknown merchant")}`;
-});
+    window.location.href = `/static/pages/category/category.html?c=${encodeURIComponent("Unknown merchants")}`;
+  });
 
 
   li.appendChild(btn);
@@ -2155,7 +2193,6 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
     const income = Number(d.expected_income || 0);
     const spent  = Number(d.spent_so_far || 0);
     const bills  = Number(d.bills_remaining || 0);
-    loadExtraSaved();
 
     if (safeEl) safeEl.textContent = (safe < 0 ? "-" : "") + money(Math.abs(safe));
     if (incomeEl) incomeEl.textContent = money(income);
@@ -2182,6 +2219,8 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
         `Baseline: ${money(baseline)}\n` +
         `Spent Today: ${money(spentFree)}`;
     }
+    // Refresh after /day-limit so today's snapshot is present for extra-saved math.
+    loadExtraSaved();
 
 
     // Keep your existing meta style: "Feb 07  $45.71/day  22 days left"
@@ -2288,42 +2327,40 @@ function closeIncomeInspect() {
 }
 
 async function fetchPaychecksForMonth(year, month) {
-  const profile0 = window.Profile?.get?.();
-  if (!profile0?.paygrade) return { events: [], breakdown: null };
+  const key = `les-paychecks:${Number(year)}-${Number(month)}`;
+  return withSharedCache(key, async () => {
+    const profile0 = window.Profile?.get?.();
+    if (!profile0?.paygrade) return { events: [], breakdown: null };
 
-  // normalize a couple fields (same as recurring_page.js)
-  const profile = { ...profile0 };
-  if (profile.paygrade != null) {
-    profile.paygrade = String(profile.paygrade).toUpperCase().replace(/\s+/g, "").replace("E-", "E").replace("-", "");
-  }
-  if (profile.service_start != null) profile.service_start = String(profile.service_start);
-  if (profile.bah_override === "") profile.bah_override = null;
+    // normalize a couple fields (same as recurring_page.js)
+    const profile = { ...profile0 };
+    if (profile.paygrade != null) {
+      profile.paygrade = String(profile.paygrade).toUpperCase().replace(/\s+/g, "").replace("E-", "E").replace("-", "");
+    }
+    if (profile.service_start != null) profile.service_start = String(profile.service_start);
+    if (profile.bah_override === "") profile.bah_override = null;
 
-  const res = await apiFetch("/les/paychecks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ year, month, profile })
+    const res = await apiFetch("/les/paychecks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, month, profile })
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error("Paycheck calc failed: " + res.status + " " + txt);
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return {
+      events: Array.isArray(data?.events) ? data.events : [],
+      breakdown: data?.breakdown || null,
+    };
   });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error("Paycheck calc failed: " + res.status + " " + txt);
-  }
-
-  const data = await res.json().catch(() => ({}));
-  return {
-    events: Array.isArray(data?.events) ? data.events : [],
-    breakdown: data?.breakdown || null,
-  };
 }
 
 async function fetchInterestForMonth(year, month) {
-  let data;
-  try {
-    data = await apiGetJson(`/recurring/calendar?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
-  } catch (_) {
-    return [];
-  }
+  const data = await fetchRecurringCalendarMonthCached(year, month, { minOcc: 3, includeStale: "false" });
   const events = Array.isArray(data?.events) ? data.events : [];
 
   // only interest-like income events

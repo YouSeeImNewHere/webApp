@@ -460,6 +460,72 @@ body.is-customizing #sidebarStack > [data-sidebar-section]{
 
 body.is-customizing .account-pill{
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.is-customizing .bank-sublist li{
+  cursor: grab;
+}
+
+/* Customize mode action bar */
+.customize-bar{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 1400;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.customize-bar__inner{
+  pointer-events: auto;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow-float);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.customize-bar__title{
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.customize-bar__done{
+  appearance: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 900;
+  cursor: pointer;
+  background: #111;
+  color: #fff;
+}
+
+@media (max-width: 900px){
+  .customize-bar{
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 82px);
+    padding: 0 10px;
+  }
+
+  .customize-bar__inner{
+    width: 100%;
+    padding: 10px;
+  }
+
+  .customize-bar__title{
+    font-size: 12px;
+  }
 }
 
 /* Month budget card (home) two-column layout */

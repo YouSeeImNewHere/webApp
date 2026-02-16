@@ -74,6 +74,167 @@ def _event_is_income(e: dict, amount: float, etype: str, cadence: str, category:
 
     return False
 
+def _ensure_daily_limit_snapshot_pg(tid: int | None = None):
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_limit_snapshot (
+              tenant_id BIGINT NOT NULL,
+              day DATE NOT NULL,
+              baseline DOUBLE PRECISION NOT NULL,
+              computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """
+        )
+        cur.execute("ALTER TABLE daily_limit_snapshot ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_limit_snapshot_tenant_day ON daily_limit_snapshot(tenant_id, day)"
+        )
+        if tid:
+            cur.execute("UPDATE daily_limit_snapshot SET tenant_id = %s WHERE tenant_id IS NULL", (int(tid),))
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'daily_limit_snapshot_pkey'
+                  AND conrelid = 'daily_limit_snapshot'::regclass
+              ) THEN
+                ALTER TABLE daily_limit_snapshot DROP CONSTRAINT daily_limit_snapshot_pkey;
+              END IF;
+            END $$;
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'daily_limit_snapshot_tenant_day_pkey'
+                  AND conrelid = 'daily_limit_snapshot'::regclass
+              ) THEN
+                ALTER TABLE daily_limit_snapshot
+                ADD CONSTRAINT daily_limit_snapshot_tenant_day_pkey PRIMARY KEY (tenant_id, day);
+              END IF;
+            END $$;
+            """
+        )
+        conn.commit()
+
+def _compute_spent_free_for_day(day: date, tid: int | None = None) -> tuple[float, float, float]:
+    year = day.year
+    month = day.month
+    if tid is None:
+        tid = _require_tenant_id()
+
+    tx_rows = query_db(
+        f"""
+        WITH base AS (
+          SELECT
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            t.amount::double precision AS amount,
+            LOWER(TRIM(COALESCE(t.category,''))) AS category,
+            LOWER(a.accountType) AS accountType
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+        ),
+        norm AS (
+          SELECT
+            *,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT d, amount, category, accountType
+        FROM norm
+        WHERE d = %s
+        """,
+        ((int(tid), int(tid), day) if tid else (day,)),
+    )
+
+    spent_today = 0.0
+    cat_spent: dict[str, float] = {}
+
+    for r in tx_rows:
+        category = (r["category"] or "").strip().lower()
+        if category in ("card payment", "transfer", "cash withdrawal"):
+            continue
+        amt = float(r["amount"] or 0.0)
+        if (r["accounttype"] or "").lower() in ("checking", "credit") and amt > 0:
+            spent_today += amt
+            if category:
+                cat_spent[category] = cat_spent.get(category, 0.0) + amt
+
+    groups = _get_budget_groups_for_month(year, month)
+    budgeted_cats = set()
+    for g in (groups or []):
+        for c in (g.get("categories") or []):
+            budgeted_cats.add(_norm_cat(c))
+
+    spent_budgeted = 0.0
+    for cn, amt in cat_spent.items():
+        if _norm_cat(cn) in budgeted_cats:
+            spent_budgeted += float(amt)
+
+    spent_free = spent_today - spent_budgeted
+    return spent_today, spent_budgeted, spent_free
+
+def _compute_extra_saved_rollover_for_month(
+    tid: int,
+    year: int,
+    month: int,
+    today: date,
+    fallback_today_baseline: float = 0.0,
+) -> float:
+    month_start = date(year, month, 1)
+
+    rows = query_db(
+        """
+        SELECT day, baseline
+        FROM daily_limit_snapshot
+        WHERE day >= %s AND day <= %s AND tenant_id = %s
+        ORDER BY day ASC
+        """,
+        (month_start, today, int(tid)),
+    )
+
+    by_day: dict[date, float] = {}
+    for r in rows:
+        by_day[r["day"]] = float(r.get("baseline") or 0.0)
+
+    if today not in by_day:
+        by_day[today] = float(fallback_today_baseline or 0.0)
+
+    balance = 0.0
+    dcur = month_start
+    while dcur <= today:
+        baseline = by_day.get(dcur)
+        if baseline is None:
+            dcur += timedelta(days=1)
+            continue
+
+        _, _, spent_free = _compute_spent_free_for_day(dcur, tid=tid)
+        leftover = float(baseline) - float(spent_free)
+
+        if dcur < today:
+            applied = leftover
+        else:
+            applied = leftover if leftover < 0 else 0.0
+
+        balance = max(0.0, balance + applied)
+        dcur += timedelta(days=1)
+
+    return float(balance)
+
 
 def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: bool = False):
     tid = _require_tenant_id()
@@ -256,10 +417,31 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
     spent_free = spent_so_far - budgeted_spent_total
     safe_to_spend = free_spend_goal - spent_free
 
-    # Daily limits with weekend override:
-    # - Weekday weight = 1
-    # - Weekend weight = 2
-    # This keeps the SAME total safe_to_spend, but redistributes it.
+    # Apply month-to-date rollover:
+    # completed-day leftover is moved into extra-saved (not spendable in monthly safe),
+    # and overspend pulls from extra-saved first (never below zero).
+    extra_saved_applied = 0.0
+    if tid and year == today.year and month == today.month:
+        _ensure_daily_limit_snapshot_pg(tid)
+        # fallback only when today's snapshot is missing
+        rough_days_left = max(1, (month_end - today).days + 1)
+        fallback_today_baseline = safe_to_spend / rough_days_left
+        try:
+            extra_saved_applied = _compute_extra_saved_rollover_for_month(
+                tid=int(tid),
+                year=year,
+                month=month,
+                today=today,
+                fallback_today_baseline=fallback_today_baseline,
+            )
+        except Exception:
+            extra_saved_applied = 0.0
+
+    safe_to_spend = safe_to_spend - extra_saved_applied
+
+    # Daily limits with configurable weekday/weekend point weights.
+    # This keeps the same total safe_to_spend, but redistributes it.
+    weekday_points, weekend_points = _get_daily_weight_cfg()
 
     if today < month_start:
         start_day = month_start
@@ -284,10 +466,11 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
             dcur += timedelta(days=1)
 
         days_left = (month_end - start_day).days + 1
-        total_points = weekday_days + (2 * weekend_days)
+        total_points = (weekday_days * weekday_points) + (weekend_days * weekend_points)
 
-    weekday_limit = (safe_to_spend / total_points) if total_points > 0 else 0.0
-    weekend_limit = weekday_limit * 2
+    point_value = (safe_to_spend / total_points) if total_points > 0 else 0.0
+    weekday_limit = point_value * weekday_points
+    weekend_limit = point_value * weekend_points
 
     # Keep backward compat: daily_limit becomes "today's limit"
     is_weekend_today = (today.weekday() >= 5)
@@ -325,6 +508,8 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
 # UPDATED meaning: safe-to-spend (FREE spending, after allocations)
         "safe_to_spend": round(safe_to_spend, 2),
+        "safe_to_spend_raw": round(free_spend_goal - spent_free, 2),
+        "extra_saved_applied": round(extra_saved_applied, 2),
 
         # Backward compatibility (what widget + UI already expects)
         # This is now TODAY'S allowance
@@ -336,7 +521,9 @@ def _month_budget_home(year: int, month: int, min_occ: int = 3, include_stale: b
         "daily_weekend_limit": round(weekend_limit, 2),
         "weekday_days_left": int(weekday_days),
         "weekend_days_left": int(weekend_days),
-        "daily_weight_mode": "weekend_x2",
+        "daily_weight_mode": "custom_points",
+        "weekday_points": float(weekday_points),
+        "weekend_points": float(weekend_points),
         "free_spend_goal": round(free_spend_goal, 2),
         "spent_free": round(spent_free, 2),
         "category_spent": {k: round(v, 2) for k, v in cat_spent.items()},
@@ -385,6 +572,37 @@ def _compute_monthly_savings_goal(total_income: float) -> float:
         return max(0.0, total_income * (value / 100.0))
     # mode == "amount"
     return max(0.0, value)
+
+
+def _get_daily_weight_cfg() -> tuple[float, float]:
+    """
+    Returns (weekday_points, weekend_points), defaulting to (1.0, 2.0).
+    Stored in app_settings key='daily_weights'.
+    """
+    _ensure_app_settings_pg()
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key=%s LIMIT 1",
+        (scoped_key("daily_weights"),),
+    )
+    if not rows:
+        return 1.0, 2.0
+    try:
+        j = json.loads(rows[0].get("value_json") or "{}")
+    except Exception:
+        j = {}
+
+    def _safe(v: object, default: float) -> float:
+        try:
+            x = float(v)
+        except Exception:
+            return default
+        if x <= 0:
+            return default
+        if x > 10:
+            return 10.0
+        return x
+
+    return _safe(j.get("weekday_points"), 1.0), _safe(j.get("weekend_points"), 2.0)
 
 def _get_default_les_profile():
     rows = query_db("SELECT profile_json FROM les_profile WHERE key=%s LIMIT 1", (scoped_key("default"),))
@@ -583,10 +801,78 @@ def create_category_rule(payload: RuleCreate):
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/category-rules/list")
-def list_category_rules(include_inactive: int = 0, with_counts: int = 0):
-    where = ""
+def list_category_rules(
+    include_inactive: int = 0,
+    with_counts: int = 0,
+    limit: int = 0,
+    offset: int = 0,
+    rule_id: str = "",
+    keyword: str = "",
+    category: str = "",
+):
+    clauses: list[str] = []
+    params: list[Any] = []
+
     if not include_inactive:
-        where = "WHERE COALESCE(is_active, TRUE) = TRUE"
+        clauses.append("COALESCE(is_active, TRUE) = TRUE")
+
+    rid = (rule_id or "").strip()
+    if rid:
+        try:
+            clauses.append("id = %s")
+            params.append(int(rid))
+        except Exception:
+            return {"rows": [], "limit": 0, "offset": 0, "has_more": False, "total": 0}
+
+    kw = (keyword or "").strip()
+    if kw:
+        clauses.append("(pattern ILIKE %s)")
+        params.append(f"%{kw}%")
+
+    cat = (category or "").strip()
+    if cat:
+        clauses.append("category ILIKE %s")
+        params.append(f"%{cat}%")
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    use_paging = bool(limit) or bool(offset) or bool(rid) or bool(kw) or bool(cat)
+    if use_paging:
+        lim = max(1, min(int(limit or 50), 200))
+        off = max(0, int(offset or 0))
+        page_params = params + [lim + 1, off]
+
+        rows = query_db(
+            f"""
+            SELECT id, pattern, flags, category, COALESCE(is_active, TRUE) AS is_active
+            FROM {CATEGORY_RULES_TABLE}
+            {where}
+            ORDER BY COALESCE(is_active, TRUE) DESC, id DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(page_params),
+        )
+
+        rules = [dict(r) for r in rows]
+        has_more = len(rules) > lim
+        if has_more:
+            rules = rules[:lim]
+
+        if with_counts:
+            for r in rules:
+                try:
+                    r["match_count"] = _rule_match_count(r["pattern"], r.get("flags") or "i")
+                except Exception:
+                    r["match_count"] = 0
+                    r["regex_error"] = "Invalid regex"
+
+        total_rows = query_db(
+            f"SELECT COUNT(*)::int AS n FROM {CATEGORY_RULES_TABLE} {where}",
+            tuple(params),
+        )
+        total = int(total_rows[0]["n"] or 0) if total_rows else 0
+
+        return {"rows": rules, "limit": lim, "offset": off, "has_more": has_more, "total": total}
 
     rows = query_db(
         f"""

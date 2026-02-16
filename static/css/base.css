@@ -5599,3 +5599,34 @@ body.page-budget .fund-actions{
   line-height: 1.4;
   color: var(--muted);
 }
+
+/* =============================================================================
+   Shared Chrome Safe Areas (authoritative override)
+   Prevent content from being hidden by fixed top/bottom bars.
+   ============================================================================= */
+:root{
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --topbar-h: 62px;
+  --tabs-h: 64px;
+  --page-top-pad: calc(var(--topbar-h) + var(--safe-top) + 8px);
+  --page-bottom-pad: calc(var(--tabs-h) + var(--safe-bottom) + 12px);
+}
+
+body{
+  padding-top: var(--page-top-pad) !important;
+  padding-bottom: var(--page-bottom-pad) !important;
+}
+
+.top-bar{
+  padding-top: var(--safe-top) !important;
+  height: calc(var(--topbar-h) + var(--safe-top)) !important;
+}
+
+.top-bar-inner{
+  min-height: var(--topbar-h);
+}
+
+.mobile-tabs{
+  bottom: var(--safe-bottom) !important;
+}

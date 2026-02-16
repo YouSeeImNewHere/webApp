@@ -3,7 +3,7 @@
   const v = (window.BUILD_ID ? `?v=${encodeURIComponent(window.BUILD_ID)}` : "");
 
   // 1) Load shared chrome HTML
-  const res = await fetch(`/static/shared/shared.html${v}`, { cache: "no-store" });
+  const res = await fetch(`/static/shared/shared.html${v}`, { cache: "force-cache" });
   if (!res.ok) {
     console.error("Failed to load shared.html", res.status);
     return;
