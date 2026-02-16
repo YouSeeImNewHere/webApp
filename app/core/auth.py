@@ -454,7 +454,6 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         "scope": " ".join(scopes),
         "access_type": "offline",
         "include_granted_scopes": "true",
-        "prompt": "consent",
         "state": state,
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
@@ -833,13 +832,14 @@ async def login(request: Request):
         return JSONResponse({"ok": False, "error": "bad_password"}, status_code=401)
 
     request.session["authed"] = True
-    if "google_email" in request.session:
-        request.session.pop("google_email", None)
     request.session["app_password_ok"] = True
     if MULTI_TENANT_ENABLED:
         next_url = next_url if next_url.startswith("/") else "/"
-        oauth_start = f"/gmail/oauth/start?next={next_url}"
-        return RedirectResponse(url=oauth_start, status_code=302)
+        session_google_email = str(request.session.get("google_email") or "").strip()
+        if not session_google_email:
+            oauth_start = f"/gmail/oauth/start?next={next_url}"
+            return RedirectResponse(url=oauth_start, status_code=302)
+        return RedirectResponse(url=next_url, status_code=302)
 
     # If it was a form submit, always redirect
     if "application/x-www-form-urlencoded" in ct or "multipart/form-data" in ct:
