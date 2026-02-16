@@ -1,11 +1,15 @@
 from __future__ import annotations
+import logging
+import os
+import time
 from app.core import auth
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
+from starlette.middleware.gzip import GZipMiddleware
 from app.routers.csv_upload import router as csv_upload_router
 
-from db import open_pool, close_pool
+from db import open_pool, close_pool, ensure_performance_indexes
 
 from app.core.templates import templates  # ensure templates init
 from app.core.auth import add_auth_middlewares
@@ -38,11 +42,29 @@ from app.routers import (
 
 def create_app() -> FastAPI:
     app = FastAPI()
+    app.add_middleware(GZipMiddleware, minimum_size=700)
+    logger = logging.getLogger("app.perf")
+    slow_request_ms = int(os.getenv("SLOW_REQUEST_MS", "450"))
+    log_all_timings = os.getenv("LOG_ALL_REQUEST_TIMINGS", "0").strip() == "1"
 
     @app.middleware("http")
     async def static_cache_control(request: Request, call_next):
+        t0 = time.perf_counter()
         response = await call_next(request)
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
         path = request.url.path or ""
+        response.headers["X-Response-Time-Ms"] = str(elapsed_ms)
+
+        if not path.startswith("/static/"):
+            if log_all_timings or elapsed_ms >= float(slow_request_ms):
+                logger.info(
+                    "request_timing method=%s path=%s status=%s ms=%s",
+                    request.method,
+                    path,
+                    response.status_code,
+                    elapsed_ms,
+                )
+
         if path.startswith("/static/"):
             lower = path.lower()
             query = request.url.query or ""
@@ -74,6 +96,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def _startup():
         open_pool()
+        ensure_performance_indexes()
         initialize_tenancy()
 
     @app.on_event("shutdown")

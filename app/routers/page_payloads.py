@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, List
 from datetime import date, datetime, timedelta
 from copy import deepcopy
 import time
+from threading import Lock
 
 from fastapi import APIRouter, HTTPException, Query, Header
 from fastapi.responses import FileResponse
@@ -26,7 +27,7 @@ from app.routers.transactions import transactions, transactions_all, account_tra
 from app.routers.analytics import category_totals_month, _last_day_of_month, parse_iso
 from app.routers.notifications import unread_count
 from app.routers.accounts import bank_totals, account_info
-from app.routers.category_rules import _month_budget_home
+from app.routers.category_rules import month_budget_home_cached
 from app.routers.budget_groups import _get_budget_groups_for_month, _norm_cat, _norm_name
 from app.routers.recurring import recurring_calendar
 from app.routers.les import les_paychecks, LESPaychecksRequest, LESProfileModel
@@ -35,6 +36,10 @@ router = APIRouter()
 
 WIDGET_SUMMARY_CACHE_TTL_SEC = 90
 _WIDGET_SUMMARY_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+PAGE_PAYLOAD_CACHE_TTL_SEC = 30
+_PAGE_PAYLOAD_CACHE: dict[str, dict[str, Any]] = {}
+_PAGE_PAYLOAD_CACHE_LOCK = Lock()
+DAY_LIMIT_CACHE_TTL_SEC = 20
 
 # =============================================================================
 # Page payload endpoints (one request per page)
@@ -60,6 +65,24 @@ def _call_optional(fn, *args, **kwargs):
     except Exception:
         return None
 
+
+def _payload_cache_get(key: str, ttl_sec: int = PAGE_PAYLOAD_CACHE_TTL_SEC):
+    now_ts = time.time()
+    with _PAGE_PAYLOAD_CACHE_LOCK:
+        row = _PAGE_PAYLOAD_CACHE.get(key)
+        if not row:
+            return None
+        ts = float(row.get("ts") or 0.0)
+        if now_ts - ts > float(ttl_sec):
+            _PAGE_PAYLOAD_CACHE.pop(key, None)
+            return None
+        return deepcopy(row.get("data"))
+
+
+def _payload_cache_set(key: str, payload: Dict[str, Any]):
+    with _PAGE_PAYLOAD_CACHE_LOCK:
+        _PAGE_PAYLOAD_CACHE[key] = {"ts": time.time(), "data": deepcopy(payload)}
+
 @router.get("/page/home")
 def page_home(
     tx_limit: int = Query(15, ge=1, le=200),
@@ -68,6 +91,12 @@ def page_home(
     One-shot payload for home.html/home.js
     Bundle the things home currently fetches separately.
     """
+    tid = _require_tenant_id()
+    cache_key = f"page:home:tenant={tid or 0}:tx_limit={int(tx_limit)}"
+    cached = _payload_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     payload: Dict[str, Any] = {
         "transactions": transactions(limit=tx_limit),
         "category_totals_month": category_totals_month(),
@@ -76,6 +105,7 @@ def page_home(
         # add this if you have month_budget() defined in this file:
         "month_budget": _call_optional(globals().get("month_budget")),
     }
+    _payload_cache_set(cache_key, payload)
     return payload
 
 @router.get("/page/account/{account_id}")
@@ -86,12 +116,19 @@ def page_account(
     """
     One-shot payload for account.html/account.js
     """
+    tid = _require_tenant_id()
+    cache_key = f"page:account:tenant={tid or 0}:account_id={int(account_id)}:tx_limit={int(tx_limit)}"
+    cached = _payload_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     payload: Dict[str, Any] = {
         "account": account_info(account_id=account_id),                        # existing route fn【turn10file2†app_postgres.py†L1-L12】
         "transactions": account_transactions(account_id=account_id, limit=tx_limit),  # existing route fn【turn10file0†app_postgres.py†L54-L99】
         # Add any account charts/series endpoints your account.js calls:
         # "account_series": account_series(account_id=account_id, start=..., end=...),
     }
+    _payload_cache_set(cache_key, payload)
     return payload
 
 @router.get("/page/all-transactions")
@@ -104,10 +141,17 @@ def page_all_transactions(
     Uses your existing 'transactions-all' endpoint function.
     """
     # transactions_all() exists right after transactions() in your file【turn10file0†app_postgres.py†L100-L103】
+    tid = _require_tenant_id()
+    cache_key = f"page:all-transactions:tenant={tid or 0}:limit={int(limit)}:offset={int(offset)}"
+    cached = _payload_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     payload: Dict[str, Any] = {
         "rows": transactions_all(limit=limit, offset=offset),
         "notifications_unread": unread_count(),
     }
+    _payload_cache_set(cache_key, payload)
     return payload
 
 @router.get("/page/category")
@@ -123,12 +167,19 @@ def page_category(
     # Example:
     #   category_trend(c=...)
     #   category_transactions(c=..., limit=..., offset=...)
+    tid = _require_tenant_id()
+    cache_key = f"page:category:tenant={tid or 0}:c={c}"
+    cached = _payload_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     payload: Dict[str, Any] = {
         "category": c,
         # "trend": category_trend(c=c),
         # "transactions": category_transactions(c=c, limit=500, offset=0),
         "notifications_unread": unread_count(),
     }
+    _payload_cache_set(cache_key, payload)
     return payload
 
 @router.get("/page/recurring")
@@ -137,12 +188,19 @@ def page_recurring():
     One-shot payload for recurring.html/recurring_page.js
     Bundle whatever recurring_page.js fetches.
     """
+    tid = _require_tenant_id()
+    cache_key = f"page:recurring:tenant={tid or 0}"
+    cached = _payload_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     payload: Dict[str, Any] = {
         # If you have endpoints like get_recurring() / calendar preview, add them:
         # "recurring": get_recurring_endpoint(...),
         # "ignored_preview": get_ignored_merchants_preview(...),
         "notifications_unread": unread_count(),
     }
+    _payload_cache_set(cache_key, payload)
     return payload
 
 # -----------------------------------------------------------------------------
@@ -244,7 +302,7 @@ def widget_summary(x_widget_secret: str = Header(default="")):
 
     bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
     n = now_local()
-    mb = _month_budget_home(n.year, n.month)
+    mb = month_budget_home_cached(n.year, n.month)
     dl = day_limit(recalc=0)
     credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
 
@@ -815,14 +873,20 @@ def day_limit(recalc: int = 0):
     _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
+    cache_key = f"day-limit:tenant={int(tid)}:day={today.isoformat()}"
+    force_refresh = bool(int(recalc or 0))
+    if not force_refresh:
+        cached = _payload_cache_get(cache_key, ttl_sec=DAY_LIMIT_CACHE_TTL_SEC)
+        if cached is not None:
+            return cached
 
     # Get or compute today's baseline
     row = query_db(
         "SELECT day, baseline, computed_at FROM daily_limit_snapshot WHERE day=%s AND tenant_id=%s",
         (today, int(tid)),
     )
-    if recalc or not row:
-        mb = _month_budget_home(today.year, today.month)
+    if force_refresh or not row:
+        mb = month_budget_home_cached(today.year, today.month)
         baseline = float(mb.get("daily_limit") or 0.0)
 
         with with_db_cursor() as (conn, cur):
@@ -848,7 +912,7 @@ def day_limit(recalc: int = 0):
     spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(today)
     remaining = baseline - spent_free
 
-    return {
+    out = {
         "ok": True,
         "day": today.isoformat(),
         "baseline": round(baseline, 2),
@@ -860,6 +924,8 @@ def day_limit(recalc: int = 0):
 
         "remaining_today": round(remaining, 2),
     }
+    _payload_cache_set(cache_key, out)
+    return out
 
 @router.get("/extra-saved")
 def extra_saved():
@@ -874,7 +940,7 @@ def extra_saved():
     _ensure_daily_limit_snapshot_pg(tid)
 
     today = today_local()
-    mb = _month_budget_home(today.year, today.month)
+    mb = month_budget_home_cached(today.year, today.month)
     fallback_today_baseline = float((mb or {}).get("daily_limit") or 0.0)
     total_extra, _, days_counted = _compute_extra_saved_rollover(
         tid=int(tid),
@@ -904,7 +970,7 @@ def extra_saved_detail():
 
     today = today_local()
     month_start = date(today.year, today.month, 1)
-    mb = _month_budget_home(today.year, today.month)
+    mb = month_budget_home_cached(today.year, today.month)
     fallback_today_baseline = float((mb or {}).get("daily_limit") or 0.0)
     total, days, _ = _compute_extra_saved_rollover(
         tid=int(tid),
@@ -1120,7 +1186,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
     m = int(start_date.month)
 
     # Month budget gives us projected bill categories + totals, and ensures consistency with home math
-    mb = _month_budget_home(y, m)
+    mb = month_budget_home_cached(y, m)
 
     # Build budget groups for this month, including synthetic Bills group if missing
     groups = _get_budget_groups_for_month(y, m)

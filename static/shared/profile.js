@@ -1,4 +1,4 @@
-// /static/profile.js
+// /static/shared/profile.js
 // LES Profile: localStorage cache + DB-backed persistence via /les-profile (so it stays the same across devices).
 (function () {
   const KEY = "les_profile_v1";
@@ -411,3 +411,4 @@ if (!res.ok) {
 
   window.Profile = { init, get, set, replace, onChange, mountEditor };
 })();
+

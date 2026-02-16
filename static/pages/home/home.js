@@ -112,18 +112,20 @@ function applyHomeSectionOrder() {
 
   const order = UI_LAYOUT?.home_sections || getDefaultUILayout().home_sections;
   const seen = new Set();
+  const fragment = document.createDocumentFragment();
 
   for (const key of order) {
     const el = map.get(key);
     if (el && !seen.has(key)) {
-      host.appendChild(el);
+      fragment.appendChild(el);
       seen.add(key);
     }
   }
   // append anything not in saved list
   for (const [key, el] of map.entries()) {
-    if (!seen.has(key)) host.appendChild(el);
+    if (!seen.has(key)) fragment.appendChild(el);
   }
+  host.appendChild(fragment);
 }
 
 function applySidebarOrder() {
@@ -135,17 +137,19 @@ function applySidebarOrder() {
 
   const order = UI_LAYOUT?.sidebar_sections || getDefaultUILayout().sidebar_sections;
   const seen = new Set();
+  const fragment = document.createDocumentFragment();
 
   for (const key of order) {
     const el = map.get(key);
     if (el && !seen.has(key)) {
-      host.appendChild(el);
+      fragment.appendChild(el);
       seen.add(key);
     }
   }
   for (const [key, el] of map.entries()) {
-    if (!seen.has(key)) host.appendChild(el);
+    if (!seen.has(key)) fragment.appendChild(el);
   }
+  host.appendChild(fragment);
 }
 
 function signMoney(n) {
@@ -577,6 +581,7 @@ async function loadBankTotals(dataOverride = null) {
 
   const seen = new Set();
   const keys = [...order, ...Object.keys(map).filter(k => !order.includes(k))];
+  const fragment = document.createDocumentFragment();
 
   for (const typeKey of keys) {
     const entry = map[typeKey];
@@ -588,8 +593,9 @@ async function loadBankTotals(dataOverride = null) {
     wrap.dataset.typeKey = typeKey;
 
     await renderCategory(wrap, typeKey, entry.title, entry.payload);
-    container.appendChild(wrap);
+    fragment.appendChild(wrap);
   }
+  container.appendChild(fragment);
 
   if (document.body.classList.contains("is-customizing")) {
     initBankSortablesOnly();
@@ -606,16 +612,19 @@ function creditUsagePctText(balance, limit) {
 }
 
 async function loadHomePayload() {
+  const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
   const payload = await apiGetJson("/page/home?tx_limit=15");
 
   //  Recent transactions
   if (Array.isArray(payload.transactions)) {
     renderTxList(payload.transactions);   // < this exists in your file
+    await yieldToMain();
   }
 
   //  Category totals (this month)
   if (payload.category_totals_month) {
-    loadCategoryTotalsThisMonth(payload.category_totals_month);
+    await loadCategoryTotalsThisMonth(payload.category_totals_month);
+    await yieldToMain();
   }
 
   //  Unread badge
@@ -628,7 +637,7 @@ async function loadHomePayload() {
 
   //  Bank totals
   if (payload.bank_totals) {
-    loadBankTotals(payload.bank_totals);
+    await loadBankTotals(payload.bank_totals);
   }
 
   return payload;
@@ -833,12 +842,18 @@ async function bootHome() {
     }
 
     setChartHeaderUI();
-    refreshMonthBudgetCard(false);
+    if (document.getElementById("mbSafe")) {
+      refreshMonthBudgetCard(false);
+    }
 
-    // kick these off immediately (parallel)
+    // Start payload work after first paint to reduce startup layout contention.
     const tasks = [
-      Promise.resolve().then(() => loadHomePayload()),
-      Promise.resolve().then(() => { try { mountMonthBudgetCard("#monthBudgetMount"); } catch (_) {} }),
+      Promise.resolve().then(
+        () =>
+          new Promise((resolve) => {
+            window.requestAnimationFrame(() => setTimeout(resolve, 0));
+          }),
+      ).then(() => loadHomePayload()),
     ];
 
     const results = await Promise.allSettled(tasks);
@@ -851,6 +866,13 @@ async function bootHome() {
     bindSpentRowClick();
     bindExtraSavedRowClick();
     if (window.requestIdleCallback) {
+      window.requestIdleCallback(() => { try { mountMonthBudgetCard("#monthBudgetMount"); } catch (_) {} }, { timeout: 1200 });
+    } else {
+      window.requestAnimationFrame(() => {
+        setTimeout(() => { try { mountMonthBudgetCard("#monthBudgetMount"); } catch (_) {} }, 0);
+      });
+    }
+    if (window.requestIdleCallback) {
       window.requestIdleCallback(() => { mountUpcomingCard("#upcomingMount", { daysAhead: 30 }).catch(() => {}); }, { timeout: 1200 });
     } else {
       window.requestAnimationFrame(() => {
@@ -861,7 +883,7 @@ async function bootHome() {
     console.error("bootHome failed:", err);
 
     setChartHeaderUI();
-    loadChart();
+    scheduleInitialChartLoad();
     loadBankTotals();
     loadMonthBudget();
     bindIncomeRowClick();
@@ -982,8 +1004,79 @@ function toggleChart() {
   loadChart();
 }
 
+let initialChartLoadState = "not_scheduled";
+let initialChartVisible = false;
+let initialChartPending = false;
+let initialChartObserver = null;
 
-async function loadChart() {
+function startInitialChartWhenVisible() {
+  if (initialChartVisible) return;
+  initialChartVisible = true;
+  if (initialChartObserver) {
+    initialChartObserver.disconnect();
+    initialChartObserver = null;
+  }
+  if (initialChartPending) {
+    initialChartPending = false;
+    scheduleInitialChartLoad();
+  }
+}
+
+function observeInitialChartVisibility() {
+  if (initialChartVisible || initialChartObserver) return;
+  const target = document.getElementById(HOME_IDS.canvas) || document.getElementById("homeChartMount");
+  if (!target) {
+    startInitialChartWhenVisible();
+    return;
+  }
+  if ("IntersectionObserver" in window) {
+    initialChartObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          startInitialChartWhenVisible();
+          break;
+        }
+      }
+    }, { threshold: 0.05 });
+    initialChartObserver.observe(target);
+  } else {
+    // Legacy fallback: avoid sync geometry reads that force layout.
+    window.requestAnimationFrame(() => startInitialChartWhenVisible());
+  }
+}
+
+function scheduleInitialChartLoad() {
+  if (initialChartLoadState === "done") {
+    return loadChart();
+  }
+  if (!initialChartVisible) {
+    initialChartPending = true;
+    return;
+  }
+  if (initialChartLoadState === "scheduled" || initialChartLoadState === "running") {
+    return;
+  }
+
+  initialChartLoadState = "scheduled";
+  window.requestAnimationFrame(() => {
+    const run = async () => {
+      initialChartLoadState = "running";
+      try {
+        await loadChart({ isInitialLoad: true });
+      } finally {
+        initialChartLoadState = "done";
+      }
+    };
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(run, { timeout: 1000 });
+    } else {
+      setTimeout(run, 0);
+    }
+  });
+}
+
+
+async function loadChart({ isInitialLoad = false } = {}) {
   const start = document.getElementById("nw-start").value;
   const end = document.getElementById("nw-end").value;
   if (!start || !end) return;
@@ -1228,6 +1321,8 @@ netWorthChartInstance = new Chart(ctx, {
   options: {
     responsive: true,
   maintainAspectRatio: false,
+  resizeDelay: isInitialLoad ? 300 : 120,
+  animation: isInitialLoad ? false : undefined,
   devicePixelRatio: window.devicePixelRatio || 1,
     plugins: {
   legend: { display: false },
@@ -1674,7 +1769,7 @@ const closeBtn = document.getElementById("ruleModalClose");
   quarters: HOME_IDS.quarters,
   monthButtons: HOME_IDS.monthButtons,
   update: HOME_IDS.update
-}, loadChart);
+}, scheduleInitialChartLoad);
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1722,6 +1817,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (typeof window.bootHome === "function") window.bootHome();
+  observeInitialChartVisibility();
 
   window.Profile?.ensureUI?.();
   window.Profile?.onChange?.(() => loadMonthBudget());
@@ -1789,6 +1885,7 @@ function renderTxList(data){
   if (!list) return;
 
   list.innerHTML = "";
+  const fragment = document.createDocumentFragment();
 
   const rows = Array.isArray(data) ? data : [];
 
@@ -1813,12 +1910,13 @@ function renderTxList(data){
 
   // render pending first (its own "day")
   if (pending.length) {
-    list.appendChild(makeSectionHeader("Pending"));
-    pending.forEach(row => list.appendChild(renderOneTxRow(row)));
+    fragment.appendChild(makeSectionHeader("Pending"));
+    pending.forEach(row => fragment.appendChild(renderOneTxRow(row)));
   }
 
   // then render the rest (your existing behavior)
-  posted.forEach(row => list.appendChild(renderOneTxRow(row)));
+  posted.forEach(row => fragment.appendChild(renderOneTxRow(row)));
+  list.appendChild(fragment);
 
   if (typeof window.attachTxInspect === 'function') window.attachTxInspect(list);
 
@@ -3718,5 +3816,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.attachTxInspect) window.attachTxInspect(txList);
 });
+
 
 

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
+from copy import deepcopy
 from datetime import date, datetime, timedelta
+from threading import Lock
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Request
@@ -30,6 +34,12 @@ from app.core.tenancy import current_tenant_id, get_user_pushover_key_by_email
 from app.core.pushover import send_pushover
 
 router = APIRouter()
+
+MONTH_BUDGET_CACHE_TTL_SEC = int(os.getenv("MONTH_BUDGET_CACHE_TTL_SEC", "45"))
+UNKNOWN_MERCHANT_CACHE_TTL_SEC = int(os.getenv("UNKNOWN_MERCHANT_CACHE_TTL_SEC", "60"))
+_MONTH_BUDGET_CACHE: dict[str, dict[str, Any]] = {}
+_UNKNOWN_MERCHANT_CACHE: dict[str, dict[str, Any]] = {}
+_CACHE_LOCK = Lock()
 
 # =============================================================================
 # Category Rules (Postgres) — ported from category_rules.py
@@ -82,6 +92,24 @@ def _event_is_income(e: dict, amount: float, etype: str, cadence: str, category:
             return True
 
     return False
+
+
+def _cache_get(cache: dict[str, dict[str, Any]], key: str, ttl_sec: int):
+    now_ts = time.time()
+    with _CACHE_LOCK:
+        row = cache.get(key)
+        if not row:
+            return None
+        ts = float(row.get("ts") or 0.0)
+        if now_ts - ts > float(ttl_sec):
+            cache.pop(key, None)
+            return None
+        return deepcopy(row.get("data"))
+
+
+def _cache_set(cache: dict[str, dict[str, Any]], key: str, value: Any):
+    with _CACHE_LOCK:
+        cache[key] = {"ts": time.time(), "data": deepcopy(value)}
 
 def _ensure_daily_limit_snapshot_pg(tid: int | None = None):
     with with_db_cursor() as (conn, cur):
@@ -635,6 +663,35 @@ def _month_budget_home(
 
     }
 
+
+def month_budget_home_cached(
+    year: int,
+    month: int,
+    min_occ: int = 3,
+    include_stale: bool = False,
+    pushover_user_key: str | None = None,
+    force_refresh: bool = False,
+):
+    tid = _require_tenant_id()
+    key = (
+        f"month-budget:tenant={tid or 0}:year={int(year)}:month={int(month)}:"
+        f"min_occ={int(min_occ)}:include_stale={int(bool(include_stale))}:user_key={(pushover_user_key or '')}"
+    )
+    if not force_refresh:
+        cached = _cache_get(_MONTH_BUDGET_CACHE, key, MONTH_BUDGET_CACHE_TTL_SEC)
+        if cached is not None:
+            return cached
+
+    out = _month_budget_home(
+        year=int(year),
+        month=int(month),
+        min_occ=int(min_occ),
+        include_stale=bool(include_stale),
+        pushover_user_key=pushover_user_key,
+    )
+    _cache_set(_MONTH_BUDGET_CACHE, key, out)
+    return out
+
 def _get_savings_goal_cfg():
     """
     Returns (mode, value) where:
@@ -1111,6 +1168,10 @@ def unknown_merchant_total_month():
     today = today_local()
     first = today.replace(day=1)
     next_month = date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
+    cache_key = f"unknown-merchant-month:tenant={tid or 0}:first={first.isoformat()}"
+    cached = _cache_get(_UNKNOWN_MERCHANT_CACHE, cache_key, UNKNOWN_MERCHANT_CACHE_TTL_SEC)
+    if cached is not None:
+        return cached
 
     row = query_db(
         f"""
@@ -1150,7 +1211,9 @@ def unknown_merchant_total_month():
         ((int(tid), int(tid), first, next_month) if tid else (first, next_month)),
     )[0]
 
-    return {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
+    out = {"total": float(row["total"] or 0), "tx_count": int(row["tx_count"] or 0)}
+    _cache_set(_UNKNOWN_MERCHANT_CACHE, cache_key, out)
+    return out
 
 # -----------------------------------------------------------------------------
 # /unknown-merchant-total-range
@@ -1213,13 +1276,21 @@ def month_budget(
     month: int | None = None,
     min_occ: int = 3,
     include_stale: bool = False,
+    recalc: int = 0,
 ):
     now = datetime.now()
     y = int(year or now.year)
     m = int(month or now.month)
     session_email = (request.session.get("google_email") or "").strip().lower()
     user_key = get_user_pushover_key_by_email(session_email)
-    return _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale, pushover_user_key=user_key)
+    return month_budget_home_cached(
+        y,
+        m,
+        min_occ=min_occ,
+        include_stale=include_stale,
+        pushover_user_key=user_key,
+        force_refresh=bool(int(recalc or 0)),
+    )
 
 @router.get("/page/budget")
 def page_budget(
@@ -1228,6 +1299,7 @@ def page_budget(
     month: int | None = None,
     min_occ: int = 3,
     include_stale: bool = False,
+    recalc: int = 0,
 ):
     tid = _require_tenant_id()
     now = datetime.now()
@@ -1236,7 +1308,14 @@ def page_budget(
     session_email = (request.session.get("google_email") or "").strip().lower()
     user_key = get_user_pushover_key_by_email(session_email)
 
-    mb = _month_budget_home(y, m, min_occ=min_occ, include_stale=include_stale, pushover_user_key=user_key)
+    mb = month_budget_home_cached(
+        y,
+        m,
+        min_occ=min_occ,
+        include_stale=include_stale,
+        pushover_user_key=user_key,
+        force_refresh=bool(int(recalc or 0)),
+    )
 
     groups = _get_budget_groups_for_month(y, m)
 

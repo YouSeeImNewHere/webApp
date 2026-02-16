@@ -1,4 +1,4 @@
-// /static/layout.js
+// /static/shared/layout.js
 // Loads/saves UI layout JSON to the backend.
 //
 // Backend contract:
@@ -64,3 +64,4 @@
 
   window.LayoutStore = { load, save };
 })();
+

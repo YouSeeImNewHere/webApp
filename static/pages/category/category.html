@@ -23,8 +23,8 @@
   <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/pages/category/category.css?v={{ BUILD_ID }}">
 
-  <script src="/static/theme.js?v={{ BUILD_ID }}"></script>
-  <script src="/static/globalLoading.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
 <body class="page-categories">
   <div class="page-container">
@@ -59,12 +59,12 @@
     </script>
     <div id="sharedChrome"></div>
 
-    <script src="/static/category_icons.js?v={{ BUILD_ID }}"></script>
-    <script src="/static/txInspect.js?v={{ BUILD_ID }}"></script>
-    <script src="/static/profile.js?v={{ BUILD_ID }}"></script>
+    <script src="/static/shared/category_icons.js?v={{ BUILD_ID }}"></script>
+    <script src="/static/components/modal/txInspect.js?v={{ BUILD_ID }}"></script>
+    <script src="/static/shared/profile.js?v={{ BUILD_ID }}"></script>
     <script src="/static/shared/dates.js?v={{ BUILD_ID }}"></script>
-    <script src="/static/chartControls.js?v={{ BUILD_ID }}"></script>
-    <script src="/static/chartCard.js?v={{ BUILD_ID }}"></script>
+    <script src="/static/components/cards/chartControls.js?v={{ BUILD_ID }}"></script>
+    <script src="/static/components/cards/chartCard.js?v={{ BUILD_ID }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/static/shared/format.js?v={{ BUILD_ID }}"></script>
     <script type="module" src="/static/pages/category/category.js?v={{ BUILD_ID }}"></script>
@@ -72,3 +72,4 @@
   </div>
 </body>
 </html>
+

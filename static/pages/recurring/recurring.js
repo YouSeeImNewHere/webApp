@@ -17,7 +17,7 @@ if (window.__recurringPageLoaded) {
   window.__lastData = window.__lastData || [];
   window.__reopenIgnoredAfterOcc = window.__reopenIgnoredAfterOcc ?? false;
 
-// Shared profile helpers (provided by /static/profile.js)
+// Shared profile helpers (provided by /static/shared/profile.js)
 function getProfile(){ return window.Profile?.get?.() || null; }
 function setProfile(p){ return window.Profile?.set?.(p); }
 function openProfile(){ return window.Profile?.open?.(); }
@@ -742,4 +742,5 @@ document.addEventListener("click", (e) => {
   const caret = btn.querySelector(".rec-caret");
   if (caret) caret.textContent = collapsed ? "▸" : "▾";
 });
+
 

@@ -12,14 +12,48 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
+DB_POOL_MIN_SIZE = max(1, int(os.getenv("DB_POOL_MIN_SIZE", "2")))
+DB_POOL_MAX_SIZE = max(DB_POOL_MIN_SIZE, int(os.getenv("DB_POOL_MAX_SIZE", "12")))
+DB_POOL_TIMEOUT = max(5, int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "20")))
+
 # IMPORTANT: open=False so we control lifecycle from FastAPI startup/shutdown
 pool = ConnectionPool(
     conninfo=DATABASE_URL,
-    min_size=1,
-    max_size=5,
+    min_size=DB_POOL_MIN_SIZE,
+    max_size=DB_POOL_MAX_SIZE,
+    timeout=DB_POOL_TIMEOUT,
     kwargs={"row_factory": dict_row},
     open=False,
 )
+
+
+def ensure_performance_indexes():
+    """
+    Best-effort index creation for high-traffic query paths.
+    Safe to call at startup; failures are intentionally non-fatal.
+    """
+    statements = [
+        # Core join/filter paths
+        "CREATE INDEX IF NOT EXISTS idx_accounts_tenant_id_id ON accounts (tenant_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_accounts_tenant_type ON accounts (tenant_id, accountType)",
+        "CREATE INDEX IF NOT EXISTS idx_startingbalance_tenant_account ON startingbalance (tenant_id, account_id)",
+        "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_account ON transactions (tenant_id, account_id)",
+        "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_id_id_desc ON transactions (tenant_id, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_status ON transactions (tenant_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_interest_rates_account_effective ON interest_rates (account_id, effective_date DESC)",
+        # Fast exact/group filters commonly used by analytics and rules
+        "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_category ON transactions (tenant_id, category)",
+        "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_merchant ON transactions (tenant_id, merchant)",
+    ]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for sql in statements:
+                try:
+                    cur.execute(sql)
+                except Exception:
+                    conn.rollback()
+                else:
+                    conn.commit()
 
 def open_pool():
     # Safe to call multiple times

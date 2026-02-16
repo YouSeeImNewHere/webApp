@@ -30,12 +30,15 @@
     });
   }
 
-  // 4) Load your existing shared behavior
+  // 4) Load shared behavior scripts in parallel to reduce time-to-interactive.
   try {
-    await loadScript("/static/topBar.js");
-    await loadScript("/static/bottomTabs.js");
-    await loadScript("/static/notifs.js");
+    await Promise.all([
+      loadScript("/static/shared/topBar.js"),
+      loadScript("/static/shared/bottomTabs.js"),
+      loadScript("/static/shared/notifs.js"),
+    ]);
   } catch (e) {
     console.error("Failed loading shared scripts", e);
   }
 })();
+

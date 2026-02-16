@@ -1,4 +1,4 @@
-// /static/bottomTabs.js
+// /static/shared/bottomTabs.js
 (async function () {
   const host = document.getElementById("bottomTabs");
   if (!host) return;
@@ -30,3 +30,4 @@
     if (tab) tab.classList.add("active");
   }
 })();
+

@@ -1,4 +1,4 @@
-// /static/theme.js
+// /static/shared/theme.js
 (function () {
   const KEY = "theme";
   const root = document.documentElement;
@@ -46,3 +46,4 @@
     }
   };
 })();
+

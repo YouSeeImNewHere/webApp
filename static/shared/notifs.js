@@ -1,4 +1,4 @@
-// /static/notifs.js
+// /static/shared/notifs.js
 // Notifications drawer + badge for the top bar.
 // Works even if the top-bar.html is injected via innerHTML (MutationObserver binds when elements appear).
 
@@ -324,3 +324,4 @@
   const mo = new MutationObserver(() => bindIfPresent());
   mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
+

@@ -1,4 +1,4 @@
-// /static/topBar.js
+// /static/shared/topBar.js
 (async function () {
   const host = document.getElementById("topBar");
   if (!host) return;
@@ -66,3 +66,4 @@ if (refreshBtn) {
 
 
 })();
+

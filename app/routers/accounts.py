@@ -8,6 +8,7 @@ from app.routers.balances import latest_rates_map_pg
 from db import with_db_cursor, query_db, run_db_retry
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
+from app.core.account_totals_cache import ensure_account_totals_cache_pg
 
 router = APIRouter()
 
@@ -211,6 +212,14 @@ def bank_totals():
         with with_db_cursor() as (conn, cur):
             has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
 
+            # Ensure incremental totals cache exists; if this fails for any reason,
+            # we still fall back to direct aggregates below.
+            cache_ready = True
+            try:
+                ensure_account_totals_cache_pg()
+            except Exception:
+                cache_ready = False
+
             accounts_sql = """
               SELECT id, institution, name, LOWER(accountType) AS accounttype
             """
@@ -225,51 +234,93 @@ def bank_totals():
             cur.execute(accounts_sql, (int(tid),) if tid else ())
             accounts = cur.fetchall()
 
-            if tid:
-                cur.execute(
-                    """
-                    SELECT account_id, SUM(start) AS start_total
-                    FROM "startingbalance"
-                    WHERE tenant_id = %s
-                    GROUP BY account_id
-                    """,
-                    (int(tid),),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT account_id, SUM(start) AS start_total
-                    FROM "startingbalance"
-                    GROUP BY account_id
-                    """
-                )
-            starting_rows = cur.fetchall()
+            totals_rows = []
+            if cache_ready:
+                if tid:
+                    cur.execute(
+                        """
+                        SELECT account_id, start_total, trans_total
+                        FROM account_balance_totals
+                        WHERE tenant_id = %s
+                        """,
+                        (int(tid),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT account_id, start_total, trans_total
+                        FROM account_balance_totals
+                        WHERE tenant_id = 0
+                        """
+                    )
+                totals_rows = cur.fetchall() or []
 
-            if tid:
-                cur.execute(
-                    """
-                    SELECT account_id, SUM(amount) AS trans_total
-                    FROM transactions
-                    WHERE tenant_id = %s
-                    GROUP BY account_id
-                    """,
-                    (int(tid),),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT account_id, SUM(amount) AS trans_total
-                    FROM transactions
-                    GROUP BY account_id
-                    """
-                )
-            tx_rows = cur.fetchall()
-        return has_credit_limit, accounts, starting_rows, tx_rows
+            if not totals_rows:
+                if tid:
+                    cur.execute(
+                        """
+                        SELECT account_id, SUM(start) AS start_total
+                        FROM "startingbalance"
+                        WHERE tenant_id = %s
+                        GROUP BY account_id
+                        """,
+                        (int(tid),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT account_id, SUM(start) AS start_total
+                        FROM "startingbalance"
+                        GROUP BY account_id
+                        """
+                    )
+                starting_rows = cur.fetchall() or []
 
-    has_credit_limit, accounts, starting_rows, tx_rows = run_db_retry(_run, retries=1)
+                if tid:
+                    cur.execute(
+                        """
+                        SELECT account_id, SUM(amount) AS trans_total
+                        FROM transactions
+                        WHERE tenant_id = %s
+                        GROUP BY account_id
+                        """,
+                        (int(tid),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT account_id, SUM(amount) AS trans_total
+                        FROM transactions
+                        GROUP BY account_id
+                        """
+                    )
+                tx_rows = cur.fetchall() or []
+                totals_map: Dict[int, Dict[str, float | int]] = {
+                    int(r["account_id"]): {
+                        "account_id": int(r["account_id"]),
+                        "start_total": 0.0,
+                        "trans_total": float(r["trans_total"] or 0.0),
+                    }
+                    for r in tx_rows
+                }
+                for r in starting_rows:
+                    aid = int(r["account_id"])
+                    row = totals_map.get(aid)
+                    if row is None:
+                        totals_map[aid] = {
+                            "account_id": aid,
+                            "start_total": float(r["start_total"] or 0.0),
+                            "trans_total": 0.0,
+                        }
+                    else:
+                        row["start_total"] = float(r["start_total"] or 0.0)
+                totals_rows = list(totals_map.values())
 
-    starting = {int(r["account_id"]): float(r["start_total"] or 0) for r in starting_rows}
-    tx_totals = {int(r["account_id"]): float(r["trans_total"] or 0) for r in tx_rows}
+        return has_credit_limit, accounts, totals_rows
+
+    has_credit_limit, accounts, totals_rows = run_db_retry(_run, retries=1)
+    starting = {int(r["account_id"]): float(r.get("start_total") or 0) for r in totals_rows}
+    tx_totals = {int(r["account_id"]): float(r.get("trans_total") or 0) for r in totals_rows}
 
     by_type = {"checking": [], "savings": [], "investment": [], "credit": [], "other": []}
 
