@@ -2,7 +2,7 @@ import { apiFetch, apiGetJson, apiPostJson, apiPostForm } from "/static/shared/a
 import { escapeHtml, escapeHtmlAttr, cssEscapeAttr } from "/static/shared/dom.module.js";
 import { isoLocal, isoLocalDate, parseISODateLocal, formatMMMdd, formatMonthYearLong, shortDate, fmtISOToShort } from "/static/shared/dates.module.js";
 import { money } from "/static/shared/format.module.js";
-import { mountUpcomingCard } from "/static/upcomingCard.js";
+import { mountUpcomingCard } from "/static/components/cards/upcomingCard.js";
 
 // IDs used by the shared chart card (chartCard.js)
 const HOME_IDS = {

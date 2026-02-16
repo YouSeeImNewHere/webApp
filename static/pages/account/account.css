@@ -52,3 +52,34 @@ body.page-account .account-tx-export-btn{
 body.page-account .account-tx-export-btn:hover{
   opacity: 0.9;
 }
+
+/* Account rows have extra right-side info (amount + balance + roundup).
+   Keep enough room for amount + balance + roundup stack. */
+body.page-account .tx-row{
+  min-height: 68px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  padding-right: 14px;
+}
+
+/* Some account rows have no subtext; reserve one line so card height stays stable. */
+body.page-account .tx-sub:empty::before{
+  content: "\00a0";
+}
+
+/* Place roundup above amount inside the right column on account page. */
+body.page-account .tx-right .tx-roundup-badge{
+  position: static;
+  transform: none;
+  top: auto;
+  right: auto;
+  align-self: flex-end;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 900px){
+  body.page-account .tx-row{
+    min-height: 62px;
+    padding-right: 10px;
+  }
+}

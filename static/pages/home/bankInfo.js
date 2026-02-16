@@ -5,6 +5,20 @@ function pct(v){
   return (n).toFixed(2) + "%";
 }
 
+function isoToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function moneyOrDash(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function openBankPanel(){
   document.body.classList.add("bank-panel-open");
   document.getElementById("bankInfoOverlay").classList.remove("hidden");

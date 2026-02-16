@@ -174,6 +174,38 @@ def attach_transfer_peers_pg(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 class TxCategoryUpdate(BaseModel):
     category: str = ""
 
+
+class TxMetaUpdate(BaseModel):
+    status: Optional[str] = None
+    postedDate: Optional[str] = None
+
+
+def _normalize_status(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip().lower()
+    if not s:
+        return "posted"
+    if s not in {"pending", "posted"}:
+        raise HTTPException(status_code=400, detail={"ok": False, "error": "invalid_status"})
+    return s
+
+
+def _normalize_posted_date(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s.lower() == "unknown":
+        return "unknown"
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            d = datetime.strptime(s, fmt).date()
+            return d.strftime("%m/%d/%Y")
+        except ValueError:
+            pass
+    raise HTTPException(status_code=400, detail={"ok": False, "error": "invalid_postedDate"})
+
+
 @router.post("/transaction/{tx_id}/category")
 def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
     category = (body.category or "").strip()
@@ -205,6 +237,51 @@ def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
         conn.commit()
 
     return {"ok": True, "id": tx_id, "category": category}
+
+
+@router.patch("/transaction/{tx_id}/meta")
+def transaction_update_meta(tx_id: str, body: TxMetaUpdate):
+    next_status = _normalize_status(body.status)
+    next_posted = _normalize_posted_date(body.postedDate)
+    if next_status is None and next_posted is None:
+        raise HTTPException(status_code=400, detail={"ok": False, "error": "no_fields"})
+
+    tid = _require_tenant_id()
+    set_parts: List[str] = []
+    vals: List[Any] = []
+    if next_status is not None:
+        set_parts.append("status = %s")
+        vals.append(next_status)
+    if next_posted is not None:
+        set_parts.append("postedDate = %s")
+        vals.append(next_posted)
+
+    where_sql = "WHERE id = %s"
+    vals.append(tx_id)
+    if tid:
+        where_sql += " AND tenant_id = %s"
+        vals.append(int(tid))
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            f"""
+            UPDATE transactions
+            SET {", ".join(set_parts)}
+            {where_sql}
+            """,
+            tuple(vals),
+        )
+        if (cur.rowcount or 0) == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
+        conn.commit()
+
+    return {
+        "ok": True,
+        "id": tx_id,
+        "status": next_status,
+        "postedDate": next_posted,
+    }
 
 @router.delete("/transaction/{tx_id}")
 def transaction_delete(tx_id: str):

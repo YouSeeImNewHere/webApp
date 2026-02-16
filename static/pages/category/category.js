@@ -1,1 +1,395 @@
-import "/static/category.js";
+import { money } from "/static/shared/format.module.js";
+import { formatMMMdd, shortDate } from "/static/shared/dates.module.js";
+
+let categoryChartInstance = null;
+
+const CATEGORY_CHART_IDS = {
+  title: "catChartTitle",
+  dots: "catChartDots",
+  toggle: "catChartToggle", // hidden
+  growthLabel: "catGrowthLabel",
+  growthValue: "catGrowthValue",
+  breakLabel: "catBreakLabel",
+  breakValue: "catBreakValue",
+  quarters: "catQuarterButtons",
+  yearBack: "catYearBack",
+  yearLabel: "catYearLabel",
+  yearFwd: "catYearFwd",
+  update: "catUpdateBtn",
+  start: "cat-start",
+  end: "cat-end",
+  canvas: "catChart",
+  monthButtons: "catMonthButtons",
+  // (no dropdown on category page unless you want it)
+};
+
+function openCatDrawer() {
+  document.getElementById("catDrawer")?.classList.add("is-open");
+  document.getElementById("catDrawerBackdrop")?.classList.add("is-open");
+}
+
+function closeCatDrawer() {
+  document.getElementById("catDrawer")?.classList.remove("is-open");
+  document.getElementById("catDrawerBackdrop")?.classList.remove("is-open");
+}
+
+function bindCatDrawerUI() {
+  const btn = document.getElementById("catDrawerBtn");
+  const backdrop = document.getElementById("catDrawerBackdrop");
+
+  if (btn) btn.addEventListener("click", () => {
+    const drawer = document.getElementById("catDrawer");
+    const isOpen = drawer?.classList.contains("is-open");
+    if (isOpen) closeCatDrawer();
+    else openCatDrawer();
+  });
+
+  if (backdrop) backdrop.addEventListener("click", closeCatDrawer);
+}
+
+
+function getCategoryFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("c") || "";
+}
+
+function setCategoryInURL(category) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("c", category);
+  window.history.pushState({}, "", url);
+}
+
+async function loadCategoryChart() {
+  const category = getCategoryFromURL() || "Uncategorized";
+const t = document.getElementById(CATEGORY_CHART_IDS.title);
+if (t) t.textContent = category;
+  const start = document.getElementById("cat-start")?.value;
+  const end   = document.getElementById("cat-end")?.value;
+  if (!start || !end) return;
+
+  const res = await fetch(
+    `/category-trend?category=${encodeURIComponent(category)}&period=all`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("category chart failed");
+
+  const payload = await res.json();
+  const series = payload.series || [];
+
+  // filter to selected range
+  const filtered = series.filter(p => p.date >= start && p.date <= end);
+
+  const labels = filtered.map(p => formatMMMdd(p.date));
+
+  const dailyValues = filtered.map(p => Number(p.amount || 0));
+  const cumulative = [];
+  let running = 0;
+  for (const v of dailyValues) {
+    running += v;
+    cumulative.push(running);
+  }
+
+  // % Growth
+  let growthStr = "—";
+  if (cumulative.length >= 2 && Math.abs(cumulative[0]) > 1e-9) {
+  const pct = ((cumulative[cumulative.length - 1] - cumulative[0]) / Math.abs(cumulative[0])) * 100;
+  growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+}
+  setInlineGrowthByIds(CATEGORY_CHART_IDS, "% Growth", growthStr);
+
+  const last = cumulative.length ? cumulative[cumulative.length - 1] : 0;
+
+  const l = document.getElementById(CATEGORY_CHART_IDS.breakLabel);
+  const v = document.getElementById(CATEGORY_CHART_IDS.breakValue);
+  if (l) l.textContent = category;
+  if (v) v.textContent = money(last);
+
+
+  setInlineGrowthByIds(CATEGORY_CHART_IDS, "% Growth", growthStr);
+
+  const canvas = document.getElementById("catChart");
+  if (!canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  if (categoryChartInstance) categoryChartInstance.destroy();
+
+  categoryChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Total spent",
+        data: cumulative,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }, {
+        label: "Spent that day",
+        data: dailyValues,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }],
+    },
+    options: {
+      responsive: true,
+  maintainAspectRatio: false,
+      plugins: { legend: { display: true } },
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { ticks: { callback: v => Number(v).toLocaleString() } }
+      }
+    }
+  });
+}
+
+async function loadTrend(category, period) {
+  window.__period = period;
+
+  const res = await fetch(
+    `/category-trend?category=${encodeURIComponent(category)}&period=${encodeURIComponent(period)}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("trend failed");
+
+  const payload = await res.json();
+  const series = payload.series || [];
+
+  const labels = series.map(p => {
+    return formatMMMdd(p.date);
+  });
+
+  const dailyValues = series.map(p => Number(p.amount || 0));
+  const cumulative = [];
+  let running = 0;
+  for (const v of dailyValues) {
+    running += v;
+    cumulative.push(running);
+  }
+
+  const canvas = document.getElementById("catChart");
+  if (!canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  if (categoryChartInstance) categoryChartInstance.destroy();
+
+  categoryChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Total spent",
+        data: cumulative,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }, {
+        label: "Spent that day",
+        data: dailyValues,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { ticks: { callback: v => Number(v).toLocaleString() } }
+      }
+    }
+  });
+}
+
+async function loadCategoryTransactions(category) {
+  const list = document.getElementById("catTxList");
+  if (!list) return;
+
+  const start = document.getElementById("cat-start")?.value;
+  const end   = document.getElementById("cat-end")?.value;
+  if (!start || !end) return;
+
+  list.innerHTML = "";
+
+  const res = await fetch(
+    `/category-transactions?category=${encodeURIComponent(category)}&start=${start}&end=${end}&limit=500`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("tx failed");
+
+  const data = await res.json();
+  // Build running total starting at 0, in chronological order inside the selected range
+  const asc = [...data].sort((a, b) => {
+    const da = String(a.dateISO || "");
+    const db = String(b.dateISO || "");
+    if (da !== db) return da.localeCompare(db);
+    return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
+
+  let running = 0;
+  const runningById = new Map();
+  for (const r of asc) {
+    running += Number(r.amount || 0);
+    runningById.set(String(r.id ?? ""), running);
+  }
+
+
+  if (!Array.isArray(data) || data.length === 0) {
+    list.innerHTML = `<div style="padding:10px;">No transactions in this range.</div>`;
+    return;
+  }
+
+  data.forEach(row => {
+    const wrap = document.createElement("div");
+    wrap.className = "tx-row";
+
+    // Match Home: mark pending
+    if (String(row.status || "").toLowerCase() === "pending") {
+      wrap.classList.add("is-pending");
+    }
+
+    const merchant = (row.merchant || "").toUpperCase();
+    const sub = `${row.bank || ""}${row.card ? " • " + row.card : ""}`;
+    const amtNum = Number(row.amount || 0);
+    const transferText = row.transfer_peer
+      ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`)
+      : "";
+    const roundupCents = Number(row.roundup_cents || 0);
+    const roundupBadge = roundupCents > 0
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      : "";
+
+    // Match Home date logic: postedDate -> purchaseDate -> dateISO
+    const effectiveDate =
+  (row.postedDate && row.postedDate !== "unknown") ? row.postedDate :
+  (row.purchaseDate && row.purchaseDate !== "unknown") ? row.purchaseDate :
+  (row.raw_date && row.raw_date !== "unknown") ? row.raw_date :
+  (row.d ? row.d : row.dateISO);
+
+    wrap.dataset.txId = String(row.id ?? "");
+    wrap.innerHTML = `
+      <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
+        ${categoryIconHTML(row.category)}
+      </div>
+      <div class="tx-date">${shortDate(effectiveDate)}</div>
+      <div class="tx-main">
+        <div class="tx-merchant">${merchant}</div>
+        <div class="tx-sub">${sub}</div>
+        <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
+      </div>
+      <div class="tx-right">
+  <div class="tx-amt">${money(row.amount)}</div>
+  <div class="tx-bal">${money(runningById.get(String(row.id ?? "")) ?? 0)}</div>
+</div>
+      ${roundupBadge}
+
+    `;
+
+    list.appendChild(wrap);
+  });
+
+  if (typeof window.attachTxInspect === 'function') window.attachTxInspect(list);
+}
+
+async function loadLifetimeSidebar(activeCategory) {
+  const tbody = document.querySelector("#catSideTable tbody");
+  if (!tbody) {
+    console.warn("catSideTable tbody not found");
+    return;
+  }
+
+  const res = await fetch("/category-totals-lifetime", { cache: "no-store" });
+  if (!res.ok) throw new Error("lifetime totals failed");
+
+  const rows = await res.json(); // [{category,total},...]
+  tbody.innerHTML = "";
+
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.className = "cat-side-row" + (r.category === activeCategory ? " active" : "");
+    tr.innerHTML = `
+      <td>${r.category}</td>
+      <td style="text-align:right;">${money(r.total)}</td>
+    `;
+
+tr.addEventListener("click", async () => {
+  const newCat = r.category;
+
+  const titleEl = document.getElementById("catTitle");
+  if (titleEl) titleEl.textContent = newCat;
+
+  setCategoryInURL(newCat); // ✅ this is the missing piece
+
+  await loadLifetimeSidebar(newCat);
+  await loadCategoryChart();              // now reads the new ?c=
+  await loadCategoryTransactions(newCat);
+
+  closeCatDrawer();
+});
+
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function init() {
+  let category = getCategoryFromURL();
+  if (!category) category = "Uncategorized";
+
+async function refreshCategory(cat) {
+  // keep title in sync
+  const titleEl = document.getElementById("catTitle");
+  if (titleEl) titleEl.textContent = cat;
+
+  await loadCategoryChart();
+  await loadCategoryTransactions(cat);
+}
+
+
+  const title = document.getElementById("catTitle");
+  if (title) title.textContent = category;
+  bindCatDrawerUI();
+
+mountChartCard("#chartMount", {
+  ids: CATEGORY_CHART_IDS,
+  title: "Category",
+  showToggle: false,
+  headerActionsHtml: `
+    <button id="catDrawerBtnHeader" class="chart-toggle chart-toggle--header" aria-label="All categories">
+      ☰
+    </button>
+  `
+});
+
+// Place the drawer button where the Home "Next" pill usually is
+document.getElementById("catDrawerBtnHeader")?.addEventListener("click", openCatDrawer);
+   initChartControls(CATEGORY_CHART_IDS, async () => {
+  await refreshCategory(getCategoryFromURL() || "Uncategorized");
+});
+
+const chartTitle = document.getElementById(CATEGORY_CHART_IDS.title);
+if (chartTitle) chartTitle.textContent = category;
+
+
+
+
+  // LEFT sidebar first
+  await loadLifetimeSidebar(category);
+
+  // If user uses browser back/forward and category changes in URL
+  window.addEventListener("popstate", async () => {
+  const currentCat = getCategoryFromURL() || "Uncategorized";
+  await loadLifetimeSidebar(currentCat);
+  await refreshCategory(currentCat);
+});
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  init().catch(err => console.error(err));
+});
+

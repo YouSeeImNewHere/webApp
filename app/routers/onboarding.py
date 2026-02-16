@@ -43,6 +43,7 @@ class OnboardingAccountCreate(BaseModel):
     apy_percent: float | None = None
     starting_balance: float | None = None
     starting_date: str | None = None  # YYYY-MM-DD
+    card_benefits: list[dict[str, Any]] | None = None
 
 
 class OnboardingPushoverKeyBody(BaseModel):
@@ -169,6 +170,21 @@ def onboarding_create_account(body: OnboardingAccountCreate):
         raise HTTPException(status_code=422, detail="institution, name, accounttype are required")
     if accounttype not in {"checking", "savings", "credit", "investment"}:
         raise HTTPException(status_code=422, detail="accounttype must be checking|savings|credit|investment")
+    raw_benefits = body.card_benefits or []
+    if accounttype != "credit" and raw_benefits:
+        raise HTTPException(status_code=422, detail="card_benefits allowed only for credit accounts")
+    benefits: list[tuple[str, float]] = []
+    for b in raw_benefits:
+        category = str((b or {}).get("benefit_type") or "").strip()
+        if not category:
+            raise HTTPException(status_code=422, detail="card benefit category is required")
+        try:
+            pct = float((b or {}).get("cashback_percent"))
+        except Exception:
+            raise HTTPException(status_code=422, detail="card benefit cashback_percent must be numeric")
+        if pct < 0 or pct > 100:
+            raise HTTPException(status_code=422, detail="card benefit cashback_percent must be between 0 and 100")
+        benefits.append((category, pct))
     if body.apy_percent is not None:
         try:
             apy_val = float(body.apy_percent)
@@ -281,6 +297,38 @@ def onboarding_create_account(body: OnboardingAccountCreate):
                     tid,
                 ),
             )
+
+        if accounttype == "credit" and benefits:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS card_benefits (
+                  id SERIAL PRIMARY KEY,
+                  card_id INT NOT NULL,
+                  benefit_type TEXT NOT NULL,
+                  rate DOUBLE PRECISION NOT NULL,
+                  start_date DATE,
+                  end_date DATE,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+            cur.execute("ALTER TABLE card_benefits ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_card_id ON card_benefits(card_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_tenant_id ON card_benefits(tenant_id)")
+            for category, pct in benefits:
+                cur.execute(
+                    """
+                    INSERT INTO card_benefits (card_id, benefit_type, rate, start_date, tenant_id)
+                    VALUES (%s, %s, %s, %s::date, %s)
+                    """,
+                    (
+                        new_id,
+                        category,
+                        pct,
+                        start_date,
+                        tid,
+                    ),
+                )
 
         conn.commit()
 

@@ -653,6 +653,10 @@ def account_transactions_range(
         "account_id": int(account_id),
         "start": start_date,
         "end": end_date,
+        # Pending rows are displayed in a separate section on the account page.
+        # This multiplier keeps pending running-balance math consistent with
+        # posted display math (including credit normalization).
+        "pending_balance_multiplier": 1 if acc_type in {"investment", "credit"} else -1,
         "starting_balance": float(starting_balance_at_range),
         "ending_balance": float(ending_balance),
         "transactions": tx,

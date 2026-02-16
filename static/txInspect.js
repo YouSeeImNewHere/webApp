@@ -117,6 +117,20 @@
     );
   }
 
+  function updateAnyVisibleTxRowsMeta(txId, nextStatus) {
+    const rows = document.querySelectorAll(
+      `.tx-row[data-tx-id="${CSS.escape(String(txId))}"]`
+    );
+    const isPending = String(nextStatus || "").toLowerCase() === "pending";
+    rows.forEach((row) => {
+      row.classList.toggle("is-pending", isPending);
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("tx:meta-updated", { detail: { txId, status: nextStatus } })
+    );
+  }
+
   function renderTxInspect(obj, txId) {
     const grid = document.getElementById("txInspectGrid");
     if (!grid) return;
@@ -172,10 +186,51 @@
       return `<div class="tx-k">${esc(k)}</div><div class="tx-v">${val}</div>`;
     }).join("");
 
+    const currentStatus = String(obj?.status ?? "").trim();
+    const currentPosted = String(obj?.postedDate ?? "").trim();
+    grid.innerHTML += `
+      <div class="tx-k">edit</div>
+      <div class="tx-v">
+        <button id="txInspectMetaEditToggle" class="tx-edit-btn" type="button">Edit status/date</button>
+        <div id="txInspectMetaEditPanel" style="display:none; margin-top:10px;">
+          <div class="tx-inline-edit" style="gap:10px; flex-wrap:wrap;">
+            <label style="display:flex; align-items:center; gap:6px;">
+              <span>Status</span>
+              <select id="txInspectStatusInput" class="tx-edit-input">
+                <option value="posted"${currentStatus.toLowerCase() === "posted" ? " selected" : ""}>posted</option>
+                <option value="pending"${currentStatus.toLowerCase() === "pending" ? " selected" : ""}>pending</option>
+              </select>
+            </label>
+            <label style="display:flex; align-items:center; gap:6px;">
+              <span>Posted Date</span>
+              <input
+                id="txInspectPostedDateInput"
+                class="tx-edit-input"
+                type="text"
+                inputmode="numeric"
+                placeholder="MM/DD/YYYY or unknown"
+                value="${esc(currentPosted)}"
+              />
+            </label>
+            <button id="txInspectMetaSave" class="tx-edit-btn" type="button">Save</button>
+            <button id="txInspectMetaCancel" class="tx-edit-btn" type="button">Cancel</button>
+          </div>
+          <div id="txInspectMetaStatus" class="tx-edit-status" aria-live="polite"></div>
+        </div>
+      </div>
+    `;
+
     const btn = document.getElementById("txInspectCategorySave");
     const input = document.getElementById("txInspectCategoryInput");
     const status = document.getElementById("txInspectCategoryStatus");
     const delBtn = document.getElementById("txInspectDelete");
+    const metaToggle = document.getElementById("txInspectMetaEditToggle");
+    const metaPanel = document.getElementById("txInspectMetaEditPanel");
+    const metaSave = document.getElementById("txInspectMetaSave");
+    const metaCancel = document.getElementById("txInspectMetaCancel");
+    const metaStatus = document.getElementById("txInspectMetaStatus");
+    const statusInput = document.getElementById("txInspectStatusInput");
+    const postedInput = document.getElementById("txInspectPostedDateInput");
 
     if (btn && input) {
       btn.onclick = async () => {
@@ -205,7 +260,57 @@
         }
       };
     }
-        if (delBtn) {
+    if (metaToggle && metaPanel && statusInput && postedInput) {
+      metaToggle.onclick = () => {
+        metaPanel.style.display = "block";
+        metaToggle.style.display = "none";
+      };
+      if (metaCancel) {
+        metaCancel.onclick = () => {
+          statusInput.value = (obj?.status == null ? "" : String(obj.status)).toLowerCase() || "posted";
+          postedInput.value = obj?.postedDate == null ? "" : String(obj.postedDate);
+          if (metaStatus) metaStatus.textContent = "";
+          metaPanel.style.display = "none";
+          metaToggle.style.display = "";
+        };
+      }
+      if (metaSave) {
+        metaSave.onclick = async () => {
+          const nextStatus = String(statusInput.value || "posted").toLowerCase();
+          const nextPosted = String(postedInput.value || "").trim();
+          metaSave.disabled = true;
+          if (metaCancel) metaCancel.disabled = true;
+          statusInput.disabled = true;
+          postedInput.disabled = true;
+          if (metaStatus) metaStatus.textContent = "Saving...";
+          try {
+            const res = await fetch(`/transaction/${encodeURIComponent(txId)}/meta`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: nextStatus,
+                postedDate: nextPosted,
+              }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const out = await res.json();
+            obj.status = out?.status ?? nextStatus;
+            obj.postedDate = out?.postedDate ?? nextPosted;
+            updateAnyVisibleTxRowsMeta(txId, obj.status);
+            if (metaStatus) metaStatus.textContent = "Saved";
+            renderTxInspect(obj, txId);
+          } catch (e) {
+            console.error(e);
+            if (metaStatus) metaStatus.textContent = "Failed to save";
+            metaSave.disabled = false;
+            if (metaCancel) metaCancel.disabled = false;
+            statusInput.disabled = false;
+            postedInput.disabled = false;
+          }
+        };
+      }
+    }
+    if (delBtn) {
       delBtn.onclick = async () => {
         const ok = confirm("Delete this transaction? This cannot be undone.");
         if (!ok) return;
