@@ -811,7 +811,7 @@ def format_pushover_message(bank: str, extracted: dict) -> tuple[str, str]:
 # IMAP
 # ============================================================
 
-def get_imap_ids(mail):
+def get_imap_ids(mail, include_processed: bool = False):
     ids = []
     # Primary mailbox + Gmail archive views so recently-archived emails are still discoverable.
     mailbox_candidates = list(MAILBOXES) + ["[Gmail]/All Mail", "[Google Mail]/All Mail"]
@@ -826,10 +826,11 @@ def get_imap_ids(mail):
         # Gmail's newer_than uses d/m/y units; use a 1-day prefilter and do exact minute filtering in Python.
         # X-GM-RAW parsing can vary by IMAP client/server; try common compatible forms.
         status, data = "BAD", []
+        gm_raw = "newer_than:1d" if include_processed else "newer_than:1d -label:ProcessedNew"
         search_attempts = [
-            (None, 'X-GM-RAW "newer_than:1d -label:ProcessedNew"'),
-            (None, "X-GM-RAW", "newer_than:1d -label:ProcessedNew"),
-            ("UTF-8", 'X-GM-RAW "newer_than:1d -label:ProcessedNew"'),
+            (None, f'X-GM-RAW "{gm_raw}"'),
+            (None, "X-GM-RAW", gm_raw),
+            ("UTF-8", f'X-GM-RAW "{gm_raw}"'),
             (None, "SINCE", since_2d),
             (None, "ALL"),
         ]
@@ -864,7 +865,7 @@ def is_within_minutes_window(date_header: str, cutoff_utc: datetime) -> bool:
 # ============================================================
 TEST_MODE = False
 
-def run():
+def run(include_processed: bool = False):
     # Load .env from project root reliably (webApp/.env)
     project_root = Path(__file__).resolve().parents[1]  # .../webApp
     env_path = project_root / ".env"
@@ -885,7 +886,8 @@ def run():
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
     ensure_notified_table("notified_transactions")
-    window_minutes = int(os.getenv("EMAILFETCH_WINDOW_MINUTES") or "10")
+    # Hardcoded lookback for manual recovery/debugging.
+    window_minutes = 24 * 60
     cutoff_utc = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
 
     # 20–30 minutes is what you wanted; default 30, configurable
@@ -896,7 +898,7 @@ def run():
     mail.login(EMAIL, PASSWORD)
 
     try:
-        all_ids = get_imap_ids(mail)
+        all_ids = get_imap_ids(mail, include_processed=include_processed)
         log(f"Found {len(all_ids)} emails in 1-day prefilter; applying {window_minutes}m window")
         did_work = False
 

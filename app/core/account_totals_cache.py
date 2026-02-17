@@ -68,17 +68,17 @@ def ensure_account_totals_cache_pg() -> None:
             RETURNS TRIGGER AS $$
             BEGIN
               IF TG_OP = 'INSERT' THEN
-                PERFORM _account_totals_upsert_delta(NEW.tenant_id, NEW.account_id, NEW.start::double precision, 0);
+                PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, NEW.start::double precision, 0::double precision);
                 RETURN NEW;
               ELSIF TG_OP = 'DELETE' THEN
-                PERFORM _account_totals_upsert_delta(OLD.tenant_id, OLD.account_id, -(OLD.start::double precision), 0);
+                PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, -(OLD.start::double precision), 0::double precision);
                 RETURN OLD;
               ELSIF TG_OP = 'UPDATE' THEN
                 IF COALESCE(NEW.tenant_id, 0) = COALESCE(OLD.tenant_id, 0) AND NEW.account_id = OLD.account_id THEN
-                  PERFORM _account_totals_upsert_delta(NEW.tenant_id, NEW.account_id, (NEW.start::double precision - OLD.start::double precision), 0);
+                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, (NEW.start::double precision - OLD.start::double precision), 0::double precision);
                 ELSE
-                  PERFORM _account_totals_upsert_delta(OLD.tenant_id, OLD.account_id, -(OLD.start::double precision), 0);
-                  PERFORM _account_totals_upsert_delta(NEW.tenant_id, NEW.account_id, NEW.start::double precision, 0);
+                  PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, -(OLD.start::double precision), 0::double precision);
+                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, NEW.start::double precision, 0::double precision);
                 END IF;
                 RETURN NEW;
               END IF;
@@ -94,17 +94,17 @@ def ensure_account_totals_cache_pg() -> None:
             RETURNS TRIGGER AS $$
             BEGIN
               IF TG_OP = 'INSERT' THEN
-                PERFORM _account_totals_upsert_delta(NEW.tenant_id, NEW.account_id, 0, NEW.amount::double precision);
+                PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, NEW.amount::double precision);
                 RETURN NEW;
               ELSIF TG_OP = 'DELETE' THEN
-                PERFORM _account_totals_upsert_delta(OLD.tenant_id, OLD.account_id, 0, -(OLD.amount::double precision));
+                PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, 0::double precision, -(OLD.amount::double precision));
                 RETURN OLD;
               ELSIF TG_OP = 'UPDATE' THEN
                 IF COALESCE(NEW.tenant_id, 0) = COALESCE(OLD.tenant_id, 0) AND NEW.account_id = OLD.account_id THEN
-                  PERFORM _account_totals_upsert_delta(NEW.tenant_id, NEW.account_id, 0, (NEW.amount::double precision - OLD.amount::double precision));
+                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, (NEW.amount::double precision - OLD.amount::double precision));
                 ELSE
-                  PERFORM _account_totals_upsert_delta(OLD.tenant_id, OLD.account_id, 0, -(OLD.amount::double precision));
-                  PERFORM _account_totals_upsert_delta(NEW.tenant_id, NEW.account_id, 0, NEW.amount::double precision);
+                  PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, 0::double precision, -(OLD.amount::double precision));
+                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, NEW.amount::double precision);
                 END IF;
                 RETURN NEW;
               END IF;

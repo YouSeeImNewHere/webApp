@@ -15,6 +15,7 @@ from app.core.templates import templates  # ensure templates init
 from app.core.auth import add_auth_middlewares
 from app.core.config import BUILD_ID
 from app.core.tenancy import initialize_tenancy
+from app.core.account_totals_cache import ensure_account_totals_cache_pg
 
 # Routers
 from app.routers import (
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
     def _startup():
         open_pool()
         ensure_performance_indexes()
+        ensure_account_totals_cache_pg()
         initialize_tenancy()
 
     @app.on_event("shutdown")

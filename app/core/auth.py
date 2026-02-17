@@ -366,7 +366,7 @@ def _gmail_history_message_ids(access_token: str, start_history_id: str):
     return sorted(message_ids), latest_history_id, None
 
 
-def _trigger_event_processing():
+def _trigger_event_processing(include_processed: bool = False):
     if not _PUSH_PROCESS_LOCK.acquire(blocking=False):
         print("gmail push: processing already in progress; skipping duplicate trigger")
         return False
@@ -375,7 +375,7 @@ def _trigger_event_processing():
         try:
             from emails import emailFetch
 
-            emailFetch.run()
+            emailFetch.run(include_processed=include_processed)
         except Exception as e:
             print("gmail push: emailFetch.run failed:", repr(e))
         finally:
@@ -618,7 +618,8 @@ def gmail_push_state():
 def gmail_fetch_now(request: Request):
     if not _is_owner_request(request):
         return JSONResponse({"ok": False, "error": "owner_only"}, status_code=403)
-    started = _trigger_event_processing()
+    # Manual fetch is for validation/troubleshooting; include ProcessedNew-labeled mail.
+    started = _trigger_event_processing(include_processed=True)
     return {"ok": True, "started": bool(started), "status": "started" if started else "already_running"}
 
 

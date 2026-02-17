@@ -159,17 +159,6 @@ def finalize_transaction(
     print("Time:", time)
     print("Date:", date)
 
-    # ---- labels ----
-    for lab in labels_add:
-        mail.store(msg_id_str, "+X-GM-LABELS", f"({lab})")
-
-    for lab in labels_remove:
-        typ, resp = mail.store(msg_id_str, "-X-GM-LABELS", f"({lab})")
-        print("REMOVE LABEL:", lab, "->", typ, resp)
-
-    # Always mark processed here (single place to change)
-    mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
-
     if cost == "":
         cost = None
     # ---- insert ----
@@ -185,6 +174,16 @@ def finalize_transaction(
         source,
         use_test_table=use_test_table,
     )
+    # Label only after a successful insert so failed handlers stay unprocessed.
+    if result and result.get("inserted"):
+        for lab in labels_add:
+            mail.store(msg_id_str, "+X-GM-LABELS", f"({lab})")
+
+        for lab in labels_remove:
+            typ, resp = mail.store(msg_id_str, "-X-GM-LABELS", f"({lab})")
+            print("REMOVE LABEL:", lab, "->", typ, resp)
+
+        mail.store(msg_id_str, "+X-GM-LABELS", "(ProcessedNew)")
     return result
 
 # =============================================================================
@@ -246,7 +245,6 @@ def navyFedWithdrawal(mail, msg_id_str, match, timeEmail, use_test_table: bool =
     )
     if existing_key:
         # optional: label this email as “matched”
-        mail.store(msg_id_str, "+X-GM-LABELS", "(NavyFedWithdrawalMatched)")
         return
 
     # 3) otherwise it truly is unmatched → keep current behavior
