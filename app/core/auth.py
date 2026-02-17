@@ -48,7 +48,6 @@ _OAUTH_TABLES_READY = False
 
 # Public endpoints (no login required)
 PUBLIC_EXACT = {
-    "/",
     "/__ping",
     "/login",
     "/favicon.ico",
@@ -750,6 +749,10 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
 
             # Allow /static/* assets, but block direct access to html pages unless authed
             if any(path.startswith(p) for p in PUBLIC_PREFIXES):
+                # Shared chrome partials are fetched and injected into other pages.
+                # Redirecting them to /login causes the login page HTML to be injected.
+                if path == "/static/shared/shared.html":
+                    return await call_next(request)
                 if path.lower().endswith(".html") and not _is_authed(request):
                     return RedirectResponse(url=f"/login?next={path}", status_code=302)
                 return await call_next(request)
@@ -879,6 +882,10 @@ async def login(request: Request):
         form = await request.form()
         password = (str(form.get("secret_field_1", "")) or "").strip()
         next_url = str(form.get("next", "/") or "/")
+
+    # Never land on internal shared partials after login.
+    if next_url.startswith("/static/shared/"):
+        next_url = "/"
 
     if password != APP_PASSWORD:
         accept = request.headers.get("accept", "")

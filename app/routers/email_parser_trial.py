@@ -217,6 +217,7 @@ class TrialSamplesBody(BaseModel):
 class TrialPreviewBody(BaseModel):
     name: str | None = None
     parser_mode: str | None = None
+    parsing_method: str | None = None
     account_id: int
     sender_pattern: str | None = None
     subject_contains: str | None = None
@@ -230,6 +231,7 @@ class TrialPreviewBody(BaseModel):
 class TrialSaveBody(BaseModel):
     name: str
     parser_mode: str | None = None
+    parsing_method: str | None = None
     account_id: int
     sender_pattern: str | None = None
     subject_contains: str | None = None
@@ -417,6 +419,7 @@ def trial_save(body: TrialSaveBody, request: Request):
     draft_json = {
         "name": name,
         "parser_mode": (body.parser_mode or "").strip().lower(),
+        "parsing_method": (body.parsing_method or "anchor").strip().lower(),
         "account_id": int(body.account_id),
         "sender_pattern": (body.sender_pattern or "").strip(),
         "subject_contains": (body.subject_contains or "").strip(),

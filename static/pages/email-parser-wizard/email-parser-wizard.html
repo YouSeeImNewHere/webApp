@@ -79,7 +79,38 @@
     </section>
 
     <section class="epw-card">
-      <h2>Step 3: Rule Draft</h2>
+      <div class="epw-title-row">
+        <h2>Step 3: Rule Draft</h2>
+        <button id="epwHelpToggleBtn" class="epw-help-btn" type="button" aria-expanded="false" aria-controls="epwGuideHelpPanel" aria-label="Show guided parsing examples">?</button>
+      </div>
+      <div id="epwGuideHelpPanel" class="epw-help hidden" role="region" aria-label="Guided parsing examples">
+        <div class="epw-help-head">
+          <strong>How to fill the 4 guided fields</strong>
+          <button id="epwHelpCloseBtn" class="epw-help-close" type="button" aria-label="Close examples">Close</button>
+        </div>
+        <div class="epw-help-grid">
+          <div class="epw-help-block">
+            <div class="epw-help-label">List layout + Anchor-based</div>
+            <pre class="epw-help-pre">Merchant: TACOS CHUKIS SOUTH LAKE UNION
+Date: Sun, Feb 15, 2026
+Amount: $13.27</pre>
+            <div class="epw-help-fill">Amount: <code>Amount</code> | Merchant: <code>Merchant</code> | Date: <code>Date</code> | Time: <code>Time</code> or blank</div>
+          </div>
+          <div class="epw-help-block">
+            <div class="epw-help-label">Sentence layout + Flexible</div>
+            <pre class="epw-help-pre">The transaction for $154.48 was approved...
+...at Banya 5... at 08:45 PM EST on 02/14/26.</pre>
+            <div class="epw-help-fill">Amount: <code>transaction for</code> | Merchant: <code>at</code> | Date: <code>on</code> | Time: <code>at</code></div>
+          </div>
+          <div class="epw-help-block">
+            <div class="epw-help-label">No-anchor layout + Flexible</div>
+            <pre class="epw-help-pre">TACOS CHUKIS SOUTH LAKE UNION
+$13.27
+Sun, Feb 15, 2026</pre>
+            <div class="epw-help-fill">Amount: default | Merchant: default | Date: default | Time: blank unless present</div>
+          </div>
+        </div>
+      </div>
       <div class="epw-grid epw-grid-2">
         <label class="epw-field">
           Draft name
@@ -98,9 +129,27 @@
             <option value="advanced">Advanced (Regex)</option>
           </select>
         </label>
+        <label class="epw-field">
+          Guided layout
+          <select id="epwGuidedLayout">
+            <option value="list">List layout (Merchant / Date / Amount lines)</option>
+            <option value="sentence">Sentence layout (inline sentence)</option>
+            <option value="no_anchor">No anchor layout (amount/date near merchant)</option>
+          </select>
+        </label>
+      </div>
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
+          Parsing type
+          <span class="epw-toggle-wrap">
+            <input id="epwParsingMethodToggle" type="checkbox" checked>
+            <span id="epwParsingMethodLabel">Anchor-based parsing</span>
+          </span>
+          <span class="epw-muted epw-inline-muted">Toggle between strict label anchors and flexible pattern matching.</span>
+        </label>
         <div class="epw-field">
           <span>Guided mode defaults</span>
-          <div class="epw-muted epw-inline-muted">Use label keywords from your bank email template.</div>
+          <div class="epw-muted epw-inline-muted">Anchor mode uses explicit labels/phrases. Toggle off for more flexible matching.</div>
         </div>
       </div>
       <div id="epwGuidedFields" class="epw-grid epw-grid-4">

@@ -885,6 +885,24 @@ def is_within_minutes_window(date_header: str, cutoff_utc: datetime) -> bool:
     except Exception:
         return False
 
+
+def received_time_from_header(date_header: str) -> str:
+    """
+    Fallback time when parsed transaction time is blank.
+    Uses the email's Date header converted to local timezone.
+    """
+    if not date_header:
+        return "unknown time"
+    try:
+        dt = parsedate_to_datetime(date_header)
+        if dt is None:
+            return "unknown time"
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%I:%M %p")
+    except Exception:
+        return "unknown time"
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -1005,7 +1023,7 @@ def run(include_processed: bool = False):
                                 merchant = (result.get("merchant") or "").strip()
                                 amt = result.get("amount")
                                 date_str = result.get("purchaseDate") or "unknown date"
-                                time_str = result.get("time") or "unknown time"
+                                time_str = result.get("time") or received_time_from_header(date)
                                 fp = tx_fingerprint(account_id, amt, date_str, time_str)
                                 dbg(f"Computed fp (inserted=False path): {fp}")
 
@@ -1032,7 +1050,7 @@ def run(include_processed: bool = False):
                         merchant = (result.get("merchant") or "Unknown").strip()
                         amt = result.get("amount")
                         date_str = result.get("purchaseDate") or "unknown date"
-                        time_str = result.get("time") or "unknown time"
+                        time_str = result.get("time") or received_time_from_header(date)
 
                         # ✅ transaction-level fingerprint (dedupe across multiple emails)
                         fp = tx_fingerprint(account_id, amt, date_str, time_str)

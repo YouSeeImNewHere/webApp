@@ -31,6 +31,89 @@
   margin-bottom: 10px;
 }
 
+.epw-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.epw-help-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.epw-help {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.epw-help.hidden {
+  display: none;
+}
+
+.epw-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.epw-help-close {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.epw-help-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.epw-help-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--card);
+}
+
+.epw-help-label {
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+.epw-help-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.epw-help-fill {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .epw-muted {
   margin: 8px 0 0;
   color: var(--text-muted);
@@ -75,6 +158,25 @@
   color: var(--btn-text);
   font-size: 14px;
   font-weight: 700;
+}
+
+.epw-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.epw-toggle-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
 }
 
 .epw-field textarea {

@@ -6,6 +6,7 @@
     previewRows: [],
     usingMock: false,
   };
+  const UI_PREFS_KEY = "epw:ui-prefs:v2";
 
   function byId(id) {
     return document.getElementById(id);
@@ -34,6 +35,65 @@
       throw err;
     }
     return body;
+  }
+
+  function updateParsingMethodLabel() {
+    const toggle = byId("epwParsingMethodToggle");
+    const label = byId("epwParsingMethodLabel");
+    if (!toggle || !label) return;
+    label.textContent = toggle.checked ? "Anchor-based parsing" : "Flexible parsing";
+  }
+
+  function setHelpOpen(open) {
+    const panel = byId("epwGuideHelpPanel");
+    const btn = byId("epwHelpToggleBtn");
+    if (!panel || !btn) return;
+    panel.classList.toggle("hidden", !open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function applyParserModeVisibility() {
+    const mode = byId("epwParserMode")?.value || "guided";
+    const adv = byId("epwAdvancedFields");
+    const guidedLayout = byId("epwGuidedLayout")?.closest(".epw-field");
+    const parsingMethod = byId("epwParsingMethodToggle")?.closest(".epw-field");
+    if (adv) adv.classList.toggle("hidden", mode !== "advanced");
+    if (guidedLayout) guidedLayout.style.display = mode === "guided" ? "" : "none";
+    if (parsingMethod) parsingMethod.style.display = mode === "guided" ? "" : "none";
+  }
+
+  function saveUiPrefs() {
+    const parserMode = (byId("epwParserMode")?.value || "guided").trim();
+    const guidedLayout = (byId("epwGuidedLayout")?.value || "list").trim();
+    const parsingMethod = byId("epwParsingMethodToggle")?.checked ? "anchor" : "flexible";
+    try {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
+        parser_mode: parserMode,
+        guided_layout: guidedLayout,
+        parsing_method: parsingMethod,
+      }));
+    } catch (_e) {
+      // Ignore storage failures in private mode or restricted contexts.
+    }
+  }
+
+  function loadUiPrefs() {
+    let prefs = null;
+    try {
+      prefs = JSON.parse(localStorage.getItem(UI_PREFS_KEY) || "null");
+    } catch (_e) {
+      prefs = null;
+    }
+    if (!prefs || typeof prefs !== "object") return;
+    if (prefs.parser_mode && byId("epwParserMode")) {
+      byId("epwParserMode").value = String(prefs.parser_mode);
+    }
+    if (prefs.guided_layout && byId("epwGuidedLayout")) {
+      byId("epwGuidedLayout").value = String(prefs.guided_layout);
+    }
+    if (byId("epwParsingMethodToggle")) {
+      byId("epwParsingMethodToggle").checked = String(prefs.parsing_method || "anchor") === "anchor";
+    }
   }
 
   function renderAccounts() {
@@ -142,6 +202,8 @@
     const bodyRegex = (byId("epwBodyRegex")?.value || "").trim();
     const flags = (byId("epwRegexFlags")?.value || "i").trim() || "i";
     const name = (byId("epwDraftName")?.value || "").trim();
+    const guidedLayout = (byId("epwGuidedLayout")?.value || "list").trim();
+    const parsingMethod = byId("epwParsingMethodToggle")?.checked ? "anchor" : "flexible";
 
     const fieldMap = {
       amount_group: Number(byId("epwMapAmount")?.value || 0),
@@ -155,11 +217,13 @@
       merchant_label: (byId("epwGuidedMerchantLabel")?.value || "").trim(),
       date_label: (byId("epwGuidedDateLabel")?.value || "").trim(),
       time_label: (byId("epwGuidedTimeLabel")?.value || "").trim(),
+      layout_type: guidedLayout,
     };
 
     return {
       name,
       parser_mode: parserMode,
+      parsing_method: parsingMethod,
       account_id: accountId,
       sender_pattern: senderPattern,
       subject_contains: subjectContains,
@@ -177,30 +241,57 @@
 
   function buildRegexFromGuided(payload) {
     const g = payload.guided || {};
-    if (!g.amount_label || !g.merchant_label || !g.date_label) {
-      throw new Error("Guided mode requires Amount, Merchant, and Date labels.");
-    }
+    const layout = String(g.layout_type || "list").toLowerCase();
+    const parsingMethod = String(payload.parsing_method || "anchor").toLowerCase();
+    const strict = parsingMethod === "anchor";
     const amountL = escapeRegex(g.amount_label || "Amount");
     const merchantL = escapeRegex(g.merchant_label || "Merchant");
     const dateL = escapeRegex(g.date_label || "Date");
     const timeL = escapeRegex(g.time_label || "Time");
+    const amountPattern = "(\\$?[-]?[\\d,]+\\.\\d{2})";
+    const datePattern = "([A-Za-z]{3},?\\s+[A-Za-z]{3}\\s+\\d{1,2},\\s+\\d{4}|[A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})";
+    const timePattern = "([0-1]?\\d:[0-5]\\d\\s*(?:AM|PM)(?:\\s*[A-Z]{2,4})?)";
+    let bodyRegex = "";
+    let fieldMap = { amount_group: 1, merchant_group: 2, date_group: 3, time_group: 4 };
 
-    const bodyRegex =
-      `${amountL}\\s*[:\\-]?\\s*(\\$?[-]?[\\d,]+\\.\\d{2}).*?` +
-      `${merchantL}\\s*[:\\-]?\\s*(.+?)\\s*(?:\\r?\\n|${dateL}\\s*[:\\-]?|${timeL}\\s*[:\\-]?|$).*?` +
-      `${dateL}\\s*[:\\-]?\\s*([A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})` +
-      `(?:.*?${timeL}\\s*[:\\-]?\\s*([0-1]?\\d:[0-5]\\d\\s*(?:AM|PM)))?`;
+    if (layout === "list") {
+      if (!g.amount_label || !g.merchant_label || !g.date_label) {
+        throw new Error("List layout requires Amount, Merchant, and Date labels.");
+      }
+      if (strict) {
+        bodyRegex =
+          `(?is)(?=.*?${amountL}\\s*[:\\-]?\\s*${amountPattern})` +
+          `(?=.*?${merchantL}\\s*[:\\-]?\\s*(.+?)(?:\\r?\\n|$))` +
+          `(?=.*?${dateL}\\s*[:\\-]?\\s*${datePattern})` +
+          (g.time_label ? `(?=.*?${timeL}\\s*[:\\-]?\\s*${timePattern})?` : "") +
+          ".*";
+      } else {
+        bodyRegex =
+          `(?is)(?=.*?(?:${amountL}\\s*[:\\-]?\\s*)?${amountPattern})` +
+          `(?=.*?(?:${merchantL}\\s*[:\\-]?\\s*)?(.+?)(?:\\r?\\n|$))` +
+          `(?=.*?(?:${dateL}\\s*[:\\-]?\\s*)?${datePattern})` +
+          ".*";
+      }
+    } else if (layout === "sentence") {
+      bodyRegex =
+        `(?is)(?:transaction\\s+for\\s+)?${amountPattern}.*?\\bat\\s+(.+?)\\s+` +
+        `(?:at\\s+${timePattern}\\s+)?on\\s+${datePattern}`;
+      fieldMap = { amount_group: 1, merchant_group: 2, date_group: 4, time_group: 3 };
+    } else if (layout === "no_anchor") {
+      bodyRegex =
+        `(?is)(?:^|\\n)\\s*([^\\n$]{2,80})\\s*(?:\\r?\\n)+\\s*` +
+        `${amountPattern}\\*?\\s*(?:\\r?\\n)+\\s*${datePattern}` +
+        `(?:\\s+${timePattern})?`;
+      fieldMap = { amount_group: 2, merchant_group: 1, date_group: 3, time_group: 4 };
+    } else {
+      throw new Error("Unsupported guided layout type.");
+    }
 
     return {
       ...payload,
       body_regex: bodyRegex,
       flags: "is",
-      field_map: {
-        amount_group: 1,
-        merchant_group: 2,
-        date_group: 3,
-        time_group: 4,
-      },
+      field_map: fieldMap,
     };
   }
 
@@ -438,17 +529,31 @@
     });
     byId("epwAddManualSampleBtn")?.addEventListener("click", addManualSample);
     byId("epwParserMode")?.addEventListener("change", () => {
-      const mode = byId("epwParserMode")?.value || "guided";
-      const adv = byId("epwAdvancedFields");
-      if (adv) adv.classList.toggle("hidden", mode !== "advanced");
+      applyParserModeVisibility();
+      saveUiPrefs();
+    });
+    byId("epwGuidedLayout")?.addEventListener("change", saveUiPrefs);
+    byId("epwParsingMethodToggle")?.addEventListener("change", () => {
+      updateParsingMethodLabel();
+      saveUiPrefs();
+    });
+    byId("epwHelpToggleBtn")?.addEventListener("click", () => {
+      const isOpen = byId("epwHelpToggleBtn")?.getAttribute("aria-expanded") === "true";
+      setHelpOpen(!isOpen);
+    });
+    byId("epwHelpCloseBtn")?.addEventListener("click", () => setHelpOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setHelpOpen(false);
     });
   }
 
   async function init() {
+    loadUiPrefs();
     wireEvents();
+    applyParserModeVisibility();
+    updateParsingMethodLabel();
+    setHelpOpen(false);
     await loadAccounts();
-    const adv = byId("epwAdvancedFields");
-    if (adv) adv.classList.add("hidden");
     renderSamples();
     renderPreview();
   }
