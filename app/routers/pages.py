@@ -138,3 +138,8 @@ def transaction_detail(tx_id: str):
 @router.get("/receipts-page")
 def receipts_page():
     return FileResponse(os.path.join("static", "pages", "receipts", "receipts.html"))
+
+
+@router.get("/email-parser-wizard")
+def email_parser_wizard_page():
+    return FileResponse(os.path.join("static", "pages", "email-parser-wizard", "email-parser-wizard.html"))

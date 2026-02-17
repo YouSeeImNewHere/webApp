@@ -187,6 +187,19 @@
     }
   }
 
+  async function fetchEmailsNow() {
+    if (!pushoverResultEl) return;
+    pushoverResultEl.textContent = "Starting email fetch...";
+    try {
+      const out = await api("/gmail/fetch-now", { method: "POST", body: "{}" });
+      pushoverResultEl.textContent = out.status === "already_running"
+        ? "Email fetch is already running."
+        : "Email fetch started. Check logs for results.";
+    } catch (e) {
+      pushoverResultEl.textContent = `Fetch failed: ${e.message}`;
+    }
+  }
+
   document.getElementById("refreshBtn").addEventListener("click", refreshStatus);
   document.getElementById("addAccountBtn").addEventListener("click", addAccount);
   document.getElementById("addBenefitBtn").addEventListener("click", () => addBenefitRow("", ""));
@@ -196,6 +209,8 @@
   if (savePushoverKeyBtn) savePushoverKeyBtn.addEventListener("click", savePushoverUserKey);
   const sendPushoverTestBtn = document.getElementById("sendPushoverTestBtn");
   if (sendPushoverTestBtn) sendPushoverTestBtn.addEventListener("click", sendPushoverTest);
+  const fetchEmailsNowBtn = document.getElementById("fetchEmailsNowBtn");
+  if (fetchEmailsNowBtn) fetchEmailsNowBtn.addEventListener("click", fetchEmailsNow);
 
   addBenefitRow("", "");
   updateAccountFieldHints();

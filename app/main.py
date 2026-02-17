@@ -38,6 +38,7 @@ from app.routers import (
     transactions,
     page_payloads,
     onboarding,
+    email_parser_trial,
 )
 
 def create_app() -> FastAPI:
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(transactions.router)
     app.include_router(page_payloads.router)
     app.include_router(onboarding.router)
+    app.include_router(email_parser_trial.router)
     app.include_router(auth.router)
     app.include_router(csv_upload_router)
 

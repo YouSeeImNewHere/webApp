@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Email Parser Wizard (Trial)</title>
+  <link rel="stylesheet" href="/static/styles/tokens.css">
+  <link rel="stylesheet" href="/static/styles/theme.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/styles/utilities.css">
+  <link rel="stylesheet" href="/static/components/toast/toast.css">
+  <link rel="stylesheet" href="/static/css/mobile.css">
+  <link rel="stylesheet" href="/static/pages/email-parser-wizard/email-parser-wizard.css">
+  <script src="/static/shared/theme.js"></script>
+  <script src="/static/shared/globalLoading.js"></script>
+</head>
+<body class="email-parser-wizard-page" data-page-title="Email Parser Wizard">
+  <div class="epw-wrap">
+    <section class="epw-card">
+      <div class="epw-header">
+        <h1>Email Parser Wizard (Trial)</h1>
+        <a class="epw-btn secondary" href="/settings">Back to Settings</a>
+      </div>
+      <p class="epw-muted">
+        This is a trial workflow. It previews parsing and saves draft configs only. Current production parser remains unchanged.
+      </p>
+      <div id="epwStatus" class="epw-status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="epw-card">
+      <h2>Step 1: Scope</h2>
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
+          Account
+          <select id="epwAccount"></select>
+        </label>
+        <label class="epw-field">
+          Sender contains
+          <input id="epwSenderQuery" type="text" placeholder="alerts@bank.com">
+        </label>
+      </div>
+      <div class="epw-muted">If no accounts appear, add one in <a href="/setup">Setup Wizard</a> first.</div>
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
+          Lookback days
+          <input id="epwLookbackDays" type="number" min="1" max="365" value="30">
+        </label>
+        <label class="epw-field">
+          Max samples
+          <input id="epwSampleLimit" type="number" min="5" max="200" value="40">
+        </label>
+      </div>
+      <div class="epw-actions">
+        <button id="epwLoadSamplesBtn" class="epw-btn primary" type="button">Load Samples</button>
+      </div>
+    </section>
+
+    <section class="epw-card">
+      <h2>Step 2: Candidate Samples</h2>
+      <div id="epwSamplesMeta" class="epw-muted">No samples loaded yet.</div>
+      <div class="epw-grid epw-grid-2" style="margin-top:10px;">
+        <label class="epw-field">
+          Sample subject
+          <input id="epwManualSubject" type="text" placeholder="Transaction Alert">
+        </label>
+        <label class="epw-field">
+          Sample sender
+          <input id="epwManualSender" type="text" placeholder="alerts@bank.com">
+        </label>
+      </div>
+      <label class="epw-field" style="margin-top:10px;">
+        Paste sample email body
+        <textarea id="epwManualBody" rows="5" placeholder="Paste one full email body here for testing"></textarea>
+      </label>
+      <div class="epw-actions">
+        <button id="epwAddManualSampleBtn" class="epw-btn" type="button">Add Manual Sample</button>
+      </div>
+      <div id="epwSamplesList" class="epw-list"></div>
+    </section>
+
+    <section class="epw-card">
+      <h2>Step 3: Rule Draft</h2>
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
+          Draft name
+          <input id="epwDraftName" type="text" placeholder="Capital One Debit Alerts">
+        </label>
+        <label class="epw-field">
+          Subject contains
+          <input id="epwSubjectContains" type="text" placeholder="Transaction Alert">
+        </label>
+      </div>
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
+          Parser mode
+          <select id="epwParserMode">
+            <option value="guided">Guided (No Regex)</option>
+            <option value="advanced">Advanced (Regex)</option>
+          </select>
+        </label>
+        <div class="epw-field">
+          <span>Guided mode defaults</span>
+          <div class="epw-muted epw-inline-muted">Use label keywords from your bank email template.</div>
+        </div>
+      </div>
+      <div id="epwGuidedFields" class="epw-grid epw-grid-4">
+        <label class="epw-field">Amount label<input id="epwGuidedAmountLabel" type="text" placeholder="Amount"></label>
+        <label class="epw-field">Merchant label<input id="epwGuidedMerchantLabel" type="text" placeholder="Merchant"></label>
+        <label class="epw-field">Date label<input id="epwGuidedDateLabel" type="text" placeholder="Date"></label>
+        <label class="epw-field">Time label<input id="epwGuidedTimeLabel" type="text" placeholder="Time (optional)"></label>
+      </div>
+      <div id="epwAdvancedFields" class="epw-advanced">
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
+          Regex flags
+          <input id="epwRegexFlags" type="text" value="i" placeholder="i or is">
+        </label>
+        <label class="epw-field">
+          Sender pattern (saved)
+          <input id="epwSenderPattern" type="text" placeholder="alerts@capitalone.com">
+        </label>
+      </div>
+      <label class="epw-field">
+        Body regex
+        <textarea id="epwBodyRegex" rows="5" placeholder="Amount: (\$[\d,]+\.\d{2}).*Date: (January ..."></textarea>
+      </label>
+      <div class="epw-grid epw-grid-4">
+        <label class="epw-field">Amount group<input id="epwMapAmount" type="number" min="1" value="1"></label>
+        <label class="epw-field">Merchant group<input id="epwMapMerchant" type="number" min="1" value="2"></label>
+        <label class="epw-field">Date group<input id="epwMapDate" type="number" min="1" value="3"></label>
+        <label class="epw-field">Time group<input id="epwMapTime" type="number" min="0" value="0"></label>
+      </div>
+      </div>
+      <div class="epw-actions">
+        <button id="epwPreviewBtn" class="epw-btn primary" type="button">Run Dry-Run Preview</button>
+      </div>
+    </section>
+
+    <section class="epw-card">
+      <h2>Step 4: Preview Results</h2>
+      <div id="epwPreviewSummary" class="epw-muted">No preview run yet.</div>
+      <div id="epwPreviewRows" class="epw-list"></div>
+      <div class="epw-actions">
+        <button id="epwSaveDraftBtn" class="epw-btn" type="button">Save Draft (Inactive)</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="sharedChrome"></div>
+  <script src="/static/pages/email-parser-wizard/email-parser-wizard.js"></script>
+  <script src="/static/shared/shared.js" defer></script>
+</body>
+</html>

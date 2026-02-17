@@ -813,8 +813,16 @@ def format_pushover_message(bank: str, extracted: dict) -> tuple[str, str]:
 
 def get_imap_ids(mail):
     ids = []
-    for box in MAILBOXES:
-        mail.select(box)
+    # Primary mailbox + Gmail archive views so recently-archived emails are still discoverable.
+    mailbox_candidates = list(MAILBOXES) + ["[Gmail]/All Mail", "[Google Mail]/All Mail"]
+    since_2d = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%d-%b-%Y")
+    for box in mailbox_candidates:
+        try:
+            sel_status, _ = mail.select(box)
+            if sel_status != "OK":
+                continue
+        except Exception:
+            continue
         # Gmail's newer_than uses d/m/y units; use a 1-day prefilter and do exact minute filtering in Python.
         # X-GM-RAW parsing can vary by IMAP client/server; try common compatible forms.
         status, data = "BAD", []
@@ -822,6 +830,8 @@ def get_imap_ids(mail):
             (None, 'X-GM-RAW "newer_than:1d -label:ProcessedNew"'),
             (None, "X-GM-RAW", "newer_than:1d -label:ProcessedNew"),
             ("UTF-8", 'X-GM-RAW "newer_than:1d -label:ProcessedNew"'),
+            (None, "SINCE", since_2d),
+            (None, "ALL"),
         ]
         for args in search_attempts:
             try:
@@ -831,7 +841,8 @@ def get_imap_ids(mail):
             except imaplib.IMAP4.error:
                 continue
         if status == "OK" and data and data[0]:
-            ids.extend(x.decode() for x in data[0].split())
+            for x in data[0].split():
+                ids.append(x.decode() if isinstance(x, (bytes, bytearray)) else str(x))
     return list(dict.fromkeys(ids))
 
 

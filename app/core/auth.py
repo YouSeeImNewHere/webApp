@@ -110,16 +110,23 @@ def _google_redirect_uri() -> str:
 
 def _is_transient_admin_shutdown_error(exc: Exception) -> bool:
     s = str(exc).lower()
-    return "terminating connection due to administrator command" in s
+    return (
+        "terminating connection due to administrator command" in s
+        or "connection is closed" in s
+        or "server closed the connection unexpectedly" in s
+        or "could not receive data from server" in s
+        or "ssl connection has been closed unexpectedly" in s
+        or "adminshutdown" in s
+    )
 
 
 def _run_db_with_retry(fn):
-    for i in range(2):
+    for i in range(4):
         try:
             return fn()
         except Exception as e:
-            if i == 0 and _is_transient_admin_shutdown_error(e):
-                time.sleep(0.35)
+            if i < 3 and _is_transient_admin_shutdown_error(e):
+                time.sleep(0.35 * (i + 1))
                 continue
             raise
 
@@ -362,7 +369,7 @@ def _gmail_history_message_ids(access_token: str, start_history_id: str):
 def _trigger_event_processing():
     if not _PUSH_PROCESS_LOCK.acquire(blocking=False):
         print("gmail push: processing already in progress; skipping duplicate trigger")
-        return
+        return False
 
     def _run():
         try:
@@ -375,6 +382,7 @@ def _trigger_event_processing():
             _PUSH_PROCESS_LOCK.release()
 
     threading.Thread(target=_run, daemon=True).start()
+    return True
 
 
 def _is_notif_secret_authorized(request: Request) -> bool:
@@ -606,6 +614,14 @@ def gmail_push_state():
     return {"ok": True, "state": row or {}}
 
 
+@router.post("/gmail/fetch-now")
+def gmail_fetch_now(request: Request):
+    if not _is_owner_request(request):
+        return JSONResponse({"ok": False, "error": "owner_only"}, status_code=403)
+    started = _trigger_event_processing()
+    return {"ok": True, "started": bool(started), "status": "started" if started else "already_running"}
+
+
 # ---------------------------------------------------------
 # Gmail Push Webhook (Pub/Sub -> FastAPI)
 # ---------------------------------------------------------
@@ -637,29 +653,54 @@ async def gmail_push(request: Request):
     if not history_id:
         return {"status": "missing_history_id"}
 
-    access_token, err = _refresh_google_access_token_if_needed()
+    def _safe_save(last_history_id: str, google_email: str | None, processed_count: int, last_error: str | None):
+        try:
+            _save_push_state(
+                last_history_id=last_history_id,
+                google_email=google_email,
+                processed_count=processed_count,
+                last_error=last_error,
+            )
+        except Exception as e:
+            print("gmail push: failed to save push state:", repr(e))
+
+    try:
+        access_token, err = _refresh_google_access_token_if_needed()
+    except Exception as e:
+        msg = f"token_refresh_failed:{type(e).__name__}"
+        print("gmail push: transient failure during token refresh:", repr(e))
+        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=msg)
+        return {"status": "transient_error", "error": msg}
+
     if not access_token:
-        _save_push_state(last_history_id=history_id, google_email=email, processed_count=0, last_error=err)
+        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=err)
         return {"status": "token_error", "error": err}
 
-    start_history_id = _get_last_history_id()
+    try:
+        start_history_id = _get_last_history_id()
+    except Exception as e:
+        msg = f"history_checkpoint_read_failed:{type(e).__name__}"
+        print("gmail push: transient failure reading checkpoint:", repr(e))
+        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=msg)
+        return {"status": "transient_error", "error": msg}
+
     if not start_history_id:
         # First push after enabling watch: set checkpoint and wait for next event.
-        _save_push_state(last_history_id=history_id, google_email=email, processed_count=0, last_error=None)
+        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=None)
         return {"status": "initialized", "history_id": history_id}
 
     message_ids, latest_history_id, hist_err = _gmail_history_message_ids(access_token, start_history_id)
     if hist_err == "stale_history_id":
         # History window rolled over; reset checkpoint and continue from now.
-        _save_push_state(last_history_id=history_id, google_email=email, processed_count=0, last_error=hist_err)
+        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=hist_err)
         return {"status": "reset_checkpoint", "reason": hist_err, "history_id": history_id}
     if hist_err:
-        _save_push_state(last_history_id=start_history_id, google_email=email, processed_count=0, last_error=hist_err)
+        _safe_save(last_history_id=start_history_id, google_email=email, processed_count=0, last_error=hist_err)
         return {"status": "history_error", "error": hist_err}
 
     message_ids = message_ids or []
     next_history = str(latest_history_id or history_id)
-    _save_push_state(
+    _safe_save(
         last_history_id=next_history,
         google_email=email,
         processed_count=len(message_ids),
