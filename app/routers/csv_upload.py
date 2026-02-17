@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, List
@@ -23,6 +24,7 @@ from db import with_db_cursor
 router = APIRouter()
 
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"}
 PHONE_RX = re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
 STOP_TOKENS = {
     "debit", "dc", "credit", "pos", "purchase", "card", "visa", "mastercard",
@@ -73,6 +75,81 @@ def _read_upload_text(uf: UploadFile) -> str:
         except Exception:
             continue
     return raw.decode("utf-8", errors="replace")
+
+
+def _filename_ext(uf: UploadFile) -> str:
+    name = str(getattr(uf, "filename", "") or "").strip().lower()
+    return Path(name).suffix.lower()
+
+
+def _is_excel_upload(uf: UploadFile) -> bool:
+    return _filename_ext(uf) in EXCEL_EXTENSIONS
+
+
+def _cell_to_text(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.strftime("%m/%d/%Y")
+    return str(v).strip()
+
+
+def _parse_excel_rows(raw: bytes) -> list[list[str]]:
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Excel support requires openpyxl on the server",
+        )
+    try:
+        wb = load_workbook(filename=io.BytesIO(raw), read_only=True, data_only=True)
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid Excel file")
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Legacy .xls is not supported directly; save as .xlsx and retry",
+        )
+
+    try:
+        ws = wb.active
+        rows: list[list[str]] = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append([_cell_to_text(c) for c in row])
+        return rows
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+
+
+def _read_upload_rows(uf: UploadFile, delimiter: str = "auto") -> tuple[list[list[str]], str]:
+    raw = uf.file.read()
+    if not raw:
+        return [], ","
+    if _is_excel_upload(uf):
+        return _parse_excel_rows(raw), "excel"
+    text = ""
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except Exception:
+            continue
+    if not text:
+        text = raw.decode("utf-8", errors="replace")
+    used_delim = _detect_delimiter(text, delimiter)
+    return _parse_csv_rows(text, used_delim), used_delim
+
+
+def _rows_to_csv_bytes(rows: list[list[str]]) -> bytes:
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf)
+    for row in rows:
+        writer.writerow([(c or "") for c in row])
+    return buf.getvalue().encode("utf-8")
 
 
 def _detect_delimiter(text: str, preferred: str = "auto") -> str:
@@ -1091,14 +1168,9 @@ async def ingest_csv_mapped_dry_run(
     data_start_row: int = Form(2),
     invert_amount: str = Form("false"),
 ):
-    text = _read_upload_text(file)
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="CSV file is empty")
-
-    used_delim = _detect_delimiter(text, delimiter)
-    rows = _parse_csv_rows(text, used_delim)
+    rows, used_delim = _read_upload_rows(file, delimiter=delimiter)
     if not rows:
-        raise HTTPException(status_code=400, detail="No rows found in CSV")
+        raise HTTPException(status_code=400, detail="File is empty or has no readable rows")
 
     has_header_b = _to_bool(has_header, default=True)
     invert_amount_b = _to_bool(invert_amount, default=False)
@@ -1272,14 +1344,9 @@ async def preview_csv(
     data_start_row: int = Form(2),
     max_rows: int = Form(12),
 ):
-    text = _read_upload_text(file)
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="CSV file is empty")
-
-    used_delim = _detect_delimiter(text, delimiter)
-    rows = _parse_csv_rows(text, used_delim)
+    rows, used_delim = _read_upload_rows(file, delimiter=delimiter)
     if not rows:
-        raise HTTPException(status_code=400, detail="No rows found in CSV")
+        raise HTTPException(status_code=400, detail="File is empty or has no readable rows")
 
     has_header_b = _to_bool(has_header, default=True)
     header_idx = max(0, int(header_row) - 1)
@@ -1331,14 +1398,9 @@ async def ingest_csv_mapped(
     data_start_row: int = Form(2),
     invert_amount: str = Form("false"),
 ):
-    text = _read_upload_text(file)
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="CSV file is empty")
-
-    used_delim = _detect_delimiter(text, delimiter)
-    rows = _parse_csv_rows(text, used_delim)
+    rows, used_delim = _read_upload_rows(file, delimiter=delimiter)
     if not rows:
-        raise HTTPException(status_code=400, detail="No rows found in CSV")
+        raise HTTPException(status_code=400, detail="File is empty or has no readable rows")
 
     has_header_b = _to_bool(has_header, default=True)
     invert_amount_b = _to_bool(invert_amount, default=False)
@@ -1569,14 +1631,23 @@ async def ingest_csvs(
             target_fname = _safe_target_filename(target)
             out_path = temp_dir / target_fname
 
-            # Stream-write upload to disk
             try:
-                with out_path.open("wb") as f:
-                    while True:
-                        chunk = await uf.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+                if _is_excel_upload(uf):
+                    rows, _ = _read_upload_rows(uf, delimiter="auto")
+                    if not rows:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Uploaded file '{uf.filename or target_fname}' is empty or unreadable",
+                        )
+                    out_path.write_bytes(_rows_to_csv_bytes(rows))
+                else:
+                    # Stream-write CSV upload to disk
+                    with out_path.open("wb") as f:
+                        while True:
+                            chunk = await uf.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
             finally:
                 try:
                     await uf.close()

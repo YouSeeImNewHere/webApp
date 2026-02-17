@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from app.routers.settings import RateUpsert, _ensure_interest_rates_table_pg
 from db import with_db_cursor
+from app.core.home_snapshot_cache import bump_home_snapshot_version
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -47,6 +49,7 @@ def set_interest_rate(payload: RateUpsert):
             ),
         )
         conn.commit()
+    bump_home_snapshot_version(current_tenant_id())
 
     return {
         "ok": True,
@@ -54,4 +57,3 @@ def set_interest_rate(payload: RateUpsert):
         "effective_date": eff,
         "rate_percent": rate_percent,
     }
-

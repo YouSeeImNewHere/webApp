@@ -29,6 +29,12 @@ from app.routers.settings import _ensure_app_settings_pg
 from app.routers.notifications import create_notification
 from db import with_db_cursor, query_db
 from app.core.config import CATEGORY_RULES_TABLE, MULTI_TENANT_ENABLED
+from app.core.home_snapshot_cache import (
+    ensure_home_snapshot_cache_pg,
+    home_snapshot_version_for_tenant,
+    load_month_budget_snapshot,
+    upsert_month_budget_snapshot,
+)
 from app.core.tenant_keys import scoped_key
 from app.core.tenancy import current_tenant_id, get_user_pushover_key_by_email
 from app.core.pushover import send_pushover
@@ -673,6 +679,25 @@ def month_budget_home_cached(
     force_refresh: bool = False,
 ):
     tid = _require_tenant_id()
+    month_cache_key = (
+        int(tid),
+        int(year),
+        int(month),
+        int(min_occ),
+        bool(include_stale),
+    )
+    version_before: int | None = None
+
+    if not force_refresh:
+        version_before = home_snapshot_version_for_tenant(tid)
+        snap = load_month_budget_snapshot(*month_cache_key)
+        snap_version_raw = snap.get("source_version") if snap else None
+        snap_version = int(snap_version_raw) if snap_version_raw is not None else -1
+        if snap and snap_version == version_before:
+            out = snap.get("payload")
+            if isinstance(out, dict):
+                return out
+
     key = (
         f"month-budget:tenant={tid or 0}:year={int(year)}:month={int(month)}:"
         f"min_occ={int(min_occ)}:include_stale={int(bool(include_stale))}:user_key={(pushover_user_key or '')}"
@@ -689,6 +714,22 @@ def month_budget_home_cached(
         include_stale=bool(include_stale),
         pushover_user_key=pushover_user_key,
     )
+
+    version_after = home_snapshot_version_for_tenant(tid)
+    if (version_before is not None) and (version_before == version_after):
+        try:
+            upsert_month_budget_snapshot(
+                tid=int(tid),
+                year=int(year),
+                month=int(month),
+                min_occ=int(min_occ),
+                include_stale=bool(include_stale),
+                source_version=version_after,
+                payload=out,
+            )
+        except Exception:
+            pass
+
     _cache_set(_MONTH_BUDGET_CACHE, key, out)
     return out
 
@@ -1291,6 +1332,57 @@ def month_budget(
         pushover_user_key=user_key,
         force_refresh=bool(int(recalc or 0)),
     )
+
+
+@router.get("/debug/home-snapshot")
+def debug_home_snapshot(
+    year: int | None = None,
+    month: int | None = None,
+    min_occ: int = 3,
+    include_stale: bool = False,
+):
+    tid = _require_tenant_id()
+    ensure_home_snapshot_cache_pg()
+
+    now = today_local()
+    y = int(year or now.year)
+    m = int(month or now.month)
+    v = home_snapshot_version_for_tenant(tid)
+
+    rows = query_db(
+        """
+        SELECT source_version, updated_at
+        FROM home_snapshot_month_budget
+        WHERE tenant_id = %s
+          AND year = %s
+          AND month = %s
+          AND min_occ = %s
+          AND include_stale = %s
+        LIMIT 1
+        """,
+        (int(tid), y, m, int(min_occ), bool(include_stale)),
+    )
+    row = rows[0] if rows else {}
+    source_version_raw = row.get("source_version") if row else None
+    source_version = int(source_version_raw) if source_version_raw is not None else -1
+    is_fresh = bool(rows) and (source_version == int(v))
+    updated_at = row.get("updated_at")
+
+    return {
+        "ok": True,
+        "tenant_id": int(tid),
+        "year": y,
+        "month": m,
+        "min_occ": int(min_occ),
+        "include_stale": bool(include_stale),
+        "current_version": int(v),
+        "snapshot_exists": bool(rows),
+        "snapshot_source_version": source_version if rows else None,
+        "snapshot_is_fresh": bool(is_fresh),
+        "snapshot_updated_at": (
+            updated_at.isoformat() if hasattr(updated_at, "isoformat") else (str(updated_at) if updated_at else None)
+        ),
+    }
 
 @router.get("/page/budget")
 def page_budget(

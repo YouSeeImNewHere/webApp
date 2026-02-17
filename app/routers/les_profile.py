@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 from app.routers.settings import _ensure_les_profile_table_pg
 from app.core.tenant_keys import scoped_key
+from app.core.home_snapshot_cache import bump_home_snapshot_version
+from app.core.tenancy import current_tenant_id
 from db import with_db_cursor, query_db
 import json
 
@@ -50,5 +52,6 @@ def save_les_profile(body: SaveLESProfileBody):
             (scoped_key(body.key), json.dumps(body.profile)),
         )
         conn.commit()
+    bump_home_snapshot_version(current_tenant_id())
 
     return {"key": body.key, "profile": body.profile}

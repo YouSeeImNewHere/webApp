@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from db import with_db_cursor, query_db
 from app.core.tenant_keys import scoped_key
 from app.core.roundups import get_roundup_settings, set_roundup_settings
+from app.core.home_snapshot_cache import bump_home_snapshot_version
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -185,6 +187,7 @@ def set_daily_weights(body: DailyWeightsIn):
             (scoped_key("daily_weights"), payload),
         )
         conn.commit()
+    bump_home_snapshot_version(current_tenant_id())
     return {"ok": True, "weekday_points": weekday_points, "weekend_points": weekend_points}
 
 
@@ -200,6 +203,7 @@ def get_roundups():
 @router.post("/settings/round-ups")
 def set_roundups(body: RoundUpSettingsIn):
     cfg = set_roundup_settings(enabled=bool(body.enabled))
+    bump_home_snapshot_version(current_tenant_id())
     return {
         "ok": True,
         "enabled": bool(cfg.get("enabled", False)),

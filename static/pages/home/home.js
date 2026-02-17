@@ -34,6 +34,7 @@ const DEBUG_SPENDING = false;
 let showPotentialGrowth = (localStorage.getItem("showPotentialGrowth") === "true");
 let endBeforePotential = null;
 const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
+let HOME_BOOT_COMPLETE = false;
 
 // =============================
 // UI Layout (server-persisted)
@@ -623,7 +624,7 @@ async function loadHomePayload() {
 
   //  Category totals (this month)
   if (payload.category_totals_month) {
-    await loadCategoryTotalsThisMonth(payload.category_totals_month);
+    await loadCategoryTotalsThisMonth(payload.category_totals_month, payload.unknown_merchant_total_month);
     await yieldToMain();
   }
 
@@ -842,9 +843,7 @@ async function bootHome() {
     }
 
     setChartHeaderUI();
-    if (document.getElementById("mbSafe")) {
-      refreshMonthBudgetCard(false);
-    }
+    let pageHomePayload = null;
 
     // Start payload work after first paint to reduce startup layout contention.
     const tasks = [
@@ -853,13 +852,18 @@ async function bootHome() {
           new Promise((resolve) => {
             window.requestAnimationFrame(() => setTimeout(resolve, 0));
           }),
-      ).then(() => loadHomePayload()),
+      ).then(async () => {
+        pageHomePayload = await loadHomePayload();
+      }),
     ];
 
     const results = await Promise.allSettled(tasks);
 
     for (const r of results) {
       if (r.status === "rejected") console.warn("Home task failed:", r.reason);
+    }
+    if (document.getElementById("mbSafe")) {
+      refreshMonthBudgetCard(false, pageHomePayload);
     }
 
     bindIncomeRowClick();
@@ -885,7 +889,7 @@ async function bootHome() {
     setChartHeaderUI();
     scheduleInitialChartLoad();
     loadBankTotals();
-    loadMonthBudget();
+    refreshMonthBudgetCard(false);
     bindIncomeRowClick();
     bindSpentRowClick();
     loadCategoryTotalsThisMonth();
@@ -898,6 +902,7 @@ async function bootHome() {
       });
     }
   }
+  HOME_BOOT_COMPLETE = true;
 }
 
 window.bootHome = bootHome; //  make it globally callable if other files want it
@@ -1527,7 +1532,7 @@ function formatCardBalance(n, { showLabel = false } = {}) {
   return money(0);
 }
 
-async function loadCategoryTotalsThisMonth(payloadOverride = null) {
+async function loadCategoryTotalsThisMonth(payloadOverride = null, unknownPayloadOverride = null) {
   let payload = payloadOverride;
   if (!payload) {
     try {
@@ -1580,7 +1585,7 @@ async function loadCategoryTotalsThisMonth(payloadOverride = null) {
   }
 
 // ---- Unassigned section ----
-await renderUnknownMerchantRow(ul);
+await renderUnknownMerchantRow(ul, unknownPayloadOverride);
 renderUnassignedRow(ul, unassignedAllTime);
 
 }
@@ -1820,7 +1825,10 @@ document.addEventListener("DOMContentLoaded", () => {
   observeInitialChartVisibility();
 
   window.Profile?.ensureUI?.();
-  window.Profile?.onChange?.(() => loadMonthBudget());
+  window.Profile?.onChange?.(() => {
+    if (!HOME_BOOT_COMPLETE) return;
+    refreshMonthBudgetCard(false);
+  });
 
   if (updateBtn) updateBtn.addEventListener("click", loadChart);
   if (toggleBtn) toggleBtn.addEventListener("click", toggleChart);
@@ -2134,12 +2142,14 @@ function ellipsize(s, max = 14) {
   return s.slice(0, max - 1) + "";
 }
 
-async function renderUnknownMerchantRow(ul) {
-  let payload;
-  try {
-    payload = await apiGetJson("/unknown-merchant-total-month");
-  } catch (_) {
-    return;
+async function renderUnknownMerchantRow(ul, payloadOverride = null) {
+  let payload = payloadOverride;
+  if (!payload) {
+    try {
+      payload = await apiGetJson("/unknown-merchant-total-month");
+    } catch (_) {
+      return;
+    }
   }
   const { total, tx_count } = payload || {};
   const t = Number(total || 0);
@@ -2264,7 +2274,7 @@ function mountMonthBudgetCard(mountSel) {
 
 }
 
-async function refreshMonthBudgetCard(forceRecalcDaily = false) {
+async function refreshMonthBudgetCard(forceRecalcDaily = false, prefetched = null) {
   const safeEl = document.getElementById("mbSafe");
   const metaEl = document.getElementById("mbMeta");
   const goalEl = document.getElementById("mbGoal");
@@ -2287,7 +2297,7 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
 
   try {
     // 1) Month budget numbers
-    const d = await apiGetJson("/month-budget", { cache: "no-store" });
+    const d = prefetched?.month_budget || await apiGetJson("/month-budget", { cache: "no-store" });
 
     const safe  = Number(d.safe_to_spend || 0);
     const asOf  = d.as_of ? String(d.as_of) : "";
@@ -2305,8 +2315,9 @@ async function refreshMonthBudgetCard(forceRecalcDaily = false) {
     // We'll fill mbMeta after we fetch /day-limit (so baseline is the locked value)
 
     // 2) Daily limit (locked baseline + live remaining)
-    const dlUrl = forceRecalcDaily ? "/day-limit?recalc=1" : "/day-limit";
-    const dl = await apiGetJson(dlUrl, { cache: "no-store" });
+    const dl = forceRecalcDaily
+      ? await apiGetJson("/day-limit?recalc=1", { cache: "no-store" })
+      : (prefetched?.day_limit || await apiGetJson("/day-limit", { cache: "no-store" }));
 
     const baseline  = Number(dl.baseline || 0);
     const remaining = Number(dl.remaining_today || 0);
@@ -2705,23 +2716,23 @@ function ensureCsvUploadModal() {
   root.className = "tx-inspect hidden";
   root.innerHTML = `
     <div class="tx-inspect__backdrop" data-csv-close></div>
-    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="Import CSV">
+    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="Import file">
       <div class="tx-inspect__head">
         <div>
-          <div class="tx-inspect__title">Import CSV</div>
-          <div id="csvUploadSub" class="tx-inspect__sub">Drop a CSV, preview it, map columns, then import.</div>
+          <div class="tx-inspect__title">Import CSV/Excel</div>
+          <div id="csvUploadSub" class="tx-inspect__sub">Drop a CSV or Excel file, preview it, map columns, then import.</div>
         </div>
         <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">✕</button>
       </div>
       <div class="tx-inspect__body">
         <div id="csvDropZone" style="border:1px dashed rgba(0,0,0,.25); border-radius:12px; padding:12px; margin-bottom:10px;">
-          <div style="font-weight:700;">Drag and drop CSV here</div>
+          <div style="font-weight:700;">Drag and drop CSV/Excel here</div>
           <div style="opacity:.75; font-size:12px; margin-top:4px;">or choose a file manually</div>
           <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-            <button id="csvPickFileBtn" class="settings-btn" type="button">Choose CSV</button>
+            <button id="csvPickFileBtn" class="settings-btn" type="button">Choose file</button>
             <div id="csvPickedName" style="font-size:12px; opacity:.75;">No file selected</div>
           </div>
-          <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none;" />
+          <input id="csvFileInput" type="file" accept=".csv,text/csv,.xlsx,.xls,.xlsm,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" style="display:none;" />
         </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -2881,7 +2892,7 @@ function openCsvUploadModal() {
   CSV_MODAL_STATE.activePreset = null;
   CSV_MODAL_STATE.activePresetKey = "";
   if (msg) msg.textContent = "";
-  if (sub) sub.textContent = "Drop a CSV, preview it, map columns, then import.";
+  if (sub) sub.textContent = "Drop a CSV or Excel file, preview it, map columns, then import.";
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
   populateCsvMappingSelects([]);
   loadCsvAccounts().catch(console.error);
@@ -3062,7 +3073,7 @@ function setCsvFileForModal(f) {
   const msg = document.getElementById("csvUploadMsg");
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
   if (msg) msg.textContent = "";
-  if (sub) sub.textContent = "CSV selected. Click Preview CSV when ready.";
+  if (sub) sub.textContent = "File selected. Click Preview CSV when ready.";
 }
 
 function updateCsvPickedName() {
@@ -3152,7 +3163,7 @@ async function refreshCsvPreview() {
   const btn = document.getElementById("csvPreviewBtn");
   if (msg) msg.textContent = "";
   if (!CSV_MODAL_STATE.file) {
-    if (sub) sub.textContent = "Pick a CSV first.";
+    if (sub) sub.textContent = "Pick a file first.";
     return;
   }
   if (sub) sub.textContent = "Building preview...";
@@ -3214,7 +3225,7 @@ async function runCsvDryRun(fromPreview = false) {
   const btn = document.getElementById("csvDryRunBtn");
   if (!fromPreview && msg) msg.textContent = "";
   if (!CSV_MODAL_STATE.file) {
-    if (sub) sub.textContent = "Pick a CSV first.";
+    if (sub) sub.textContent = "Pick a file first.";
     return;
   }
   const accountId = Number(document.getElementById("csvAccountId")?.value || 0);
@@ -3259,7 +3270,7 @@ async function runCsvIngestMapped() {
   if (msg) msg.textContent = "";
 
   if (!CSV_MODAL_STATE.file) {
-    if (sub) sub.textContent = "Pick a CSV first.";
+    if (sub) sub.textContent = "Pick a file first.";
     return;
   }
   const accountId = Number(document.getElementById("csvAccountId")?.value || 0);
@@ -3283,7 +3294,7 @@ async function runCsvIngestMapped() {
 
     try { loadBankTotals(); } catch (_) {}
     try { loadData(); } catch (_) {}
-    try { loadMonthBudget(); } catch (_) {}
+    try { refreshMonthBudgetCard(false); } catch (_) {}
   } catch (e) {
     console.error(e);
     if (sub) sub.textContent = "Import failed";

@@ -16,6 +16,7 @@ from recurring import get_recurring, _norm_merchant, _amount_bucket, get_ignored
 from app.core.time import today_local
 from app.core.tenancy import current_tenant_id
 from app.core.config import MULTI_TENANT_ENABLED
+from app.core.home_snapshot_cache import bump_home_snapshot_version
 
 router = APIRouter()
 
@@ -600,6 +601,7 @@ def ignore_merchant(name: str):
             (tid, name.upper()),
         )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.post("/recurring/ignore/category")
@@ -615,6 +617,7 @@ def ignore_category(name: str):
             (tid, name.upper()),
         )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.post("/recurring/ignore/pattern")
@@ -635,6 +638,7 @@ def ignore_pattern(merchant: str, amount: float, account_id: int = -1):
             (tid, m_norm, bucket, sign, int(account_id)),
         )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.post("/recurring/override-cadence")
@@ -671,6 +675,7 @@ def override_cadence(merchant: str, amount: float, cadence: str, account_id: int
             (tid, m_norm, bucket, sign, int(account_id), cadence),
         )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.post("/recurring/merchant-alias")
@@ -697,6 +702,7 @@ def set_merchant_alias(alias: str, canonical: str):
             (tid, a, c),
         )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.post("/recurring/merchant-alias/delete")
@@ -706,6 +712,7 @@ def delete_merchant_alias(alias: str):
     with with_db_cursor() as (conn, cur):
         cur.execute("DELETE FROM merchant_aliases WHERE alias = %s AND tenant_id = %s", (a, tid))
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.post("/recurring/unignore/merchant")
@@ -717,6 +724,7 @@ def unignore_merchant(name: str):
             (name.upper(), tid),
         )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 @router.get("/recurring/ignored-preview")

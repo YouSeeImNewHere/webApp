@@ -12,6 +12,8 @@ const BASE_URL = "https://webapp-pe3q.onrender.com";
 const SECRET = "398867"; // Must match server WIDGET_SECRET
 const TENANT_ID = ""; // Optional: set to "1" etc. if multi-tenant is enabled
 const ENDPOINT = "/widget/summary";
+const VERSION_ENDPOINT = "/widget/version";
+const VERSION_CHECK_MINUTES = 180; // hit /widget/version at most every 3 hours
 
 const fm = FileManager.local();
 const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), "finance_widget_cache.json");
@@ -25,7 +27,11 @@ function finish(widget, output = "Widget refreshed") {
 }
 
 function saveCache(obj) {
-  try { fm.writeString(CACHE_PATH, JSON.stringify({ ts: Date.now(), data: obj })); } catch (_) {}
+  const now = Date.now();
+  try { fm.writeString(CACHE_PATH, JSON.stringify({ ts: now, version_check_ts: now, data: obj })); } catch (_) {}
+}
+function saveRawCache(cacheObj) {
+  try { fm.writeString(CACHE_PATH, JSON.stringify(cacheObj)); } catch (_) {}
 }
 function loadCache() {
   if (!fm.fileExists(CACHE_PATH)) return null;
@@ -48,6 +54,15 @@ function shouldMarkDailyRefresh(cache) {
   return cacheAgeMinutes(cache) >= (24 * 60);
 }
 
+function shouldCheckVersion(cache) {
+  if (!cache || !cache.data) return false;
+  const checkedTs = Number(cache.version_check_ts || 0);
+  if (!checkedTs) return true;
+  const ageMin = (Date.now() - checkedTs) / 60000;
+  if (!Number.isFinite(ageMin)) return true;
+  return ageMin >= VERSION_CHECK_MINUTES;
+}
+
 function isValidPayload(payload) {
   return !!(
     payload &&
@@ -57,8 +72,11 @@ function isValidPayload(payload) {
   );
 }
 
-async function fetchFresh() {
-  const req = new Request(BASE_URL + ENDPOINT);
+async function fetchFresh(expectedVersion = null) {
+  const qp = Number.isFinite(Number(expectedVersion))
+    ? `?widget_version=${encodeURIComponent(String(Number(expectedVersion)))}`
+    : "";
+  const req = new Request(BASE_URL + ENDPOINT + qp);
   const headers = { "x-widget-secret": SECRET };
   if (String(TENANT_ID || "").trim()) headers["x-tenant-id"] = String(TENANT_ID).trim();
   req.headers = headers;
@@ -68,6 +86,18 @@ async function fetchFresh() {
     throw new Error("invalid_widget_payload");
   }
   return payload;
+}
+
+async function fetchWidgetVersion() {
+  const req = new Request(BASE_URL + VERSION_ENDPOINT);
+  const headers = { "x-widget-secret": SECRET };
+  if (String(TENANT_ID || "").trim()) headers["x-tenant-id"] = String(TENANT_ID).trim();
+  req.headers = headers;
+  req.timeoutInterval = 8;
+  const payload = await req.loadJSON();
+  if (!payload || payload.ok !== true) return null;
+  const v = Number(payload.widget_version);
+  return Number.isFinite(v) ? v : null;
 }
 
 function colorGreen()  { return Color.dynamic(new Color("#34C759"), new Color("#30D158")); }
@@ -311,6 +341,8 @@ let usedCache = true;
 let cacheAgeMin = Infinity;
 let periodicRefresh = false;
 let dailyRefresh = false;
+let versionRefresh = false;
+let knownServerVersion = null;
 
 const cache = loadCache();
 if (cache && isValidPayload(cache.data)) {
@@ -320,11 +352,33 @@ if (cache && isValidPayload(cache.data)) {
 
 periodicRefresh = shouldDoPeriodicRefresh(cache);
 dailyRefresh = shouldMarkDailyRefresh(cache);
-if (!payload || periodicRefresh) {
+if (payload && shouldCheckVersion(cache)) {
   try {
-    payload = await fetchFresh();
+    const serverVersion = await fetchWidgetVersion();
+    knownServerVersion = serverVersion;
+    const cachedVersion = Number(
+      cache && cache.data && Number.isFinite(Number(cache.data.widget_version))
+        ? Number(cache.data.widget_version)
+        : Number(payload.widget_version)
+    );
+    if (Number.isFinite(serverVersion) && Number.isFinite(cachedVersion) && serverVersion !== cachedVersion) {
+      versionRefresh = true;
+    } else if (cache) {
+      cache.version_check_ts = Date.now();
+      saveRawCache(cache);
+    }
+  } catch (_) {
+  }
+}
+
+if (!payload || periodicRefresh || versionRefresh) {
+  try {
+    payload = await fetchFresh(knownServerVersion);
     usedCache = false;
-    saveCache(payload);
+    saveCache({
+      ...payload,
+      widget_version: Number.isFinite(Number(payload.widget_version)) ? Number(payload.widget_version) : null,
+    });
     cacheAgeMin = 0;
   } catch (e) {
     const w = new ListWidget();
@@ -476,7 +530,7 @@ w.addSpacer(8);
 const footer = w.addText(
   usedCache
     ? `Cache ${Math.round(cacheAgeMin)}m`
-    : (dailyRefresh ? "Live (daily)" : (periodicRefresh ? "Live (scheduled)" : "Live"))
+    : (versionRefresh ? "Live (purchase)" : (dailyRefresh ? "Live (daily)" : (periodicRefresh ? "Live (scheduled)" : "Live")))
 );
 footer.font = Font.systemFont(10);
 footer.textOpacity = 0.6;

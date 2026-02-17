@@ -4,6 +4,8 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from db import with_db_cursor, query_db
+from app.core.home_snapshot_cache import bump_home_snapshot_version
+from app.core.tenancy import current_tenant_id
 
 router = APIRouter()
 
@@ -207,6 +209,7 @@ def upsert_budget_group(b: BudgetGroupUpsert):
             )
 
         conn.commit()
+    bump_home_snapshot_version(current_tenant_id())
 
     return {"ok": True, "id": group_id}
 
@@ -226,7 +229,8 @@ def delete_budget_group(year: int, month: int, name: str):
         )
         deleted = (cur.rowcount or 0) > 0
         conn.commit()
+    if deleted:
+        bump_home_snapshot_version(current_tenant_id())
 
     return {"ok": True, "deleted": bool(deleted)}
-
 

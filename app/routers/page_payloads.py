@@ -13,6 +13,12 @@ from pydantic import BaseModel
 from db import with_db_cursor, query_db
 
 from app.core.config import WIDGET_SECRET, CREDIT_UTILIZATION_CAP, MULTI_TENANT_ENABLED
+from app.core.home_snapshot_cache import (
+    ensure_home_snapshot_cache_pg,
+    home_snapshot_version_for_tenant,
+    load_page_home_snapshot,
+    upsert_page_home_snapshot,
+)
 from app.core.time import today_local, now_local
 from app.core.tenancy import current_tenant_id
 from app.core.roundups import (
@@ -27,7 +33,7 @@ from app.routers.transactions import transactions, transactions_all, account_tra
 from app.routers.analytics import category_totals_month, _last_day_of_month, parse_iso
 from app.routers.notifications import unread_count
 from app.routers.accounts import bank_totals, account_info
-from app.routers.category_rules import month_budget_home_cached
+from app.routers.category_rules import month_budget_home_cached, unknown_merchant_total_month
 from app.routers.budget_groups import _get_budget_groups_for_month, _norm_cat, _norm_name
 from app.routers.recurring import recurring_calendar
 from app.routers.les import les_paychecks, LESPaychecksRequest, LESProfileModel
@@ -35,7 +41,8 @@ from app.routers.les import les_paychecks, LESPaychecksRequest, LESProfileModel
 router = APIRouter()
 
 WIDGET_SUMMARY_CACHE_TTL_SEC = 90
-_WIDGET_SUMMARY_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+_WIDGET_SUMMARY_CACHE: Dict[str, Dict[str, Any]] = {}
+_WIDGET_REFRESH_READY = False
 PAGE_PAYLOAD_CACHE_TTL_SEC = 30
 _PAGE_PAYLOAD_CACHE: dict[str, dict[str, Any]] = {}
 _PAGE_PAYLOAD_CACHE_LOCK = Lock()
@@ -52,6 +59,87 @@ def _require_tenant_id() -> int | None:
     if not tid:
         raise HTTPException(status_code=403, detail="tenant_required")
     return int(tid)
+
+
+def _widget_tenant_key(tid: Optional[int]) -> int:
+    return int(tid) if tid else 0
+
+
+def _ensure_widget_refresh_tracking_pg() -> None:
+    global _WIDGET_REFRESH_READY
+    if _WIDGET_REFRESH_READY:
+        return
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS widget_refresh_state (
+              tenant_id INT PRIMARY KEY,
+              version BIGINT NOT NULL DEFAULT 0,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE OR REPLACE FUNCTION trg_widget_refresh_transactions()
+            RETURNS trigger AS $$
+            DECLARE
+              tid INT;
+            BEGIN
+              IF TG_OP = 'DELETE' THEN
+                tid := COALESCE(OLD.tenant_id, 0)::int;
+              ELSE
+                tid := COALESCE(NEW.tenant_id, 0)::int;
+              END IF;
+
+              INSERT INTO widget_refresh_state (tenant_id, version, updated_at)
+              VALUES (tid, 1, now())
+              ON CONFLICT (tenant_id)
+              DO UPDATE SET
+                version = widget_refresh_state.version + 1,
+                updated_at = now();
+
+              IF TG_OP = 'DELETE' THEN
+                RETURN OLD;
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        cur.execute("DROP TRIGGER IF EXISTS widget_refresh_transactions_iud ON transactions")
+        cur.execute(
+            """
+            CREATE TRIGGER widget_refresh_transactions_iud
+            AFTER INSERT OR UPDATE OR DELETE ON transactions
+            FOR EACH ROW EXECUTE FUNCTION trg_widget_refresh_transactions()
+            """
+        )
+        conn.commit()
+    _WIDGET_REFRESH_READY = True
+
+
+def _widget_version_for_tenant(tid: Optional[int]) -> int:
+    _ensure_widget_refresh_tracking_pg()
+    tkey = _widget_tenant_key(tid)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "SELECT version FROM widget_refresh_state WHERE tenant_id = %s",
+            (tkey,),
+        )
+        row = cur.fetchone() or {}
+        if not row:
+            cur.execute(
+                """
+                INSERT INTO widget_refresh_state (tenant_id, version, updated_at)
+                VALUES (%s, 0, now())
+                RETURNING version
+                """,
+                (tkey,),
+            )
+            row = cur.fetchone() or {}
+        conn.commit()
+    return int(row.get("version") or 0)
 
 def _call_optional(fn, *args, **kwargs):
     """
@@ -92,21 +180,96 @@ def page_home(
     Bundle the things home currently fetches separately.
     """
     tid = _require_tenant_id()
-    cache_key = f"page:home:tenant={tid or 0}:tx_limit={int(tx_limit)}"
+    tkey = int(tid or 0)
+    v_before = home_snapshot_version_for_tenant(tid)
+    cache_key = f"page:home:tenant={tkey}:tx_limit={int(tx_limit)}:v={int(v_before)}"
     cached = _payload_cache_get(cache_key)
     if cached is not None:
         return cached
 
+    snap = load_page_home_snapshot(tkey, int(tx_limit))
+    snap_version_raw = snap.get("source_version") if snap else None
+    snap_version = int(snap_version_raw) if snap_version_raw is not None else -1
+    if snap and snap_version == int(v_before):
+        out = snap.get("payload")
+        if isinstance(out, dict):
+            if "unknown_merchant_total_month" not in out:
+                try:
+                    out["unknown_merchant_total_month"] = unknown_merchant_total_month()
+                    upsert_page_home_snapshot(
+                        tid=tkey,
+                        tx_limit=int(tx_limit),
+                        source_version=int(v_before),
+                        payload=out,
+                    )
+                except Exception:
+                    pass
+            _payload_cache_set(cache_key, out)
+            return out
+
+    now = now_local()
     payload: Dict[str, Any] = {
         "transactions": transactions(limit=tx_limit),
         "category_totals_month": category_totals_month(),
+        "unknown_merchant_total_month": unknown_merchant_total_month(),
         "notifications_unread": unread_count(),
         "bank_totals": bank_totals(),
         # add this if you have month_budget() defined in this file:
-        "month_budget": _call_optional(globals().get("month_budget")),
+        "month_budget": month_budget_home_cached(now.year, now.month),
+        "day_limit": day_limit(recalc=0),
     }
+    v_after = home_snapshot_version_for_tenant(tid)
+    if int(v_before) == int(v_after):
+        try:
+            upsert_page_home_snapshot(
+                tid=tkey,
+                tx_limit=int(tx_limit),
+                source_version=int(v_after),
+                payload=payload,
+            )
+        except Exception:
+            pass
     _payload_cache_set(cache_key, payload)
     return payload
+
+
+@router.get("/debug/page-home-snapshot")
+def debug_page_home_snapshot(
+    tx_limit: int = Query(15, ge=1, le=200),
+):
+    tid = _require_tenant_id()
+    ensure_home_snapshot_cache_pg()
+    tkey = int(tid or 0)
+    v = home_snapshot_version_for_tenant(tid)
+
+    rows = query_db(
+        """
+        SELECT source_version, updated_at
+        FROM home_snapshot_page_home
+        WHERE tenant_id = %s
+          AND tx_limit = %s
+        LIMIT 1
+        """,
+        (tkey, int(tx_limit)),
+    )
+    row = rows[0] if rows else {}
+    source_version_raw = row.get("source_version") if row else None
+    source_version = int(source_version_raw) if source_version_raw is not None else -1
+    is_fresh = bool(rows) and (source_version == int(v))
+    updated_at = row.get("updated_at")
+
+    return {
+        "ok": True,
+        "tenant_id": tkey,
+        "tx_limit": int(tx_limit),
+        "current_version": int(v),
+        "snapshot_exists": bool(rows),
+        "snapshot_source_version": source_version if rows else None,
+        "snapshot_is_fresh": bool(is_fresh),
+        "snapshot_updated_at": (
+            updated_at.isoformat() if hasattr(updated_at, "isoformat") else (str(updated_at) if updated_at else None)
+        ),
+    }
 
 @router.get("/page/account/{account_id}")
 def page_account(
@@ -289,15 +452,27 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
     return [dict(r) for r in rows]
 
 @router.get("/widget/summary")
-def widget_summary(x_widget_secret: str = Header(default="")):
+def widget_summary(
+    x_widget_secret: str = Header(default=""),
+    widget_version: Optional[int] = Query(default=None),
+):
     #Simple protection so the widget can fetch data without a login session/cookies
     if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    tid = _require_tenant_id()
+    version = int(widget_version) if widget_version is not None else _widget_version_for_tenant(tid)
+    cache_key = f"tenant={_widget_tenant_key(tid)}"
     now_ts = time.time()
-    cached_ts = float(_WIDGET_SUMMARY_CACHE.get("ts") or 0.0)
-    cached_data = _WIDGET_SUMMARY_CACHE.get("data")
-    if cached_data and (now_ts - cached_ts) < WIDGET_SUMMARY_CACHE_TTL_SEC:
+    cache_row = _WIDGET_SUMMARY_CACHE.get(cache_key) or {}
+    cached_ts = float(cache_row.get("ts") or 0.0)
+    cached_data = cache_row.get("data")
+    cached_version = int(cache_row.get("version") or -1)
+    if (
+        cached_data
+        and cached_version == version
+        and (now_ts - cached_ts) < WIDGET_SUMMARY_CACHE_TTL_SEC
+    ):
         return deepcopy(cached_data)
 
     bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
@@ -350,11 +525,20 @@ def widget_summary(x_widget_secret: str = Header(default="")):
             "spent_today_free": dl.get("spent_today_free", 0.0),
             "day": dl.get("day"),
         },
+        "widget_version": version,
         "meta": {"cron": "OK"}
     }
-    _WIDGET_SUMMARY_CACHE["ts"] = now_ts
-    _WIDGET_SUMMARY_CACHE["data"] = payload
+    _WIDGET_SUMMARY_CACHE[cache_key] = {"ts": now_ts, "version": version, "data": payload}
     return deepcopy(payload)
+
+
+@router.get("/widget/version")
+def widget_version(x_widget_secret: str = Header(default="")):
+    if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    tid = _require_tenant_id()
+    version = _widget_version_for_tenant(tid)
+    return {"ok": True, "widget_version": version}
 
 def _ensure_budget_tables_pg():
     with with_db_cursor() as (conn, cur):

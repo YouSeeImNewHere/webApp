@@ -12,9 +12,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
-DB_POOL_MIN_SIZE = max(1, int(os.getenv("DB_POOL_MIN_SIZE", "2")))
-DB_POOL_MAX_SIZE = max(DB_POOL_MIN_SIZE, int(os.getenv("DB_POOL_MAX_SIZE", "12")))
+# Keep defaults conservative for low-traffic apps on Neon:
+# - min_size=0 allows full idle scale-down.
+# - max_size=4 is enough for a few concurrent users.
+DB_POOL_MIN_SIZE = max(0, int(os.getenv("DB_POOL_MIN_SIZE", "0")))
+DB_POOL_MAX_SIZE = max(1, int(os.getenv("DB_POOL_MAX_SIZE", "4")))
+if DB_POOL_MAX_SIZE < DB_POOL_MIN_SIZE:
+    DB_POOL_MAX_SIZE = DB_POOL_MIN_SIZE
+
 DB_POOL_TIMEOUT = max(5, int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "20")))
+DB_POOL_MAX_IDLE_SECONDS = max(5, int(os.getenv("DB_POOL_MAX_IDLE_SECONDS", "30")))
+DB_POOL_MAX_LIFETIME_SECONDS = max(60, int(os.getenv("DB_POOL_MAX_LIFETIME_SECONDS", "900")))
 
 # IMPORTANT: open=False so we control lifecycle from FastAPI startup/shutdown
 pool = ConnectionPool(
@@ -22,6 +30,8 @@ pool = ConnectionPool(
     min_size=DB_POOL_MIN_SIZE,
     max_size=DB_POOL_MAX_SIZE,
     timeout=DB_POOL_TIMEOUT,
+    max_idle=DB_POOL_MAX_IDLE_SECONDS,
+    max_lifetime=DB_POOL_MAX_LIFETIME_SECONDS,
     kwargs={"row_factory": dict_row},
     open=False,
 )

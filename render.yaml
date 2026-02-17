@@ -17,6 +17,16 @@ services:
         fromDatabase:
           name: webapp-db
           property: connectionString
+      - key: DB_POOL_MIN_SIZE
+        value: "0"
+      - key: DB_POOL_MAX_SIZE
+        value: "4"
+      - key: DB_POOL_TIMEOUT_SECONDS
+        value: "20"
+      - key: DB_POOL_MAX_IDLE_SECONDS
+        value: "30"
+      - key: DB_POOL_MAX_LIFETIME_SECONDS
+        value: "900"
 
 databases:
   - name: webapp-db
