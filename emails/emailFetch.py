@@ -20,9 +20,30 @@ WEBAPP_URL = os.getenv("WEBAPP_URL") or ""
 NOTIF_SECRET = os.getenv("NOTIF_SECRET") or ""
 DEBUG = (os.getenv("EMAILFETCH_DEBUG") or "").lower() in ("1", "true", "yes")
 BATCH_SIZE = 200
-PUSHOVER_USER = os.getenv("PUSHOVER_USER_KEY") or ""
+PUSHOVER_USER = ""
 PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 MAILBOXES = ["INBOX"]
+
+
+def _lookup_pushover_user_key_from_db(email_addr: str) -> str:
+    e = (email_addr or "").strip().lower()
+    if not e:
+        return ""
+    try:
+        with with_db_cursor() as (_, cur):
+            cur.execute(
+                """
+                SELECT pushover_user_key
+                FROM users
+                WHERE lower(email) = lower(%s)
+                LIMIT 1
+                """,
+                (e,),
+            )
+            row = cur.fetchone() or {}
+            return ((row.get("pushover_user_key") or "").strip())
+    except Exception:
+        return ""
 
 def in_allowed_window():
     tz = ZoneInfo("America/Los_Angeles")
@@ -147,8 +168,12 @@ def send_pushover(title: str, message: str):
     """
     Sends a Pushover notification. Never raises (logs failures instead).
     """
+    global PUSHOVER_USER
+    if not PUSHOVER_USER:
+        PUSHOVER_USER = _lookup_pushover_user_key_from_db(os.getenv("GMAIL_ADDRESS") or "")
+
     if not pushover_enabled():
-        log("⚠️ Pushover not configured (missing PUSHOVER_USER/PUSHOVER_TOKEN)")
+        log("⚠️ Pushover not configured (missing users.pushover_user_key or PUSHOVER_API_TOKEN)")
         return
 
     try:
@@ -874,7 +899,7 @@ def run(include_processed: bool = False):
 
     # Refresh pushover creds after dotenv load
     global PUSHOVER_USER, PUSHOVER_TOKEN
-    PUSHOVER_USER = os.getenv("PUSHOVER_USER_KEY") or ""
+    PUSHOVER_USER = _lookup_pushover_user_key_from_db(os.getenv("GMAIL_ADDRESS") or "")
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
     EMAIL = os.getenv("GMAIL_ADDRESS")
@@ -1092,5 +1117,3 @@ if __name__ == "__main__":
             raise
     finally:
         close_pool()
-
-
