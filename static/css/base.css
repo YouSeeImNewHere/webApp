@@ -4737,6 +4737,30 @@ body.page-account .upcoming-day-card__more{
 .error.hidden {
   display: none;
 }
+
+/* Global request progress (non-blocking) */
+.global-progress {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  z-index: 9999;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+.global-progress.hidden {
+  display: none;
+}
+
+.global-progress__fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #00d1a3 0%, #20a4ff 100%);
+  box-shadow: 0 0 8px rgba(32, 164, 255, 0.45);
+  transition: width 160ms ease;
+}
 /* =============================================================================
    Budget page
    Put this at the VERY BOTTOM of base.css

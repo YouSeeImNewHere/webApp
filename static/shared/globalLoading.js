@@ -1,5 +1,7 @@
 (() => {
   let inflight = 0;
+  let progress = 0;
+  let progressTimer = null;
 
   const SILENT_ENDPOINTS = [
     "/notifications/unread-count",
@@ -16,12 +18,12 @@
   }
 
   function ensureUI() {
-    if (!document.getElementById("global-loader")) {
-      const loader = document.createElement("div");
-      loader.id = "global-loader";
-      loader.className = "loader hidden";
-      loader.innerHTML = `<div class="spinner"></div>`;
-      document.body.appendChild(loader);
+    if (!document.getElementById("global-progress")) {
+      const bar = document.createElement("div");
+      bar.id = "global-progress";
+      bar.className = "global-progress hidden";
+      bar.innerHTML = `<div id="global-progress-fill" class="global-progress__fill"></div>`;
+      document.body.appendChild(bar);
     }
 
     if (!document.getElementById("global-error")) {
@@ -36,12 +38,44 @@
     }
   }
 
-  function showLoader() {
-    document.getElementById("global-loader")?.classList.remove("hidden");
+  function setProgress(value) {
+    const pct = Math.max(0, Math.min(100, value));
+    progress = pct;
+    const fill = document.getElementById("global-progress-fill");
+    if (fill) fill.style.width = `${pct}%`;
   }
 
-  function hideLoader() {
-    document.getElementById("global-loader")?.classList.add("hidden");
+  function startProgress() {
+    const bar = document.getElementById("global-progress");
+    if (!bar) return;
+    bar.classList.remove("hidden");
+
+    if (progressTimer) return;
+    if (progress <= 0 || progress >= 95) setProgress(8);
+
+    progressTimer = setInterval(() => {
+      if (inflight <= 0) return;
+      const remaining = 95 - progress;
+      if (remaining <= 0) return;
+      const step = Math.max(0.4, remaining * 0.08);
+      setProgress(progress + step);
+    }, 140);
+  }
+
+  function completeProgress() {
+    const bar = document.getElementById("global-progress");
+    if (!bar) return;
+
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+
+    setProgress(100);
+    setTimeout(() => {
+      bar.classList.add("hidden");
+      setProgress(0);
+    }, 220);
   }
 
   function showError() {
@@ -66,7 +100,7 @@
     if (!silent) {
       inflight++;
       hideError();
-      showLoader();
+      startProgress();
     }
 
     try {
@@ -81,7 +115,7 @@
     } finally {
       if (!silent) {
         inflight = Math.max(0, inflight - 1);
-        if (inflight === 0) hideLoader();
+        if (inflight === 0) completeProgress();
       }
     }
   };
