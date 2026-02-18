@@ -1905,20 +1905,8 @@ function renderTxList(data){
     (isPending ? pending : posted).push(r);
   }
 
-  // helper: header (reuse your existing styles from account page)
-  function makeSectionHeader(label) {
-    const h = document.createElement("div");
-    h.className = "tx-day-header";
-    h.innerHTML = `
-      <div class="tx-day-header__date">${label}</div>
-      <div class="tx-day-header__bal"></div>
-    `;
-    return h;
-  }
-
-  // render pending first (its own "day")
+  // render pending first (without a separate header)
   if (pending.length) {
-    fragment.appendChild(makeSectionHeader("Pending"));
     pending.forEach(row => fragment.appendChild(renderOneTxRow(row)));
   }
 
@@ -2018,6 +2006,16 @@ document.addEventListener("DOMContentLoaded", initUnassignedToggle);
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("csvUploadBtn");
   if (btn) btn.addEventListener("click", openCsvUploadModal);
+
+  const params = new URLSearchParams(window.location.search || "");
+  const openCsvImport = String(params.get("openCsvImport") || "").toLowerCase();
+  if (["1", "true", "yes"].includes(openCsvImport)) {
+    openCsvUploadModal();
+    params.delete("openCsvImport");
+    const q = params.toString();
+    const next = `${window.location.pathname}${q ? `?${q}` : ""}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", next);
+  }
 });
 
 
@@ -2766,7 +2764,7 @@ function ensureCsvUploadModal() {
         </div>
 
         <div style="display:flex; gap:10px; margin-top:12px; justify-content:flex-end;">
-          <button id="csvPreviewBtn" class="settings-btn" type="button">Preview CSV</button>
+          <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
           <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
           <button id="csvSavePresetBtn" class="settings-btn" type="button">Save preset</button>
           <button id="csvUploadCancel" class="settings-btn" type="button">Cancel</button>
@@ -2872,7 +2870,7 @@ function ensureCsvUploadModal() {
       if (!inDropZone) {
         e.preventDefault();
         const sub = document.getElementById("csvUploadSub");
-        if (sub) sub.textContent = "Drop files inside the CSV drop area.";
+        if (sub) sub.textContent = "Use the upload box above: drag a file there or click Choose file.";
       }
     });
   }
@@ -3073,7 +3071,7 @@ function setCsvFileForModal(f) {
   const msg = document.getElementById("csvUploadMsg");
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
   if (msg) msg.textContent = "";
-  if (sub) sub.textContent = "File selected. Click Preview CSV when ready.";
+  if (sub) sub.textContent = "File selected. Click Preview File when ready.";
 }
 
 function updateCsvPickedName() {

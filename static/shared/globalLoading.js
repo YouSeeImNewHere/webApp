@@ -25,6 +25,7 @@
       bar.innerHTML = `<div id="global-progress-fill" class="global-progress__fill"></div>`;
       document.body.appendChild(bar);
     }
+    mountProgressBar();
 
     if (!document.getElementById("global-error")) {
       const err = document.createElement("div");
@@ -38,6 +39,21 @@
     }
   }
 
+  function mountProgressBar() {
+    const bar = document.getElementById("global-progress");
+    if (!bar) return;
+
+    const tabs = document.querySelector("#bottomTabs .mobile-tabs, .mobile-tabs");
+    if (tabs) {
+      if (bar.parentElement !== tabs) tabs.appendChild(bar);
+      bar.classList.add("global-progress--tabs");
+      return;
+    }
+
+    if (bar.parentElement !== document.body) document.body.appendChild(bar);
+    bar.classList.remove("global-progress--tabs");
+  }
+
   function setProgress(value) {
     const pct = Math.max(0, Math.min(100, value));
     progress = pct;
@@ -46,6 +62,7 @@
   }
 
   function startProgress() {
+    mountProgressBar();
     const bar = document.getElementById("global-progress");
     if (!bar) return;
     bar.classList.remove("hidden");

@@ -6,6 +6,8 @@
     selectedSampleIds: new Set(),
     primarySampleId: "",
     previewRows: [],
+    corrRows: [],
+    corrSummary: null,
     usingMock: false,
   };
   const UI_PREFS_KEY = "epw:ui-prefs:v2";
@@ -68,6 +70,13 @@
     if (guidedFields) guidedFields.style.display = mode === "guided" ? "" : "none";
   }
 
+  function syncSubjectFallbackVisibility() {
+    const q = (byId("epwSubjectQuery")?.value || "").trim();
+    const wrap = byId("epwSubjectFallbackWrap");
+    if (!wrap) return;
+    wrap.style.display = q ? "none" : "";
+  }
+
   function saveUiPrefs() {
     const parserMode = (byId("epwParserMode")?.value || "guided").trim();
     const guidedLayout = (byId("epwGuidedLayout")?.value || "list").trim();
@@ -124,11 +133,13 @@
     const sender = String(setting.sender_pattern || "").trim();
     if (subject) {
       byId("epwSubjectQuery").value = subject;
+      if (byId("epwSubjectFallback")) byId("epwSubjectFallback").value = subject;
     }
     if (sender) {
       byId("epwSenderQuery").value = sender;
     }
     if (setting.parser_mode && byId("epwParserMode")) byId("epwParserMode").value = String(setting.parser_mode);
+    if (setting.rule_role && byId("epwRuleRole")) byId("epwRuleRole").value = String(setting.rule_role);
     if (setting.parsing_method && byId("epwParsingMethodToggle")) {
       byId("epwParsingMethodToggle").checked = String(setting.parsing_method).toLowerCase() === "anchor";
       updateParsingMethodLabel();
@@ -147,6 +158,7 @@
     if (guided.time_label) byId("epwGuidedTimeLabel").value = String(guided.time_label);
     if (guided.layout_type && byId("epwGuidedLayout")) byId("epwGuidedLayout").value = String(guided.layout_type);
     applyParserModeVisibility();
+    syncSubjectFallbackVisibility();
     renderLiveCapture();
   }
 
@@ -176,18 +188,75 @@
     sel.innerHTML = options.join("");
   }
 
+  function renderCorrelationDraftSelectors() {
+    const primarySel = byId("epwCorrPrimaryDraft");
+    const secondarySel = byId("epwCorrSecondaryDraft");
+    if (!primarySel || !secondarySel) return;
+    const settings = Array.isArray(state.accountSettings) ? state.accountSettings : [];
+    const options = ['<option value="">Select draft</option>'].concat(settings.map((s) => {
+      const role = String(s.rule_role || "standard");
+      const subject = String(s.subject_contains || "").trim() || "(blank subject)";
+      const name = String(s.name || "").trim();
+      const label = `${subject}${name ? ` - ${name}` : ""} [${role}]`;
+      return `<option value="${escapeHtml(String(s.draft_id || ""))}">${escapeHtml(label)}</option>`;
+    }));
+    primarySel.innerHTML = options.join("");
+    secondarySel.innerHTML = options.join("");
+
+    const primary = settings.find((s) => String(s.rule_role || "").toLowerCase() === "primary_transaction");
+    const secondary = settings.find((s) => String(s.rule_role || "").toLowerCase() === "secondary_withdrawal");
+    if (primary) primarySel.value = String(primary.draft_id);
+    if (secondary) secondarySel.value = String(secondary.draft_id);
+  }
+
+  function renderCorrelationPreview() {
+    const summaryEl = byId("epwCorrSummary");
+    const rowsEl = byId("epwCorrRows");
+    if (!summaryEl || !rowsEl) return;
+    if (!state.corrSummary) {
+      summaryEl.textContent = "No correlation preview run yet.";
+      rowsEl.innerHTML = "";
+      return;
+    }
+    const s = state.corrSummary || {};
+    summaryEl.textContent = `Pending=${s.pending || 0} | Resolved=${s.resolved || 0} | Immediate notify=${s.notify_immediate || 0} | Skipped notified=${s.skip_already_notified || 0}`;
+    const rows = Array.isArray(state.corrRows) ? state.corrRows : [];
+    rowsEl.innerHTML = rows.map((r) => {
+      const notifyChip = r.notify ? '<span class="epw-chip ok">Notify</span>' : '<span class="epw-chip">No Notify</span>';
+      const title = `${r.matched_rule || "none"} | ${r.action || ""} | ${r.tx_action || ""}`;
+      const ext = r.extracted || {};
+      const line = `amount=${ext.amount || ""} merchant=${ext.merchant || ""} date=${ext.date || ""} time=${ext.time || ""}`;
+      return `
+        <div class="epw-row">
+          <div class="epw-row-head">
+            <div class="epw-row-title">${escapeHtml(String(r.subject || "(no subject)"))}</div>
+            ${notifyChip}
+          </div>
+          <div class="epw-row-sub">${escapeHtml(String(r.sender || ""))}</div>
+          <div class="epw-row-sub">${escapeHtml(title)}</div>
+          <div class="epw-row-sub">${escapeHtml(line)}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
   async function loadAccountSettings() {
     const accountId = Number(byId("epwAccount")?.value || 0);
     state.accountSettings = [];
+    state.corrRows = [];
+    state.corrSummary = null;
     renderSubjectSettings();
+    renderCorrelationPreview();
     if (!accountId || state.usingMock) return;
     try {
       const data = await fetchJson(`/email-parser/trial/account-settings/${accountId}`, { cache: "no-store" });
       state.accountSettings = Array.isArray(data.settings) ? data.settings : [];
       renderSubjectSettings();
+      renderCorrelationDraftSelectors();
     } catch (_e) {
       state.accountSettings = [];
       renderSubjectSettings();
+      renderCorrelationDraftSelectors();
     }
   }
 
@@ -264,12 +333,14 @@
     const m = rx.exec(String(body || ""));
     if (!m) return { matched: false, error: "No match", extracted: null };
     const g = payload.field_map || {};
+    const merchantGroup = Number(g.merchant_group) || 0;
+    const merchantVal = merchantGroup > 0 ? (m[merchantGroup] || "") : "";
     return {
       matched: true,
       error: "",
       extracted: {
         amount: m[Number(g.amount_group) || 0] || "",
-        merchant: m[Number(g.merchant_group) || 0] || "",
+        merchant: merchantVal || "Unknown",
         date: m[Number(g.date_group) || 0] || "",
         time: ((Number(g.time_group) || 0) > 0 ? (m[Number(g.time_group)] || "") : "") || timeFromReceivedAt(receivedAt),
       },
@@ -503,13 +574,14 @@
   function getDraftPayload() {
     const accountId = Number(byId("epwAccount")?.value || 0);
     const senderPattern = (byId("epwSenderQuery")?.value || "").trim();
-    const subjectContains = (byId("epwSubjectQuery")?.value || "").trim();
+    const subjectContains = (byId("epwSubjectQuery")?.value || byId("epwSubjectFallback")?.value || "").trim();
     const parserMode = (byId("epwParserMode")?.value || "guided").trim();
     const bodyRegex = (byId("epwBodyRegex")?.value || "").trim();
     const flags = (byId("epwRegexFlags")?.value || "i").trim() || "i";
     const selectedAccount = (state.accounts || []).find((a) => Number(a.id) === Number(accountId));
     const accountLabel = selectedAccount ? `${selectedAccount.institution || "Account"} ${selectedAccount.name || ""}`.trim() : `Account ${accountId}`;
     const name = `${accountLabel} ${subjectContains || "Email Rule"}`.trim();
+    const ruleRole = (byId("epwRuleRole")?.value || "standard").trim().toLowerCase();
     const guidedLayout = (byId("epwGuidedLayout")?.value || "list").trim();
     const parsingMethod = byId("epwParsingMethodToggle")?.checked ? "anchor" : "flexible";
 
@@ -532,6 +604,8 @@
       name,
       parser_mode: parserMode,
       parsing_method: parsingMethod,
+      rule_role: ruleRole,
+      pending_ttl_minutes: 30,
       account_id: accountId,
       sender_pattern: senderPattern,
       subject_contains: subjectContains,
@@ -550,6 +624,7 @@
   function buildRegexFromGuided(payload) {
     const g = payload.guided || {};
     const layout = String(g.layout_type || "list").toLowerCase();
+    const role = String(payload.rule_role || "standard").toLowerCase();
     const parsingMethod = String(payload.parsing_method || "anchor").toLowerCase();
     const strict = parsingMethod === "anchor";
     const amountL = escapeRegex(g.amount_label || "Amount");
@@ -578,10 +653,16 @@
           ".*";
       }
     } else if (layout === "sentence") {
-      bodyRegex =
-        `(?is)(?:transaction\\s+for\\s+)?${amountPattern}.*?\\bat\\s+(.+?)\\s+` +
-        `(?:at\\s+${timePattern}\\s+)?on\\s+${datePattern}`;
-      fieldMap = { amount_group: 1, merchant_group: 2, date_group: 4, time_group: 3 };
+      if (role === "secondary_withdrawal") {
+        bodyRegex =
+          `(?is)${amountPattern}\\s+was\\s+withdrawn.*?As\\s+of\\s+${datePattern}\\s+at\\s+${timePattern}`;
+        fieldMap = { amount_group: 1, merchant_group: 0, date_group: 2, time_group: 3 };
+      } else {
+        bodyRegex =
+          `(?is)(?:transaction\\s+for\\s+)?${amountPattern}.*?\\bat\\s+(.+?)\\s+` +
+          `(?:at\\s+${timePattern}\\s+)?on\\s+${datePattern}`;
+        fieldMap = { amount_group: 1, merchant_group: 2, date_group: 4, time_group: 3 };
+      }
     } else if (layout === "no_anchor") {
       bodyRegex =
         `(?is)(?:^|\\n)\\s*([^\\n$]{2,80})\\s*(?:\\r?\\n)+\\s*` +
@@ -635,13 +716,14 @@
       }
       const g = payload.field_map || {};
       const timeGroup = Number(g.time_group) || 0;
+      const merchantGroup = Number(g.merchant_group) || 0;
       const fallbackTime = timeFromReceivedAt(s.received_at);
       out.push({
         sample_id: s.sample_id,
         matched: true,
         extracted: {
           amount: m[g.amount_group] || "",
-          merchant: m[g.merchant_group] || "",
+          merchant: (merchantGroup > 0 ? (m[merchantGroup] || "") : "") || "Unknown",
           date: m[g.date_group] || "",
           time: (timeGroup > 0 ? (m[timeGroup] || "") : "") || fallbackTime,
         },
@@ -718,8 +800,11 @@
       state.selectedSampleIds = new Set((state.samples || []).map((s) => String(s.sample_id)));
       state.primarySampleId = state.samples.length ? String(state.samples[0].sample_id) : "";
       state.previewRows = [];
+      state.corrRows = [];
+      state.corrSummary = null;
       renderSamples();
       renderPreview();
+      renderCorrelationPreview();
       setStatus(`Loaded ${items.length} samples.`, false);
     } catch (e) {
       renderSamples();
@@ -804,6 +889,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        await loadAccountSettings();
       }
       setStatus(state.usingMock ? "Draft validated locally (mock mode)." : "Draft saved as inactive trial config.", false);
     } catch (e) {
@@ -811,13 +897,84 @@
     }
   }
 
+  async function resetAllDrafts() {
+    const ok = window.confirm("Delete all parser drafts and start fresh?");
+    if (!ok) return;
+    setStatus("Deleting drafts...", false);
+    try {
+      const data = await fetchJson("/email-parser/trial/drafts/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      await loadAccountSettings();
+      state.corrRows = [];
+      state.corrSummary = null;
+      renderCorrelationPreview();
+      setStatus(`Deleted ${Number(data.deleted || 0)} drafts.`, false);
+    } catch (e) {
+      setStatus(`Delete drafts failed: ${e.message}`, true);
+    }
+  }
+
+  async function runCorrelationPreview() {
+    const accountId = Number(byId("epwAccount")?.value || 0);
+    const primaryDraftId = Number(byId("epwCorrPrimaryDraft")?.value || 0);
+    const secondaryDraftId = Number(byId("epwCorrSecondaryDraft")?.value || 0);
+    const sampleIds = Array.from(state.selectedSampleIds || []);
+    if (!accountId) {
+      setStatus("Select an account first.", true);
+      return;
+    }
+    if (!primaryDraftId || !secondaryDraftId) {
+      setStatus("Select both primary and secondary drafts.", true);
+      return;
+    }
+    if (!sampleIds.length) {
+      setStatus("Select at least one sample.", true);
+      return;
+    }
+    setStatus("Running correlation preview...", false);
+    try {
+      const data = await fetchJson("/email-parser/trial/correlation-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountId,
+          primary_draft_id: primaryDraftId,
+          secondary_draft_id: secondaryDraftId,
+          sample_ids: sampleIds,
+        }),
+      });
+      const summary = data.summary || {};
+      state.corrRows = Array.isArray(data.rows) ? data.rows : [];
+      state.corrSummary = {
+        pending: Number(summary.pending || 0),
+        resolved: Number(summary.resolved || 0),
+        notify_immediate: Number(summary.notify_immediate || 0),
+        skip_already_notified: Number(summary.skip_already_notified || 0),
+      };
+      renderCorrelationPreview();
+      setStatus("Correlation preview complete.", false);
+    } catch (e) {
+      setStatus(`Correlation preview failed: ${e.message}`, true);
+    }
+  }
+
   function wireEvents() {
     byId("epwLoadSamplesBtn")?.addEventListener("click", loadSamples);
     byId("epwPreviewBtn")?.addEventListener("click", runPreview);
+    byId("epwCorrPreviewBtn")?.addEventListener("click", runCorrelationPreview);
     byId("epwSaveDraftBtn")?.addEventListener("click", saveDraft);
+    byId("epwResetDraftsBtn")?.addEventListener("click", resetAllDrafts);
     byId("epwSenderQuery")?.addEventListener("change", () => {
       renderLiveCapture();
     });
+    byId("epwSubjectQuery")?.addEventListener("input", () => {
+      syncSubjectFallbackVisibility();
+      renderLiveCapture();
+    });
+    byId("epwSubjectFallback")?.addEventListener("input", renderLiveCapture);
     byId("epwAccount")?.addEventListener("change", async () => {
       await loadAccountSettings();
     });
@@ -869,12 +1026,14 @@
     loadUiPrefs();
     wireEvents();
     applyParserModeVisibility();
+    syncSubjectFallbackVisibility();
     updateParsingMethodLabel();
     setHelpOpen(false);
     await loadAccounts();
     await loadAccountSettings();
     renderSamples();
     renderPreview();
+    renderCorrelationPreview();
     updateRuleSourceBody();
     renderLiveCapture();
   }

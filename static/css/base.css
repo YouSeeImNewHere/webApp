@@ -2615,28 +2615,29 @@ body.settings-page{
 
 :root{
   /* core */
-  --bg: #ffffff;
+  --bg: #f2f5f9;
   --text: #111111;
-  --muted: rgba(17,17,17,0.65);
+  --muted: rgba(17,17,17,0.72);
 
   /* surfaces */
   --card: #ffffff;
-  --card-2: #f6f7f8;
-  --border: rgba(0,0,0,0.10);
+  --card-2: #eaf0f6;
+  --panel: #ffffff;
+  --border: rgba(0,0,0,0.16);
 
   /* controls */
-  --btn-bg: #ffffff;
+  --btn-bg: #f8fbff;
   --btn-text: #111111;
-  --btn-border: rgba(0,0,0,0.14);
-  --btn-hover: #f7f7f7;
+  --btn-border: rgba(0,0,0,0.22);
+  --btn-hover: #eef3f8;
 
   /* accents */
   --accent: #111111;
   --accent-contrast: #ffffff;
 
   /* shadows */
-  --shadow-soft: 0 10px 26px rgba(0,0,0,0.06);
-  --shadow-float: 0 12px 30px rgba(0,0,0,0.12);
+  --shadow-soft: 0 8px 22px rgba(15, 23, 42, 0.10);
+  --shadow-float: 0 12px 32px rgba(15, 23, 42, 0.16);
 }
 
 /* Dark theme overrides */
@@ -2645,6 +2646,7 @@ body.settings-page{
   --bg: #070A10;          /* page */
   --card: #0E1420;        /* primary surface */
   --card-2: #0A0F18;      /* recessed surface (charts/inner panels) */
+  --panel: #0E1420;
 
   /* Text */
   --text: #EAF0FF;
@@ -2666,6 +2668,11 @@ body.settings-page{
   /* Shadows (stronger so cards feel layered) */
   --shadow-soft: 0 14px 40px rgba(0,0,0,0.45);
   --shadow-float: 0 18px 55px rgba(0,0,0,0.55);
+
+  --surface-hover: rgba(255,255,255,0.08);
+  --surface-pressed: rgba(255,255,255,0.14);
+  --chip-bg: rgba(255,255,255,0.06);
+  --chip-border: rgba(141,173,255,0.20);
 
   /* Optional semantic colors if you want them later */
   --pos: #2EE59D;   /* income / good */
@@ -2738,17 +2745,17 @@ body.settings-page{
 :root{
   --surface: var(--card);
   --surface-2: var(--card-2);
-  --surface-hover: rgba(0,0,0,0.04);
-  --surface-pressed: rgba(0,0,0,0.07);
-  --chip-bg: rgba(0,0,0,0.02);
-  --chip-border: rgba(0,0,0,0.10);
+  --surface-hover: rgba(15,23,42,0.07);
+  --surface-pressed: rgba(15,23,42,0.12);
+  --chip-bg: rgba(15,23,42,0.04);
+  --chip-border: rgba(15,23,42,0.16);
 }
 
 :root[data-theme="dark"]{
-  --surface-hover: rgba(255,255,255,0.06);
-  --surface-pressed: rgba(255,255,255,0.10);
-  --chip-bg: rgba(255,255,255,0.05);
-  --chip-border: rgba(255,255,255,0.10);
+  --surface-hover: rgba(255,255,255,0.08);
+  --surface-pressed: rgba(255,255,255,0.14);
+  --chip-bg: rgba(255,255,255,0.06);
+  --chip-border: rgba(141,173,255,0.20);
 }
 
 /* ---- BANK “white bars” (account pills) ---- */
@@ -2903,20 +2910,66 @@ body.settings-page{
 .mobile-tab.active{ background: var(--surface-pressed) !important; color: var(--text) !important; }
 
 
-/* Make cards feel separated in dark mode */
+/* Make cards feel separated across non-default themes */
 :root[data-theme="dark"] .category-box,
 :root[data-theme="dark"] .bank-card,
 :root[data-theme="dark"] .chart-card,
 :root[data-theme="dark"] .tx-row,
-:root[data-theme="dark"] .settings-card{
+:root[data-theme="dark"] .settings-card,
+:root[data-theme="oled"] .category-box,
+:root[data-theme="oled"] .bank-card,
+:root[data-theme="oled"] .chart-card,
+:root[data-theme="oled"] .tx-row,
+:root[data-theme="oled"] .settings-card,
+:root[data-theme="solarized"] .category-box,
+:root[data-theme="solarized"] .bank-card,
+:root[data-theme="solarized"] .chart-card,
+:root[data-theme="solarized"] .tx-row,
+:root[data-theme="solarized"] .settings-card,
+:root[data-theme="forest"] .category-box,
+:root[data-theme="forest"] .bank-card,
+:root[data-theme="forest"] .chart-card,
+:root[data-theme="forest"] .tx-row,
+:root[data-theme="forest"] .settings-card,
+:root[data-theme="midnight"] .category-box,
+:root[data-theme="midnight"] .bank-card,
+:root[data-theme="midnight"] .chart-card,
+:root[data-theme="midnight"] .tx-row,
+:root[data-theme="midnight"] .settings-card{
   box-shadow: var(--shadow-soft);
 }
 
 /* Slight highlight on hover to guide the eye */
 :root[data-theme="dark"] .tx-row:hover,
-:root[data-theme="dark"] .category-box:hover,a
-:root[data-theme="dark"] .bank-card:hover{
+:root[data-theme="dark"] .category-box:hover,
+:root[data-theme="dark"] .bank-card:hover,
+:root[data-theme="oled"] .tx-row:hover,
+:root[data-theme="oled"] .category-box:hover,
+:root[data-theme="oled"] .bank-card:hover,
+:root[data-theme="solarized"] .tx-row:hover,
+:root[data-theme="solarized"] .category-box:hover,
+:root[data-theme="solarized"] .bank-card:hover,
+:root[data-theme="forest"] .tx-row:hover,
+:root[data-theme="forest"] .category-box:hover,
+:root[data-theme="forest"] .bank-card:hover,
+:root[data-theme="midnight"] .tx-row:hover,
+:root[data-theme="midnight"] .category-box:hover,
+:root[data-theme="midnight"] .bank-card:hover{
    background: var(--surface-hover);
+}
+
+/* Light/default theme: add separation so surfaces do not blend together */
+:root:not([data-theme]) .category-box,
+:root:not([data-theme]) .bank-card,
+:root:not([data-theme]) .chart-card,
+:root:not([data-theme]) .tx-row,
+:root:not([data-theme]) .settings-card,
+:root[data-theme="light"] .category-box,
+:root[data-theme="light"] .bank-card,
+:root[data-theme="light"] .chart-card,
+:root[data-theme="light"] .tx-row,
+:root[data-theme="light"] .settings-card{
+  box-shadow: var(--shadow-soft);
 }
 
 /* Strong, consistent focus ring */
@@ -4174,41 +4227,53 @@ body.page-recurring .merge-btn{
 }
 :root[data-theme="oled"]{
   --bg: #000000;
-  --card: #000000;
-  --card-2: #050505;
+  --card: #0b0b0b;
+  --card-2: #141414;
+  --panel: #0b0b0b;
 
   --text: #f2f2f2;
   --muted: rgba(242,242,242,0.6);
 
-  --border: rgba(255,255,255,0.08);
-  --btn-border: rgba(255,255,255,0.14);
+  --border: rgba(255,255,255,0.18);
+  --btn-border: rgba(255,255,255,0.24);
 
-  --btn-bg: rgba(255,255,255,0.04);
+  --btn-bg: rgba(255,255,255,0.08);
   --btn-text: #f2f2f2;
-  --btn-hover: rgba(255,255,255,0.08);
+  --btn-hover: rgba(255,255,255,0.14);
+
+  --surface-hover: rgba(255,255,255,0.12);
+  --surface-pressed: rgba(255,255,255,0.18);
+  --chip-bg: rgba(255,255,255,0.08);
+  --chip-border: rgba(255,255,255,0.22);
 
   --accent: #4f8cff;
   --accent-contrast: #000;
 
-  --shadow-soft: none;
-  --shadow-float: none;
+  --shadow-soft: 0 0 0 1px rgba(255,255,255,0.08), 0 12px 28px rgba(0,0,0,0.65);
+  --shadow-float: 0 0 0 1px rgba(255,255,255,0.12), 0 18px 42px rgba(0,0,0,0.75);
 
   color-scheme: dark;
 }
 :root[data-theme="solarized"]{
   --bg: #fdf6e3;
-  --card: #fffdf5;
-  --card-2: #f5efdc;
+  --card: #fffcf2;
+  --card-2: #efe7d0;
+  --panel: #fffcf2;
 
   --text: #586e75;
-  --muted: rgba(88,110,117,0.65);
+  --muted: rgba(88,110,117,0.78);
 
-  --border: rgba(88,110,117,0.18);
-  --btn-border: rgba(88,110,117,0.22);
+  --border: rgba(88,110,117,0.26);
+  --btn-border: rgba(88,110,117,0.32);
 
-  --btn-bg: #fffdf5;
+  --btn-bg: #fff9e8;
   --btn-text: #586e75;
-  --btn-hover: #eee8d5;
+  --btn-hover: #e7ddc2;
+
+  --surface-hover: rgba(88,110,117,0.10);
+  --surface-pressed: rgba(88,110,117,0.16);
+  --chip-bg: rgba(88,110,117,0.08);
+  --chip-border: rgba(88,110,117,0.22);
 
   --accent: #268bd2;
   --accent-contrast: #ffffff;
@@ -4217,19 +4282,25 @@ body.page-recurring .merge-btn{
   --shadow-float: 0 12px 30px rgba(88,110,117,0.22);
 }
 :root[data-theme="forest"]{
-  --bg: #0f1b16;
-  --card: #14261f;
-  --card-2: #10201a;
+  --bg: #0b1712;
+  --card: #163026;
+  --card-2: #11261e;
+  --panel: #163026;
 
   --text: #e6f2ec;
   --muted: rgba(230,242,236,0.65);
 
-  --border: rgba(160,200,180,0.18);
-  --btn-border: rgba(160,200,180,0.22);
+  --border: rgba(160,200,180,0.24);
+  --btn-border: rgba(160,200,180,0.30);
 
-  --btn-bg: rgba(255,255,255,0.04);
+  --btn-bg: rgba(255,255,255,0.08);
   --btn-text: #e6f2ec;
-  --btn-hover: rgba(255,255,255,0.08);
+  --btn-hover: rgba(255,255,255,0.14);
+
+  --surface-hover: rgba(255,255,255,0.10);
+  --surface-pressed: rgba(255,255,255,0.16);
+  --chip-bg: rgba(255,255,255,0.08);
+  --chip-border: rgba(160,200,180,0.22);
 
   --accent: #3cb371; /* medium sea green */
   --accent-contrast: #0f1b16;
@@ -4240,19 +4311,25 @@ body.page-recurring .merge-btn{
   color-scheme: dark;
 }
 :root[data-theme="midnight"]{
-  --bg: #060b1a;
-  --card: #0b1330;
-  --card-2: #080f24;
+  --bg: #040914;
+  --card: #0f1b40;
+  --card-2: #0a1432;
+  --panel: #0f1b40;
 
   --text: #e7ebff;
   --muted: rgba(231,235,255,0.65);
 
-  --border: rgba(120,140,255,0.22);
-  --btn-border: rgba(120,140,255,0.26);
+  --border: rgba(120,140,255,0.30);
+  --btn-border: rgba(120,140,255,0.36);
 
-  --btn-bg: rgba(255,255,255,0.05);
+  --btn-bg: rgba(255,255,255,0.10);
   --btn-text: #e7ebff;
-  --btn-hover: rgba(255,255,255,0.1);
+  --btn-hover: rgba(255,255,255,0.16);
+
+  --surface-hover: rgba(255,255,255,0.12);
+  --surface-pressed: rgba(255,255,255,0.18);
+  --chip-bg: rgba(255,255,255,0.09);
+  --chip-border: rgba(120,140,255,0.28);
 
   --accent: #ffb454; /* amber */
   --accent-contrast: #060b1a;
@@ -4413,10 +4490,21 @@ body.page-spending .chart-canvas-box{
 
 @supports (background: color-mix(in srgb, #000 10%, #fff)){
   :root{
-    /* stronger tint so it’s visible in dark/colored themes */
-    --pending-bg:    color-mix(in srgb, var(--accent) 18%, var(--card));
-    --pending-hover: color-mix(in srgb, var(--accent) 26%, var(--card));
-    --pending-border: color-mix(in srgb, var(--accent) 32%, var(--border));
+    /* softer pending tint: light gray feel in light mode, still visible in dark modes */
+    --pending-bg:    color-mix(in srgb, var(--card-2) 55%, var(--card));
+    --pending-hover: color-mix(in srgb, var(--card-2) 72%, var(--card));
+    --pending-border: color-mix(in srgb, var(--border) 82%, var(--card-2));
+  }
+
+  /* Non-default themes: make pending clearly distinguishable */
+  :root[data-theme="dark"],
+  :root[data-theme="oled"],
+  :root[data-theme="solarized"],
+  :root[data-theme="forest"],
+  :root[data-theme="midnight"]{
+    --pending-bg: color-mix(in srgb, var(--accent) 20%, var(--card));
+    --pending-hover: color-mix(in srgb, var(--accent) 28%, var(--card));
+    --pending-border: color-mix(in srgb, var(--accent) 36%, var(--border));
   }
 }
 
@@ -4426,6 +4514,12 @@ body.page-spending .chart-canvas-box{
     --pending-bg: var(--card-2);
     --pending-hover: var(--card-2);
     --pending-border: var(--border);
+  }
+
+  :root[data-theme]{
+    --pending-bg: var(--btn-hover);
+    --pending-hover: var(--surface-pressed);
+    --pending-border: var(--btn-border);
   }
 }
 
@@ -4693,32 +4787,13 @@ body.page-account .upcoming-day-card__more{
   margin-top: 0;
 }
 
-/* Loader overlay */
+/* Disable legacy full-screen loader; use only the global progress bar */
 .loader {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
+  display: none !important;
 }
 
-.loader.hidden {
-  display: none;
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(255,255,255,0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.loader .spinner {
+  display: none !important;
 }
 
 /* Error indicator */
@@ -4741,13 +4816,28 @@ body.page-account .upcoming-day-card__more{
 /* Global request progress (non-blocking) */
 .global-progress {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 40px));
+  bottom: 16px;
+  height: 3px;
   z-index: 9999;
   background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.global-progress.global-progress--tabs {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: auto;
+  width: auto;
+  transform: none;
+  border-radius: 0;
+  z-index: 2;
 }
 
 .global-progress.hidden {

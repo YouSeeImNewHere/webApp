@@ -1,8 +1,4 @@
-import { startLoading, stopLoading, signalError } from "./loading.js";
-
 export async function apiFetch(url, options = {}) {
-  startLoading();
-
   try {
     const res = await fetch(url, options);
 
@@ -13,9 +9,6 @@ export async function apiFetch(url, options = {}) {
     return res;
   } catch (err) {
     console.error("API error:", err);
-    signalError();
     throw err;
-  } finally {
-    stopLoading();
   }
 }

@@ -131,6 +131,20 @@ Sun, Feb 15, 2026</pre>
       </div>
       <div class="epw-grid epw-grid-2">
         <label class="epw-field">
+          Rule role
+          <select id="epwRuleRole">
+            <option value="standard">Standard</option>
+            <option value="primary_transaction">Primary Transaction</option>
+            <option value="secondary_withdrawal">Secondary Withdrawal</option>
+          </select>
+        </label>
+        <label id="epwSubjectFallbackWrap" class="epw-field" style="display:none;">
+          Subject contains (used when Step 1 subject is blank)
+          <input id="epwSubjectFallback" type="text" placeholder="Transaction Notification">
+        </label>
+      </div>
+      <div class="epw-grid epw-grid-2">
+        <label class="epw-field">
           Parsing type
           <span class="epw-toggle-wrap">
             <input id="epwParsingMethodToggle" type="checkbox" checked>
@@ -171,6 +185,24 @@ Sun, Feb 15, 2026</pre>
         <button id="epwPreviewBtn" class="epw-btn primary" type="button">Run Dry-Run Preview</button>
       </div>
       <div class="epw-field" style="margin-top:10px;">
+        Correlation Preview (Wizard-only)
+        <div class="epw-grid epw-grid-2">
+          <label class="epw-field">
+            Primary draft
+            <select id="epwCorrPrimaryDraft"></select>
+          </label>
+          <label class="epw-field">
+            Secondary draft
+            <select id="epwCorrSecondaryDraft"></select>
+          </label>
+        </div>
+        <div class="epw-actions">
+          <button id="epwCorrPreviewBtn" class="epw-btn secondary" type="button">Run Correlation Preview</button>
+        </div>
+        <div id="epwCorrSummary" class="epw-muted">No correlation preview run yet.</div>
+        <div id="epwCorrRows" class="epw-list"></div>
+      </div>
+      <div class="epw-field" style="margin-top:10px;">
         Live capture preview
         <div id="epwLiveCaptureStatus" class="epw-muted">Fill rule fields to preview captures.</div>
         <div id="epwLiveCaptureFields" class="epw-row-sub"></div>
@@ -184,6 +216,7 @@ Sun, Feb 15, 2026</pre>
       <div id="epwPreviewRows" class="epw-list"></div>
       <div class="epw-actions">
         <button id="epwSaveDraftBtn" class="epw-btn" type="button">Save Draft (Inactive)</button>
+        <button id="epwResetDraftsBtn" class="epw-btn secondary" type="button">Delete All Drafts</button>
       </div>
     </section>
   </div>

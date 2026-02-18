@@ -34,6 +34,24 @@
   gap:12px;
 }
 
+.bank-header-actions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.home-header-btn{
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  border-radius: 10px;
+  line-height: 1;
+}
+
 .bank-card{
   border:1px solid #e7e7e7;
   border-radius:16px;
@@ -187,31 +205,19 @@
 
 /* Upcoming (home) */
 .mini-calendar[data-upcoming-body]{
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
 }
 
-.mini-calendar[data-upcoming-body] > div{
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-}
-
-.mini-calendar[data-upcoming-body] > div > div:first-child{
-  flex: 0 0 auto;
-}
-
-.mini-calendar[data-upcoming-body] > div > div:nth-child(2){
-  overflow: visible !important;
-  max-height: none !important;
-}
-
-.mini-calendar[data-upcoming-body] > div > div:nth-child(2) *{
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.mini-calendar[data-upcoming-body] > *{
+  flex: 0 0 132px;
+  min-width: 132px;
 }
 
 .upc-modal.hidden{ display:none; }
@@ -307,11 +313,18 @@
 }
 
 .upcoming-day-card{
-  border: 1px solid #eee;
-  border-radius: 12px;
-  padding: 10px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
   min-height: 86px;
   cursor: pointer;
+}
+
+.upcoming-day-card:hover{
+  background: var(--surface-hover, rgba(255,255,255,0.06));
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
 }
 
 .upcoming-day-card__head{
@@ -321,8 +334,11 @@
   gap:8px;
 }
 
-.upcoming-day-card__dow{ font-weight:700; }
-.upcoming-day-card__md{ opacity:.75; font-size:.9em; }
+.upcoming-day-card__dow{ font-weight: 800; }
+.upcoming-day-card__md{
+  color: var(--muted);
+  font-size: .9em;
+}
 
 .upcoming-day-card__list{
   margin-top: 8px;
@@ -338,8 +354,17 @@
   font-size:.9em;
 }
 
-.upcoming-day-card__empty{ opacity:.35; }
-.upcoming-day-card__more{ opacity:.6; font-size:.85em; }
+.upcoming-day-card__cat{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upcoming-day-card__empty,
+.upcoming-day-card__more{
+  color: var(--muted);
+}
 
 .upcoming-day-backdrop{
   position: fixed;

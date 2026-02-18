@@ -239,6 +239,13 @@ def _extract_group(match: re.Match[str], group_no: int) -> str:
         return ""
 
 
+def _safe_int(v: Any, default: int) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return int(default)
+
+
 def _time_from_received_at(received_at: str) -> str:
     s = str(received_at or "").strip()
     if not s:
@@ -275,6 +282,8 @@ class TrialPreviewBody(BaseModel):
     field_map: dict[str, Any] = {}
     guided: dict[str, Any] | None = None
     sample_ids: list[str] = []
+    rule_role: str | None = "standard"
+    pending_ttl_minutes: int | None = 30
 
 
 class TrialSaveBody(BaseModel):
@@ -290,6 +299,75 @@ class TrialSaveBody(BaseModel):
     guided: dict[str, Any] | None = None
     status: str | None = "trial_inactive"
     sample_ids: list[str] = []
+    rule_role: str | None = "standard"
+    pending_ttl_minutes: int | None = 30
+
+
+class CorrelationPreviewBody(BaseModel):
+    account_id: int
+    primary_draft_id: int
+    secondary_draft_id: int
+    sample_ids: list[str]
+
+
+class TrialDraftResetBody(BaseModel):
+    account_id: int | None = None
+
+
+def _normalize_amount_str(v: str) -> str:
+    s = str(v or "").strip().replace("$", "").replace(",", "")
+    if not s:
+        return ""
+    try:
+        return f"{float(s):.2f}"
+    except Exception:
+        return s
+
+
+def _normalize_date_str(v: str) -> str:
+    s = str(v or "").strip()
+    if not s:
+        return ""
+    for fmt in ("%m/%d/%y", "%m/%d/%Y", "%b %d, %Y", "%B %d, %Y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%m/%d/%y")
+        except Exception:
+            continue
+    return s.lower()
+
+
+def _normalize_time_str(v: str, received_at: str) -> str:
+    s = str(v or "").strip()
+    if s:
+        return s.lower()
+    return _time_from_received_at(received_at).lower()
+
+
+def _trial_corr_key(account_id: int, amount: str, date_s: str, time_s: str) -> str:
+    a = int(account_id or 0)
+    amt = _normalize_amount_str(amount)
+    d = _normalize_date_str(date_s)
+    t = _normalize_time_str(time_s, "")
+    return f"{a}|{amt}|{d}|{t}"
+
+
+def _extract_from_match(m: re.Match[str], field_map: dict[str, Any], received_at: str) -> dict[str, str]:
+    amount_g = int((field_map or {}).get("amount_group") or 0)
+    merchant_g = int((field_map or {}).get("merchant_group") or 0)
+    date_g = int((field_map or {}).get("date_group") or 0)
+    time_g = int((field_map or {}).get("time_group") or 0)
+    time_val = _extract_group(m, time_g)
+    if not time_val:
+        time_val = _time_from_received_at(received_at)
+    merchant_val = _extract_group(m, merchant_g)
+    if not merchant_val:
+        merchant_val = "Unknown"
+    return {
+        "amount": _extract_group(m, amount_g),
+        "merchant": merchant_val,
+        "date": _extract_group(m, date_g),
+        "time": time_val,
+    }
 
 
 @router.get("/email-parser/trial/accounts")
@@ -471,6 +549,8 @@ def trial_account_settings(account_id: int, request: Request):
                 "sender_pattern": str(cfg.get("sender_pattern") or "").strip(),
                 "parser_mode": str(cfg.get("parser_mode") or "").strip(),
                 "parsing_method": str(cfg.get("parsing_method") or "").strip(),
+                "rule_role": str(cfg.get("rule_role") or "standard").strip().lower(),
+                "pending_ttl_minutes": max(1, min(_safe_int(cfg.get("pending_ttl_minutes"), 30), 24 * 60)),
                 "body_regex": str(cfg.get("body_regex") or "").strip(),
                 "flags": str(cfg.get("flags") or "i").strip() or "i",
                 "field_map": cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {},
@@ -546,7 +626,7 @@ def trial_preview(body: TrialPreviewBody, request: Request):
                 "matched": True,
                 "extracted": {
                     "amount": _extract_group(m, amount_g),
-                    "merchant": _extract_group(m, merchant_g),
+                    "merchant": _extract_group(m, merchant_g) or "Unknown",
                     "date": _extract_group(m, date_g),
                     "time": time_val,
                 },
@@ -568,6 +648,8 @@ def trial_save(body: TrialSaveBody, request: Request):
         "name": name,
         "parser_mode": (body.parser_mode or "").strip().lower(),
         "parsing_method": (body.parsing_method or "anchor").strip().lower(),
+        "rule_role": (body.rule_role or "standard").strip().lower(),
+        "pending_ttl_minutes": max(1, min(int(body.pending_ttl_minutes or 30), 24 * 60)),
         "account_id": int(body.account_id),
         "sender_pattern": (body.sender_pattern or "").strip(),
         "subject_contains": (body.subject_contains or "").strip(),
@@ -603,3 +685,220 @@ def trial_save(body: TrialSaveBody, request: Request):
         row = cur.fetchone() or {}
         conn.commit()
     return {"ok": True, "draft_id": int(row.get("id") or 0)}
+
+
+@router.post("/email-parser/trial/correlation-preview")
+def trial_correlation_preview(body: CorrelationPreviewBody, request: Request):
+    tid = _require_tenant_id()
+    session_email = _require_session_email(request)
+    ids = [str(x).strip() for x in (body.sample_ids or []) if str(x).strip()]
+    if not ids:
+        raise HTTPException(status_code=422, detail="sample_ids_required")
+
+    with with_db_cursor() as (conn, cur):
+        _ensure_trial_tables(cur)
+        tid0 = int(tid or 0)
+
+        cur.execute(
+            """
+            SELECT id, draft_json
+            FROM email_parser_trial_drafts
+            WHERE tenant_id = %s
+              AND user_email = %s
+              AND account_id = %s
+              AND id IN (%s, %s)
+            """,
+            (tid0, session_email, int(body.account_id), int(body.primary_draft_id), int(body.secondary_draft_id)),
+        )
+        draft_rows = [dict(r) for r in (cur.fetchall() or [])]
+        by_did: dict[int, dict[str, Any]] = {}
+        for r in draft_rows:
+            did = int(r.get("id") or 0)
+            cfg_raw = r.get("draft_json")
+            cfg = {}
+            if isinstance(cfg_raw, str):
+                try:
+                    cfg = json.loads(cfg_raw) or {}
+                except Exception:
+                    cfg = {}
+            by_did[did] = cfg
+
+        primary_cfg = by_did.get(int(body.primary_draft_id))
+        secondary_cfg = by_did.get(int(body.secondary_draft_id))
+        if not primary_cfg or not secondary_cfg:
+            raise HTTPException(status_code=404, detail="draft_not_found_for_account")
+
+        try:
+            primary_rx = re.compile(
+                str(primary_cfg.get("body_regex") or "").strip(),
+                _to_regex_flags(str(primary_cfg.get("flags") or "i")),
+            )
+            secondary_rx = re.compile(
+                str(secondary_cfg.get("body_regex") or "").strip(),
+                _to_regex_flags(str(secondary_cfg.get("flags") or "i")),
+            )
+        except re.error as e:
+            raise HTTPException(status_code=422, detail=f"invalid_regex:{e}")
+
+        cur.execute(
+            """
+            SELECT sample_id, subject, sender, received_at, body
+            FROM email_parser_trial_samples
+            WHERE tenant_id = %s
+              AND user_email = %s
+              AND sample_id = ANY(%s)
+            """,
+            (tid0, session_email, ids),
+        )
+        sample_rows = [dict(r) for r in (cur.fetchall() or [])]
+        conn.commit()
+
+    def _sort_key(r: dict[str, Any]):
+        d = str(r.get("received_at") or "").strip()
+        try:
+            dt = parsedate_to_datetime(d)
+            if dt:
+                return dt.isoformat()
+        except Exception:
+            pass
+        return d
+
+    samples = sorted(sample_rows, key=_sort_key)
+    sample_by_id = {str(s.get("sample_id") or ""): s for s in samples}
+
+    pending: dict[str, dict[str, Any]] = {}
+    notified: set[str] = set()
+    seen_tx: set[str] = set()
+    out_rows: list[dict[str, Any]] = []
+    summary = {
+        "no_match": 0,
+        "pending": 0,
+        "resolved": 0,
+        "notify_immediate": 0,
+        "skip_already_notified": 0,
+        "insert_trial": 0,
+        "merge_existing": 0,
+    }
+
+    for sid in ids:
+        s = sample_by_id.get(sid)
+        if not s:
+            out_rows.append({"sample_id": sid, "action": "sample_not_found", "notify": False})
+            continue
+        body_txt = str(s.get("body") or "")
+        received_at = str(s.get("received_at") or "")
+
+        pm = primary_rx.search(body_txt)
+        sm = None if pm else secondary_rx.search(body_txt)
+        if not pm and not sm:
+            summary["no_match"] += 1
+            out_rows.append(
+                {
+                    "sample_id": sid,
+                    "subject": s.get("subject"),
+                    "sender": s.get("sender"),
+                    "matched_rule": "none",
+                    "action": "no_match",
+                    "notify": False,
+                }
+            )
+            continue
+
+        matched_rule = "primary" if pm else "secondary"
+        cfg = primary_cfg if pm else secondary_cfg
+        m = pm or sm
+        extracted = _extract_from_match(m, cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {}, received_at)
+        key = _trial_corr_key(
+            int(body.account_id),
+            extracted.get("amount") or "",
+            extracted.get("date") or "",
+            extracted.get("time") or "",
+        )
+
+        tx_action = "merge_existing" if key in seen_tx else "insert_trial"
+        seen_tx.add(key)
+        summary[tx_action] += 1
+
+        merchant = str(extracted.get("merchant") or "").strip().lower()
+        unknown_merchant = merchant in ("", "unknown", "unknown merchant")
+
+        action = ""
+        notify = False
+        if key in notified:
+            action = "skip_already_notified"
+            summary["skip_already_notified"] += 1
+        elif matched_rule == "primary":
+            if key in pending:
+                pending.pop(key, None)
+                action = "resolve_pending_notify"
+                notify = True
+                notified.add(key)
+                summary["resolved"] += 1
+            else:
+                action = "notify_immediate"
+                notify = True
+                notified.add(key)
+                summary["notify_immediate"] += 1
+        else:
+            if unknown_merchant:
+                pending[key] = {"sample_id": sid}
+                action = "pending_upsert"
+                summary["pending"] += 1
+            else:
+                action = "notify_immediate"
+                notify = True
+                notified.add(key)
+                summary["notify_immediate"] += 1
+
+        out_rows.append(
+            {
+                "sample_id": sid,
+                "subject": s.get("subject"),
+                "sender": s.get("sender"),
+                "received_at": s.get("received_at"),
+                "matched_rule": matched_rule,
+                "action": action,
+                "tx_action": tx_action,
+                "notify": notify,
+                "key": key,
+                "extracted": extracted,
+            }
+        )
+
+    return {
+        "ok": True,
+        "summary": summary,
+        "pending_count": len(pending),
+        "rows": out_rows,
+    }
+
+
+@router.post("/email-parser/trial/drafts/reset")
+def trial_reset_drafts(body: TrialDraftResetBody, request: Request):
+    tid = _require_tenant_id()
+    session_email = _require_session_email(request)
+    with with_db_cursor() as (conn, cur):
+        _ensure_trial_tables(cur)
+        tid0 = int(tid or 0)
+        if body.account_id is not None:
+            cur.execute(
+                """
+                DELETE FROM email_parser_trial_drafts
+                WHERE tenant_id = %s
+                  AND user_email = %s
+                  AND account_id = %s
+                """,
+                (tid0, session_email, int(body.account_id)),
+            )
+        else:
+            cur.execute(
+                """
+                DELETE FROM email_parser_trial_drafts
+                WHERE tenant_id = %s
+                  AND user_email = %s
+                """,
+                (tid0, session_email),
+            )
+        deleted = int(cur.rowcount or 0)
+        conn.commit()
+    return {"ok": True, "deleted": deleted}

@@ -286,13 +286,32 @@
     gap: 8px;
     padding: 8px 10px;
     padding-left: 72px; /* default tx-row icon offset */
+    min-height: 72px;
     max-width: 100%;
     box-sizing: border-box;
   }
 
+  .tx-main{
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto auto auto;
+    row-gap: 2px;
+    align-content: center;
+  }
+
   .tx-date{ font-size: 11px; }
   .tx-merchant{ font-size: 13px; }
-  .tx-sub{ font-size: 10px; }
+  .tx-sub{
+    font-size: 10px;
+    line-height: 1.15;
+    min-height: 1.15em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tx-sub:empty::before{
+    content: "\00a0";
+  }
   .tx-amt{ font-size: 13px; }
 
   .section-divider{ margin: 16px 0; }

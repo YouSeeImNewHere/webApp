@@ -94,7 +94,41 @@ def _cell_to_text(v: Any) -> str:
     return str(v).strip()
 
 
-def _parse_excel_rows(raw: bytes) -> list[list[str]]:
+def _parse_excel_rows(raw: bytes, ext: str) -> list[list[str]]:
+    ext = (ext or "").lower()
+    if ext == ".xls":
+        try:
+            import xlrd
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail="Legacy .xls support requires xlrd on the server",
+            )
+        try:
+            wb = xlrd.open_workbook(file_contents=raw)
+            sh = wb.sheet_by_index(0)
+            rows: list[list[str]] = []
+            for r in range(sh.nrows):
+                out_row: list[str] = []
+                for c in range(sh.ncols):
+                    cell = sh.cell(r, c)
+                    val = cell.value
+                    ctype = cell.ctype
+                    if ctype == xlrd.XL_CELL_DATE:
+                        try:
+                            dt = xlrd.xldate_as_datetime(val, wb.datemode)
+                            out_row.append(dt.strftime("%m/%d/%Y"))
+                        except Exception:
+                            out_row.append(str(val).strip())
+                    else:
+                        out_row.append(_cell_to_text(val))
+                rows.append(out_row)
+            return rows
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid Excel file")
+
     try:
         from openpyxl import load_workbook
     except Exception:
@@ -107,10 +141,7 @@ def _parse_excel_rows(raw: bytes) -> list[list[str]]:
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid Excel file")
     except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="Legacy .xls is not supported directly; save as .xlsx and retry",
-        )
+        raise HTTPException(status_code=400, detail="Invalid Excel file")
 
     try:
         ws = wb.active
@@ -130,7 +161,7 @@ def _read_upload_rows(uf: UploadFile, delimiter: str = "auto") -> tuple[list[lis
     if not raw:
         return [], ","
     if _is_excel_upload(uf):
-        return _parse_excel_rows(raw), "excel"
+        return _parse_excel_rows(raw, _filename_ext(uf)), "excel"
     text = ""
     for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
         try:
