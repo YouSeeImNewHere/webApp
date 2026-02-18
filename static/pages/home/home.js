@@ -2662,11 +2662,12 @@ const CSV_MODAL_STATE = {
   file: null,
   columns: [],
   accounts: [],
-  presetKeys: [],
   activePreset: null,
-  activePresetKey: "",
+  activePresetAccountId: 0,
   dropGuardBound: false,
 };
+
+const CSV_ACCOUNT_PRESET_KEY = "__account__";
 
 const CSV_MAPPING_FIELD_LABELS = {
   csvMapPurchase: "Transaction date",
@@ -2694,15 +2695,6 @@ function ensureCsvMappingOption(id, val) {
   opt.value = String(val);
   opt.textContent = `${friendly}: ${colLabel} (saved)`;
   el.appendChild(opt);
-}
-
-function syncCsvPresetKeySelect() {
-  const keyInput = document.getElementById("csvInstitutionKey");
-  const sel = document.getElementById("csvPresetKeySelect");
-  if (!keyInput || !sel) return;
-  const key = String(keyInput.value || "").trim().toLowerCase();
-  const rows = Array.isArray(CSV_MODAL_STATE.presetKeys) ? CSV_MODAL_STATE.presetKeys : [];
-  sel.value = rows.includes(key) ? key : "";
 }
 
 function ensureCsvUploadModal() {
@@ -2734,17 +2726,8 @@ function ensureCsvUploadModal() {
         </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-          <label style="font-size:12px; font-weight:800;">Preset key (primary)
-            <select id="csvPresetKeySelect" style="width:100%; margin-top:4px;">
-              <option value="">Choose preset key</option>
-            </select>
-          </label>
           <label style="font-size:12px; font-weight:700;">Account
             <select id="csvAccountId" style="width:100%; margin-top:4px;"></select>
-          </label>
-          <label style="font-size:12px; font-weight:700;">Institution preset key (for save)
-            <input id="csvInstitutionKey" type="text" list="csvPresetKeysList" placeholder="Enter key to save/update preset" style="width:100%; margin-top:4px;" />
-            <datalist id="csvPresetKeysList"></datalist>
           </label>
           <label style="font-size:12px; font-weight:700;">Delimiter
             <select id="csvDelimiter" style="width:100%; margin-top:4px;">
@@ -2766,8 +2749,9 @@ function ensureCsvUploadModal() {
         <div style="display:flex; gap:10px; margin-top:12px; justify-content:flex-end;">
           <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
           <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
-          <button id="csvSavePresetBtn" class="settings-btn" type="button">Save preset</button>
+          <button id="csvSavePresetBtn" class="settings-btn" type="button">Save mapping</button>
           <button id="csvUploadCancel" class="settings-btn" type="button">Cancel</button>
+          <button id="csvUploadDone" class="settings-btn" type="button">Done</button>
           <button id="csvUploadRun" class="settings-btn primary" type="button">Import</button>
         </div>
 
@@ -2805,6 +2789,7 @@ function ensureCsvUploadModal() {
   root.addEventListener("click", (e) => { if (e.target?.matches?.("[data-csv-close]")) closeCsvUploadModal(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCsvUploadModal(); });
   root.querySelector("#csvUploadCancel")?.addEventListener("click", closeCsvUploadModal);
+  root.querySelector("#csvUploadDone")?.addEventListener("click", closeCsvUploadModal);
   root.querySelector("#csvPreviewBtn")?.addEventListener("click", refreshCsvPreview);
   root.querySelector("#csvDryRunBtn")?.addEventListener("click", runCsvDryRun);
   root.querySelector("#csvSavePresetBtn")?.addEventListener("click", saveCsvPreset);
@@ -2815,23 +2800,7 @@ function ensureCsvUploadModal() {
     if (!f) return;
     setCsvFileForModal(f);
   });
-  root.querySelector("#csvAccountId")?.addEventListener("change", autoFillInstitutionAndLoadPreset);
-  root.querySelector("#csvInstitutionKey")?.addEventListener("input", () => { syncCsvPresetKeySelect(); });
-  root.querySelector("#csvInstitutionKey")?.addEventListener("change", loadCsvPreset);
-  root.querySelector("#csvInstitutionKey")?.addEventListener("blur", loadCsvPreset);
-  root.querySelector("#csvPresetKeySelect")?.addEventListener("change", (e) => {
-    const picked = String(e?.target?.value || "").trim().toLowerCase();
-    if (!picked) return;
-    const keyInput = root.querySelector("#csvInstitutionKey");
-    if (keyInput) keyInput.value = picked;
-    loadCsvPresetByKey(picked).catch(console.error);
-  });
-  root.querySelector("#csvInstitutionKey")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      loadCsvPreset().catch(console.error);
-    }
-  });
+  root.querySelector("#csvAccountId")?.addEventListener("change", () => { loadCsvPreset().catch(console.error); });
 
   const drop = root.querySelector("#csvDropZone");
   if (drop) {
@@ -2888,7 +2857,7 @@ function openCsvUploadModal() {
   const preview = document.getElementById("csvPreviewWrap");
   CSV_MODAL_STATE.columns = [];
   CSV_MODAL_STATE.activePreset = null;
-  CSV_MODAL_STATE.activePresetKey = "";
+  CSV_MODAL_STATE.activePresetAccountId = 0;
   if (msg) msg.textContent = "";
   if (sub) sub.textContent = "Drop a CSV or Excel file, preview it, map columns, then import.";
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
@@ -2941,118 +2910,51 @@ function selectedCsvAccountMeta() {
   return { accountId, meta };
 }
 
-async function autoFillInstitutionAndLoadPreset() {
-  const keyInput = document.getElementById("csvInstitutionKey");
-  const { meta } = selectedCsvAccountMeta();
-  if (keyInput && !keyInput.value.trim() && meta?.institution) {
-    keyInput.value = String(meta.institution).trim().toLowerCase();
-  }
-  await loadCsvPresetKeys();
-  syncCsvPresetKeySelect();
-  await loadCsvPreset();
-}
-
-async function loadCsvPresetByKey(institutionKey, preferredAccountId = null) {
+async function loadCsvPreset(preferredAccountId = null) {
   const sub = document.getElementById("csvUploadSub");
-  const key = String(institutionKey || "").trim().toLowerCase();
-  if (!key) return false;
-
   const accountSel = document.getElementById("csvAccountId");
-  const allAccounts = (CSV_MODAL_STATE.accounts || []).map(a => Number(a.id)).filter(n => Number.isFinite(n) && n > 0);
-  const curr = Number(accountSel?.value || 0);
-  const pref = Number(preferredAccountId || curr || 0);
-  const ids = Array.from(new Set([pref, ...allAccounts].filter(n => n > 0)));
-
-  for (const aid of ids) {
-    try {
-      const q = `/csv/mapping-presets?account_id=${encodeURIComponent(aid)}&institution_key=${encodeURIComponent(key)}`;
-      const out = await apiGetJson(q, { cache: "no-store" });
-      if (out?.ok && out?.found && out?.preset) {
-        applyCsvPreset(out.preset);
-        CSV_MODAL_STATE.activePresetKey = key;
-        if (accountSel) accountSel.value = String(aid);
-        const keyInput = document.getElementById("csvInstitutionKey");
-        if (keyInput) keyInput.value = key;
-        syncCsvPresetKeySelect();
-        if (sub) sub.textContent = "Preset loaded.";
-        return true;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  CSV_MODAL_STATE.activePreset = null;
-  CSV_MODAL_STATE.activePresetKey = "";
-  if (sub) sub.textContent = "No preset found for selected key.";
-  return false;
-}
-
-async function loadCsvPreset() {
-  const keyInput = document.getElementById("csvInstitutionKey");
-  const institution = String(keyInput?.value || "").trim().toLowerCase();
-  if (!institution) {
+  const accountId = Number(preferredAccountId || accountSel?.value || 0);
+  if (!accountId) {
     CSV_MODAL_STATE.activePreset = null;
-    CSV_MODAL_STATE.activePresetKey = "";
-    return;
+    CSV_MODAL_STATE.activePresetAccountId = 0;
+    return false;
   }
-  if (keyInput) keyInput.value = institution;
-  await loadCsvPresetByKey(institution);
-}
-
-function renderCsvPresetKeyList(keys) {
-  const dl = document.getElementById("csvPresetKeysList");
-  const sel = document.getElementById("csvPresetKeySelect");
-  const rows = Array.from(new Set((keys || []).map(k => String(k || "").trim().toLowerCase()).filter(Boolean)));
-  if (dl) {
-    dl.innerHTML = rows.map((k) => `<option value="${escapeHtml(String(k))}"></option>`).join("");
-  }
-  if (sel) {
-    sel.innerHTML = ['<option value="">Choose preset key</option>']
-      .concat(rows.map((k) => `<option value="${escapeHtmlAttr(String(k))}">${escapeHtml(String(k))}</option>`))
-      .join("");
-  }
-  syncCsvPresetKeySelect();
-}
-
-async function loadCsvPresetKeys() {
-  const params = new URLSearchParams();
-  params.set("limit", "50");
-
   try {
-    const out = await apiGetJson(`/csv/mapping-presets/keys?${params.toString()}`, { cache: "no-store" });
-    const keys = Array.isArray(out?.keys) ? out.keys : [];
-    CSV_MODAL_STATE.presetKeys = keys;
-    renderCsvPresetKeyList(keys);
+    const q = `/csv/mapping-presets?account_id=${encodeURIComponent(accountId)}&institution_key=${encodeURIComponent(CSV_ACCOUNT_PRESET_KEY)}`;
+    const out = await apiGetJson(q, { cache: "no-store" });
+    if (out?.ok && out?.found && out?.preset) {
+      applyCsvPreset(out.preset);
+      CSV_MODAL_STATE.activePresetAccountId = accountId;
+      if (sub) sub.textContent = "Saved mapping loaded for selected account.";
+      return true;
+    }
   } catch (e) {
     console.error(e);
   }
+  CSV_MODAL_STATE.activePreset = null;
+  CSV_MODAL_STATE.activePresetAccountId = 0;
+  return false;
 }
 
 async function saveCsvPreset() {
   const sub = document.getElementById("csvUploadSub");
   const { accountId } = selectedCsvAccountMeta();
-  const keyInput = document.getElementById("csvInstitutionKey");
-  const institution = String(keyInput?.value || "").trim().toLowerCase();
-  if (!accountId || !institution) {
-    if (sub) sub.textContent = "Choose account and institution key before saving preset.";
+  if (!accountId) {
+    if (sub) sub.textContent = "Choose account before saving mapping.";
     return;
   }
-  if (keyInput) keyInput.value = institution;
   try {
     await apiPostJson("/csv/mapping-presets", {
       account_id: accountId,
-      institution_key: institution,
+      institution_key: CSV_ACCOUNT_PRESET_KEY,
       preset: buildCsvPresetPayload(),
     });
-    await loadCsvPresetKeys();
     CSV_MODAL_STATE.activePreset = buildCsvPresetPayload();
-    CSV_MODAL_STATE.activePresetKey = institution;
-    syncCsvPresetKeySelect();
-    if (sub) sub.textContent = "Preset saved.";
+    CSV_MODAL_STATE.activePresetAccountId = accountId;
+    if (sub) sub.textContent = "Mapping saved for selected account.";
   } catch (e) {
     console.error(e);
-    if (sub) sub.textContent = `Preset save failed: ${e?.message || e}`;
+    if (sub) sub.textContent = `Mapping save failed: ${e?.message || e}`;
   }
 }
 
@@ -3060,10 +2962,10 @@ function setCsvFileForModal(f) {
   if (!f) return;
   CSV_MODAL_STATE.file = f;
   CSV_MODAL_STATE.columns = [];
-  const institution = String(document.getElementById("csvInstitutionKey")?.value || "").trim().toLowerCase();
+  const { accountId } = selectedCsvAccountMeta();
   updateCsvPickedName();
   populateCsvMappingSelects([]);
-  if (CSV_MODAL_STATE.activePreset && CSV_MODAL_STATE.activePresetKey && CSV_MODAL_STATE.activePresetKey === institution) {
+  if (CSV_MODAL_STATE.activePreset && CSV_MODAL_STATE.activePresetAccountId === accountId) {
     applyCsvPreset(CSV_MODAL_STATE.activePreset);
   }
   const preview = document.getElementById("csvPreviewWrap");
@@ -3147,8 +3049,7 @@ async function loadCsvAccounts() {
     for (const c of (info.credit_cards || [])) rows.push({ id: c.card_id, label: `${c.bank} - ${c.name} (credit)`, institution: c.bank });
     CSV_MODAL_STATE.accounts = rows;
     sel.innerHTML = rows.map(r => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join("");
-    await loadCsvPresetKeys();
-    await autoFillInstitutionAndLoadPreset();
+    await loadCsvPreset();
   } catch (e) {
     console.error(e);
     sel.innerHTML = `<option value="">Failed to load accounts</option>`;
@@ -3261,10 +3162,49 @@ async function runCsvDryRun(fromPreview = false) {
   }
 }
 
+let CSV_IMPORT_PROGRESS_TIMER = null;
+let CSV_IMPORT_PROGRESS_PCT = 0;
+
+function stopCsvImportProgress() {
+  if (CSV_IMPORT_PROGRESS_TIMER) {
+    clearInterval(CSV_IMPORT_PROGRESS_TIMER);
+    CSV_IMPORT_PROGRESS_TIMER = null;
+  }
+}
+
+function renderCsvImportProgress() {
+  const sub = document.getElementById("csvUploadSub");
+  if (!sub) return;
+  const pct = Math.max(0, Math.min(99, Math.round(CSV_IMPORT_PROGRESS_PCT)));
+  sub.textContent = `Importing... ${pct}%`;
+}
+
+function startCsvImportProgress() {
+  stopCsvImportProgress();
+  CSV_IMPORT_PROGRESS_PCT = 4;
+  renderCsvImportProgress();
+  CSV_IMPORT_PROGRESS_TIMER = setInterval(() => {
+    if (CSV_IMPORT_PROGRESS_PCT >= 96) return;
+    const remaining = 96 - CSV_IMPORT_PROGRESS_PCT;
+    const step = Math.max(0.6, remaining * 0.08);
+    CSV_IMPORT_PROGRESS_PCT += step;
+    renderCsvImportProgress();
+  }, 180);
+}
+
+function completeCsvImportProgress() {
+  stopCsvImportProgress();
+  CSV_IMPORT_PROGRESS_PCT = 100;
+  const sub = document.getElementById("csvUploadSub");
+  if (sub) sub.textContent = "Importing... 100%";
+}
+
 async function runCsvIngestMapped() {
   const msg = document.getElementById("csvUploadMsg");
   const sub = document.getElementById("csvUploadSub");
   const runBtn = document.getElementById("csvUploadRun");
+  const doneBtn = document.getElementById("csvUploadDone");
+  const cancelBtn = document.getElementById("csvUploadCancel");
   if (msg) msg.textContent = "";
 
   if (!CSV_MODAL_STATE.file) {
@@ -3276,8 +3216,10 @@ async function runCsvIngestMapped() {
     if (sub) sub.textContent = "Choose an account first.";
     return;
   }
-  if (sub) sub.textContent = "Importing...";
+  startCsvImportProgress();
   if (runBtn) runBtn.disabled = true;
+  if (doneBtn) doneBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
 
   try {
     const fd = new FormData();
@@ -3286,6 +3228,7 @@ async function runCsvIngestMapped() {
 
     const out = await apiPostForm("/csv/ingest-mapped", fd);
     if (!out?.ok) throw new Error("Import failed");
+    completeCsvImportProgress();
     const errCount = Array.isArray(out.errors) ? out.errors.length : 0;
     if (sub) sub.textContent = `Imported ${out.inserted || 0}, updated ${out.updated || 0}, skipped ${out.skipped || 0}${errCount ? `, ${errCount} row errors` : ""}.`;
     if (msg) msg.textContent = errCount ? JSON.stringify(out.errors, null, 2) : "Import complete.";
@@ -3295,10 +3238,14 @@ async function runCsvIngestMapped() {
     try { refreshMonthBudgetCard(false); } catch (_) {}
   } catch (e) {
     console.error(e);
+    stopCsvImportProgress();
     if (sub) sub.textContent = "Import failed";
     if (msg) msg.textContent = String(e?.message || e);
   } finally {
+    stopCsvImportProgress();
     if (runBtn) runBtn.disabled = false;
+    if (doneBtn) doneBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
   }
 }
 

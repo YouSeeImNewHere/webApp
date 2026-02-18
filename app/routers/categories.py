@@ -66,10 +66,9 @@ def list_categories():
           SELECT DISTINCT TRIM(category) AS category
           FROM "categoryrules"
           WHERE category IS NOT NULL AND TRIM(category) <> ''
-            {"AND tenant_id = %s" if tid else ""}
         ) u
         ORDER BY LOWER(category) ASC
         """,
-        ((int(tid), int(tid)) if tid else ()),
+        ((int(tid),) if tid else ()),
     )
     return [r["category"] for r in rows]
