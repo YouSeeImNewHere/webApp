@@ -10,7 +10,7 @@ const WIDGET_ENABLED = true;
 // ===== CONFIG =====
 const BASE_URL = "https://webapp-pe3q.onrender.com";
 const SECRET = "398867"; // Must match server WIDGET_SECRET
-const TENANT_ID = ""; // Optional: set to "1" etc. if multi-tenant is enabled
+const TENANT_ID = ""; // Required in multi-tenant mode: set to your tenant id (e.g. "20")
 const ENDPOINT = "/widget/summary";
 const VERSION_ENDPOINT = "/widget/version";
 const VERSION_CHECK_MINUTES = 180; // hit /widget/version at most every 3 hours
@@ -72,13 +72,20 @@ function isValidPayload(payload) {
   );
 }
 
+function normalizedTenantId() {
+  const tid = String(TENANT_ID || "").trim();
+  return /^\d+$/.test(tid) && Number(tid) > 0 ? tid : "";
+}
+
 async function fetchFresh(expectedVersion = null) {
   const qp = Number.isFinite(Number(expectedVersion))
     ? `?widget_version=${encodeURIComponent(String(Number(expectedVersion)))}`
     : "";
   const req = new Request(BASE_URL + ENDPOINT + qp);
   const headers = { "x-widget-secret": SECRET };
-  if (String(TENANT_ID || "").trim()) headers["x-tenant-id"] = String(TENANT_ID).trim();
+  const tid = normalizedTenantId();
+  if (!tid) throw new Error("tenant_id_required");
+  headers["x-tenant-id"] = tid;
   req.headers = headers;
   req.timeoutInterval = 10;
   const payload = await req.loadJSON();
@@ -91,7 +98,9 @@ async function fetchFresh(expectedVersion = null) {
 async function fetchWidgetVersion() {
   const req = new Request(BASE_URL + VERSION_ENDPOINT);
   const headers = { "x-widget-secret": SECRET };
-  if (String(TENANT_ID || "").trim()) headers["x-tenant-id"] = String(TENANT_ID).trim();
+  const tid = normalizedTenantId();
+  if (!tid) throw new Error("tenant_id_required");
+  headers["x-tenant-id"] = tid;
   req.headers = headers;
   req.timeoutInterval = 8;
   const payload = await req.loadJSON();

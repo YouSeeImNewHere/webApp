@@ -4,6 +4,10 @@ body.page-account .top-title.account-title-switcher{
   max-width: min(560px, calc(100% - 180px));
 }
 
+body.page-account #topBarBack{
+  display: none !important;
+}
+
 body.page-account .account-title-switcher__select{
   width: 100%;
   min-width: 180px;
@@ -19,12 +23,26 @@ body.page-account .account-title-switcher__select{
 }
 
 @media (max-width: 900px){
+  body.page-account #hardRefreshBtn{
+    display: none !important;
+  }
+
+  body.page-account .top-bar-right{
+    gap: 0 !important;
+  }
+
   body.page-account .top-title.account-title-switcher{
-    max-width: calc(100% - 140px);
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(58vw, 260px);
+    max-width: calc(100% - 104px);
+    margin: 0;
   }
 
   body.page-account .account-title-switcher__select{
-    min-width: 140px;
+    min-width: 0;
+    max-width: 100%;
     font-size: 12px;
     height: 34px;
   }
