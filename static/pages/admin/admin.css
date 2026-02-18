@@ -1,0 +1,88 @@
+.admin-wrap {
+  max-width: 980px;
+  margin: 20px auto 80px;
+  padding: 0 14px;
+}
+
+.admin-section {
+  margin-bottom: 16px;
+}
+
+.admin-title {
+  font-size: 18px;
+  font-weight: 900;
+  margin: 0 0 8px 0;
+}
+
+.admin-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #d8dce6);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.admin-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.admin-row:last-child {
+  margin-bottom: 0;
+}
+
+.admin-select,
+.admin-input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d8dce6);
+  border-radius: 10px;
+  background: var(--btn-bg, #fff);
+  color: var(--btn-text, #1a1a1a);
+}
+
+.admin-select {
+  min-width: 280px;
+}
+
+.admin-input {
+  min-width: 220px;
+}
+
+.admin-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-user {
+  border: 1px solid var(--border, #d8dce6);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 44px;
+  font-size: 12px;
+}
+
+.admin-muted {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.settings-btn.danger {
+  background: #bf1e2d;
+  color: #fff;
+  border-color: #bf1e2d;
+}

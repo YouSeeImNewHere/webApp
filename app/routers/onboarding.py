@@ -44,6 +44,8 @@ class OnboardingAccountCreate(BaseModel):
     starting_balance: float | None = None
     starting_date: str | None = None  # YYYY-MM-DD
     card_benefits: list[dict[str, Any]] | None = None
+    receives_emails: bool = True
+    is_paycheck_account: bool = False
 
 
 class OnboardingPushoverKeyBody(BaseModel):
@@ -54,6 +56,11 @@ class OnboardingPushoverTestBody(BaseModel):
     user_key: str | None = None
 
 
+def _ensure_accounts_config_columns(cur) -> None:
+    cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS receives_emails BOOLEAN NOT NULL DEFAULT TRUE")
+    cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_paycheck_account BOOLEAN NOT NULL DEFAULT FALSE")
+
+
 @router.get("/setup")
 def setup_page():
     return FileResponse("static/pages/setup/setup.html")
@@ -62,6 +69,9 @@ def setup_page():
 @router.get("/onboarding/status")
 def onboarding_status(request: Request):
     tid = _require_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        _ensure_accounts_config_columns(cur)
+        conn.commit()
     state = get_or_create_onboarding_state(tid)
     session_email = (request.session.get("google_email") or "").strip().lower()
     pushover_user_key_set = bool(get_user_pushover_key_by_email(session_email))
@@ -77,7 +87,10 @@ def onboarding_status(request: Request):
     )
     accounts = query_db(
         """
-        SELECT id, institution, name, LOWER(accounttype) AS accounttype
+        SELECT id, institution, name, LOWER(accounttype) AS accounttype,
+               interest_post_day, credit_limit,
+               COALESCE(receives_emails, TRUE) AS receives_emails,
+               COALESCE(is_paycheck_account, FALSE) AS is_paycheck_account
         FROM accounts
         WHERE tenant_id = %s
         ORDER BY institution, name
@@ -198,6 +211,7 @@ def onboarding_create_account(body: OnboardingAccountCreate):
     start_date = (body.starting_date or "").strip() or date.today().isoformat()
 
     with with_db_cursor() as (conn, cur):
+        _ensure_accounts_config_columns(cur)
         cur.execute(
             """
             SELECT id
@@ -213,8 +227,10 @@ def onboarding_create_account(body: OnboardingAccountCreate):
 
         cur.execute(
             """
-            INSERT INTO accounts (institution, name, accounttype, interest_post_day, credit_limit, tenant_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO accounts (
+                institution, name, accounttype, interest_post_day, credit_limit, tenant_id, receives_emails, is_paycheck_account
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -224,9 +240,21 @@ def onboarding_create_account(body: OnboardingAccountCreate):
                 body.interest_post_day,
                 body.credit_limit,
                 tid,
+                bool(body.receives_emails),
+                bool(body.is_paycheck_account),
             ),
         )
         new_id = int(cur.fetchone()["id"])
+
+        if bool(body.is_paycheck_account):
+            cur.execute(
+                """
+                UPDATE accounts
+                SET is_paycheck_account = FALSE
+                WHERE tenant_id = %s AND id <> %s
+                """,
+                (tid, new_id),
+            )
 
         if body.starting_balance is not None:
             cur.execute(
@@ -334,3 +362,195 @@ def onboarding_create_account(body: OnboardingAccountCreate):
 
     set_onboarding_completed(tid, False)
     return {"ok": True, "account_id": new_id}
+
+
+@router.put("/onboarding/accounts/{account_id}")
+def onboarding_update_account(account_id: int, body: OnboardingAccountCreate):
+    tid = _require_tenant_id()
+
+    institution = (body.institution or "").strip()
+    name = (body.name or "").strip()
+    accounttype = (body.accounttype or "").strip().lower()
+    if not institution or not name or not accounttype:
+        raise HTTPException(status_code=422, detail="institution, name, accounttype are required")
+    if accounttype not in {"checking", "savings", "credit", "investment"}:
+        raise HTTPException(status_code=422, detail="accounttype must be checking|savings|credit|investment")
+    raw_benefits = body.card_benefits
+    if accounttype != "credit" and raw_benefits:
+        raise HTTPException(status_code=422, detail="card_benefits allowed only for credit accounts")
+    benefits: list[tuple[str, float]] = []
+    if raw_benefits is not None:
+        for b in raw_benefits:
+            category = str((b or {}).get("benefit_type") or "").strip()
+            if not category:
+                raise HTTPException(status_code=422, detail="card benefit category is required")
+            try:
+                pct = float((b or {}).get("cashback_percent"))
+            except Exception:
+                raise HTTPException(status_code=422, detail="card benefit cashback_percent must be numeric")
+            if pct < 0 or pct > 100:
+                raise HTTPException(status_code=422, detail="card benefit cashback_percent must be between 0 and 100")
+            benefits.append((category, pct))
+    if body.apy_percent is not None:
+        try:
+            apy_val = float(body.apy_percent)
+        except Exception:
+            raise HTTPException(status_code=422, detail="apy_percent must be numeric")
+        if apy_val < 0 or apy_val > 100:
+            raise HTTPException(status_code=422, detail="apy_percent must be between 0 and 100")
+    else:
+        apy_val = None
+
+    start_date = (body.starting_date or "").strip() or date.today().isoformat()
+    account_id_i = int(account_id)
+
+    with with_db_cursor() as (conn, cur):
+        _ensure_accounts_config_columns(cur)
+        cur.execute(
+            "SELECT id FROM accounts WHERE id = %s AND tenant_id = %s LIMIT 1",
+            (account_id_i, tid),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="account_not_found_for_tenant")
+
+        cur.execute(
+            """
+            UPDATE accounts
+            SET institution = %s,
+                name = %s,
+                accounttype = %s,
+                interest_post_day = %s,
+                credit_limit = %s,
+                receives_emails = %s,
+                is_paycheck_account = %s
+            WHERE id = %s AND tenant_id = %s
+            """,
+            (
+                institution,
+                name,
+                accounttype,
+                body.interest_post_day,
+                body.credit_limit,
+                bool(body.receives_emails),
+                bool(body.is_paycheck_account),
+                account_id_i,
+                tid,
+            ),
+        )
+        if bool(body.is_paycheck_account):
+            cur.execute(
+                """
+                UPDATE accounts
+                SET is_paycheck_account = FALSE
+                WHERE tenant_id = %s AND id <> %s
+                """,
+                (tid, account_id_i),
+            )
+
+        if body.starting_balance is not None:
+            cur.execute(
+                """
+                INSERT INTO startingbalance (account_id, bank, start, date, tenant_id)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (account_id) DO UPDATE SET
+                  bank = EXCLUDED.bank,
+                  start = EXCLUDED.start,
+                  date = EXCLUDED.date,
+                  tenant_id = EXCLUDED.tenant_id
+                """,
+                (
+                    account_id_i,
+                    institution,
+                    float(body.starting_balance),
+                    start_date,
+                    tid,
+                ),
+            )
+
+        if apy_val is not None and accounttype in {"checking", "savings", "investment"}:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS interest_rates (
+                  id SERIAL PRIMARY KEY,
+                  account_id INT NOT NULL,
+                  apr DOUBLE PRECISION NOT NULL,
+                  effective_date DATE NOT NULL,
+                  note TEXT,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+            cur.execute("ALTER TABLE interest_rates ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_interest_rates_tenant_id ON interest_rates(tenant_id)")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF NOT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname='public'
+                      AND indexname='ux_interest_rates_account_day'
+                  ) THEN
+                    CREATE UNIQUE INDEX ux_interest_rates_account_day
+                      ON interest_rates(account_id, effective_date);
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute(
+                """
+                INSERT INTO interest_rates (account_id, apr, effective_date, note, created_at, tenant_id)
+                VALUES (%s, %s, %s::date, %s, now(), %s)
+                ON CONFLICT (account_id, effective_date)
+                DO UPDATE SET
+                  apr = EXCLUDED.apr,
+                  note = EXCLUDED.note,
+                  tenant_id = EXCLUDED.tenant_id
+                """,
+                (
+                    account_id_i,
+                    float(apy_val) / 100.0,
+                    start_date,
+                    "setup_wizard_apy",
+                    tid,
+                ),
+            )
+
+        if accounttype == "credit" and raw_benefits is not None:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS card_benefits (
+                  id SERIAL PRIMARY KEY,
+                  card_id INT NOT NULL,
+                  benefit_type TEXT NOT NULL,
+                  rate DOUBLE PRECISION NOT NULL,
+                  start_date DATE,
+                  end_date DATE,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+            cur.execute("ALTER TABLE card_benefits ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_card_id ON card_benefits(card_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_tenant_id ON card_benefits(tenant_id)")
+            cur.execute("DELETE FROM card_benefits WHERE tenant_id = %s AND card_id = %s", (tid, account_id_i))
+            for category, pct in benefits:
+                cur.execute(
+                    """
+                    INSERT INTO card_benefits (card_id, benefit_type, rate, start_date, tenant_id)
+                    VALUES (%s, %s, %s, %s::date, %s)
+                    """,
+                    (
+                        account_id_i,
+                        category,
+                        pct,
+                        start_date,
+                        tid,
+                    ),
+                )
+
+        conn.commit()
+
+    set_onboarding_completed(tid, False)
+    return {"ok": True, "account_id": account_id_i}

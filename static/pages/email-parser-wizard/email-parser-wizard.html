@@ -33,10 +33,21 @@
         <label class="epw-field">
           Account
           <select id="epwAccount"></select>
+          <span class="epw-muted epw-inline-muted">🟢 parser configured  |  🟠 parser not configured</span>
         </label>
+        <label id="epwSubjectSettingWrap" class="epw-field" style="display:none;">
+          Subject setting
+          <select id="epwSubjectSetting"></select>
+        </label>
+      </div>
+      <div class="epw-grid epw-grid-2">
         <label class="epw-field">
           Sender contains
           <input id="epwSenderQuery" type="text" placeholder="alerts@bank.com">
+        </label>
+        <label class="epw-field">
+          Subject contains
+          <input id="epwSubjectQuery" type="text" placeholder="Transaction Alert">
         </label>
       </div>
       <div class="epw-muted">If no accounts appear, add one in <a href="/setup">Setup Wizard</a> first.</div>
@@ -50,6 +61,13 @@
           <input id="epwSampleLimit" type="number" min="5" max="200" value="40">
         </label>
       </div>
+      <label class="epw-field" style="margin-top:8px;">
+        Missing-field fallback
+        <span class="epw-toggle-wrap">
+          <input id="epwTryHtmlMissing" type="checkbox">
+          <span>Try HTML body when Merchant/Date/Amount are blank</span>
+        </span>
+      </label>
       <div class="epw-actions">
         <button id="epwLoadSamplesBtn" class="epw-btn primary" type="button">Load Samples</button>
       </div>
@@ -58,23 +76,6 @@
     <section class="epw-card">
       <h2>Step 2: Candidate Samples</h2>
       <div id="epwSamplesMeta" class="epw-muted">No samples loaded yet.</div>
-      <div class="epw-grid epw-grid-2" style="margin-top:10px;">
-        <label class="epw-field">
-          Sample subject
-          <input id="epwManualSubject" type="text" placeholder="Transaction Alert">
-        </label>
-        <label class="epw-field">
-          Sample sender
-          <input id="epwManualSender" type="text" placeholder="alerts@bank.com">
-        </label>
-      </div>
-      <label class="epw-field" style="margin-top:10px;">
-        Paste sample email body
-        <textarea id="epwManualBody" rows="5" placeholder="Paste one full email body here for testing"></textarea>
-      </label>
-      <div class="epw-actions">
-        <button id="epwAddManualSampleBtn" class="epw-btn" type="button">Add Manual Sample</button>
-      </div>
       <div id="epwSamplesList" class="epw-list"></div>
     </section>
 
@@ -113,16 +114,6 @@ Sun, Feb 15, 2026</pre>
       </div>
       <div class="epw-grid epw-grid-2">
         <label class="epw-field">
-          Draft name
-          <input id="epwDraftName" type="text" placeholder="Capital One Debit Alerts">
-        </label>
-        <label class="epw-field">
-          Subject contains
-          <input id="epwSubjectContains" type="text" placeholder="Transaction Alert">
-        </label>
-      </div>
-      <div class="epw-grid epw-grid-2">
-        <label class="epw-field">
           Parser mode
           <select id="epwParserMode">
             <option value="guided">Guided (No Regex)</option>
@@ -145,14 +136,14 @@ Sun, Feb 15, 2026</pre>
             <input id="epwParsingMethodToggle" type="checkbox" checked>
             <span id="epwParsingMethodLabel">Anchor-based parsing</span>
           </span>
-          <span class="epw-muted epw-inline-muted">Toggle between strict label anchors and flexible pattern matching.</span>
         </label>
-        <div class="epw-field">
-          <span>Guided mode defaults</span>
-          <div class="epw-muted epw-inline-muted">Anchor mode uses explicit labels/phrases. Toggle off for more flexible matching.</div>
+        <div id="epwParsingTypeHelp" class="epw-field epw-parse-help">
+          <span>How they differ</span>
+          <div class="epw-muted epw-inline-muted"><strong>Anchor-based:</strong> Uses exact labels like <code>Amount:</code>, <code>Description:</code>, <code>Date:</code>. Best when email format is stable.</div>
+          <div class="epw-muted epw-inline-muted"><strong>Flexible:</strong> Looser matching when labels vary. Better for mixed templates, but can capture the wrong line if body text is noisy.</div>
         </div>
       </div>
-      <div id="epwGuidedFields" class="epw-grid epw-grid-4">
+      <div id="epwGuidedFields" class="epw-grid epw-grid-2">
         <label class="epw-field">Amount label<input id="epwGuidedAmountLabel" type="text" placeholder="Amount"></label>
         <label class="epw-field">Merchant label<input id="epwGuidedMerchantLabel" type="text" placeholder="Merchant"></label>
         <label class="epw-field">Date label<input id="epwGuidedDateLabel" type="text" placeholder="Date"></label>
@@ -163,10 +154,6 @@ Sun, Feb 15, 2026</pre>
         <label class="epw-field">
           Regex flags
           <input id="epwRegexFlags" type="text" value="i" placeholder="i or is">
-        </label>
-        <label class="epw-field">
-          Sender pattern (saved)
-          <input id="epwSenderPattern" type="text" placeholder="alerts@capitalone.com">
         </label>
       </div>
       <label class="epw-field">
@@ -182,6 +169,12 @@ Sun, Feb 15, 2026</pre>
       </div>
       <div class="epw-actions">
         <button id="epwPreviewBtn" class="epw-btn primary" type="button">Run Dry-Run Preview</button>
+      </div>
+      <div class="epw-field" style="margin-top:10px;">
+        Live capture preview
+        <div id="epwLiveCaptureStatus" class="epw-muted">Fill rule fields to preview captures.</div>
+        <div id="epwLiveCaptureFields" class="epw-row-sub"></div>
+        <div id="epwLiveCaptureBody" class="epw-body"></div>
       </div>
     </section>
 

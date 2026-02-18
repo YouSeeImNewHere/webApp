@@ -4,6 +4,7 @@ import base64
 import json
 import re
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import requests
@@ -76,6 +77,10 @@ def _ensure_trial_tables(cur) -> None:
     )
 
 
+def _ensure_accounts_email_columns(cur) -> None:
+    cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS receives_emails BOOLEAN NOT NULL DEFAULT TRUE")
+
+
 def _to_text_from_html(s: str) -> str:
     if not s:
         return ""
@@ -103,7 +108,20 @@ def _decode_b64url(data: str | None) -> str:
     return raw.decode("utf-8", errors="ignore")
 
 
-def _extract_gmail_body(payload: dict[str, Any]) -> str:
+def _looks_like_blank_label_template(s: str) -> bool:
+    t = str(s or "")
+    if "Merchant:" not in t:
+        return False
+    return bool(
+        re.search(
+            r"Merchant:\s*(?:\r?\n)\s*Date:\s*(?:\r?\n)\s*Amount:\s*(?:\r?\n|$)",
+            t,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _extract_gmail_body(payload: dict[str, Any], *, try_html_on_missing_fields: bool = False) -> str:
     if not payload:
         return ""
 
@@ -130,17 +148,31 @@ def _extract_gmail_body(payload: dict[str, Any]) -> str:
             stack.append(child)
 
     if plain:
+        if try_html_on_missing_fields and html and _looks_like_blank_label_template(plain):
+            return _to_text_from_html(html)
         return plain.strip()
     if html:
         return _to_text_from_html(html)
     return _to_text_from_html(fallback)
 
 
-def _gmail_list_messages(access_token: str, *, sender_query: str, lookback_days: int, limit: int) -> list[str]:
+def _gmail_list_messages(
+    access_token: str,
+    *,
+    sender_query: str,
+    subject_query: str,
+    lookback_days: int,
+    limit: int,
+) -> list[str]:
     terms: list[str] = []
     sender = (sender_query or "").strip()
+    subject = (subject_query or "").strip()
     if sender:
         terms.append(f"from:{sender}")
+    if subject:
+        safe_subject = subject.replace('"', "").strip()
+        if safe_subject:
+            terms.append(f'subject:"{safe_subject}"')
     if lookback_days > 0:
         terms.append(f"newer_than:{int(lookback_days)}d")
     q = " ".join(terms).strip()
@@ -207,9 +239,26 @@ def _extract_group(match: re.Match[str], group_no: int) -> str:
         return ""
 
 
+def _time_from_received_at(received_at: str) -> str:
+    s = str(received_at or "").strip()
+    if not s:
+        return ""
+    try:
+        dt = parsedate_to_datetime(s)
+    except Exception:
+        return ""
+    if not dt:
+        return ""
+    tz = (dt.tzname() or "").strip()
+    base = dt.strftime("%I:%M %p")
+    return f"{base} {tz}".strip()
+
+
 class TrialSamplesBody(BaseModel):
     account_id: int
     sender_query: str | None = None
+    subject_query: str | None = None
+    try_html_on_missing_fields: bool = False
     lookback_days: int = 30
     limit: int = 40
 
@@ -246,26 +295,54 @@ class TrialSaveBody(BaseModel):
 @router.get("/email-parser/trial/accounts")
 def trial_accounts(request: Request):
     tid = _require_tenant_id()
-    _require_session_email(request)
+    session_email = _require_session_email(request)
     with with_db_cursor() as (conn, cur):
         _ensure_trial_tables(cur)
+        _ensure_accounts_email_columns(cur)
         if tid:
             cur.execute(
                 """
-                SELECT id, institution, name, LOWER(accounttype) AS accounttype
-                FROM accounts
-                WHERE tenant_id = %s
+                SELECT
+                    a.id,
+                    a.institution,
+                    a.name,
+                    LOWER(a.accounttype) AS accounttype,
+                    COALESCE(a.receives_emails, TRUE) AS receives_emails,
+                    EXISTS (
+                      SELECT 1
+                      FROM email_parser_trial_drafts d
+                      WHERE d.tenant_id = %s
+                        AND d.user_email = %s
+                        AND d.account_id = a.id
+                    ) AS has_parser_setting
+                FROM accounts a
+                WHERE a.tenant_id = %s
+                  AND COALESCE(a.receives_emails, TRUE) = TRUE
                 ORDER BY institution ASC, name ASC, id ASC
                 """,
-                (int(tid),),
+                (int(tid), session_email, int(tid)),
             )
         else:
             cur.execute(
                 """
-                SELECT id, institution, name, LOWER(accounttype) AS accounttype
-                FROM accounts
+                SELECT
+                    a.id,
+                    a.institution,
+                    a.name,
+                    LOWER(a.accounttype) AS accounttype,
+                    COALESCE(a.receives_emails, TRUE) AS receives_emails,
+                    EXISTS (
+                      SELECT 1
+                      FROM email_parser_trial_drafts d
+                      WHERE d.tenant_id = 0
+                        AND d.user_email = %s
+                        AND d.account_id = a.id
+                    ) AS has_parser_setting
+                FROM accounts a
+                WHERE COALESCE(a.receives_emails, TRUE) = TRUE
                 ORDER BY institution ASC, name ASC, id ASC
-                """
+                """,
+                (session_email,),
             )
         rows = [dict(r) for r in (cur.fetchall() or [])]
         conn.commit()
@@ -278,6 +355,7 @@ def trial_samples(body: TrialSamplesBody, request: Request):
     session_email = _require_session_email(request)
 
     sender_query = (body.sender_query or "").strip()
+    subject_query = (body.subject_query or "").strip()
     if not sender_query:
         raise HTTPException(status_code=422, detail="sender_query_required")
 
@@ -288,6 +366,7 @@ def trial_samples(body: TrialSamplesBody, request: Request):
     message_ids = _gmail_list_messages(
         access_token,
         sender_query=sender_query,
+        subject_query=subject_query,
         lookback_days=max(1, min(int(body.lookback_days or 30), 365)),
         limit=max(1, min(int(body.limit or 40), 100)),
     )
@@ -299,7 +378,10 @@ def trial_samples(body: TrialSamplesBody, request: Request):
         for mid in message_ids:
             msg = _gmail_get_message(access_token, mid)
             h = _headers_map(msg)
-            body_text = _extract_gmail_body(msg.get("payload") or {})
+            body_text = _extract_gmail_body(
+                msg.get("payload") or {},
+                try_html_on_missing_fields=bool(body.try_html_on_missing_fields),
+            )
             snippet = str(msg.get("snippet") or "")[:600]
             item = {
                 "sample_id": mid,
@@ -343,6 +425,61 @@ def trial_samples(body: TrialSamplesBody, request: Request):
     return {"ok": True, "items": items, "count": len(items)}
 
 
+@router.get("/email-parser/trial/account-settings/{account_id}")
+def trial_account_settings(account_id: int, request: Request):
+    tid = _require_tenant_id()
+    session_email = _require_session_email(request)
+    with with_db_cursor() as (conn, cur):
+        _ensure_trial_tables(cur)
+        cur.execute(
+            """
+            SELECT id, name, draft_json, updated_at
+            FROM email_parser_trial_drafts
+            WHERE tenant_id = %s
+              AND user_email = %s
+              AND account_id = %s
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (int(tid or 0), session_email, int(account_id)),
+        )
+        rows = [dict(r) for r in (cur.fetchall() or [])]
+        conn.commit()
+
+    settings: list[dict[str, Any]] = []
+    seen_subjects: set[str] = set()
+    for r in rows:
+        raw = r.get("draft_json")
+        cfg: dict[str, Any] = {}
+        if isinstance(raw, str):
+            try:
+                cfg = json.loads(raw) or {}
+            except Exception:
+                cfg = {}
+        elif isinstance(raw, dict):
+            cfg = raw
+
+        subject = str(cfg.get("subject_contains") or "").strip()
+        key = subject.lower()
+        if key in seen_subjects:
+            continue
+        seen_subjects.add(key)
+        settings.append(
+            {
+                "draft_id": int(r.get("id") or 0),
+                "name": str(cfg.get("name") or r.get("name") or "").strip(),
+                "subject_contains": subject,
+                "sender_pattern": str(cfg.get("sender_pattern") or "").strip(),
+                "parser_mode": str(cfg.get("parser_mode") or "").strip(),
+                "parsing_method": str(cfg.get("parsing_method") or "").strip(),
+                "body_regex": str(cfg.get("body_regex") or "").strip(),
+                "flags": str(cfg.get("flags") or "i").strip() or "i",
+                "field_map": cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {},
+                "guided": cfg.get("guided") if isinstance(cfg.get("guided"), dict) else {},
+            }
+        )
+    return {"ok": True, "account_id": int(account_id), "settings": settings}
+
+
 @router.post("/email-parser/trial/preview")
 def trial_preview(body: TrialPreviewBody, request: Request):
     tid = _require_tenant_id()
@@ -364,7 +501,7 @@ def trial_preview(body: TrialPreviewBody, request: Request):
         tid0 = int(tid or 0)
         cur.execute(
             """
-            SELECT sample_id, body
+            SELECT sample_id, body, received_at
             FROM email_parser_trial_samples
             WHERE tenant_id = %s
               AND user_email = %s
@@ -375,7 +512,13 @@ def trial_preview(body: TrialPreviewBody, request: Request):
         rows = [dict(r) for r in (cur.fetchall() or [])]
         conn.commit()
 
-    by_id = {str(r.get("sample_id") or ""): str(r.get("body") or "") for r in rows}
+    by_id = {
+        str(r.get("sample_id") or ""): {
+            "body": str(r.get("body") or ""),
+            "received_at": str(r.get("received_at") or ""),
+        }
+        for r in rows
+    }
     fm = body.field_map or {}
     amount_g = int(fm.get("amount_group") or 0)
     merchant_g = int(fm.get("merchant_group") or 0)
@@ -384,7 +527,9 @@ def trial_preview(body: TrialPreviewBody, request: Request):
 
     out: list[dict[str, Any]] = []
     for sid in ids:
-        btxt = by_id.get(sid, "")
+        row = by_id.get(sid) or {}
+        btxt = str(row.get("body") or "")
+        received_at = str(row.get("received_at") or "")
         if not btxt:
             out.append({"sample_id": sid, "matched": False, "extracted": None, "error": "sample_not_found"})
             continue
@@ -392,6 +537,9 @@ def trial_preview(body: TrialPreviewBody, request: Request):
         if not m:
             out.append({"sample_id": sid, "matched": False, "extracted": None, "error": "No match"})
             continue
+        time_val = _extract_group(m, time_g)
+        if not time_val:
+            time_val = _time_from_received_at(received_at)
         out.append(
             {
                 "sample_id": sid,
@@ -400,7 +548,7 @@ def trial_preview(body: TrialPreviewBody, request: Request):
                     "amount": _extract_group(m, amount_g),
                     "merchant": _extract_group(m, merchant_g),
                     "date": _extract_group(m, date_g),
-                    "time": _extract_group(m, time_g),
+                    "time": time_val,
                 },
             }
         )

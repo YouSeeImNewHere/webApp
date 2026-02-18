@@ -11,6 +11,12 @@
   const statusEl = document.getElementById("status");
   const addResultEl = document.getElementById("addResult");
   const pushoverResultEl = document.getElementById("pushoverResult");
+  const accountsListEl = document.getElementById("accountsList");
+  const addAccountBtnEl = document.getElementById("addAccountBtn");
+  const cancelEditBtnEl = document.getElementById("cancelEditBtn");
+
+  let editingAccountId = null;
+  let latestAccounts = [];
 
   function pill(ok, label) {
     const cls = ok ? "ok" : "todo";
@@ -39,6 +45,71 @@
     benefitInputs.forEach((el) => {
       el.disabled = !creditMode;
       if (!creditMode) el.value = "";
+    });
+  }
+
+  function resetAccountForm() {
+    document.getElementById("institution").value = "";
+    document.getElementById("name").value = "";
+    document.getElementById("accounttype").value = "checking";
+    document.getElementById("startingBalance").value = "";
+    document.getElementById("startingDate").value = "";
+    document.getElementById("creditLimit").value = "";
+    document.getElementById("apyPercent").value = "";
+    document.getElementById("interestPostDay").value = "";
+    document.getElementById("receivesEmails").checked = true;
+    document.getElementById("isPaycheckAccount").checked = false;
+    document.getElementById("benefitRows").innerHTML = "";
+    addBenefitRow("", "");
+    updateAccountFieldHints();
+  }
+
+  function setEditMode(on, account) {
+    editingAccountId = on && account ? Number(account.id) : null;
+    if (addAccountBtnEl) addAccountBtnEl.textContent = editingAccountId ? "Save Account Changes" : "Add Account";
+    if (cancelEditBtnEl) cancelEditBtnEl.style.display = editingAccountId ? "" : "none";
+  }
+
+  function startEditAccount(accountId) {
+    const a = (latestAccounts || []).find((x) => Number(x.id) === Number(accountId));
+    if (!a) return;
+    document.getElementById("institution").value = String(a.institution || "");
+    document.getElementById("name").value = String(a.name || "");
+    document.getElementById("accounttype").value = String(a.accounttype || "checking").toLowerCase();
+    document.getElementById("creditLimit").value = (a.credit_limit ?? "") === null ? "" : String(a.credit_limit ?? "");
+    document.getElementById("interestPostDay").value = (a.interest_post_day ?? "") === null ? "" : String(a.interest_post_day ?? "");
+    document.getElementById("receivesEmails").checked = !!a.receives_emails;
+    document.getElementById("isPaycheckAccount").checked = !!a.is_paycheck_account;
+    setEditMode(true, a);
+    updateAccountFieldHints();
+    addResultEl.textContent = `Editing account #${a.id}.`;
+  }
+
+  function renderAccountsList() {
+    if (!accountsListEl) return;
+    if (!latestAccounts.length) {
+      accountsListEl.innerHTML = `<div class="setup-muted">No accounts yet.</div>`;
+      return;
+    }
+    accountsListEl.innerHTML = `
+      <div class="setup-list">
+        ${latestAccounts.map((a) => `
+          <div class="setup-list-row">
+            <div>
+              <div><strong>${String(a.institution || "")} - ${String(a.name || "")}</strong> <span class="setup-list-meta">(${String(a.accounttype || "").toLowerCase()})</span></div>
+              <div class="setup-list-meta">
+                Receives emails: ${a.receives_emails ? "Yes" : "No"} | Paycheck account: ${a.is_paycheck_account ? "Yes" : "No"}
+              </div>
+            </div>
+            <div class="setup-list-actions">
+              <button type="button" class="secondary setup-edit-account" data-account-id="${Number(a.id)}">Edit</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    accountsListEl.querySelectorAll(".setup-edit-account").forEach((btn) => {
+      btn.addEventListener("click", () => startEditAccount(Number(btn.getAttribute("data-account-id") || 0)));
     });
   }
 
@@ -91,6 +162,8 @@
           Accounts: ${s.counts.accounts} | Starting Balances: ${s.counts.starting_balances} | Transactions: ${s.counts.transactions}
         </div>
       `;
+      latestAccounts = Array.isArray(s.accounts) ? s.accounts : [];
+      renderAccountsList();
     } catch (e) {
       statusEl.textContent = `Status failed: ${e.message}`;
     }
@@ -131,13 +204,21 @@
         const v = document.getElementById("interestPostDay").value.trim();
         return v ? Number(v) : null;
       })(),
-      card_benefits: benefits,
+      receives_emails: !!document.getElementById("receivesEmails")?.checked,
+      is_paycheck_account: !!document.getElementById("isPaycheckAccount")?.checked,
     };
+    if (!editingAccountId || accounttype === "credit") {
+      body.card_benefits = benefits;
+    }
     try {
-      const out = await api("/onboarding/accounts", { method: "POST", body: JSON.stringify(body) });
-      addResultEl.textContent = `Added account id ${out.account_id}.`;
-      document.getElementById("benefitRows").innerHTML = "";
-      addBenefitRow("", "");
+      const out = editingAccountId
+        ? await api(`/onboarding/accounts/${Number(editingAccountId)}`, { method: "PUT", body: JSON.stringify(body) })
+        : await api("/onboarding/accounts", { method: "POST", body: JSON.stringify(body) });
+      addResultEl.textContent = editingAccountId
+        ? `Updated account id ${out.account_id}.`
+        : `Added account id ${out.account_id}.`;
+      setEditMode(false, null);
+      resetAccountForm();
       await refreshStatus();
     } catch (e) {
       addResultEl.textContent = `Add failed: ${e.message}`;
@@ -203,6 +284,13 @@
   document.getElementById("refreshBtn").addEventListener("click", refreshStatus);
   document.getElementById("addAccountBtn").addEventListener("click", addAccount);
   document.getElementById("addBenefitBtn").addEventListener("click", () => addBenefitRow("", ""));
+  if (cancelEditBtnEl) {
+    cancelEditBtnEl.addEventListener("click", () => {
+      setEditMode(false, null);
+      resetAccountForm();
+      addResultEl.textContent = "Edit cancelled.";
+    });
+  }
   document.getElementById("completeBtn").addEventListener("click", markComplete);
   document.getElementById("accounttype").addEventListener("change", updateAccountFieldHints);
   const savePushoverKeyBtn = document.getElementById("savePushoverKeyBtn");
@@ -212,8 +300,8 @@
   const fetchEmailsNowBtn = document.getElementById("fetchEmailsNowBtn");
   if (fetchEmailsNowBtn) fetchEmailsNowBtn.addEventListener("click", fetchEmailsNow);
 
-  addBenefitRow("", "");
-  updateAccountFieldHints();
+  resetAccountForm();
+  setEditMode(false, null);
   refreshStatus();
 })();
 

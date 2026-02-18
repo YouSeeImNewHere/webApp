@@ -14,3 +14,10 @@ p, li { line-height: 1.4; }
 .todo { background: rgba(198, 144, 38, 0.24); color: #7a4b00; }
 .setup-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .setup-muted { color: var(--muted, #637089); }
+.setup-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text, #121826); }
+.setup-check input { width: auto; margin: 0; }
+.setup-list { border: 1px solid var(--border, #c6cfdf); border-radius: 8px; }
+.setup-list-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--border, #c6cfdf); }
+.setup-list-row:first-child { border-top: none; }
+.setup-list-meta { font-size: 12px; color: var(--muted, #637089); }
+.setup-list-actions button { width: auto; padding: 6px 10px; font-size: 12px; }

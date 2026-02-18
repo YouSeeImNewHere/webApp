@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Admin Console</title>
+
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/admin/admin.css?v={{ BUILD_ID }}">
+  <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
+</head>
+<body class="settings-page" data-page-title="Admin">
+  <div class="admin-wrap">
+    <section class="admin-section">
+      <h2 class="admin-title">Admin Console</h2>
+      <div class="admin-card">
+        <div class="admin-row">
+          <a class="settings-btn" href="/settings">Back to Settings</a>
+          <button id="refreshBtn" class="settings-btn primary" type="button">Refresh</button>
+        </div>
+        <div id="statusMsg" class="admin-muted"></div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2 class="admin-title">Pending Users</h2>
+      <div class="admin-card">
+        <div id="pendingUsersList" class="admin-list"></div>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2 class="admin-title">Tenants</h2>
+      <div class="admin-card">
+        <div class="admin-row">
+          <label for="tenantSelect">Tenant</label>
+          <select id="tenantSelect" class="admin-select"></select>
+          <button id="loadFootprintBtn" class="settings-btn" type="button">Load Footprint</button>
+        </div>
+        <pre id="footprintBox" class="admin-pre"></pre>
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2 class="admin-title">Danger Zone</h2>
+      <div class="admin-card">
+        <div class="admin-row">
+          <label for="confirmInput">Type tenant slug to confirm</label>
+          <input id="confirmInput" class="admin-input" type="text" placeholder="tenant-slug" />
+        </div>
+        <div class="admin-row">
+          <label><input id="deleteTenantRow" type="checkbox" checked /> Delete tenant record after purge</label>
+        </div>
+        <div class="admin-row">
+          <button id="dryRunBtn" class="settings-btn" type="button">Dry Run Purge</button>
+          <button id="purgeBtn" class="settings-btn danger" type="button">Purge Tenant Data</button>
+        </div>
+        <pre id="purgeResultBox" class="admin-pre"></pre>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/static/pages/admin/admin.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+</body>
+</html>

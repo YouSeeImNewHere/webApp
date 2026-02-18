@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from db import with_db_cursor
-from app.core.config import BUILD_ID, MULTI_TENANT_ENABLED
+from app.core.config import BUILD_ID, MULTI_TENANT_ENABLED, OWNER_GOOGLE_EMAIL
 from app.core.templates import templates
 from app.core.tenancy import current_tenant_id, get_or_create_onboarding_state
 
@@ -95,6 +95,15 @@ def home(request: Request):
 def settings_page():
     return FileResponse("static/pages/settings/settings.html")
 
+
+@router.get("/admin")
+def admin_page(request: Request):
+    if not bool(request.session.get("authed")):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    if not _is_owner_request(request):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return FileResponse("static/pages/admin/admin.html")
+
 @router.get("/account")
 def account_page():
     return FileResponse("static/pages/account/account.html")
@@ -143,3 +152,9 @@ def receipts_page():
 @router.get("/email-parser-wizard")
 def email_parser_wizard_page():
     return FileResponse(os.path.join("static", "pages", "email-parser-wizard", "email-parser-wizard.html"))
+def _is_owner_request(request: Request) -> bool:
+    if not MULTI_TENANT_ENABLED:
+        return True
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    owner_email = (OWNER_GOOGLE_EMAIL or "").strip().lower()
+    return bool(owner_email) and session_email == owner_email

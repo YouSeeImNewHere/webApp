@@ -39,6 +39,7 @@ from app.routers import (
     interest_rates,
     transactions,
     page_payloads,
+    admin,
     onboarding,
     email_parser_trial,
 )
@@ -131,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(interest_rates.router)
     app.include_router(transactions.router)
     app.include_router(page_payloads.router)
+    app.include_router(admin.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)
     app.include_router(auth.router)

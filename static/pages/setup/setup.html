@@ -52,6 +52,10 @@
         <input id="interestPostDay" type="number" min="1" max="31" placeholder="Interest Post Day (optional)" />
         <div></div>
       </div>
+      <div class="setup-row">
+        <label class="setup-check"><input id="receivesEmails" type="checkbox" checked /> Receives email transaction alerts</label>
+        <label class="setup-check"><input id="isPaycheckAccount" type="checkbox" /> Paycheck deposit account</label>
+      </div>
       <div id="creditBenefitsWrap">
         <div class="setup-muted" style="margin-bottom:6px;">Credit Card Benefits (optional)</div>
         <div id="benefitRows"></div>
@@ -61,7 +65,12 @@
         </div>
       </div>
       <button id="addAccountBtn" type="button">Add Account</button>
+      <button id="cancelEditBtn" type="button" class="secondary" style="display:none; margin-top:8px;">Cancel Edit</button>
       <div id="addResult" class="setup-muted" style="margin-top:8px;"></div>
+      <div style="margin-top:14px;">
+        <div class="setup-muted" style="margin-bottom:6px;">Existing accounts</div>
+        <div id="accountsList"></div>
+      </div>
     </div>
 
     <div class="setup-card">
