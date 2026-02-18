@@ -1639,6 +1639,67 @@ function updatePotentialToggleVisibility() {
 
 let unassignedQueue = [];
 let unassignedIndex = 0;
+let unassignedRawQueue = [];
+
+function normalizeUnassignedText(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function unassignedExactKey(tx) {
+  const merchant = normalizeUnassignedText(tx?.merchant);
+  const bank = normalizeUnassignedText(tx?.bank);
+  const card = normalizeUnassignedText(tx?.card);
+  const amount = Number(tx?.amount || 0);
+  const amountKey = Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+  return `${merchant}|${amountKey}|${bank}|${card}`;
+}
+
+function buildUnassignedQueue(rawRows, mode) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  if (mode !== "freq") {
+    return rows.map((r) => ({ ...r, _match_count: 1 }));
+  }
+
+  const map = new Map();
+  const ordered = [];
+  for (const row of rows) {
+    const key = unassignedExactKey(row);
+    const existing = map.get(key);
+    if (existing) {
+      existing._match_count += 1;
+      continue;
+    }
+    const rep = { ...row, _match_count: 1 };
+    map.set(key, rep);
+    ordered.push(rep);
+  }
+  return ordered;
+}
+
+async function reloadUnassignedQueue({ keepSelection = false } = {}) {
+  const prev = keepSelection ? unassignedQueue[unassignedIndex] : null;
+  const prevKey = prev ? unassignedExactKey(prev) : "";
+
+  const rows = await apiGetJson(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+  unassignedRawQueue = Array.isArray(rows) ? rows : [];
+  unassignedQueue = buildUnassignedQueue(unassignedRawQueue, unassignedMode);
+
+  if (!unassignedQueue.length) {
+    unassignedIndex = 0;
+    return false;
+  }
+
+  if (keepSelection && prevKey) {
+    const found = unassignedQueue.findIndex((x) => unassignedExactKey(x) === prevKey);
+    if (found >= 0) {
+      unassignedIndex = found;
+      return true;
+    }
+  }
+
+  unassignedIndex = 0;
+  return true;
+}
 
 function openBackdrop(show) {
   const el = document.getElementById("ruleModalBackdrop");
@@ -1659,6 +1720,12 @@ function fillModalFromTx(tx) {
   document.getElementById("ruleTxAccount").textContent =
     `${tx.bank || ""}${tx.card ? "  " + tx.card : ""}`;
 
+  const matchesEl = document.getElementById("ruleTxMatches");
+  if (matchesEl) {
+    const n = Math.max(1, Number(tx?._match_count || 1));
+    matchesEl.textContent = (n > 1) ? `${n} identical transactions` : "1 transaction";
+  }
+
   // reset form
   document.getElementById("ruleCategory").value = "";
   document.getElementById("ruleKeywords").value = "";
@@ -1668,19 +1735,18 @@ function fillModalFromTx(tx) {
 
 async function openRuleModal() {
   try {
-    unassignedQueue = await apiGetJson(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
+    const ok = await reloadUnassignedQueue({ keepSelection: false });
+    if (!ok) {
+      return alert("No unassigned transactions ");
+    }
   } catch (err) {
     alert("Failed to load unassigned.");
     return;
   }
-  unassignedIndex = 0;
-
-  if (!unassignedQueue.length) {
-    return alert("No unassigned transactions ");
-  }
 
   openBackdrop(true);
   loadCategoryOptions();
+  updateRuleModeToggleLabel();
   showUnassignedAt(0);
 }
 
@@ -1755,9 +1821,33 @@ const closeBtn = document.getElementById("ruleModalClose");
 
     const prevBtn = document.getElementById("rulePrevBtn");
     const nextBtn = document.getElementById("ruleNextBtn");
+    const modeBtn = document.getElementById("ruleModeToggle");
 
     if (prevBtn) prevBtn.addEventListener("click", prevUnassigned);
     if (nextBtn) nextBtn.addEventListener("click", nextUnassigned);
+    if (modeBtn) {
+      modeBtn.addEventListener("click", async () => {
+        unassignedMode = (unassignedMode === "freq") ? "recent" : "freq";
+        localStorage.setItem("unassignedMode", unassignedMode);
+        updateRuleModeToggleLabel();
+        try {
+          const ok = await reloadUnassignedQueue({ keepSelection: false });
+          if (!ok) {
+            document.getElementById("ruleTxMerchant").textContent = "No unassigned transactions ";
+            document.getElementById("ruleTxAccount").textContent = "";
+            document.getElementById("ruleTxAmount").textContent = "";
+            document.getElementById("ruleTxDate").textContent = "";
+            const m = document.getElementById("ruleTxMatches");
+            if (m) m.textContent = "—";
+            document.getElementById("ruleCounter").textContent = "0 / 0";
+            return;
+          }
+          showUnassignedAt(0);
+        } catch (e) {
+          console.error(e);
+        }
+      });
+    }
 
 
   // click outside modal closes
@@ -1840,6 +1930,12 @@ function updateRuleCounter() {
   el.textContent = `${unassignedIndex + 1} / ${unassignedQueue.length}`;
 }
 
+function updateRuleModeToggleLabel() {
+  const modeBtn = document.getElementById("ruleModeToggle");
+  if (!modeBtn) return;
+  modeBtn.textContent = `Mode: ${unassignedMode === "freq" ? "Most frequent" : "Most recent"}`;
+}
+
 function showUnassignedAt(index) {
   if (!unassignedQueue.length) return;
 
@@ -1860,13 +1956,13 @@ function showUnassignedAt(index) {
 
 function prevUnassigned() {
   if (!unassignedQueue.length) return;
-  unassignedIndex = (unassignedIndex - 1 + unassignedQueue.length) % unassignedQueue.length;
+  unassignedIndex = Math.max(0, unassignedIndex - 1);
   showUnassignedAt(unassignedIndex);
 }
 
 function nextUnassigned() {
   if (!unassignedQueue.length) return;
-  unassignedIndex = (unassignedIndex + 1) % unassignedQueue.length;
+  unassignedIndex = Math.min(unassignedQueue.length - 1, unassignedIndex + 1);
   showUnassignedAt(unassignedIndex);
 }
 
@@ -1972,7 +2068,7 @@ let unassignedMode = localStorage.getItem("unassignedMode") || "freq";
 
 function initUnassignedToggle() {
   const toggleBtn = document.getElementById("unassignedToggle");
-  if (!toggleBtn) return; //  prevents crash on pages without the button
+  if (!toggleBtn) return;
 
   function setToggleLabel() {
     toggleBtn.textContent = (unassignedMode === "freq")
@@ -2028,12 +2124,10 @@ async function fetchUnassignedQueue() {
 }
 
 async function refreshUnassignedQueueAfterSave() {
-  // remember what we were looking at, so we can stay near it after refresh
   const prev = unassignedQueue[unassignedIndex];
-  const prevKey = (prev?.merchant || "").toLowerCase();
+  const prevKey = prev ? unassignedExactKey(prev) : "";
 
-  // pull fresh list
-  unassignedQueue = await fetchUnassignedQueue();
+  const ok = await reloadUnassignedQueue({ keepSelection: false });
 
   if (!unassignedQueue.length) {
     // nothing left  keep modal open but show friendly state
@@ -2045,13 +2139,14 @@ async function refreshUnassignedQueueAfterSave() {
     return;
   }
 
-  // try to keep user near the same merchant after refresh
+  // try to keep user near the same grouped transaction after refresh
   let newIndex = 0;
   if (prevKey) {
-    const found = unassignedQueue.findIndex(x => (x.merchant || "").toLowerCase() === prevKey);
+    const found = unassignedQueue.findIndex(x => unassignedExactKey(x) === prevKey);
     if (found >= 0) newIndex = found;
   }
 
+  if (!ok) newIndex = 0;
   showUnassignedAt(newIndex);
 }
 
