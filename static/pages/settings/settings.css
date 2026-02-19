@@ -78,6 +78,7 @@
   display: grid;
   grid-template-columns: 1.2fr 1fr;
   gap: 12px;
+  min-width: 0;
 }
 
 .widget-preview-head {
@@ -105,11 +106,13 @@
   display: grid;
   grid-template-columns: 1fr 130px;
   gap: 12px;
+  min-width: 0;
 }
 
 .widget-home-left {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .widget-home-right {
@@ -117,6 +120,7 @@
   align-content: start;
   gap: 8px;
   padding-top: 16px;
+  min-width: 0;
 }
 
 .widget-metric-head {
@@ -160,6 +164,10 @@
   font-size: 11px;
   font-weight: 800;
   color: #fff;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .widget-kv {
@@ -224,9 +232,62 @@
 .lock-rect-sub {
   font-size: 12px;
   opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-@media (max-width: 700px) {
+.widget-manual-copy-sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 14px;
+}
+
+.widget-manual-copy-sheet.open {
+  display: flex;
+}
+
+.widget-manual-copy-card {
+  width: min(920px, 100%);
+  max-height: min(80vh, 700px);
+  background: var(--card, #fff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.14));
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.widget-manual-copy-title {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.widget-manual-copy-sub {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+#widgetManualCopyText {
+  width: 100%;
+  min-height: 44vh;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.2));
+  border-radius: 10px;
+  padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  resize: vertical;
+  background: var(--bg, #fff);
+  color: var(--text, #111);
+}
+
+@media (max-width: 900px) {
   .daily-weights-main {
     grid-template-columns: 1fr;
   }
@@ -253,5 +314,18 @@
 
   .widget-home-right {
     padding-top: 4px;
+  }
+
+  .lock-row {
+    grid-template-columns: 1fr;
+  }
+
+  .lock-circular {
+    width: 64px;
+    height: 64px;
+  }
+
+  .widget-manual-copy-card {
+    max-height: 86vh;
   }
 }

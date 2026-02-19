@@ -1,4 +1,5 @@
 let _monthBudgetSnapshot = null;
+let _lastWidgetScript = "";
 
 function money(n) {
   const v = Number(n || 0);
@@ -31,6 +32,50 @@ async function copyToClipboard(text) {
   const ok = document.execCommand("copy");
   document.body.removeChild(ta);
   if (!ok) throw new Error("clipboard_copy_failed");
+}
+
+function openManualCopySheet(text) {
+  const script = String(text || "");
+  if (!script) return;
+
+  let sheet = document.getElementById("widgetManualCopySheet");
+  if (!sheet) {
+    sheet = document.createElement("div");
+    sheet.id = "widgetManualCopySheet";
+    sheet.className = "widget-manual-copy-sheet";
+    sheet.innerHTML = `
+      <div class="widget-manual-copy-card">
+        <div class="widget-manual-copy-title">Manual Copy (iPhone)</div>
+        <div class="widget-manual-copy-sub">Press and hold inside the text, then tap Select All and Copy.</div>
+        <textarea id="widgetManualCopyText" readonly></textarea>
+        <div class="settings-row">
+          <button type="button" class="settings-btn" id="widgetManualCopyCloseBtn">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(sheet);
+    sheet.querySelector("#widgetManualCopyCloseBtn")?.addEventListener("click", () => {
+      sheet?.classList.remove("open");
+    });
+  }
+
+  const ta = sheet.querySelector("#widgetManualCopyText");
+  if (ta) {
+    ta.value = script;
+    ta.focus();
+    ta.setSelectionRange(0, Math.min(script.length, 65535));
+  }
+  sheet.classList.add("open");
+}
+
+async function fetchWidgetScript() {
+  const res = await fetch("/settings/widget-script", { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const payload = await res.json();
+  const script = String(payload.script || "");
+  if (!script) throw new Error("script_missing");
+  _lastWidgetScript = script;
+  return script;
 }
 
 function formatPreviewTime(d) {
@@ -156,15 +201,17 @@ function bindWidgetActions() {
     copyBtn.disabled = true;
     if (statusEl) statusEl.textContent = "Generating code...";
     try {
-      const res = await fetch("/settings/widget-script", { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const payload = await res.json();
-      const script = String(payload.script || "");
-      if (!script) throw new Error("script_missing");
+      const script = await fetchWidgetScript();
       await copyToClipboard(script);
       if (statusEl) statusEl.textContent = "Copied. Paste into Scriptable as a new script.";
-    } catch (_) {
-      if (statusEl) statusEl.textContent = "Failed to copy widget code.";
+    } catch (err) {
+      try {
+        const fallbackScript = _lastWidgetScript || await fetchWidgetScript();
+        openManualCopySheet(fallbackScript);
+        if (statusEl) statusEl.textContent = "iPhone blocked clipboard. Manual copy sheet opened.";
+      } catch (_) {
+        if (statusEl) statusEl.textContent = "Failed to prepare widget code.";
+      }
     } finally {
       copyBtn.disabled = false;
     }
