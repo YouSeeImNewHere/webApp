@@ -54,9 +54,12 @@ function openManualCopySheet(text) {
       </div>
     `;
     document.body.appendChild(sheet);
-    sheet.querySelector("#widgetManualCopyCloseBtn")?.addEventListener("click", () => {
-      sheet?.classList.remove("open");
-    });
+    const closeBtn = sheet.querySelector("#widgetManualCopyCloseBtn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        if (sheet) sheet.classList.remove("open");
+      });
+    }
   }
 
   const ta = sheet.querySelector("#widgetManualCopyText");
@@ -219,7 +222,8 @@ function bindWidgetActions() {
 }
 
 function readPointValue(id, fallback) {
-  const raw = (document.getElementById(id)?.value || "").trim();
+  const input = document.getElementById(id);
+  const raw = String((input && input.value) || "").trim();
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.max(1, Math.round(n));

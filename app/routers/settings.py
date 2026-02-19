@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Request
@@ -253,12 +254,16 @@ def create_widget_script(request: Request):
     script_template = script_path.read_text(encoding="utf-8")
 
     base_url = str(request.base_url).rstrip("/")
-    script = script_template.replace(
-        'const BASE_URL = "https://webapp-pe3q.onrender.com";',
+    script = re.sub(
+        r'const\s+BASE_URL\s*=\s*"[^"]*";',
         f'const BASE_URL = "{base_url}";',
+        script_template,
+        count=1,
     )
-    script = script.replace(
-        'const WIDGET_TOKEN = "";',
+    script = re.sub(
+        r'const\s+WIDGET_TOKEN\s*=\s*"[^"]*";',
         f'const WIDGET_TOKEN = "{token}";',
+        script,
+        count=1,
     )
     return {"ok": True, "tenant_id": tenant_id, "script": script}
