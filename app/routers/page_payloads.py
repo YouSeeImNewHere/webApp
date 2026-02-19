@@ -6,13 +6,13 @@ from copy import deepcopy
 import time
 from threading import Lock
 
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from db import with_db_cursor, query_db
 
-from app.core.config import WIDGET_SECRET, CREDIT_UTILIZATION_CAP, MULTI_TENANT_ENABLED
+from app.core.config import CREDIT_UTILIZATION_CAP, MULTI_TENANT_ENABLED
 from app.core.home_snapshot_cache import (
     ensure_home_snapshot_cache_pg,
     home_snapshot_version_for_tenant,
@@ -43,6 +43,9 @@ router = APIRouter()
 WIDGET_SUMMARY_CACHE_TTL_SEC = 90
 _WIDGET_SUMMARY_CACHE: Dict[str, Dict[str, Any]] = {}
 _WIDGET_REFRESH_READY = False
+WIDGET_VERSION_CACHE_TTL_SEC = 15 * 60
+_WIDGET_VERSION_CACHE: Dict[str, Dict[str, Any]] = {}
+_WIDGET_VERSION_CACHE_LOCK = Lock()
 PAGE_PAYLOAD_CACHE_TTL_SEC = 30
 _PAGE_PAYLOAD_CACHE: dict[str, dict[str, Any]] = {}
 _PAGE_PAYLOAD_CACHE_LOCK = Lock()
@@ -140,6 +143,24 @@ def _widget_version_for_tenant(tid: Optional[int]) -> int:
             row = cur.fetchone() or {}
         conn.commit()
     return int(row.get("version") or 0)
+
+
+def _widget_version_for_tenant_cached(tid: Optional[int]) -> int:
+    tkey = _widget_tenant_key(tid)
+    cache_key = f"tenant={int(tkey)}"
+    now_ts = time.time()
+
+    with _WIDGET_VERSION_CACHE_LOCK:
+        row = _WIDGET_VERSION_CACHE.get(cache_key)
+        if row:
+            ts = float(row.get("ts") or 0.0)
+            if (now_ts - ts) < WIDGET_VERSION_CACHE_TTL_SEC:
+                return int(row.get("version") or 0)
+
+    version = _widget_version_for_tenant(tid)
+    with _WIDGET_VERSION_CACHE_LOCK:
+        _WIDGET_VERSION_CACHE[cache_key] = {"ts": now_ts, "version": int(version)}
+    return int(version)
 
 def _call_optional(fn, *args, **kwargs):
     """
@@ -453,15 +474,10 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
 
 @router.get("/widget/summary")
 def widget_summary(
-    x_widget_secret: str = Header(default=""),
     widget_version: Optional[int] = Query(default=None),
 ):
-    #Simple protection so the widget can fetch data without a login session/cookies
-    if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     tid = _require_tenant_id()
-    version = int(widget_version) if widget_version is not None else _widget_version_for_tenant(tid)
+    version = int(widget_version) if widget_version is not None else _widget_version_for_tenant_cached(tid)
     cache_key = f"tenant={_widget_tenant_key(tid)}"
     now_ts = time.time()
     cache_row = _WIDGET_SUMMARY_CACHE.get(cache_key) or {}
@@ -533,11 +549,9 @@ def widget_summary(
 
 
 @router.get("/widget/version")
-def widget_version(x_widget_secret: str = Header(default="")):
-    if WIDGET_SECRET and x_widget_secret != WIDGET_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+def widget_version():
     tid = _require_tenant_id()
-    version = _widget_version_for_tenant(tid)
+    version = _widget_version_for_tenant_cached(tid)
     return {"ok": True, "widget_version": version}
 
 def _ensure_budget_tables_pg():

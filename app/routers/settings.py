@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from db import with_db_cursor, query_db
+from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenant_keys import scoped_key
 from app.core.roundups import get_roundup_settings, set_roundup_settings
 from app.core.home_snapshot_cache import bump_home_snapshot_version
-from app.core.tenancy import current_tenant_id
+from app.core.tenancy import current_tenant_id, get_user_by_email
+from app.core.widget_tokens import issue_widget_token
 
 router = APIRouter()
 
@@ -209,3 +212,53 @@ def set_roundups(body: RoundUpSettingsIn):
         "enabled": bool(cfg.get("enabled", False)),
         "category": str(cfg.get("category") or "Round-ups"),
     }
+
+
+def _require_approved_session_user(request: Request) -> tuple[int, str]:
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    if not session_email:
+        raise HTTPException(status_code=401, detail="google_auth_required")
+
+    user = get_user_by_email(session_email)
+    if not user:
+        raise HTTPException(status_code=403, detail="user_not_registered")
+    if user.get("status") != "approved":
+        raise HTTPException(status_code=403, detail="user_pending_approval")
+
+    tenant_id_raw = user.get("tenant_id")
+    tenant_id = int(tenant_id_raw) if tenant_id_raw else 0
+    if tenant_id <= 0:
+        raise HTTPException(status_code=403, detail="tenant_not_assigned")
+    return tenant_id, session_email
+
+
+@router.post("/settings/widget-token")
+def create_widget_token(request: Request):
+    if not MULTI_TENANT_ENABLED:
+        raise HTTPException(status_code=400, detail="widget_token_requires_multi_tenant")
+    tenant_id, session_email = _require_approved_session_user(request)
+
+    token = issue_widget_token(tenant_id=tenant_id, user_email=session_email)
+    return {"ok": True, "widget_token": token, "tenant_id": tenant_id}
+
+
+@router.post("/settings/widget-script")
+def create_widget_script(request: Request):
+    if not MULTI_TENANT_ENABLED:
+        raise HTTPException(status_code=400, detail="widget_token_requires_multi_tenant")
+    tenant_id, session_email = _require_approved_session_user(request)
+    token = issue_widget_token(tenant_id=tenant_id, user_email=session_email)
+
+    script_path = Path("scripts") / "scriptable_finance_widget.js"
+    script_template = script_path.read_text(encoding="utf-8")
+
+    base_url = str(request.base_url).rstrip("/")
+    script = script_template.replace(
+        'const BASE_URL = "https://webapp-pe3q.onrender.com";',
+        f'const BASE_URL = "{base_url}";',
+    )
+    script = script.replace(
+        'const WIDGET_TOKEN = "";',
+        f'const WIDGET_TOKEN = "{token}";',
+    )
+    return {"ok": True, "tenant_id": tenant_id, "script": script}

@@ -9,11 +9,10 @@ const WIDGET_ENABLED = true;
 
 // ===== CONFIG =====
 const BASE_URL = "https://webapp-pe3q.onrender.com";
-const SECRET = "398867"; // Must match server WIDGET_SECRET
-const TENANT_ID = ""; // Required in multi-tenant mode: set to your tenant id (e.g. "20")
+const WIDGET_TOKEN = ""; // Create via POST /settings/widget-token from an OAuth-authenticated session.
 const ENDPOINT = "/widget/summary";
 const VERSION_ENDPOINT = "/widget/version";
-const VERSION_CHECK_MINUTES = 180; // hit /widget/version at most every 3 hours
+const VERSION_CHECK_MINUTES = 15; // hit /widget/version at most every 15 minutes
 
 const fm = FileManager.local();
 const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), "finance_widget_cache.json");
@@ -72,20 +71,15 @@ function isValidPayload(payload) {
   );
 }
 
-function normalizedTenantId() {
-  const tid = String(TENANT_ID || "").trim();
-  return /^\d+$/.test(tid) && Number(tid) > 0 ? tid : "";
+function normalizedWidgetToken() {
+  return String(WIDGET_TOKEN || "").trim();
 }
 
-async function fetchFresh(expectedVersion = null) {
-  const qp = Number.isFinite(Number(expectedVersion))
-    ? `?widget_version=${encodeURIComponent(String(Number(expectedVersion)))}`
-    : "";
-  const req = new Request(BASE_URL + ENDPOINT + qp);
-  const headers = { "x-widget-secret": SECRET };
-  const tid = normalizedTenantId();
-  if (!tid) throw new Error("tenant_id_required");
-  headers["x-tenant-id"] = tid;
+async function fetchFresh() {
+  const req = new Request(BASE_URL + ENDPOINT);
+  const token = normalizedWidgetToken();
+  if (!token) throw new Error("widget_token_required");
+  const headers = { "x-widget-token": token };
   req.headers = headers;
   req.timeoutInterval = 10;
   const payload = await req.loadJSON();
@@ -97,10 +91,9 @@ async function fetchFresh(expectedVersion = null) {
 
 async function fetchWidgetVersion() {
   const req = new Request(BASE_URL + VERSION_ENDPOINT);
-  const headers = { "x-widget-secret": SECRET };
-  const tid = normalizedTenantId();
-  if (!tid) throw new Error("tenant_id_required");
-  headers["x-tenant-id"] = tid;
+  const token = normalizedWidgetToken();
+  if (!token) throw new Error("widget_token_required");
+  const headers = { "x-widget-token": token };
   req.headers = headers;
   req.timeoutInterval = 8;
   const payload = await req.loadJSON();
@@ -351,7 +344,6 @@ let cacheAgeMin = Infinity;
 let periodicRefresh = false;
 let dailyRefresh = false;
 let versionRefresh = false;
-let knownServerVersion = null;
 
 const cache = loadCache();
 if (cache && isValidPayload(cache.data)) {
@@ -364,7 +356,6 @@ dailyRefresh = shouldMarkDailyRefresh(cache);
 if (payload && shouldCheckVersion(cache)) {
   try {
     const serverVersion = await fetchWidgetVersion();
-    knownServerVersion = serverVersion;
     const cachedVersion = Number(
       cache && cache.data && Number.isFinite(Number(cache.data.widget_version))
         ? Number(cache.data.widget_version)
@@ -382,7 +373,7 @@ if (payload && shouldCheckVersion(cache)) {
 
 if (!payload || periodicRefresh || versionRefresh) {
   try {
-    payload = await fetchFresh(knownServerVersion);
+    payload = await fetchFresh();
     usedCache = false;
     saveCache({
       ...payload,

@@ -25,6 +25,7 @@ from app.core.tenancy import (
     list_pending_users,
     approve_user,
 )
+from app.core.widget_tokens import resolve_widget_token
 from app.core.config import (
     WIDGET_SECRET,
     SESSION_SECRET,
@@ -723,20 +724,22 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
         tenant_token = set_current_tenant_id(None)
 
         try:
-            # Widget endpoints: allow header-based auth (Shortcut/Scriptable)
+            # Widget endpoints: OAuth-bound widget token auth.
             if path.startswith("/widget/"):
-                provided = request.headers.get("x-widget-secret", "")
-                if WIDGET_SECRET and provided == WIDGET_SECRET:
-                    if MULTI_TENANT_ENABLED:
-                        raw_tid = (request.headers.get("x-tenant-id") or "").strip()
-                        if (not raw_tid.isdigit()) or int(raw_tid) <= 0:
-                            return JSONResponse({"ok": False, "error": "tenant_id_required"}, status_code=403)
-                        tenant_id = int(raw_tid)
-                        if not tenant_id:
-                            return JSONResponse({"ok": False, "error": "tenant_required"}, status_code=403)
-                        set_current_tenant_id(int(tenant_id))
+                widget_token = (request.headers.get("x-widget-token") or "").strip()
+                if widget_token:
+                    subject = resolve_widget_token(widget_token)
+                    if not subject:
+                        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+                    set_current_tenant_id(int(subject["tenant_id"]))
                     return await call_next(request)
-                return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+                # Legacy fallback for single-tenant mode only.
+                if (not MULTI_TENANT_ENABLED) and WIDGET_SECRET:
+                    provided = request.headers.get("x-widget-secret", "")
+                    if provided == WIDGET_SECRET:
+                        return await call_next(request)
+                return JSONResponse({"ok": False, "error": "widget_token_required"}, status_code=401)
 
             # Always allow these
             if path in PUBLIC_EXACT:
