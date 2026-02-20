@@ -2,7 +2,7 @@
 // Copy/paste this file into Scriptable.
 // Optimized to reduce backend/Neon CPU:
 // - Widget rendering prefers local cache.
-// - Network refresh happens in Shortcut mode and periodically in widget mode.
+// - Network refresh happens in Shortcut mode (or first run with no cache).
 
 // ===== TOGGLE =====
 const WIDGET_ENABLED = true;
@@ -11,12 +11,9 @@ const WIDGET_ENABLED = true;
 const BASE_URL = "https://webapp-pe3q.onrender.com";
 const WIDGET_TOKEN = ""; // Create via POST /settings/widget-token from an OAuth-authenticated session.
 const ENDPOINT = "/widget/summary";
-const VERSION_ENDPOINT = "/widget/version";
-const VERSION_CHECK_MINUTES = 15; // hit /widget/version at most every 15 minutes
 
 const fm = FileManager.local();
 const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), "finance_widget_cache.json");
-const WIDGET_NETWORK_REFRESH_MINUTES = 12 * 60; // at least twice daily
 
 function finish(widget, output = "Widget refreshed") {
   try { Script.setShortcutOutput(output); } catch (_) {}
@@ -27,10 +24,7 @@ function finish(widget, output = "Widget refreshed") {
 
 function saveCache(obj) {
   const now = Date.now();
-  try { fm.writeString(CACHE_PATH, JSON.stringify({ ts: now, version_check_ts: now, data: obj })); } catch (_) {}
-}
-function saveRawCache(cacheObj) {
-  try { fm.writeString(CACHE_PATH, JSON.stringify(cacheObj)); } catch (_) {}
+  try { fm.writeString(CACHE_PATH, JSON.stringify({ ts: now, data: obj })); } catch (_) {}
 }
 function loadCache() {
   if (!fm.fileExists(CACHE_PATH)) return null;
@@ -39,27 +33,6 @@ function loadCache() {
 function cacheAgeMinutes(cache) {
   if (!cache || !cache.ts) return Infinity;
   return (Date.now() - cache.ts) / 60000;
-}
-
-function shouldDoPeriodicRefresh(cache) {
-  if (!cache || !cache.data) return true;
-  const age = cacheAgeMinutes(cache);
-  if (!Number.isFinite(age)) return true;
-  return age >= WIDGET_NETWORK_REFRESH_MINUTES;
-}
-
-function shouldMarkDailyRefresh(cache) {
-  if (!cache || !cache.data) return false;
-  return cacheAgeMinutes(cache) >= (24 * 60);
-}
-
-function shouldCheckVersion(cache) {
-  if (!cache || !cache.data) return false;
-  const checkedTs = Number(cache.version_check_ts || 0);
-  if (!checkedTs) return true;
-  const ageMin = (Date.now() - checkedTs) / 60000;
-  if (!Number.isFinite(ageMin)) return true;
-  return ageMin >= VERSION_CHECK_MINUTES;
 }
 
 function isValidPayload(payload) {
@@ -87,19 +60,6 @@ async function fetchFresh() {
     throw new Error("invalid_widget_payload");
   }
   return payload;
-}
-
-async function fetchWidgetVersion() {
-  const req = new Request(BASE_URL + VERSION_ENDPOINT);
-  const token = normalizedWidgetToken();
-  if (!token) throw new Error("widget_token_required");
-  const headers = { "x-widget-token": token };
-  req.headers = headers;
-  req.timeoutInterval = 8;
-  const payload = await req.loadJSON();
-  if (!payload || payload.ok !== true) return null;
-  const v = Number(payload.widget_version);
-  return Number.isFinite(v) ? v : null;
 }
 
 function colorGreen()  { return Color.dynamic(new Color("#34C759"), new Color("#30D158")); }
@@ -341,9 +301,6 @@ if (!fam) {
 let payload = null;
 let usedCache = true;
 let cacheAgeMin = Infinity;
-let periodicRefresh = false;
-let dailyRefresh = false;
-let versionRefresh = false;
 
 const cache = loadCache();
 if (cache && isValidPayload(cache.data)) {
@@ -351,27 +308,7 @@ if (cache && isValidPayload(cache.data)) {
   cacheAgeMin = cacheAgeMinutes(cache);
 }
 
-periodicRefresh = shouldDoPeriodicRefresh(cache);
-dailyRefresh = shouldMarkDailyRefresh(cache);
-if (payload && shouldCheckVersion(cache)) {
-  try {
-    const serverVersion = await fetchWidgetVersion();
-    const cachedVersion = Number(
-      cache && cache.data && Number.isFinite(Number(cache.data.widget_version))
-        ? Number(cache.data.widget_version)
-        : Number(payload.widget_version)
-    );
-    if (Number.isFinite(serverVersion) && Number.isFinite(cachedVersion) && serverVersion !== cachedVersion) {
-      versionRefresh = true;
-    } else if (cache) {
-      cache.version_check_ts = Date.now();
-      saveRawCache(cache);
-    }
-  } catch (_) {
-  }
-}
-
-if (!payload || periodicRefresh || versionRefresh) {
+if (!payload) {
   try {
     payload = await fetchFresh();
     usedCache = false;
@@ -408,14 +345,12 @@ const pct = cap > 0 ? (used / cap) : 0;
 if (fam === "accessoryInline") {
   const w = new ListWidget();
   w.addText(`Left ${money0(leftToday)}`);
-  w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
   return finish(w);
 }
 
 if (fam === "accessoryCircular") {
   const w = new ListWidget();
   w.addText(money0(leftToday)).font = Font.boldSystemFont(12);
-  w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
   return finish(w);
 }
 
@@ -444,7 +379,6 @@ if (fam === "accessoryRectangular") {
   safeLine.font = Font.systemFont(12);
   safeLine.textOpacity = 0.75;
 
-  w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
   return finish(w);
 }
 
@@ -530,10 +464,9 @@ w.addSpacer(8);
 const footer = w.addText(
   usedCache
     ? `Cache ${Math.round(cacheAgeMin)}m`
-    : (versionRefresh ? "Live (purchase)" : (dailyRefresh ? "Live (daily)" : (periodicRefresh ? "Live (scheduled)" : "Live")))
+    : "Live"
 );
 footer.font = Font.systemFont(10);
 footer.textOpacity = 0.6;
 
-w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
 return finish(w);
