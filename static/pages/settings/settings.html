@@ -180,11 +180,27 @@
       <div class="settings-card">
         <div class="settings-row" style="justify-content:space-between;">
           <div>
-            <div style="font-weight:950;">Parser wizard (trial)</div>
-            <div class="settings-muted" style="margin:4px 0 0 0;">Build parser rules for new banks in dry-run mode.</div>
+            <div style="font-weight:950;">Parser wizard</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Create and maintain live parser rules.</div>
           </div>
           <a class="settings-btn primary" href="/email-parser-wizard">Open Wizard</a>
         </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div style="font-weight:900;margin-bottom:6px;">Manual backfill parse</div>
+        <div class="settings-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
+            Lookback days
+            <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7" style="max-width:120px;">
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; font-weight:800; font-size:12px; opacity:.9; margin-bottom:10px;">
+            <input id="emailParserIncludeProcessed" type="checkbox" checked>
+            Include already processed emails
+          </label>
+          <button class="settings-btn primary" id="runEmailParserBackfillBtn" type="button">Fetch + Parse + Insert</button>
+        </div>
+        <div id="emailParserBackfillStatus" class="settings-muted" role="status" aria-live="polite"></div>
+        <pre id="emailParserBackfillLog" class="settings-code" style="max-height:260px; overflow:auto; margin-top:8px; display:none;"></pre>
+        <div id="emailParserBackfillRows" style="display:none; margin-top:8px;"></div>
       </div>
     </section>
 

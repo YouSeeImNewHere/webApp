@@ -321,6 +321,143 @@ async function loadDailyWeightsSettings() {
   });
 }
 
+function formatBackfillLog(out) {
+  const summary = out?.summary || {};
+  const rows = Array.isArray(out?.rows) ? out.rows : [];
+  const head = [
+    `lookback_days=${Number(summary.lookback_days || 0)}`,
+    `fetched=${Number(summary.fetched || 0)}`,
+    `matched=${Number(summary.matched || 0)}`,
+    `inserted=${Number(summary.inserted || 0)}`,
+    `notified=${Number(summary.notified || 0)}`,
+    `skipped=${Number(summary.skipped || 0)}`,
+  ].join(" | ");
+  const body = rows.map((r) => {
+    const ext = r && r.extracted ? r.extracted : null;
+    const ex = ext
+      ? `amount=${ext.amount} merchant=${ext.merchant} date=${ext.date} time=${ext.time} account_id=${ext.account_id}`
+      : "extracted=none";
+    return [
+      `${r.matched ? "MATCH" : "SKIP"} | inserted=${!!r.inserted} | notified=${!!r.notified} | reason=${r.reason || ""}`,
+      `${r.subject || "(no subject)"}`,
+      `${r.sender || ""}`,
+      ex,
+    ].join("\n");
+  }).join("\n\n");
+  return body ? `${head}\n\n${body}` : `${head}\n\n(no rows)`;
+}
+
+function esc(v) {
+  return String(v == null ? "" : v)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderBackfillRows(out) {
+  const host = document.getElementById("emailParserBackfillRows");
+  if (!host) return;
+  const rows = Array.isArray(out?.rows) ? out.rows : [];
+  if (!rows.length) {
+    host.innerHTML = "";
+    host.style.display = "none";
+    return;
+  }
+  const parts = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const r = rows[i] || {};
+    const idx = i + 1;
+    const cls = r.matched ? "match" : "skip";
+    const reason = esc(r.reason || "");
+    const hdr = `${r.matched ? "MATCH" : "SKIP"} | inserted=${!!r.inserted} | notified=${!!r.notified}`;
+    const body = esc(r.body_excerpt || "");
+    const attempts = Array.isArray(r.attempted_parsers) ? r.attempted_parsers : [];
+    const attemptsText = attempts.length
+      ? attempts.map((a) => [
+        `draft_id=${a.draft_id || 0}`,
+        `sender_matched=${!!a.sender_matched}`,
+        `subject_contains=${a.subject_contains || ""}`,
+        `sender_pattern=${a.sender_pattern || ""}`,
+        `regex=${a.regex || ""}`,
+      ].join(" | ")).join("\n\n")
+      : "No parser attempts recorded.";
+    parts.push(`
+      <div class="backfill-row ${cls}">
+        <div class="backfill-row-top">
+          <div class="backfill-row-title">#${idx} ${esc(hdr)}</div>
+          <div class="backfill-row-reason">${reason}</div>
+        </div>
+        <div class="backfill-row-meta">${esc(r.subject || "(no subject)")}</div>
+        <div class="backfill-row-meta">${esc(r.sender || "")}</div>
+        <div class="backfill-row-actions">
+          <button type="button" class="settings-btn" data-toggle="body-${idx}">View body</button>
+          <button type="button" class="settings-btn" data-toggle="attempts-${idx}">View parser attempts</button>
+        </div>
+        <pre id="body-${idx}" class="settings-code backfill-detail" style="display:none;">${body}</pre>
+        <pre id="attempts-${idx}" class="settings-code backfill-detail" style="display:none;">${esc(attemptsText)}</pre>
+      </div>
+    `);
+  }
+  host.innerHTML = parts.join("");
+  host.style.display = "";
+  host.querySelectorAll("button[data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-toggle");
+      if (!id) return;
+      const target = host.querySelector(`#${CSS.escape(id)}`);
+      if (!target) return;
+      target.style.display = target.style.display === "none" ? "" : "none";
+    });
+  });
+}
+
+function bindEmailParserBackfill() {
+  const btn = document.getElementById("runEmailParserBackfillBtn");
+  const daysEl = document.getElementById("emailParserBackfillDays");
+  const includeEl = document.getElementById("emailParserIncludeProcessed");
+  const statusEl = document.getElementById("emailParserBackfillStatus");
+  const logEl = document.getElementById("emailParserBackfillLog");
+  const rowsEl = document.getElementById("emailParserBackfillRows");
+  if (!btn || !daysEl || !includeEl || !statusEl || !logEl) return;
+
+  btn.addEventListener("click", async () => {
+    const daysRaw = Number(daysEl.value || 7);
+    const days = Math.max(1, Math.min(60, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 7));
+    daysEl.value = String(days);
+    const includeProcessed = !!includeEl.checked;
+    btn.disabled = true;
+    statusEl.textContent = "Running parser backfill...";
+    logEl.style.display = "none";
+    logEl.textContent = "";
+    if (rowsEl) {
+      rowsEl.innerHTML = "";
+      rowsEl.style.display = "none";
+    }
+    try {
+      const res = await fetch("/settings/email-parser/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days, include_processed: includeProcessed, max_emails: 5000 }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out?.ok) {
+        const detail = out?.detail || `HTTP ${res.status}`;
+        throw new Error(String(detail));
+      }
+      statusEl.textContent = "Backfill complete.";
+      logEl.textContent = formatBackfillLog(out);
+      logEl.style.display = "";
+      renderBackfillRows(out);
+    } catch (err) {
+      statusEl.textContent = `Backfill failed: ${err?.message || err}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   if (window.Profile) {
     window.Profile.mountEditor("#lesProfileMount");
@@ -350,4 +487,5 @@ document.addEventListener("DOMContentLoaded", () => {
   loadDailyWeightsSettings().catch((err) => console.error(err));
   loadWidgetPreview().catch((err) => console.error(err));
   bindWidgetActions();
+  bindEmailParserBackfill();
 });

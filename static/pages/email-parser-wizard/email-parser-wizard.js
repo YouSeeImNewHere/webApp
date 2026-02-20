@@ -8,7 +8,10 @@
     previewRows: [],
     corrRows: [],
     corrSummary: null,
+    testRows: [],
+    testSummary: null,
     usingMock: false,
+    lastParserMode: "guided",
   };
   const UI_PREFS_KEY = "epw:ui-prefs:v2";
 
@@ -41,33 +44,26 @@
     return body;
   }
 
-  function updateParsingMethodLabel() {
-    const toggle = byId("epwParsingMethodToggle");
-    const label = byId("epwParsingMethodLabel");
-    if (!toggle || !label) return;
-    label.textContent = toggle.checked ? "Anchor-based parsing" : "Flexible parsing";
-  }
-
-  function setHelpOpen(open) {
-    const panel = byId("epwGuideHelpPanel");
-    const btn = byId("epwHelpToggleBtn");
-    if (!panel || !btn) return;
-    panel.classList.toggle("hidden", !open);
-    btn.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
   function applyParserModeVisibility() {
     const mode = byId("epwParserMode")?.value || "guided";
     const adv = byId("epwAdvancedFields");
-    const guidedLayout = byId("epwGuidedLayout")?.closest(".epw-field");
-    const parsingMethod = byId("epwParsingMethodToggle")?.closest(".epw-field");
-    const parsingTypeHelp = byId("epwParsingTypeHelp");
     const guidedFields = byId("epwGuidedFields");
     if (adv) adv.classList.toggle("hidden", mode !== "advanced");
-    if (guidedLayout) guidedLayout.style.display = mode === "guided" ? "" : "none";
-    if (parsingMethod) parsingMethod.style.display = mode === "guided" ? "" : "none";
-    if (parsingTypeHelp) parsingTypeHelp.style.display = mode === "guided" ? "" : "none";
     if (guidedFields) guidedFields.style.display = mode === "guided" ? "" : "none";
+  }
+
+  function syncGuidedEndTextInputs() {
+    [
+      ["epwGuidedAmountEnd", "epwGuidedAmountEndText"],
+      ["epwGuidedMerchantEnd", "epwGuidedMerchantEndText"],
+      ["epwGuidedDateEnd", "epwGuidedDateEndText"],
+      ["epwGuidedTimeEnd", "epwGuidedTimeEndText"],
+    ].forEach(([selId, textId]) => {
+      const sel = byId(selId);
+      const txt = byId(textId);
+      if (!sel || !txt) return;
+      txt.style.display = String(sel.value || "").toLowerCase() === "text" ? "" : "none";
+    });
   }
 
   function syncSubjectFallbackVisibility() {
@@ -79,13 +75,9 @@
 
   function saveUiPrefs() {
     const parserMode = (byId("epwParserMode")?.value || "guided").trim();
-    const guidedLayout = (byId("epwGuidedLayout")?.value || "list").trim();
-    const parsingMethod = byId("epwParsingMethodToggle")?.checked ? "anchor" : "flexible";
     try {
       localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
         parser_mode: parserMode,
-        guided_layout: guidedLayout,
-        parsing_method: parsingMethod,
       }));
     } catch (_e) {
       // Ignore storage failures in private mode or restricted contexts.
@@ -102,12 +94,6 @@
     if (!prefs || typeof prefs !== "object") return;
     if (prefs.parser_mode && byId("epwParserMode")) {
       byId("epwParserMode").value = String(prefs.parser_mode);
-    }
-    if (prefs.guided_layout && byId("epwGuidedLayout")) {
-      byId("epwGuidedLayout").value = String(prefs.guided_layout);
-    }
-    if (byId("epwParsingMethodToggle")) {
-      byId("epwParsingMethodToggle").checked = String(prefs.parsing_method || "anchor") === "anchor";
     }
   }
 
@@ -139,11 +125,9 @@
       byId("epwSenderQuery").value = sender;
     }
     if (setting.parser_mode && byId("epwParserMode")) byId("epwParserMode").value = String(setting.parser_mode);
-    if (setting.rule_role && byId("epwRuleRole")) byId("epwRuleRole").value = String(setting.rule_role);
-    if (setting.parsing_method && byId("epwParsingMethodToggle")) {
-      byId("epwParsingMethodToggle").checked = String(setting.parsing_method).toLowerCase() === "anchor";
-      updateParsingMethodLabel();
-    }
+    if (setting.parser_slot && byId("epwParserSlot")) byId("epwParserSlot").value = String(setting.parser_slot);
+    if (byId("epwPrimaryOverride")) byId("epwPrimaryOverride").checked = !!setting.override_on_primary;
+    if (byId("epwBackupAssumeUnknown")) byId("epwBackupAssumeUnknown").checked = !!setting.backup_assume_unknown;
     if (setting.body_regex && byId("epwBodyRegex")) byId("epwBodyRegex").value = String(setting.body_regex);
     if (setting.flags && byId("epwRegexFlags")) byId("epwRegexFlags").value = String(setting.flags);
     const fm = (setting.field_map && typeof setting.field_map === "object") ? setting.field_map : {};
@@ -152,11 +136,25 @@
     if (Number(fm.date_group) > 0) byId("epwMapDate").value = String(Number(fm.date_group));
     if (Number(fm.time_group) >= 0) byId("epwMapTime").value = String(Number(fm.time_group));
     const guided = (setting.guided && typeof setting.guided === "object") ? setting.guided : {};
-    if (guided.amount_label) byId("epwGuidedAmountLabel").value = String(guided.amount_label);
-    if (guided.merchant_label) byId("epwGuidedMerchantLabel").value = String(guided.merchant_label);
-    if (guided.date_label) byId("epwGuidedDateLabel").value = String(guided.date_label);
-    if (guided.time_label) byId("epwGuidedTimeLabel").value = String(guided.time_label);
-    if (guided.layout_type && byId("epwGuidedLayout")) byId("epwGuidedLayout").value = String(guided.layout_type);
+    if (byId("epwGuidedAmountLabel")) byId("epwGuidedAmountLabel").value = String(guided.amount_label || "");
+    if (byId("epwGuidedMerchantLabel")) byId("epwGuidedMerchantLabel").value = String(guided.merchant_label || "");
+    if (byId("epwGuidedDateLabel")) byId("epwGuidedDateLabel").value = String(guided.date_label || "");
+    if (byId("epwGuidedTimeLabel")) byId("epwGuidedTimeLabel").value = String(guided.time_label || "");
+    if (byId("epwGuidedMerchantOrder")) byId("epwGuidedMerchantOrder").value = String(Number.isFinite(Number(guided.merchant_order)) ? Number(guided.merchant_order) : 0);
+    if (byId("epwGuidedDateOrder")) byId("epwGuidedDateOrder").value = String(Number.isFinite(Number(guided.date_order)) ? Number(guided.date_order) : 0);
+    if (byId("epwGuidedAmountOrder")) byId("epwGuidedAmountOrder").value = String(Number.isFinite(Number(guided.amount_order)) ? Number(guided.amount_order) : 0);
+    if (byId("epwGuidedTimeOrder")) byId("epwGuidedTimeOrder").value = String(Number.isFinite(Number(guided.time_order)) ? Number(guided.time_order) : 0);
+    if (byId("epwGuidedAmountEnd")) byId("epwGuidedAmountEnd").value = String(guided.amount_end || "auto");
+    if (byId("epwGuidedMerchantEnd")) byId("epwGuidedMerchantEnd").value = String(guided.merchant_end || "auto");
+    if (byId("epwGuidedDateEnd")) byId("epwGuidedDateEnd").value = String(guided.date_end || "auto");
+    if (byId("epwGuidedTimeEnd")) byId("epwGuidedTimeEnd").value = String(guided.time_end || "auto");
+    if (byId("epwGuidedAmountEndText")) byId("epwGuidedAmountEndText").value = String(guided.amount_end_text || "");
+    if (byId("epwGuidedMerchantEndText")) byId("epwGuidedMerchantEndText").value = String(guided.merchant_end_text || "");
+    if (byId("epwGuidedDateEndText")) byId("epwGuidedDateEndText").value = String(guided.date_end_text || "");
+    if (byId("epwGuidedTimeEndText")) byId("epwGuidedTimeEndText").value = String(guided.time_end_text || "");
+    if (byId("epwGuidedAccountBefore")) byId("epwGuidedAccountBefore").value = String(guided.account_before || "");
+    if (byId("epwGuidedAccountExact")) byId("epwGuidedAccountExact").value = String(guided.account_exact || "");
+    syncGuidedEndTextInputs();
     applyParserModeVisibility();
     syncSubjectFallbackVisibility();
     renderLiveCapture();
@@ -182,7 +180,9 @@
     const options = ['<option value="">Select subject setting</option>'].concat(settings.map((s) => {
       const subject = String(s.subject_contains || "").trim() || "(blank subject)";
       const name = String(s.name || "").trim();
-      const label = name ? `${subject} - ${name}` : subject;
+      const slot = String(s.parser_slot || "primary").toLowerCase();
+      const labelBase = name ? `${subject} - ${name}` : subject;
+      const label = `${labelBase} [${slot}]`;
       return `<option value="${escapeHtml(String(s.draft_id || ""))}">${escapeHtml(label)}</option>`;
     }));
     sel.innerHTML = options.join("");
@@ -193,18 +193,18 @@
     const secondarySel = byId("epwCorrSecondaryDraft");
     if (!primarySel || !secondarySel) return;
     const settings = Array.isArray(state.accountSettings) ? state.accountSettings : [];
-    const options = ['<option value="">Select draft</option>'].concat(settings.map((s) => {
-      const role = String(s.rule_role || "standard");
+    const options = ['<option value="">Select parser</option>'].concat(settings.map((s) => {
+      const slot = String(s.parser_slot || "primary");
       const subject = String(s.subject_contains || "").trim() || "(blank subject)";
       const name = String(s.name || "").trim();
-      const label = `${subject}${name ? ` - ${name}` : ""} [${role}]`;
+      const label = `${subject}${name ? ` - ${name}` : ""} [${slot}]`;
       return `<option value="${escapeHtml(String(s.draft_id || ""))}">${escapeHtml(label)}</option>`;
     }));
     primarySel.innerHTML = options.join("");
     secondarySel.innerHTML = options.join("");
 
-    const primary = settings.find((s) => String(s.rule_role || "").toLowerCase() === "primary_transaction");
-    const secondary = settings.find((s) => String(s.rule_role || "").toLowerCase() === "secondary_withdrawal");
+    const primary = settings.find((s) => String(s.parser_slot || "").toLowerCase() === "primary");
+    const secondary = settings.find((s) => String(s.parser_slot || "").toLowerCase() === "backup");
     if (primary) primarySel.value = String(primary.draft_id);
     if (secondary) secondarySel.value = String(secondary.draft_id);
   }
@@ -323,28 +323,248 @@
     return new RegExp(source, flags || "i");
   }
 
+  function extractGuidedDirect(body, guided, receivedAt) {
+    const text = String(body || "");
+    const amountRe = /(\$?[-]?[\d,]+\.\d{2})/i;
+    const dateRe = /([A-Za-z]{3},?\s+[A-Za-z]{3}\s+\d{1,2},\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i;
+    const timeRe = /([0-1]?\d:[0-5]\d\s*(?:AM|PM)(?:\s*[A-Z]{2,4})?)/i;
+
+    const ord = {
+      amount: Number(guided?.amount_order || 0),
+      merchant: Number(guided?.merchant_order || 0),
+      date: Number(guided?.date_order || 0),
+      time: Number(guided?.time_order || 0),
+    };
+    const ordered = ["amount", "merchant", "date", "time"]
+      .filter((k) => Number(ord[k]) > 0)
+      .sort((a, b) => Number(ord[a]) - Number(ord[b]));
+    if (Number(ord.amount || 0) <= 0 && guidedAmountPresent(text, guided)) return null;
+    if (!ordered.length) return null;
+
+    const acctBefore = String(guided?.account_before || "").trim();
+    const acctExact = String(guided?.account_exact || "").trim();
+    if (acctBefore && acctExact) {
+      const bpat = boundaryLabelPattern(acctBefore);
+      const epat = escapeRegex(acctExact);
+      const guard = new RegExp(`${bpat}\\s*[:\\-]?\\s*[^\\r\\n]*?${epat}`, "i");
+      if (!guard.test(text)) return null;
+    }
+
+    function ownLineExtract(re, fromIdx) {
+      const sub = text.slice(Math.max(0, fromIdx));
+      const rx = new RegExp(`(?:^|\\r?\\n)\\s*${re.source}`, "i");
+      const m = rx.exec(sub);
+      if (!m) return null;
+      const fullStart = Math.max(0, fromIdx) + m.index;
+      const fullEnd = fullStart + m[0].length;
+      return { value: String(m[1] || "").trim(), next: fullEnd };
+    }
+
+    function labelExtract(label, re, fromIdx) {
+      const sub = text.slice(Math.max(0, fromIdx));
+      const lpat = boundaryLabelPattern(label);
+      const rx = new RegExp(`${lpat}\\s*[:\\-]?\\s*${re.source}`, "i");
+      const m = rx.exec(sub);
+      if (!m) return null;
+      const fullStart = Math.max(0, fromIdx) + m.index;
+      const fullEnd = fullStart + m[0].length;
+      return { value: String(m[1] || "").trim(), next: fullEnd };
+    }
+
+    function merchantFrom(label, endMode, endText, fromIdx) {
+      const sub = text.slice(Math.max(0, fromIdx));
+      let startInSub = -1;
+      if (label) {
+        const lpat = boundaryLabelPattern(label);
+        const m = new RegExp(`${lpat}\\s*[:\\-]?\\s*`, "i").exec(sub);
+        if (!m) return null;
+        startInSub = m.index + m[0].length;
+      } else {
+        const m = /(?:^|\r?\n)\s*([A-Za-z0-9][^\r\n]{1,140})/.exec(sub);
+        if (!m) return null;
+        startInSub = m.index + m[0].indexOf(m[1]);
+      }
+      const after = sub.slice(startInSub);
+      const mode = String(endMode || "auto").toLowerCase();
+      let end = -1;
+      if (mode === "comma" || mode === "auto") end = after.search(/\s*,/);
+      if (end < 0 && mode === "period") end = after.search(/\s*\./);
+      if (end < 0 && mode === "newline") end = after.search(/\r?\n/);
+      if (end < 0 && mode === "sentence_end") end = after.search(/[.!?]/);
+      if (end < 0 && mode === "text") {
+        const needle = String(endText || "").trim();
+        if (needle) {
+          const idx = after.toLowerCase().indexOf(needle.toLowerCase());
+          if (idx >= 0) end = idx;
+        }
+      }
+      if (end < 0 && mode === "auto") {
+        end = after.search(/\s+(?:in\s+the\s+amount\s+of|amount\s+of|on\s+\d{1,2}\/\d{1,2}\/\d{2,4}|on\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})/i);
+      }
+      if (end < 0) end = Math.min(after.length, 160);
+      const raw = String(after.slice(0, end)).trim();
+      const clean = raw.replace(/^[\s,.:;|\-]+|[\s,.:;|\-]+$/g, "").replace(/\s{2,}/g, " ").trim();
+      if (!clean || clean.length < 2 || !/[A-Za-z0-9]/.test(clean)) return null;
+      return {
+        value: clean,
+        next: Math.max(0, fromIdx) + startInSub + end,
+      };
+    }
+
+    const out = { amount: "Unknown", merchant: "Unknown", date: "", time: "" };
+    let cursor = 0;
+    for (const field of ordered) {
+      if (field === "amount") {
+        const label = String(guided?.amount_label || "").trim();
+        let got = label ? (labelExtract(label, amountRe, cursor) || labelExtract(label, amountRe, 0)) : null;
+        if (!got) got = ownLineExtract(amountRe, cursor) || ownLineExtract(amountRe, 0);
+        if (!got) {
+          const m = amountRe.exec(text);
+          if (m) got = { value: String(m[1] || "").trim(), next: (m.index + m[0].length) };
+        }
+        if (!got) return null;
+        out.amount = got.value;
+        cursor = got.next;
+      } else if (field === "date") {
+        const label = String(guided?.date_label || "").trim();
+        let got = label ? (labelExtract(label, dateRe, cursor) || labelExtract(label, dateRe, 0)) : null;
+        if (!got) got = ownLineExtract(dateRe, cursor) || ownLineExtract(dateRe, 0);
+        if (!got) {
+          const m = dateRe.exec(text);
+          if (m) got = { value: String(m[1] || "").trim(), next: (m.index + m[0].length) };
+        }
+        if (!got) return null;
+        out.date = got.value;
+        cursor = got.next;
+      } else if (field === "time") {
+        const label = String(guided?.time_label || "").trim();
+        let got = label ? (labelExtract(label, timeRe, cursor) || labelExtract(label, timeRe, 0)) : null;
+        if (!got) got = ownLineExtract(timeRe, cursor) || ownLineExtract(timeRe, 0);
+        if (!got) {
+          const m = timeRe.exec(text);
+          if (m) got = { value: String(m[1] || "").trim(), next: (m.index + m[0].length) };
+        }
+        if (!got) {
+          out.time = timeFromReceivedAt(receivedAt);
+          continue;
+        }
+        out.time = got.value;
+        cursor = got.next;
+      } else if (field === "merchant") {
+        const label = String(guided?.merchant_label || "").trim();
+        const endText = String(guided?.merchant_end_text || "").trim();
+        let got = merchantFrom(label, guided?.merchant_end, endText, cursor) || merchantFrom(label, guided?.merchant_end, endText, 0);
+        if (!got && !label) got = merchantFrom("", guided?.merchant_end, endText, cursor) || merchantFrom("", guided?.merchant_end, endText, 0);
+        if (!got) return null;
+        let mv = String(got.value || "").trim();
+        // For Description-style lines, prefer the trailing segment after " - ".
+        if (/description:?/i.test(label) && /\s-\s/.test(mv)) {
+          const parts = mv.split(/\s-\s/).map((x) => String(x || "").trim()).filter(Boolean);
+          if (parts.length) mv = parts[parts.length - 1];
+        }
+        out.merchant = mv;
+        cursor = got.next;
+      }
+    }
+    if (!out.time) out.time = timeFromReceivedAt(receivedAt);
+    if (!out.amount) out.amount = "Unknown";
+    return out;
+  }
+
   function safeExtract(body, payload, receivedAt) {
+    function guidedAccountGuardPass(text, guided) {
+      const acctBefore = String(guided?.account_before || "").trim();
+      const acctExact = String(guided?.account_exact || "").trim();
+      if (!(acctBefore && acctExact)) return true;
+      try {
+        const bpat = boundaryLabelPattern(acctBefore);
+        const epat = escapeRegex(acctExact);
+        const guard = new RegExp(`${bpat}\\s*[:\\-]?\\s*[^\\r\\n]*?${epat}`, "i");
+        return guard.test(String(text || ""));
+      } catch (_e) {
+        return false;
+      }
+    }
+
+    if (String(payload?.parser_mode || "").toLowerCase() === "guided") {
+      const g0 = payload?.guided || {};
+      if (Number(g0?.amount_order || 0) <= 0 && guidedAmountPresent(body, g0)) {
+        return { matched: false, error: "Amount found but parser is set to unknown amount", extracted: null };
+      }
+      if (!guidedAccountGuardPass(body, payload?.guided || {})) {
+        return { matched: false, error: "Account sequence guard failed", extracted: null };
+      }
+    }
     let rx = null;
     try {
       rx = compileClientRegex(payload.body_regex || "", payload.flags || "i");
     } catch (e) {
       return { matched: false, error: `Invalid regex: ${e.message}`, extracted: null };
     }
-    const m = rx.exec(String(body || ""));
+    let m = rx.exec(String(body || ""));
     if (!m) return { matched: false, error: "No match", extracted: null };
     const g = payload.field_map || {};
     const merchantGroup = Number(g.merchant_group) || 0;
     const merchantVal = merchantGroup > 0 ? (m[merchantGroup] || "") : "";
-    return {
+    const out = {
       matched: true,
       error: "",
       extracted: {
-        amount: m[Number(g.amount_group) || 0] || "",
+        amount: ((Number(g.amount_group) || 0) > 0 ? (m[Number(g.amount_group)] || "") : "") || "Unknown",
         merchant: merchantVal || "Unknown",
         date: m[Number(g.date_group) || 0] || "",
         time: ((Number(g.time_group) || 0) > 0 ? (m[Number(g.time_group)] || "") : "") || timeFromReceivedAt(receivedAt),
       },
     };
+    const ext = out.extracted || {};
+    ext.amount = String(ext.amount || "").trim();
+    ext.date = String(ext.date || "").trim();
+    ext.time = String(ext.time || "").trim();
+    ext.merchant = String(ext.merchant || "").trim().replace(/^[\s,.:;|\-]+|[\s,.:;|\-]+$/g, "").replace(/\s{2,}/g, " ");
+    const merchPrefix = String(payload?.guided?.merchant_label || "").trim().toLowerCase();
+    if (merchPrefix && ext.merchant.toLowerCase().startsWith(`${merchPrefix} `)) {
+      ext.merchant = ext.merchant.slice(merchPrefix.length).trim();
+    }
+    if (!ext.merchant || !/[A-Za-z0-9]/.test(ext.merchant) || ext.merchant.length < 2) {
+      ext.merchant = "Unknown";
+    }
+    // Guided rescue pass: if merchant is still unknown, try a direct "text before + ends at" extraction.
+    if (ext.merchant === "Unknown" && String(payload?.parser_mode || "").toLowerCase() === "guided") {
+      const gcfg = payload?.guided || {};
+      const mLabel = String(gcfg.merchant_label || "").trim();
+      const mEnd = String(gcfg.merchant_end || "auto").toLowerCase();
+      const mEndText = String(gcfg.merchant_end_text || "").trim();
+      if (mLabel) {
+        const lpat = boundaryLabelPattern(mLabel);
+        let direct = null;
+        try {
+          if (mEnd === "comma" || mEnd === "auto") {
+            direct = new RegExp(`${lpat}\\s+([^,\\r\\n]{2,140})(?=\\s*,)`, "i").exec(String(body || ""));
+          }
+          if (!direct && mEnd === "newline") {
+            direct = new RegExp(`${lpat}\\s+([^\\r\\n]{2,140})(?=\\s*\\r?\\n)`, "i").exec(String(body || ""));
+          }
+          if (!direct && mEnd === "text" && mEndText) {
+            direct = new RegExp(`${lpat}\\s+([\\s\\S]{2,140}?)(?=${escapeRegex(mEndText)})`, "i").exec(String(body || ""));
+          }
+          if (!direct) {
+            direct = new RegExp(`${lpat}\\s+([^\\r\\n]{2,140})`, "i").exec(String(body || ""));
+          }
+        } catch (_e) {
+          direct = null;
+        }
+        if (direct && direct[1]) {
+          let mclean = String(direct[1] || "").trim().replace(/^[\s,.:;|\-]+|[\s,.:;|\-]+$/g, "").replace(/\s{2,}/g, " ");
+          if (mclean.toLowerCase().startsWith(`${merchPrefix} `)) {
+            mclean = mclean.slice(merchPrefix.length).trim();
+          }
+          if (mclean && /[A-Za-z0-9]/.test(mclean) && mclean.length >= 2) {
+            ext.merchant = mclean;
+          }
+        }
+      }
+    }
+    return out;
   }
 
   function highlightCapturedBody(body, extracted) {
@@ -407,6 +627,7 @@
     const fullBody = String(s.body || "");
     const displayBody = fullBody.slice(0, 12000);
     const truncated = fullBody.length > displayBody.length;
+    syncAdvancedRegexFromGuided();
     const { payload, error } = buildLivePayload();
     if (!payload) {
       statusEl.textContent = error || "Fill rule fields to preview captures.";
@@ -571,6 +792,49 @@
     }).join("");
   }
 
+  function renderTestReport() {
+    const summaryEl = byId("epwTestSummary");
+    const rowsEl = byId("epwTestRows");
+    if (!summaryEl || !rowsEl) return;
+    if (!state.testSummary) {
+      summaryEl.textContent = "No parser test run yet.";
+      rowsEl.innerHTML = "";
+      return;
+    }
+    const s = state.testSummary || {};
+    summaryEl.textContent = `Parsers ${Number(s.parsers || 0)} | Fetched ${Number(s.fetched || 0)} | Matched ${Number(s.matched || 0)} | Skipped ${Number(s.skipped || 0)} | Would insert ${Number(s.would_insert || 0)} | Would skip insert ${Number(s.would_skip_insert || 0)}`;
+    const rows = Array.isArray(state.testRows) ? state.testRows : [];
+    rowsEl.innerHTML = rows.map((r) => {
+      const ok = !!r.matched;
+      const chipClass = ok ? "ok" : "bad";
+      const chipLabel = ok ? "Matched" : "Skipped";
+      const p = r.parser || {};
+      const ext = r.extracted || {};
+      const would = r.would_db_row || {};
+      const parserLine = ok
+        ? `parser=${p.name || "(unnamed)"} [${p.slot || ""}] id=${p.draft_id || ""} account=${p.account_label || p.account_id || ""}`
+        : `reason=${r.skip_reason || "no_parser_match"}`;
+      const extLine = ok
+        ? `amount=${ext.amount || ""} merchant=${ext.merchant || ""} date=${ext.date || ""} time=${ext.time || ""}`
+        : "";
+      const dbLine = r.would_insert
+        ? `DB -> account_id=${would.account_id} amount=${would.amount} merchant=${would.merchant} purchasedate=${would.purchasedate} time=${would.time} source=${would.source}`
+        : `DB -> skipped (${r.skip_reason || "no_parser_match"})`;
+      return `
+        <div class="epw-row ${ok ? "epw-row-match" : "epw-row-no-match"}">
+          <div class="epw-row-head">
+            <div class="epw-row-title">${escapeHtml(String(r.subject || "(no subject)"))}</div>
+            <span class="epw-chip ${chipClass}">${chipLabel}</span>
+          </div>
+          <div class="epw-row-sub">${escapeHtml(String(r.sender || ""))}</div>
+          <div class="epw-row-sub">${escapeHtml(parserLine)}</div>
+          ${extLine ? `<div class="epw-row-sub">${escapeHtml(extLine)}</div>` : ""}
+          <div class="epw-row-sub">${escapeHtml(dbLine)}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
   function getDraftPayload() {
     const accountId = Number(byId("epwAccount")?.value || 0);
     const senderPattern = (byId("epwSenderQuery")?.value || "").trim();
@@ -581,9 +845,10 @@
     const selectedAccount = (state.accounts || []).find((a) => Number(a.id) === Number(accountId));
     const accountLabel = selectedAccount ? `${selectedAccount.institution || "Account"} ${selectedAccount.name || ""}`.trim() : `Account ${accountId}`;
     const name = `${accountLabel} ${subjectContains || "Email Rule"}`.trim();
-    const ruleRole = (byId("epwRuleRole")?.value || "standard").trim().toLowerCase();
-    const guidedLayout = (byId("epwGuidedLayout")?.value || "list").trim();
-    const parsingMethod = byId("epwParsingMethodToggle")?.checked ? "anchor" : "flexible";
+    const parserSlot = (byId("epwParserSlot")?.value || "primary").trim().toLowerCase();
+    const overrideOnPrimary = !!byId("epwPrimaryOverride")?.checked;
+    const backupAssumeUnknown = !!byId("epwBackupAssumeUnknown")?.checked;
+    const parsingMethod = "guided_blocks";
 
     const fieldMap = {
       amount_group: Number(byId("epwMapAmount")?.value || 0),
@@ -597,14 +862,29 @@
       merchant_label: (byId("epwGuidedMerchantLabel")?.value || "").trim(),
       date_label: (byId("epwGuidedDateLabel")?.value || "").trim(),
       time_label: (byId("epwGuidedTimeLabel")?.value || "").trim(),
-      layout_type: guidedLayout,
+      merchant_order: Number(byId("epwGuidedMerchantOrder")?.value || 0),
+      date_order: Number(byId("epwGuidedDateOrder")?.value || 0),
+      amount_order: Number(byId("epwGuidedAmountOrder")?.value || 0),
+      time_order: Number(byId("epwGuidedTimeOrder")?.value || 0),
+      amount_end: (byId("epwGuidedAmountEnd")?.value || "auto").trim(),
+      merchant_end: (byId("epwGuidedMerchantEnd")?.value || "auto").trim(),
+      date_end: (byId("epwGuidedDateEnd")?.value || "auto").trim(),
+      time_end: (byId("epwGuidedTimeEnd")?.value || "auto").trim(),
+      amount_end_text: (byId("epwGuidedAmountEndText")?.value || "").trim(),
+      merchant_end_text: (byId("epwGuidedMerchantEndText")?.value || "").trim(),
+      date_end_text: (byId("epwGuidedDateEndText")?.value || "").trim(),
+      time_end_text: (byId("epwGuidedTimeEndText")?.value || "").trim(),
+      account_before: (byId("epwGuidedAccountBefore")?.value || "").trim(),
+      account_exact: (byId("epwGuidedAccountExact")?.value || "").trim(),
     };
 
     return {
       name,
       parser_mode: parserMode,
       parsing_method: parsingMethod,
-      rule_role: ruleRole,
+      parser_slot: parserSlot,
+      override_on_primary: overrideOnPrimary,
+      backup_assume_unknown: backupAssumeUnknown,
       pending_ttl_minutes: 30,
       account_id: accountId,
       sender_pattern: senderPattern,
@@ -621,61 +901,205 @@
     return String(v || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
+  function guidedLabelPattern(v) {
+    const parts = String(v || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => escapeRegex(p));
+    if (!parts.length) return "";
+    // Be tolerant to HTML/text normalization differences in sentence bodies.
+    return parts.join("\\s+");
+  }
+
+  function boundaryLabelPattern(v) {
+    const core = guidedLabelPattern(v);
+    if (!core) return "";
+    // Use non-word boundaries so labels with punctuation (e.g. "Description:")
+    // still match reliably, while short labels like "at" don't match inside "that".
+    return `(?<!\\w)${core}(?!\\w)`;
+  }
+
+  function guidedAmountPresent(text, guided) {
+    const body = String(text || "");
+    const label = String(guided?.amount_label || "").trim();
+    const amountCore = "\\$?[-]?[\\d,]+\\.\\d{2}";
+    try {
+      if (label) {
+        const lpat = boundaryLabelPattern(label);
+        if (lpat) {
+          return new RegExp(`${lpat}\\s*[:\\-]?\\s*${amountCore}`, "i").test(body);
+        }
+      }
+      return new RegExp(amountCore, "i").test(body);
+    } catch (_e) {
+      return new RegExp(amountCore, "i").test(body);
+    }
+  }
+
   function buildRegexFromGuided(payload) {
     const g = payload.guided || {};
-    const layout = String(g.layout_type || "list").toLowerCase();
-    const role = String(payload.rule_role || "standard").toLowerCase();
-    const parsingMethod = String(payload.parsing_method || "anchor").toLowerCase();
-    const strict = parsingMethod === "anchor";
-    const amountL = escapeRegex(g.amount_label || "Amount");
-    const merchantL = escapeRegex(g.merchant_label || "Merchant");
-    const dateL = escapeRegex(g.date_label || "Date");
-    const timeL = escapeRegex(g.time_label || "Time");
+    const amountL = boundaryLabelPattern(g.amount_label || "");
+    const merchantL = boundaryLabelPattern(g.merchant_label || "");
+    const dateL = boundaryLabelPattern(g.date_label || "");
+    const timeL = boundaryLabelPattern(g.time_label || "");
     const amountPattern = "(\\$?[-]?[\\d,]+\\.\\d{2})";
     const datePattern = "([A-Za-z]{3},?\\s+[A-Za-z]{3}\\s+\\d{1,2},\\s+\\d{4}|[A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})";
     const timePattern = "([0-1]?\\d:[0-5]\\d\\s*(?:AM|PM)(?:\\s*[A-Z]{2,4})?)";
-    let bodyRegex = "";
-    let fieldMap = { amount_group: 1, merchant_group: 2, date_group: 3, time_group: 4 };
+    const orderMap = {
+      merchant: Number(g.merchant_order || 0),
+      date: Number(g.date_order || 0),
+      amount: Number(g.amount_order || 0),
+      time: Number(g.time_order || 0),
+    };
 
-    if (layout === "list") {
-      if (strict) {
-        bodyRegex =
-          `(?is)(?=.*?${amountL}\\s*[:\\-]?\\s*${amountPattern})` +
-          `(?=.*?${merchantL}\\s*[:\\-]?\\s*(.+?)(?:\\r?\\n|$))` +
-          `(?=.*?${dateL}\\s*[:\\-]?\\s*${datePattern})` +
-          (g.time_label ? `(?=.*?${timeL}\\s*[:\\-]?\\s*${timePattern})?` : "") +
-          ".*";
-      } else {
-        bodyRegex =
-          `(?is)(?=.*?(?:${amountL}\\s*[:\\-]?\\s*)?${amountPattern})` +
-          `(?=.*?${merchantL}\\s*[:\\-]?\\s*(.+?)(?:\\r?\\n|$))` +
-          `(?=.*?(?:${dateL}\\s*[:\\-]?\\s*)?${datePattern})` +
-          ".*";
+    function prefixFor(labelEscaped) {
+      if (!labelEscaped) return "";
+      return `${labelEscaped}\\s*[:\\-]?\\s*`;
+    }
+
+    function delimSuffix(mode, textVal) {
+      const m = String(mode || "auto").toLowerCase();
+      if (m === "comma") return "(?=\\s*,)";
+      if (m === "period") return "(?=\\s*\\.)";
+      if (m === "newline") return "(?=\\s*\\r?\\n)";
+      if (m === "sentence_end") return "(?=\\s*[.!?])";
+      if (m === "text") {
+        const t = String(textVal || "").trim();
+        return t ? `(?=${escapeRegex(t)})` : "";
       }
-    } else if (layout === "sentence") {
-      if (role === "secondary_withdrawal") {
-        bodyRegex =
-          `(?is)${amountPattern}\\s+was\\s+withdrawn.*?As\\s+of\\s+${datePattern}\\s+at\\s+${timePattern}`;
-        fieldMap = { amount_group: 1, merchant_group: 0, date_group: 2, time_group: 3 };
-      } else {
-        bodyRegex =
-          `(?is)(?:transaction\\s+for\\s+)?${amountPattern}.*?\\bat\\s+(.+?)\\s+` +
-          `(?:at\\s+${timePattern}\\s+)?on\\s+${datePattern}`;
-        fieldMap = { amount_group: 1, merchant_group: 2, date_group: 4, time_group: 3 };
+      return "";
+    }
+
+    function segmentFor(key) {
+      if (key === "amount") {
+        if (!amountL) return `(?:^|\\r?\\n)\\s*${amountPattern}(?:\\s*(?:\\r?\\n|$))`;
+        return `${prefixFor(amountL)}${amountPattern}${delimSuffix(g.amount_end, g.amount_end_text)}`;
       }
-    } else if (layout === "no_anchor") {
-      bodyRegex =
-        `(?is)(?:^|\\n)\\s*([^\\n$]{2,80})\\s*(?:\\r?\\n)+\\s*` +
-        `${amountPattern}\\*?\\s*(?:\\r?\\n)+\\s*${datePattern}` +
-        `(?:\\s+${timePattern})?`;
-      fieldMap = { amount_group: 2, merchant_group: 1, date_group: 3, time_group: 4 };
-    } else {
-      throw new Error("Unsupported guided layout type.");
+      if (key === "date") {
+        if (!dateL) return `(?:^|\\r?\\n)\\s*${datePattern}(?:\\s*(?:\\r?\\n|$))`;
+        return `${prefixFor(dateL)}${datePattern}${delimSuffix(g.date_end, g.date_end_text)}`;
+      }
+      if (key === "time") {
+        if (!timeL) return `(?:^|\\r?\\n)\\s*${timePattern}(?:\\s*(?:\\r?\\n|$))`;
+        return `${prefixFor(timeL)}${timePattern}${delimSuffix(g.time_end, g.time_end_text)}`;
+      }
+      if (key === "merchant") {
+        const mend = String(g.merchant_end || "auto").toLowerCase();
+        if (!merchantL) {
+          return "(?:^|\\r?\\n)\\s*([A-Za-z0-9][^\\r\\n]{1,140}?[A-Za-z0-9])(?:\\s*(?:\\r?\\n|$))";
+        }
+        if (mend === "comma") {
+          return `${prefixFor(merchantL)}([^,\\r\\n]{2,140}?)(?=\\s*,)`;
+        }
+        const sfx = delimSuffix(g.merchant_end, g.merchant_end_text) || "(?=\\r?\\n|\\s*,|\\s+in\\s+the\\s+amount\\s+of|\\s+amount\\s+of|$)";
+        return `${prefixFor(merchantL)}([A-Za-z0-9][^\\r\\n]{1,140}?[A-Za-z0-9])${sfx}`;
+      }
+      return "";
+    }
+
+    const ordered = ["merchant", "date", "amount", "time"]
+      .filter((k) => Number(orderMap[k]) > 0)
+      .sort((a, b) => Number(orderMap[a]) - Number(orderMap[b]));
+
+    if (!ordered.length) {
+      throw new Error("Guided order must include at least one field.");
+    }
+
+    const fieldMap = { amount_group: 0, merchant_group: 0, date_group: 0, time_group: 0 };
+    let groupIdx = 1;
+    const segments = [];
+    for (const key of ordered) {
+      segments.push(segmentFor(key));
+      fieldMap[`${key}_group`] = groupIdx;
+      groupIdx += 1;
+    }
+
+    const bodyRegex = `${segments.join(".*?")}`;
+    const amountUnknownGuard = Number(orderMap.amount || 0) <= 0
+      ? (() => {
+          const amountCore = "\\$?[-]?[\\d,]+\\.\\d{2}";
+          const amountLbl = boundaryLabelPattern(g.amount_label || "");
+          const guardNeedle = amountLbl
+            ? `${amountLbl}\\s*[:\\-]?\\s*${amountCore}`
+            : amountCore;
+          return `(?![\\s\\S]*${guardNeedle})`;
+        })()
+      : "";
+    const acctBefore = String(g?.account_before || "").trim();
+    const acctExact = String(g?.account_exact || "").trim();
+    let scopedRegex = `(?is)${amountUnknownGuard}${bodyRegex}`;
+    if (acctBefore && acctExact) {
+      const bpat = boundaryLabelPattern(acctBefore);
+      const epat = escapeRegex(acctExact);
+      scopedRegex = `(?is)${amountUnknownGuard}(?=.*?${bpat}\\s*[:\\-]?\\s*[^\\r\\n]*?${epat}).*?${segments.join(".*?")}`;
     }
 
     return {
       ...payload,
-      body_regex: bodyRegex,
+      body_regex: scopedRegex,
+      flags: "is",
+      field_map: fieldMap,
+    };
+  }
+
+  function syncAdvancedRegexFromGuided(force = false) {
+    const mode = String(byId("epwParserMode")?.value || "guided").trim().toLowerCase();
+    if (!force && mode !== "guided") return;
+    const payloadRaw = getDraftPayload();
+    try {
+      const built = buildRegexFromGuided(payloadRaw);
+      if (byId("epwBodyRegex")) byId("epwBodyRegex").value = String(built.body_regex || "");
+      if (byId("epwRegexFlags")) byId("epwRegexFlags").value = String(built.flags || "is");
+      if (byId("epwMapAmount")) byId("epwMapAmount").value = String(Number(built?.field_map?.amount_group || 0));
+      if (byId("epwMapMerchant")) byId("epwMapMerchant").value = String(Number(built?.field_map?.merchant_group || 0));
+      if (byId("epwMapDate")) byId("epwMapDate").value = String(Number(built?.field_map?.date_group || 0));
+      if (byId("epwMapTime")) byId("epwMapTime").value = String(Number(built?.field_map?.time_group || 0));
+    } catch (_e) {
+      // Keep current advanced values if guided config is temporarily incomplete.
+    }
+  }
+
+  function buildGuidedGenericFallback(payload) {
+    const g = payload?.guided || {};
+    const amountPattern = "(\\$?[-]?[\\d,]+\\.\\d{2})";
+    const datePattern = "([A-Za-z]{3},?\\s+[A-Za-z]{3}\\s+\\d{1,2},\\s+\\d{4}|[A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})";
+    const timePattern = "([0-1]?\\d:[0-5]\\d\\s*(?:AM|PM)(?:\\s*[A-Z]{2,4})?)";
+    const merchantPattern = "([A-Za-z0-9][^\\n]{1,120}?[A-Za-z0-9])";
+    const ord = {
+      merchant: Number(g.merchant_order || 0),
+      date: Number(g.date_order || 0),
+      amount: Number(g.amount_order || 0),
+      time: Number(g.time_order || 0),
+    };
+    const ordered = ["merchant", "date", "amount", "time"]
+      .filter((k) => Number(ord[k]) > 0)
+      .sort((a, b) => Number(ord[a]) - Number(ord[b]));
+    if (!ordered.length) return null;
+
+    const fieldMap = { amount_group: 0, merchant_group: 0, date_group: 0, time_group: 0 };
+    let gi = 1;
+    const segs = [];
+    for (const k of ordered) {
+      if (k === "amount") segs.push(amountPattern);
+      if (k === "date") segs.push(datePattern);
+      if (k === "time") segs.push(timePattern);
+      if (k === "merchant") segs.push(merchantPattern);
+      fieldMap[`${k}_group`] = gi++;
+    }
+    const amountUnknownGuard = Number(ord.amount || 0) <= 0
+      ? (() => {
+          const amountCore = "\\$?[-]?[\\d,]+\\.\\d{2}";
+          const amountLbl = boundaryLabelPattern(g.amount_label || "");
+          const guardNeedle = amountLbl
+            ? `${amountLbl}\\s*[:\\-]?\\s*${amountCore}`
+            : amountCore;
+          return `(?![\\s\\S]*${guardNeedle})`;
+        })()
+      : "";
+    return {
+      ...payload,
+      body_regex: `(?is)${amountUnknownGuard}${segs.join(".*?")}`,
       flags: "is",
       field_map: fieldMap,
     };
@@ -692,41 +1116,17 @@
 
   function localPreview(payload) {
     const out = [];
-    let rx = null;
-    try {
-      rx = compileClientRegex(payload.body_regex || "", payload.flags || "i");
-    } catch (e) {
-      return state.samples.map((s) => ({
-        sample_id: s.sample_id,
-        matched: false,
-        extracted: null,
-        error: `Invalid regex: ${e.message}`,
-      }));
-    }
-
     const ids = new Set((payload.sample_ids || []).map((x) => String(x)));
     const selected = state.samples.filter((s) => ids.has(String(s.sample_id)));
 
     for (const s of selected) {
       const body = String(s.body || "");
-      const m = rx.exec(body);
-      if (!m) {
-        out.push({ sample_id: s.sample_id, matched: false, extracted: null, error: "No match" });
-        continue;
-      }
-      const g = payload.field_map || {};
-      const timeGroup = Number(g.time_group) || 0;
-      const merchantGroup = Number(g.merchant_group) || 0;
-      const fallbackTime = timeFromReceivedAt(s.received_at);
+      const res = safeExtract(body, payload, s.received_at);
       out.push({
         sample_id: s.sample_id,
-        matched: true,
-        extracted: {
-          amount: m[g.amount_group] || "",
-          merchant: (merchantGroup > 0 ? (m[merchantGroup] || "") : "") || "Unknown",
-          date: m[g.date_group] || "",
-          time: (timeGroup > 0 ? (m[timeGroup] || "") : "") || fallbackTime,
-        },
+        matched: !!res.matched,
+        extracted: res.extracted || null,
+        error: res.matched ? "" : (res.error || "No match"),
       });
     }
     return out;
@@ -737,7 +1137,7 @@
       const data = await fetchJson("/email-parser/trial/accounts", { cache: "no-store" });
       state.accounts = data.accounts || [];
       state.usingMock = false;
-      setStatus("Connected to trial endpoints.", false);
+      setStatus("Connected to parser endpoints.", false);
     } catch (_e) {
       try {
         const bankInfo = await fetchJson("/bank-info", { cache: "no-store" });
@@ -753,7 +1153,7 @@
         }));
         state.accounts = checkingSavings.concat(credits).filter((a) => Number.isFinite(a.id) && a.id > 0);
         state.usingMock = true;
-        setStatus("Trial account endpoint unavailable. Loaded accounts from your workspace.", false);
+        setStatus("Account endpoint unavailable. Loaded accounts from your workspace.", false);
       } catch (_e2) {
         state.accounts = [];
         state.usingMock = true;
@@ -854,10 +1254,40 @@
     }
   }
 
+  async function runParserTest() {
+    const lookbackDays = 7;
+    const limit = 500;
+    const tryHtmlOnMissing = !!byId("epwTryHtmlMissing")?.checked;
+    if (state.usingMock) {
+      setStatus("Parser test requires live parser endpoints.", true);
+      return;
+    }
+    setStatus("Fetching all emails from last 7 days and testing all saved parsers across all accounts...", false);
+    try {
+      const out = await fetchJson("/email-parser/trial/test-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_query: "",
+          subject_query: "",
+          try_html_on_missing_fields: tryHtmlOnMissing,
+          lookback_days: lookbackDays,
+          limit: limit,
+        }),
+      });
+      state.testSummary = out.summary || {};
+      state.testRows = Array.isArray(out.rows) ? out.rows : [];
+      renderTestReport();
+      setStatus("Parser test complete.", false);
+    } catch (e) {
+      setStatus(`Parser test failed: ${e.message}`, true);
+    }
+  }
+
   async function saveDraft() {
     const payloadRaw = getDraftPayload();
     if (!payloadRaw.name) {
-      setStatus("Draft name is required.", true);
+      setStatus("Parser name is required.", true);
       return;
     }
     if (!payloadRaw.account_id) {
@@ -874,14 +1304,14 @@
       return;
     }
     if (!payloadRaw.name) {
-      setStatus("Draft name is required.", true);
+      setStatus("Parser name is required.", true);
       return;
     }
     payload.status = "trial_inactive";
     payload.parser_mode = payloadRaw.parser_mode;
     payload.guided = payloadRaw.guided;
 
-    setStatus("Saving draft...", false);
+    setStatus("Saving parser...", false);
     try {
       if (!state.usingMock) {
         await fetchJson("/email-parser/trial/save", {
@@ -891,16 +1321,16 @@
         });
         await loadAccountSettings();
       }
-      setStatus(state.usingMock ? "Draft validated locally (mock mode)." : "Draft saved as inactive trial config.", false);
+      setStatus(state.usingMock ? "Parser validated locally (mock mode)." : "Parser saved.", false);
     } catch (e) {
       setStatus(`Save failed: ${e.message}`, true);
     }
   }
 
   async function resetAllDrafts() {
-    const ok = window.confirm("Delete all parser drafts and start fresh?");
+    const ok = window.confirm("Delete all saved parsers and start fresh?");
     if (!ok) return;
-    setStatus("Deleting drafts...", false);
+    setStatus("Deleting parsers...", false);
     try {
       const data = await fetchJson("/email-parser/trial/drafts/reset", {
         method: "POST",
@@ -911,9 +1341,9 @@
       state.corrRows = [];
       state.corrSummary = null;
       renderCorrelationPreview();
-      setStatus(`Deleted ${Number(data.deleted || 0)} drafts.`, false);
+      setStatus(`Deleted ${Number(data.deleted || 0)} parsers.`, false);
     } catch (e) {
-      setStatus(`Delete drafts failed: ${e.message}`, true);
+      setStatus(`Delete parsers failed: ${e.message}`, true);
     }
   }
 
@@ -927,7 +1357,7 @@
       return;
     }
     if (!primaryDraftId || !secondaryDraftId) {
-      setStatus("Select both primary and secondary drafts.", true);
+      setStatus("Select both primary and backup parsers.", true);
       return;
     }
     if (!sampleIds.length) {
@@ -963,6 +1393,7 @@
 
   function wireEvents() {
     byId("epwLoadSamplesBtn")?.addEventListener("click", loadSamples);
+    byId("epwTestParsersBtn")?.addEventListener("click", runParserTest);
     byId("epwPreviewBtn")?.addEventListener("click", runPreview);
     byId("epwCorrPreviewBtn")?.addEventListener("click", runCorrelationPreview);
     byId("epwSaveDraftBtn")?.addEventListener("click", saveDraft);
@@ -985,18 +1416,27 @@
       if (s) applySettingToForm(s);
     });
     byId("epwParserMode")?.addEventListener("change", () => {
+      const prevMode = String(state.lastParserMode || "guided").toLowerCase();
+      const nextMode = String(byId("epwParserMode")?.value || "guided").toLowerCase();
+      if (prevMode === "guided" && nextMode === "advanced") {
+        syncAdvancedRegexFromGuided(true);
+      }
+      state.lastParserMode = nextMode;
       applyParserModeVisibility();
       saveUiPrefs();
+      syncAdvancedRegexFromGuided();
       renderLiveCapture();
     });
-    byId("epwGuidedLayout")?.addEventListener("change", () => {
-      saveUiPrefs();
-      renderLiveCapture();
-    });
-    byId("epwParsingMethodToggle")?.addEventListener("change", () => {
-      updateParsingMethodLabel();
-      saveUiPrefs();
-      renderLiveCapture();
+    [
+      "epwGuidedAmountEnd",
+      "epwGuidedMerchantEnd",
+      "epwGuidedDateEnd",
+      "epwGuidedTimeEnd",
+    ].forEach((id) => {
+      byId(id)?.addEventListener("change", () => {
+        syncGuidedEndTextInputs();
+        renderLiveCapture();
+      });
     });
     [
       "epwBodyRegex",
@@ -1009,16 +1449,29 @@
       "epwGuidedMerchantLabel",
       "epwGuidedDateLabel",
       "epwGuidedTimeLabel",
+      "epwGuidedMerchantOrder",
+      "epwGuidedDateOrder",
+      "epwGuidedAmountOrder",
+      "epwGuidedTimeOrder",
+      "epwGuidedAmountEnd",
+      "epwGuidedMerchantEnd",
+      "epwGuidedDateEnd",
+      "epwGuidedTimeEnd",
+      "epwGuidedAmountEndText",
+      "epwGuidedMerchantEndText",
+      "epwGuidedDateEndText",
+      "epwGuidedTimeEndText",
+      "epwGuidedAccountBefore",
+      "epwGuidedAccountExact",
     ].forEach((id) => {
-      byId(id)?.addEventListener("input", renderLiveCapture);
-    });
-    byId("epwHelpToggleBtn")?.addEventListener("click", () => {
-      const isOpen = byId("epwHelpToggleBtn")?.getAttribute("aria-expanded") === "true";
-      setHelpOpen(!isOpen);
-    });
-    byId("epwHelpCloseBtn")?.addEventListener("click", () => setHelpOpen(false));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") setHelpOpen(false);
+      byId(id)?.addEventListener("input", () => {
+        syncAdvancedRegexFromGuided();
+        renderLiveCapture();
+      });
+      byId(id)?.addEventListener("change", () => {
+        syncAdvancedRegexFromGuided();
+        renderLiveCapture();
+      });
     });
   }
 
@@ -1026,15 +1479,17 @@
     loadUiPrefs();
     wireEvents();
     applyParserModeVisibility();
+    state.lastParserMode = String(byId("epwParserMode")?.value || "guided").toLowerCase();
+    syncGuidedEndTextInputs();
     syncSubjectFallbackVisibility();
-    updateParsingMethodLabel();
-    setHelpOpen(false);
     await loadAccounts();
     await loadAccountSettings();
     renderSamples();
     renderPreview();
+    renderTestReport();
     renderCorrelationPreview();
     updateRuleSourceBody();
+    syncAdvancedRegexFromGuided();
     renderLiveCapture();
   }
 

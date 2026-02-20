@@ -48,6 +48,12 @@ class DailyWeightsIn(BaseModel):
 class RoundUpSettingsIn(BaseModel):
     enabled: bool
 
+
+class EmailParserBackfillIn(BaseModel):
+    days: int = 1
+    include_processed: bool = True
+    max_emails: int = 2000
+
 # -----------------------------
 # Table ensure helpers (Postgres)
 # -----------------------------
@@ -267,3 +273,22 @@ def create_widget_script(request: Request):
         count=1,
     )
     return {"ok": True, "tenant_id": tenant_id, "script": script}
+
+
+@router.post("/settings/email-parser/run")
+def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
+    _, session_email = _require_approved_session_user(request)
+    days = max(1, min(int(body.days or 1), 60))
+    include_processed = bool(body.include_processed)
+    max_emails = max(1, min(int(body.max_emails or 2000), 10000))
+    try:
+        from emails import emailFetch
+        result = emailFetch.run_manual_wizard_parse(
+            lookback_days=days,
+            include_processed=include_processed,
+            max_emails=max_emails,
+            rules_user_email=session_email,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"email_parser_backfill_failed:{type(e).__name__}:{e}")

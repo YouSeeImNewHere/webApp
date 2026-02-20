@@ -42,6 +42,71 @@
   max-width: 180px;
 }
 
+.settings-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.backfill-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin: 8px 0;
+  background: color-mix(in srgb, var(--card-bg) 82%, transparent);
+}
+
+.backfill-row.match {
+  border-color: color-mix(in srgb, #16a34a 45%, var(--border));
+}
+
+.backfill-row.skip {
+  border-color: color-mix(in srgb, #dc2626 45%, var(--border));
+}
+
+.backfill-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.backfill-row-title {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.backfill-row-reason {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.backfill-row-meta {
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.95;
+}
+
+.backfill-row-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.backfill-detail {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
 .daily-weights-actions {
   display: flex;
   justify-content: flex-start;

@@ -1,5 +1,5 @@
-import imaplib
 import email
+import base64
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 import os
@@ -10,7 +10,9 @@ import re
 import html
 import requests, json, hashlib
 
-from .email_handlers import *  # handlers + account constants (still used for inserts)
+# Legacy handler import kept for backward compatibility of helper symbols in this module.
+from .email_handlers import *
+from .transactionHandler import insert_transaction, makeKey
 from db import with_db_cursor, query_db, open_pool, close_pool
 
 from datetime import datetime, timedelta, timezone
@@ -23,6 +25,9 @@ BATCH_SIZE = 200
 PUSHOVER_USER = ""
 PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 MAILBOXES = ["INBOX"]
+# Wizard pipeline is now the only supported email parser pipeline.
+USE_LEGACY_PIPELINE = False
+_GMAIL_LABEL_CACHE: dict[str, str] = {}
 
 
 def _lookup_pushover_user_key_from_db(email_addr: str) -> str:
@@ -836,40 +841,199 @@ def format_pushover_message(bank: str, extracted: dict) -> tuple[str, str]:
 # IMAP
 # ============================================================
 
-def get_imap_ids(mail, include_processed: bool = False):
-    ids = []
-    # Primary mailbox + Gmail archive views so recently-archived emails are still discoverable.
-    mailbox_candidates = list(MAILBOXES) + ["[Gmail]/All Mail", "[Google Mail]/All Mail"]
-    since_2d = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%d-%b-%Y")
-    for box in mailbox_candidates:
+def get_recent_gmail_ids(access_token: str, *, include_processed: bool = False, lookback_days: int = 1, limit: int = 5000):
+    return _gmail_api_list_ids(
+        access_token,
+        lookback_days=max(1, int(lookback_days or 1)),
+        include_processed=bool(include_processed),
+        limit=max(1, int(limit or 5000)),
+    )
+
+
+def _decode_b64url(data: str | None) -> str:
+    if not data:
+        return ""
+    try:
+        raw = base64.urlsafe_b64decode(data.encode("utf-8"))
+    except Exception:
+        return ""
+    for enc in ("utf-8", "latin-1"):
         try:
-            sel_status, _ = mail.select(box)
-            if sel_status != "OK":
-                continue
+            return raw.decode(enc)
         except Exception:
             continue
-        # Gmail's newer_than uses d/m/y units; use a 1-day prefilter and do exact minute filtering in Python.
-        # X-GM-RAW parsing can vary by IMAP client/server; try common compatible forms.
-        status, data = "BAD", []
-        gm_raw = "newer_than:1d" if include_processed else "newer_than:1d -label:ProcessedNew"
-        search_attempts = [
-            (None, f'X-GM-RAW "{gm_raw}"'),
-            (None, "X-GM-RAW", gm_raw),
-            ("UTF-8", f'X-GM-RAW "{gm_raw}"'),
-            (None, "SINCE", since_2d),
-            (None, "ALL"),
-        ]
-        for args in search_attempts:
-            try:
-                status, data = mail.search(*args)
-                if status == "OK":
+    return raw.decode("utf-8", errors="ignore")
+
+
+def _to_text_from_html(s: str) -> str:
+    if not s:
+        return ""
+    x = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", s)
+    x = re.sub(r"(?is)<br\s*/?>", "\n", x)
+    x = re.sub(r"(?is)</p\s*>", "\n", x)
+    x = re.sub(r"(?is)<[^>]+>", " ", x)
+    x = re.sub(r"[ \t]+", " ", x)
+    x = re.sub(r"\n\s*\n+", "\n\n", x)
+    return html.unescape(x).strip()
+
+
+def _looks_like_blank_label_template(s: str) -> bool:
+    t = str(s or "")
+    if "Merchant:" not in t:
+        return False
+    return bool(
+        re.search(
+            r"Merchant:\s*(?:\r?\n)\s*Date:\s*(?:\r?\n)\s*Amount:\s*(?:\r?\n|$)",
+            t,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _extract_gmail_body_from_payload(payload: dict, *, try_html_on_missing_fields: bool = True) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    stack = [payload]
+    plain = ""
+    html_body = ""
+    fallback = ""
+    while stack:
+        part = stack.pop()
+        if not isinstance(part, dict):
+            continue
+        mime = str(part.get("mimeType") or "").lower()
+        body = part.get("body") or {}
+        data = _decode_b64url(body.get("data"))
+        if data and not fallback:
+            fallback = data
+        if mime == "text/plain" and data:
+            plain = data
+            break
+        if mime == "text/html" and data and not html_body:
+            html_body = data
+        for child in (part.get("parts") or []):
+            stack.append(child)
+    if plain:
+        if try_html_on_missing_fields and html_body and _looks_like_blank_label_template(plain):
+            return _to_text_from_html(html_body)
+        return plain.strip()
+    if html_body:
+        return _to_text_from_html(html_body)
+    return _to_text_from_html(fallback)
+
+
+def _gmail_headers_map(msg: dict) -> dict[str, str]:
+    payload = msg.get("payload") or {}
+    headers = payload.get("headers") or []
+    out = {}
+    for h in headers:
+        k = str((h or {}).get("name") or "").strip().lower()
+        v = str((h or {}).get("value") or "").strip()
+        if k and v:
+            out[k] = v
+    return out
+
+
+def _gmail_api_list_ids(access_token: str, *, lookback_days: int, include_processed: bool, limit: int) -> list[str]:
+    terms = [f"newer_than:{max(1, int(lookback_days or 1))}d"]
+    if not include_processed:
+        terms.append("-label:ProcessedNew")
+    q = " ".join(terms).strip()
+    out: list[str] = []
+    page_token = None
+    wanted = max(1, int(limit or 100))
+    while len(out) < wanted:
+        params = {"q": q, "maxResults": min(500, wanted - len(out))}
+        if page_token:
+            params["pageToken"] = page_token
+        r = requests.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params=params,
+            timeout=30,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"gmail_list_failed_http_{r.status_code}")
+        data = r.json() or {}
+        for m in (data.get("messages") or []):
+            mid = str((m or {}).get("id") or "").strip()
+            if mid:
+                out.append(mid)
+                if len(out) >= wanted:
                     break
-            except imaplib.IMAP4.error:
-                continue
-        if status == "OK" and data and data[0]:
-            for x in data[0].split():
-                ids.append(x.decode() if isinstance(x, (bytes, bytearray)) else str(x))
-    return list(dict.fromkeys(ids))
+        page_token = str(data.get("nextPageToken") or "").strip() or None
+        if not page_token:
+            break
+    return list(dict.fromkeys(out))
+
+
+def _gmail_api_get_message(access_token: str, message_id: str) -> dict:
+    r = requests.get(
+        f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"format": "full"},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"gmail_get_failed_http_{r.status_code}")
+    return r.json() or {}
+
+
+def _gmail_get_or_create_label_id(access_token: str, label_name: str) -> str | None:
+    name = str(label_name or "").strip()
+    if not name:
+        return None
+    cache_key = f"{access_token[:24]}::{name.lower()}"
+    cached = _GMAIL_LABEL_CACHE.get(cache_key)
+    if cached:
+        return cached
+
+    r = requests.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=20,
+    )
+    if r.status_code != 200:
+        return None
+    data = r.json() or {}
+    for lbl in (data.get("labels") or []):
+        if str((lbl or {}).get("name") or "").strip().lower() == name.lower():
+            lid = str((lbl or {}).get("id") or "").strip()
+            if lid:
+                _GMAIL_LABEL_CACHE[cache_key] = lid
+                return lid
+
+    cr = requests.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={
+            "name": name,
+            "labelListVisibility": "labelShow",
+            "messageListVisibility": "show",
+        },
+        timeout=20,
+    )
+    if cr.status_code not in (200, 201):
+        return None
+    lid = str((cr.json() or {}).get("id") or "").strip()
+    if lid:
+        _GMAIL_LABEL_CACHE[cache_key] = lid
+        return lid
+    return None
+
+
+def _gmail_mark_processed(access_token: str, message_id: str, processed_label_id: str | None) -> None:
+    if not access_token or not message_id or not processed_label_id:
+        return
+    try:
+        requests.post(
+            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json={"addLabelIds": [processed_label_id]},
+            timeout=20,
+        )
+    except Exception:
+        pass
 
 
 def is_within_minutes_window(date_header: str, cutoff_utc: datetime) -> bool:
@@ -903,6 +1067,664 @@ def received_time_from_header(date_header: str) -> str:
     except Exception:
         return "unknown time"
 
+
+def _to_regex_flags_py(flag_str: str) -> int:
+    f = 0
+    s = (flag_str or "").lower()
+    if "i" in s:
+        f |= re.IGNORECASE
+    if "s" in s:
+        f |= re.DOTALL
+    if "m" in s:
+        f |= re.MULTILINE
+    return f
+
+
+def _normalize_date_mmddyy(v: str) -> str:
+    s = (v or "").strip()
+    if not s:
+        return ""
+    for fmt in ("%m/%d/%y", "%m/%d/%Y", "%b %d, %Y", "%B %d, %Y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%m/%d/%y")
+        except Exception:
+            continue
+    return s
+
+
+def _normalize_amount(v: str):
+    s = str(v or "").strip()
+    if not s:
+        return None
+    try:
+        return float(s.replace("$", "").replace(",", ""))
+    except Exception:
+        return None
+
+
+def _normalize_time(v: str, fallback_header_date: str, date_mmddyy: str) -> str:
+    s = str(v or "").strip()
+    if not s:
+        s = received_time_from_header(fallback_header_date)
+    # strip trailing tz token for ET->local conversion helper
+    t0 = re.sub(r"\s+[A-Z]{2,4}$", "", s).strip()
+    try:
+        return et_time_to_local(date_mmddyy, t0)
+    except Exception:
+        return t0 or "unknown time"
+
+
+def _extract_group_safe(m: re.Match, idx: int) -> str:
+    if int(idx or 0) <= 0:
+        return ""
+    try:
+        return str(m.group(int(idx)) or "").strip()
+    except Exception:
+        return ""
+
+
+def _clean_merchant(v: str) -> str:
+    s = str(v or "").strip()
+    s = re.sub(r"^[\s,.:;|\-]+|[\s,.:;|\-]+$", "", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    if not s or len(s) < 2 or not re.search(r"[A-Za-z0-9]", s):
+        return "Unknown"
+    return s
+
+
+def _escape_regex(v: str) -> str:
+    return re.escape(str(v or ""))
+
+
+def _boundary_label_pattern(v: str) -> str:
+    parts = [re.escape(p) for p in str(v or "").strip().split() if p]
+    if not parts:
+        return ""
+    core = r"\s+".join(parts)
+    return rf"(?<!\w){core}(?!\w)"
+
+
+def _guided_amount_present(text: str, guided: dict) -> bool:
+    body = str(text or "")
+    amount_core = r"\$?[-]?[\d,]+\.\d{2}"
+    label = str((guided or {}).get("amount_label") or "").strip()
+    if label:
+        lpat = _boundary_label_pattern(label)
+        if lpat:
+            return bool(re.search(rf"{lpat}\s*[:\-]?\s*{amount_core}", body, re.IGNORECASE))
+    return bool(re.search(amount_core, body, re.IGNORECASE))
+
+
+def _guided_extract_line_or_label(text: str, label: str, value_pattern: str, from_idx: int) -> tuple[str, int] | None:
+    t = str(text or "")
+    start = max(0, int(from_idx or 0))
+    sub = t[start:]
+    if label:
+        lpat = _boundary_label_pattern(label)
+        rx = re.compile(rf"{lpat}\s*[:\-]?\s*{value_pattern}", re.IGNORECASE)
+        m = rx.search(sub)
+        if not m:
+            m = rx.search(t)
+            if not m:
+                return None
+            return str(m.group(1) or "").strip(), m.end()
+        return str(m.group(1) or "").strip(), start + m.end()
+    # blank label => own line first
+    rx_line = re.compile(rf"(?:^|\r?\n)\s*{value_pattern}", re.IGNORECASE)
+    m = rx_line.search(sub)
+    if not m:
+        m = rx_line.search(t)
+        if not m:
+            return None
+        return str(m.group(1) or "").strip(), m.end()
+    return str(m.group(1) or "").strip(), start + m.end()
+
+
+def _guided_extract_merchant(text: str, label: str, end_mode: str, end_text: str, from_idx: int) -> tuple[str, int] | None:
+    t = str(text or "")
+    start = max(0, int(from_idx or 0))
+    sub = t[start:]
+
+    start_pos = -1
+    if label:
+        lpat = _boundary_label_pattern(label)
+        m = re.search(rf"{lpat}\s*[:\-]?\s*", sub, re.IGNORECASE)
+        if not m:
+            m0 = re.search(rf"{lpat}\s*[:\-]?\s*", t, re.IGNORECASE)
+            if not m0:
+                return None
+            start_pos = m0.end()
+        else:
+            start_pos = start + m.end()
+    else:
+        m = re.search(r"(?:^|\r?\n)\s*([A-Za-z0-9][^\r\n]{1,140})", sub)
+        if not m:
+            m0 = re.search(r"(?:^|\r?\n)\s*([A-Za-z0-9][^\r\n]{1,140})", t)
+            if not m0:
+                return None
+            start_pos = m0.start(1)
+        else:
+            start_pos = start + m.start(1)
+
+    after = t[start_pos:]
+    mode = str(end_mode or "auto").strip().lower()
+    end = -1
+    if mode in ("comma", "auto"):
+        m = re.search(r"\s*,", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "period":
+        m = re.search(r"\s*\.", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "newline":
+        m = re.search(r"\r?\n", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "sentence_end":
+        m = re.search(r"[.!?]", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "text":
+        needle = str(end_text or "").strip()
+        if needle:
+            idx = after.lower().find(needle.lower())
+            if idx >= 0:
+                end = idx
+    if end < 0 and mode == "auto":
+        m = re.search(r"\s+(?:in\s+the\s+amount\s+of|amount\s+of|on\s+\d{1,2}/\d{1,2}/\d{2,4}|on\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})", after, re.IGNORECASE)
+        end = m.start() if m else -1
+    if end < 0:
+        end = min(len(after), 160)
+    raw = str(after[:end]).strip()
+    clean = re.sub(r"^[\s,.:;|\-]+|[\s,.:;|\-]+$", "", raw)
+    clean = re.sub(r"\s{2,}", " ", clean).strip()
+    if not clean or len(clean) < 2 or not re.search(r"[A-Za-z0-9]", clean):
+        return None
+    return clean, start_pos + end
+
+
+def _guided_extract_fields(body: str, guided: dict, header_date: str) -> dict | None:
+    text = str(body or "")
+    g = guided or {}
+    ord_map = {
+        "amount": int(g.get("amount_order") or 0),
+        "merchant": int(g.get("merchant_order") or 0),
+        "date": int(g.get("date_order") or 0),
+        "time": int(g.get("time_order") or 0),
+    }
+    if ord_map["amount"] <= 0 and _guided_amount_present(text, g):
+        return None
+    ordered = [k for k in ("amount", "merchant", "date", "time") if int(ord_map.get(k) or 0) > 0]
+    ordered.sort(key=lambda k: int(ord_map.get(k) or 0))
+    if not ordered:
+        return None
+
+    acct_before = str(g.get("account_before") or "").strip()
+    acct_exact = str(g.get("account_exact") or "").strip()
+    if acct_before and acct_exact:
+        bpat = _boundary_label_pattern(acct_before)
+        epat = _escape_regex(acct_exact)
+        guard = re.search(rf"{bpat}\s*[:\-]?\s*[^\r\n]*?{epat}", text, re.IGNORECASE)
+        if not guard:
+            return None
+
+    amount_re = r"(\$?[-]?[\d,]+\.\d{2})"
+    date_re = r"([A-Za-z]{3},?\s+[A-Za-z]{3}\s+\d{1,2},\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}|\d{1,2}/\d{1,2}/\d{2,4})"
+    time_re = r"([0-1]?\d:[0-5]\d\s*(?:AM|PM)(?:\s*[A-Z]{2,4})?)"
+
+    out = {"amount": "", "merchant": "Unknown", "date": "", "time": ""}
+    cursor = 0
+    for field in ordered:
+        if field == "amount":
+            got = _guided_extract_line_or_label(text, str(g.get("amount_label") or "").strip(), amount_re, cursor)
+            if not got:
+                return None
+            out["amount"], cursor = got
+        elif field == "date":
+            got = _guided_extract_line_or_label(text, str(g.get("date_label") or "").strip(), date_re, cursor)
+            if not got:
+                return None
+            out["date"], cursor = got
+        elif field == "time":
+            got = _guided_extract_line_or_label(text, str(g.get("time_label") or "").strip(), time_re, cursor)
+            if got:
+                out["time"], cursor = got
+        elif field == "merchant":
+            got = _guided_extract_merchant(
+                text,
+                str(g.get("merchant_label") or "").strip(),
+                str(g.get("merchant_end") or "auto").strip().lower(),
+                str(g.get("merchant_end_text") or "").strip(),
+                cursor,
+            )
+            if not got:
+                return None
+            out["merchant"], cursor = got
+
+    if not out["time"]:
+        out["time"] = received_time_from_header(header_date)
+    return out
+
+
+def load_wizard_rules(email_addr: str):
+    e = (email_addr or "").strip().lower()
+    if not e:
+        return []
+    rows = query_db(
+        """
+        SELECT id, account_id, draft_json, updated_at
+        FROM email_parser_trial_drafts
+        WHERE lower(user_email) = lower(%s)
+        ORDER BY updated_at DESC, id DESC
+        """,
+        (e,),
+    ) or []
+    out = []
+    seen_ids = set()
+    for r in rows:
+        rid = int(r.get("id") or 0)
+        if rid in seen_ids:
+            continue
+        seen_ids.add(rid)
+        raw = r.get("draft_json")
+        cfg = {}
+        if isinstance(raw, str):
+            try:
+                cfg = json.loads(raw) or {}
+            except Exception:
+                cfg = {}
+        elif isinstance(raw, dict):
+            cfg = raw
+        body_regex = str(cfg.get("body_regex") or "").strip()
+        if not body_regex:
+            continue
+        flags = str(cfg.get("flags") or "i")
+        try:
+            rx = re.compile(body_regex, _to_regex_flags_py(flags))
+        except Exception:
+            continue
+        slot = str(cfg.get("parser_slot") or "primary").strip().lower()
+        if slot not in ("primary", "backup"):
+            slot = "primary"
+        fm = cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {}
+        parser_mode = str(cfg.get("parser_mode") or "advanced").strip().lower()
+        guided = cfg.get("guided") if isinstance(cfg.get("guided"), dict) else {}
+        out.append(
+            {
+                "draft_id": rid,
+                "account_id": int(cfg.get("account_id") or r.get("account_id") or 0),
+                "parser_mode": parser_mode if parser_mode in ("guided", "advanced") else "advanced",
+                "guided": guided,
+                "sender_pattern": str(cfg.get("sender_pattern") or "").strip().lower(),
+                "subject_contains": str(cfg.get("subject_contains") or "").strip().lower(),
+                "parser_slot": slot,
+                "override_on_primary": bool(cfg.get("override_on_primary")),
+                "backup_assume_unknown": bool(cfg.get("backup_assume_unknown")),
+                "rx": rx,
+                "field_map": {
+                    "amount_group": int(fm.get("amount_group") or 0),
+                    "merchant_group": int(fm.get("merchant_group") or 0),
+                    "date_group": int(fm.get("date_group") or 0),
+                    "time_group": int(fm.get("time_group") or 0),
+                },
+            }
+        )
+    # Keep DB recency order (updated_at DESC) while still prioritizing primary over backup.
+    # Python sort is stable, so sorting by slot only preserves relative recency.
+    slot_rank = {"primary": 0, "backup": 1}
+    out.sort(key=lambda x: slot_rank.get(x["parser_slot"], 9))
+    return out
+
+
+def _rule_scope_match(rule: dict, sender: str, subject: str) -> bool:
+    snd = (sender or "").lower()
+    sub = (subject or "").lower()
+    sp = (rule.get("sender_pattern") or "").strip()
+    sc = (rule.get("subject_contains") or "").strip()
+    if sp and sp not in snd:
+        return False
+    if sc and sc not in sub:
+        return False
+    return True
+
+
+def _subject_scoped_rules(rules: list[dict], subject: str) -> list[dict]:
+    sub = (subject or "").lower()
+    specific = [r for r in rules if (r.get("subject_contains") or "").strip() and (r.get("subject_contains") in sub)]
+    if specific:
+        return specific
+    # Fallback: parsers with blank subject act as catch-all.
+    blank = [r for r in rules if not (r.get("subject_contains") or "").strip()]
+    return blank
+
+
+def _account_meta_by_id(account_id: int):
+    rows = query_db(
+        "SELECT institution, name, LOWER(accounttype) AS accounttype FROM accounts WHERE id = %s LIMIT 1",
+        (int(account_id),),
+    ) or []
+    if not rows:
+        return None
+    r = rows[0]
+    return {
+        "bank": str(r.get("institution") or "").strip(),
+        "card": str(r.get("name") or "").strip(),
+        "accounttype": str(r.get("accounttype") or "").strip().lower(),
+    }
+
+
+def _maybe_mark_processed(mail, imap_id: str, *, access_token: str | None = None, processed_label_id: str | None = None):
+    # OAuth path (current).
+    if access_token:
+        _gmail_mark_processed(str(access_token), str(imap_id), processed_label_id)
+        return
+    # Backward compatibility fallback.
+    try:
+        if mail is not None:
+            mail.store(imap_id, "+X-GM-LABELS", "(ProcessedNew)")
+    except Exception:
+        pass
+
+
+def process_wizard_email(
+    *,
+    mail,
+    imap_id: str,
+    sender: str,
+    subject: str,
+    header_date: str,
+    body: str,
+    rules: list[dict],
+    pending_table: str,
+    return_detail: bool = False,
+    access_token: str | None = None,
+    processed_label_id: str | None = None,
+):
+    """
+    Returns True if any wizard rule matched and was processed.
+    """
+    scoped_rules = _subject_scoped_rules(rules, subject)
+    if not scoped_rules:
+        if return_detail:
+            return {
+                "matched": False,
+                "status": "skipped",
+                "reason": "no_subject_parser",
+                "parser": None,
+                "inserted": False,
+                "notified": False,
+                "extracted": None,
+                "attempted_parsers": [],
+            }
+        return False
+
+    attempted: list[dict] = []
+    for rule in scoped_rules:
+        sender_ok = True
+        if (rule.get("sender_pattern") or "").strip():
+            sender_ok = _rule_scope_match(rule, sender, subject)
+        attempted.append(
+            {
+                "draft_id": int(rule.get("draft_id") or 0),
+                "parser_mode": str(rule.get("parser_mode") or "advanced"),
+                "subject_contains": str(rule.get("subject_contains") or ""),
+                "sender_pattern": str(rule.get("sender_pattern") or ""),
+                "sender_matched": bool(sender_ok),
+                "regex": str(getattr(rule.get("rx"), "pattern", "") or ""),
+            }
+        )
+        # Subject has already scoped parser candidates; sender is an additional filter.
+        if (rule.get("sender_pattern") or "").strip() and not sender_ok:
+            continue
+
+        parser_mode = str(rule.get("parser_mode") or "advanced").strip().lower()
+        amount_raw = ""
+        merchant_raw = ""
+        date_raw = ""
+        time_raw = ""
+        if parser_mode == "guided":
+            gx = _guided_extract_fields(body or "", rule.get("guided") if isinstance(rule.get("guided"), dict) else {}, header_date or "")
+            if not gx:
+                continue
+            amount_raw = str(gx.get("amount") or "")
+            merchant_raw = str(gx.get("merchant") or "")
+            date_raw = str(gx.get("date") or "")
+            time_raw = str(gx.get("time") or "")
+        else:
+            m = rule["rx"].search(body or "")
+            if not m:
+                continue
+            fm = rule.get("field_map") or {}
+            amount_raw = _extract_group_safe(m, int(fm.get("amount_group") or 0))
+            merchant_raw = _extract_group_safe(m, int(fm.get("merchant_group") or 0))
+            date_raw = _extract_group_safe(m, int(fm.get("date_group") or 0))
+            time_raw = _extract_group_safe(m, int(fm.get("time_group") or 0))
+
+        amount_val = _normalize_amount(amount_raw)
+        if amount_val is None:
+            dbg(f"Wizard rule {rule.get('draft_id')} matched but amount missing/unparseable; trying next parser")
+            continue
+
+        date_mmddyy = _normalize_date_mmddyy(date_raw) or datetime.now().strftime("%m/%d/%y")
+        time_local = _normalize_time(time_raw, header_date, date_mmddyy)
+        merchant = _clean_merchant(merchant_raw)
+        slot = str(rule.get("parser_slot") or "primary").lower()
+        allow_primary_override = bool(rule.get("override_on_primary")) and slot == "primary"
+        account_id = int(rule.get("account_id") or 0)
+        meta = _account_meta_by_id(account_id)
+        if not meta:
+            dbg(f"Wizard rule {rule.get('draft_id')} account_id={account_id} not found; trying next parser")
+            continue
+
+        key = makeKey(f"{amount_val:.2f}", date_mmddyy, account_id=account_id)
+        result = insert_transaction(
+            key=key,
+            bank=meta["bank"],
+            card=meta["card"],
+            accountType=meta["accounttype"],
+            cost=amount_val,
+            where=merchant,
+            purchaseDate=date_mmddyy,
+            time=time_local,
+            source="email",
+            use_test_table=TEST_MODE,
+        )
+
+        fp = tx_fingerprint(account_id, amount_val, date_mmddyy, time_local)
+        is_unknown = merchant.lower() in ("unknown", "unknown merchant", "")
+        backup_pending_first = bool(rule.get("backup_assume_unknown")) and slot == "backup"
+        effective_unknown = is_unknown or backup_pending_first
+
+        notified_key = f"{fp}|primary_override" if allow_primary_override else fp
+        did_notify = False
+        notify_reason = ""
+        if not already_notified(notified_key):
+            notify_now = False
+            reason = ""
+            if slot == "backup" and effective_unknown:
+                upsert_pending(
+                    pending_table,
+                    fp,
+                    account_id,
+                    amount_val,
+                    date_mmddyy,
+                    time_local,
+                    slot,
+                )
+                reason = "backup unknown/pending-first -> pending"
+            else:
+                if slot == "primary":
+                    try_resolve_pending_and_notify(
+                        pending_table=pending_table,
+                        fp=fp,
+                        account_id=account_id,
+                        merchant=merchant,
+                        amt=amount_val,
+                        date_str=date_mmddyy,
+                        time_str=time_local,
+                    )
+                    if allow_primary_override:
+                        reason = "primary override -> notify"
+                notify_now = True
+                if not reason:
+                    reason = "notify now"
+
+            if notify_now:
+                amt_str = f"${float(amount_val):.2f}"
+                title = "Transaction alert"
+                message = f"{meta['bank']} {meta['card']} was used at {merchant} for {amt_str} on {date_mmddyy} at {time_local}"
+                send_pushover(title, message)
+                mark_notified(notified_key)
+                did_notify = True
+                notify_reason = reason or "notify now"
+            dbg_notify_status(subject, f"wizard:{slot}", inserted=(result or {}).get("inserted"), fp=notified_key, reason=reason)
+        else:
+            dbg_notify_status(subject, f"wizard:{slot}", inserted=(result or {}).get("inserted"), fp=notified_key, reason="already_notified")
+
+        _maybe_mark_processed(mail, imap_id, access_token=access_token, processed_label_id=processed_label_id)
+        if return_detail:
+            return {
+                "matched": True,
+                "status": "matched",
+                "reason": notify_reason or ("already_notified" if already_notified(notified_key) else "matched"),
+                "parser": {
+                    "draft_id": int(rule.get("draft_id") or 0),
+                    "slot": slot,
+                    "subject_contains": str(rule.get("subject_contains") or ""),
+                    "sender_pattern": str(rule.get("sender_pattern") or ""),
+                },
+                "inserted": bool((result or {}).get("inserted")),
+                "notified": bool(did_notify),
+                "extracted": {
+                    "amount": float(amount_val),
+                    "merchant": merchant,
+                    "date": date_mmddyy,
+                    "time": time_local,
+                    "account_id": account_id,
+                    "account_label": f"{meta['bank']} {meta['card']}".strip(),
+                },
+            }
+        return True
+
+    if return_detail:
+        return {
+            "matched": False,
+            "status": "skipped",
+            "reason": "subject_matched_but_regex_failed",
+            "parser": None,
+            "inserted": False,
+            "notified": False,
+            "extracted": None,
+            "attempted_parsers": attempted,
+        }
+    return False
+
+
+def run_manual_wizard_parse(
+    *,
+    lookback_days: int = 1,
+    include_processed: bool = True,
+    max_emails: int = 2000,
+    rules_user_email: str | None = None,
+) -> dict:
+    """
+    Manual parse runner for Settings page.
+    Returns summary + per-email rows including skipped and extracted info.
+    """
+    project_root = Path(__file__).resolve().parents[1]
+    env_path = project_root / ".env"
+    load_dotenv(dotenv_path=env_path, override=False)
+    init_account_ids()
+
+    global PUSHOVER_USER, PUSHOVER_TOKEN
+    PUSHOVER_USER = _lookup_pushover_user_key_from_db(os.getenv("GMAIL_ADDRESS") or "")
+    PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
+
+    EMAIL = os.getenv("GMAIL_ADDRESS")
+    if not EMAIL:
+        raise RuntimeError("Missing Gmail address")
+
+    rules_owner = str(rules_user_email or EMAIL or "").strip().lower()
+    wizard_rules = load_wizard_rules(rules_owner)
+    pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
+    ensure_pending_table(pending_table)
+    ensure_notified_table("notified_transactions")
+
+    days = max(1, int(lookback_days or 1))
+    cutoff_utc = datetime.now(timezone.utc) - timedelta(days=days)
+    rows: list[dict] = []
+    summary = {
+        "lookback_days": days,
+        "fetched": 0,
+        "matched": 0,
+        "inserted": 0,
+        "notified": 0,
+        "skipped": 0,
+    }
+
+    from app.core.auth import _refresh_google_access_token_if_needed
+
+    access_token, err = _refresh_google_access_token_if_needed()
+    if not access_token:
+        raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
+
+    processed_label_id = None
+    if not include_processed:
+        processed_label_id = _gmail_get_or_create_label_id(access_token, "ProcessedNew")
+
+    message_ids = _gmail_api_list_ids(
+        access_token,
+        lookback_days=days,
+        include_processed=include_processed,
+        limit=max_emails,
+    )
+    summary["fetched"] = len(message_ids)
+    for mid in message_ids:
+        msg = _gmail_api_get_message(access_token, mid)
+        h = _gmail_headers_map(msg)
+        subject = h.get("subject", "")
+        sender = h.get("from", "")
+        date = h.get("date", "")
+        if not is_within_minutes_window(date, cutoff_utc):
+            continue
+        body = _extract_gmail_body_from_payload(msg.get("payload") or {})
+        detail = process_wizard_email(
+            mail=None,
+            imap_id=str(mid),
+            sender=sender,
+            subject=subject,
+            header_date=date,
+            body=body,
+            rules=wizard_rules,
+            pending_table=pending_table,
+            return_detail=True,
+            access_token=access_token,
+            processed_label_id=processed_label_id,
+        ) or {}
+        row = {
+            "imap_id": str(mid),
+            "subject": str(subject or ""),
+            "sender": str(sender or ""),
+            "received_at": str(date or ""),
+            "matched": bool(detail.get("matched")),
+            "status": str(detail.get("status") or "skipped"),
+            "reason": str(detail.get("reason") or ""),
+            "inserted": bool(detail.get("inserted")),
+            "notified": bool(detail.get("notified")),
+            "parser": detail.get("parser"),
+            "extracted": detail.get("extracted"),
+            "attempted_parsers": detail.get("attempted_parsers") or [],
+            "body_excerpt": str((body or "")[:6000]),
+        }
+        if row["matched"]:
+            summary["matched"] += 1
+        else:
+            summary["skipped"] += 1
+        if row["inserted"]:
+            summary["inserted"] += 1
+        if row["notified"]:
+            summary["notified"] += 1
+        rows.append(row)
+
+    return {"ok": True, "summary": summary, "rows": rows}
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -921,10 +1743,13 @@ def run(include_processed: bool = False):
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
     EMAIL = os.getenv("GMAIL_ADDRESS")
-    PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+    if not EMAIL:
+        raise RuntimeError("Missing Gmail address")
 
-    if not EMAIL or not PASSWORD:
-        raise RuntimeError("Missing Gmail credentials")
+    wizard_rules = load_wizard_rules(EMAIL)
+    log(f"Wizard pipeline enabled; loaded {len(wizard_rules)} parser rule(s)")
+    if not wizard_rules:
+        log("No parser rules found; emails will be fetched but none will parse until rules are created.")
 
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
@@ -936,192 +1761,74 @@ def run(include_processed: bool = False):
     # 20–30 minutes is what you wanted; default 30, configurable
     PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
 
-    log("Connecting to Gmail…")
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
-    mail.login(EMAIL, PASSWORD)
+    from app.core.auth import _refresh_google_access_token_if_needed
 
-    try:
-        all_ids = get_imap_ids(mail, include_processed=include_processed)
-        log(f"Found {len(all_ids)} emails in 1-day prefilter; applying {window_minutes}m window")
-        did_work = False
+    access_token, err = _refresh_google_access_token_if_needed()
+    if not access_token:
+        raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
+    processed_label_id = None
+    if not include_processed:
+        processed_label_id = _gmail_get_or_create_label_id(access_token, "ProcessedNew")
 
-        if DEBUG:
-            dbg(f"IMAP IDS: {all_ids}")
+    all_ids = get_recent_gmail_ids(
+        access_token,
+        include_processed=include_processed,
+        lookback_days=1,
+        limit=5000,
+    )
+    log(f"Found {len(all_ids)} emails in 1-day prefilter; applying {window_minutes}m window")
+    did_work = False
 
-        for i in range(0, len(all_ids), BATCH_SIZE):
-            batch = all_ids[i:i + BATCH_SIZE]
-            dbg(f"Batch {i // BATCH_SIZE + 1} ({len(batch)})")
+    if DEBUG:
+        dbg(f"GMAIL IDS: {all_ids}")
 
-            res, hdrs = mail.fetch(
-                ",".join(batch),
-                "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID SUBJECT FROM DATE)])"
-            )
-            if res != "OK":
+    for i in range(0, len(all_ids), BATCH_SIZE):
+        batch = all_ids[i:i + BATCH_SIZE]
+        dbg(f"Batch {i // BATCH_SIZE + 1} ({len(batch)})")
+
+        for mid in batch:
+            msg = _gmail_api_get_message(access_token, str(mid))
+            hdrs = _gmail_headers_map(msg)
+            subject = hdrs.get("subject", "")
+            sender = hdrs.get("from", "")
+            date = hdrs.get("date", "")
+            if not is_within_minutes_window(date, cutoff_utc):
                 continue
+            k = dedupe_key({"Message-ID": hdrs.get("message-id", "")}, sender, subject, date, str(mid))
+            dbg_header(str(mid), subject, sender, date, k)
+            body = _extract_gmail_body_from_payload(msg.get("payload") or {})
 
-            headers = [email.message_from_bytes(p[1]) for p in hdrs if isinstance(p, tuple)]
-
-            keys = []
-            meta = []
-            for idx, h in enumerate(headers):
-                imap_id = batch[min(idx, len(batch) - 1)]
-                subj = decode_hdr(h.get("Subject"))
-                sndr = decode_hdr(h.get("From"))
-                date = h.get("Date") or ""
-                if not is_within_minutes_window(date, cutoff_utc):
-                    continue
-                k = dedupe_key(h, sndr, subj, date, imap_id)
-                keys.append(k)
-                meta.append((imap_id, subj, sndr, date, h))
-                dbg_header(imap_id, subj, sndr, date, k)
-
-            for (imap_id, subject, sender, date, hdr), key in zip(meta, keys):
-                # ------------------------------------------------------------
-                # SUBJECT DEBUGGING (NEW)
-                # ------------------------------------------------------------
-                matched_subject = subject_matches(subject)
-                debug_subject(subject, matched_subject)
-
-                if not matched_subject:
-                    continue
-
+            matched = process_wizard_email(
+                mail=None,
+                imap_id=str(mid),
+                sender=sender,
+                subject=subject,
+                header_date=date,
+                body=body,
+                rules=wizard_rules,
+                pending_table=pending_table,
+                access_token=access_token,
+                processed_label_id=processed_label_id,
+            )
+            if matched:
                 did_work = True
+            elif DEBUG:
+                dbg_dump_body_on_no_rule(subject, sender, str(mid), body)
 
-                _, data = mail.fetch(imap_id, "(RFC822)")
-                msg = email.message_from_bytes(data[0][1])
-                body = extract_body(msg)
+    if did_work:
+        dbg("Flushing pending notifications…")
+        try:
+            flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
+        except Exception as e:
+            msg = f"{type(e).__name__}: {e}"
+            log(f"⚠️ flush_pending_notifications failed: {msg}")
+            push_error(
+                kind="cron_error",
+                subject="emailFetch: flush_pending_notifications FAILED",
+                body=msg,
+            )
 
-                matched = False
-
-                for rule in RULES:
-                    dbg_rule_attempt(rule["name"])
-                    m = rule["regex"].search(body)
-
-                    if not m:
-                        dbg_rule_no_match(rule["name"])
-                        continue
-
-                    dbg_rule_match(rule["name"])
-
-                    # ✅ Matched a rule. Now run handler (inserts to DB), then send pushover.
-                    matched = True
-                    extracted = extract_fields(rule["name"], m)
-
-                    try:
-                        result = rule["handler"](mail, imap_id, m, "", use_test_table=TEST_MODE)
-                        dbg_handler_result(result)
-
-                        # ✅ Only notify if a NEW row was inserted
-                        # ✅ Only notify if a NEW row was inserted
-                        if not result or not result.get("inserted"):
-                            reason = "handler returned None" if not result else "inserted=False (already in DB / deduped)"
-
-                            # NEW: even if inserted=False, a Transaction Notification might be the merchant-resolver
-                            # for a pending withdrawal. Try to resolve pending and notify.
-                            if result and rule["name"] == "navy credit":
-                                account_id = int(result.get("account_id") or 0)
-                                merchant = (result.get("merchant") or "").strip()
-                                amt = result.get("amount")
-                                date_str = result.get("purchaseDate") or "unknown date"
-                                time_str = result.get("time") or received_time_from_header(date)
-                                fp = tx_fingerprint(account_id, amt, date_str, time_str)
-                                dbg(f"Computed fp (inserted=False path): {fp}")
-
-                                resolved = try_resolve_pending_and_notify(
-                                    pending_table=pending_table,
-                                    fp=fp,
-                                    account_id=account_id,
-                                    merchant=merchant,
-                                    amt=amt,
-                                    date_str=date_str,
-                                    time_str=time_str,
-                                )
-
-                                if resolved:
-                                    reason = "inserted=False but resolved pending withdrawal → notified"
-
-                            dbg_notify_status(subject, rule["name"], inserted=(result or {}).get("inserted"),
-                                              reason=reason)
-                            break
-
-                        account_id = int(result["account_id"])
-                        bank, card = get_bank_card_by_account_id(account_id)
-
-                        merchant = (result.get("merchant") or "Unknown").strip()
-                        amt = result.get("amount")
-                        date_str = result.get("purchaseDate") or "unknown date"
-                        time_str = result.get("time") or received_time_from_header(date)
-
-                        # ✅ transaction-level fingerprint (dedupe across multiple emails)
-                        fp = tx_fingerprint(account_id, amt, date_str, time_str)
-
-                        # ✅ If we already sent a notification for this transaction, never send again
-                        dbg(f"Computed fp: {fp}")
-
-                        if already_notified(fp):
-                            dbg_notification_decision("Already notified → skipping")
-                            dbg_notify_status(subject, rule["name"], inserted=True, fp=fp,
-                                              reason="already_notified(fp)=True → skipping")
-                            break
-
-                        is_unknown = (merchant.lower() in ("unknown", "unknown merchant", ""))
-                        if rule["name"] == "navy withdrawal" and is_unknown:
-                            dbg_notification_decision("Withdrawal unknown → stored pending")
-
-                            upsert_pending(
-                                pending_table,
-                                fp,
-                                account_id,
-                                amt,
-                                date_str,
-                                time_str,
-                                rule["name"],
-                            )
-                            break
-
-                        amt_str = f"${float(amt):.2f}" if amt is not None else "an unknown amount"
-
-                        title = "Transaction alert"
-                        message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
-                        dbg_notification_decision("Sending pushover now")
-                        dbg_notify_status(subject, rule["name"], inserted=True, fp=fp, reason="sending pushover")
-
-                        send_pushover(title, message)
-                        mark_notified(fp)
-                        break
-
-
-
-                    except Exception as e:
-                        msg = f"rule={rule['name']} imap_id={imap_id}\n{type(e).__name__}: {e}"
-                        log(f"⚠️ handler failed {msg}")
-                        push_error(subject=f"emailFetch handler FAILED: {rule['name']}", body=msg, kind="handler_error")
-
-                    break
-
-                if not matched:
-                    # If it passed the SUBJECT filter but none of the regex rules matched,
-                    # dump body so we can build a regex for this email type.
-                    if matched_subject:
-                        dbg_dump_body_on_no_rule(subject, sender, imap_id, body)
-
-        if did_work:
-            dbg("Flushing pending notifications…")
-            try:
-                flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
-            except Exception as e:
-                msg = f"{type(e).__name__}: {e}"
-                log(f"⚠️ flush_pending_notifications failed: {msg}")
-                push_error(
-                    kind="cron_error",
-                    subject="emailFetch: flush_pending_notifications FAILED",
-                    body=msg,
-                )
-
-        log("DONE")
-
-    finally:
-        mail.logout()
+    log("DONE")
 
 
 if __name__ == "__main__":

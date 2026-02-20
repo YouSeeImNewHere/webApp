@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+import threading
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from pathlib import Path
+import tempfile
 from typing import Any
 
 import requests
@@ -17,6 +21,93 @@ from app.core.tenancy import current_tenant_id
 from db import with_db_cursor
 
 router = APIRouter()
+_SCHEMA_INIT_LOCK = threading.Lock()
+_SCHEMA_READY = False
+_ACCOUNTS_EMAIL_COLUMN_READY = False
+_SAMPLES_CACHE_LOCK = threading.Lock()
+_SAMPLES_CACHE_MAX = 1000
+
+
+def _cache_key(tenant_id: int | None, user_email: str) -> tuple[int, str]:
+    return (int(tenant_id or 0), str(user_email or "").strip().lower())
+
+
+def _sample_store_dir() -> Path:
+    p = Path(tempfile.gettempdir()) / "webapp_email_parser_samples"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _sample_store_file(tenant_id: int | None, user_email: str) -> Path:
+    tid, email = _cache_key(tenant_id, user_email)
+    safe_email = re.sub(r"[^a-z0-9_.@-]+", "_", email.lower())
+    return _sample_store_dir() / f"t{tid}_{safe_email}.json"
+
+
+def _read_sample_bucket(tenant_id: int | None, user_email: str) -> dict[str, dict[str, Any]]:
+    f = _sample_store_file(tenant_id, user_email)
+    if not f.exists():
+        return {}
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for k, v in raw.items():
+        sid = str(k or "").strip()
+        if not sid or not isinstance(v, dict):
+            continue
+        out[sid] = dict(v)
+    return out
+
+
+def _write_sample_bucket(tenant_id: int | None, user_email: str, bucket: dict[str, dict[str, Any]]) -> None:
+    f = _sample_store_file(tenant_id, user_email)
+    tmp = f.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(bucket, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, f)
+
+
+def _cache_trial_samples(tenant_id: int | None, user_email: str, items: list[dict[str, Any]]) -> None:
+    with _SAMPLES_CACHE_LOCK:
+        bucket = _read_sample_bucket(tenant_id, user_email)
+        for item in items:
+            sid = str(item.get("sample_id") or "").strip()
+            if not sid:
+                continue
+            bucket[sid] = {
+                "sample_id": sid,
+                "sender": str(item.get("sender") or ""),
+                "subject": str(item.get("subject") or ""),
+                "received_at": str(item.get("received_at") or ""),
+                "snippet": str(item.get("snippet") or ""),
+                "body": str(item.get("body") or ""),
+                "account_id": int(item.get("account_id") or 0),
+                "_cached_at": datetime.utcnow().isoformat() + "Z",
+            }
+        if len(bucket) > _SAMPLES_CACHE_MAX:
+            # Drop oldest cached samples first to bound process memory.
+            ordered = sorted(
+                bucket.items(),
+                key=lambda kv: str((kv[1] or {}).get("_cached_at") or ""),
+            )
+            drop_n = len(bucket) - _SAMPLES_CACHE_MAX
+            for sid, _ in ordered[:drop_n]:
+                bucket.pop(sid, None)
+        _write_sample_bucket(tenant_id, user_email, bucket)
+
+
+def _get_cached_trial_samples(tenant_id: int | None, user_email: str, sample_ids: list[str]) -> list[dict[str, Any]]:
+    with _SAMPLES_CACHE_LOCK:
+        bucket = _read_sample_bucket(tenant_id, user_email)
+        out: list[dict[str, Any]] = []
+        for sid in sample_ids:
+            row = bucket.get(str(sid).strip())
+            if row:
+                out.append(dict(row))
+        return out
 
 
 def _require_tenant_id() -> int | None:
@@ -36,49 +127,43 @@ def _require_session_email(request: Request) -> str:
 
 
 def _ensure_trial_tables(cur) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS email_parser_trial_samples (
-            id BIGSERIAL PRIMARY KEY,
-            tenant_id BIGINT NOT NULL DEFAULT 0,
-            user_email TEXT NOT NULL,
-            sample_id TEXT NOT NULL,
-            account_id BIGINT,
-            sender TEXT,
-            subject TEXT,
-            received_at TEXT,
-            snippet TEXT,
-            body TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_INIT_LOCK:
+        if _SCHEMA_READY:
+            return
+        # Serialize first-time DDL across concurrent workers/processes.
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (8612401901,))
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_parser_trial_drafts (
+                id BIGSERIAL PRIMARY KEY,
+                tenant_id BIGINT NOT NULL DEFAULT 0,
+                user_email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                account_id BIGINT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'trial_inactive',
+                draft_json TEXT NOT NULL DEFAULT '{}',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
         )
-        """
-    )
-    cur.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_email_parser_trial_samples_scope
-        ON email_parser_trial_samples (tenant_id, sample_id)
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS email_parser_trial_drafts (
-            id BIGSERIAL PRIMARY KEY,
-            tenant_id BIGINT NOT NULL DEFAULT 0,
-            user_email TEXT NOT NULL,
-            name TEXT NOT NULL,
-            account_id BIGINT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'trial_inactive',
-            draft_json TEXT NOT NULL DEFAULT '{}',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-        """
-    )
+        _SCHEMA_READY = True
 
 
 def _ensure_accounts_email_columns(cur) -> None:
-    cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS receives_emails BOOLEAN NOT NULL DEFAULT TRUE")
+    global _ACCOUNTS_EMAIL_COLUMN_READY
+    if _ACCOUNTS_EMAIL_COLUMN_READY:
+        return
+    with _SCHEMA_INIT_LOCK:
+        if _ACCOUNTS_EMAIL_COLUMN_READY:
+            return
+        # Serialize first-time DDL across concurrent workers/processes.
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (8612401902,))
+        cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS receives_emails BOOLEAN NOT NULL DEFAULT TRUE")
+        _ACCOUNTS_EMAIL_COLUMN_READY = True
 
 
 def _to_text_from_html(s: str) -> str:
@@ -177,20 +262,34 @@ def _gmail_list_messages(
         terms.append(f"newer_than:{int(lookback_days)}d")
     q = " ".join(terms).strip()
 
-    r = requests.get(
-        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-        headers={"Authorization": f"Bearer {access_token}"},
-        params={"q": q, "maxResults": max(1, min(int(limit), 100))},
-        timeout=25,
-    )
-    if r.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"gmail_list_failed_http_{r.status_code}")
-    data = r.json() or {}
     out: list[str] = []
-    for m in (data.get("messages") or []):
-        mid = str((m or {}).get("id") or "").strip()
-        if mid:
-            out.append(mid)
+    wanted = max(1, min(int(limit), 1000))
+    page_token: str | None = None
+    while len(out) < wanted:
+        params: dict[str, Any] = {
+            "q": q,
+            "maxResults": min(100, wanted - len(out)),
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        r = requests.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params=params,
+            timeout=25,
+        )
+        if r.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"gmail_list_failed_http_{r.status_code}")
+        data = r.json() or {}
+        for m in (data.get("messages") or []):
+            mid = str((m or {}).get("id") or "").strip()
+            if mid:
+                out.append(mid)
+                if len(out) >= wanted:
+                    break
+        page_token = str(data.get("nextPageToken") or "").strip() or None
+        if not page_token:
+            break
     return out
 
 
@@ -282,7 +381,9 @@ class TrialPreviewBody(BaseModel):
     field_map: dict[str, Any] = {}
     guided: dict[str, Any] | None = None
     sample_ids: list[str] = []
-    rule_role: str | None = "standard"
+    parser_slot: str | None = "primary"
+    override_on_primary: bool = False
+    backup_assume_unknown: bool = False
     pending_ttl_minutes: int | None = 30
 
 
@@ -299,7 +400,9 @@ class TrialSaveBody(BaseModel):
     guided: dict[str, Any] | None = None
     status: str | None = "trial_inactive"
     sample_ids: list[str] = []
-    rule_role: str | None = "standard"
+    parser_slot: str | None = "primary"
+    override_on_primary: bool = False
+    backup_assume_unknown: bool = False
     pending_ttl_minutes: int | None = 30
 
 
@@ -312,6 +415,15 @@ class CorrelationPreviewBody(BaseModel):
 
 class TrialDraftResetBody(BaseModel):
     account_id: int | None = None
+
+
+class TrialTestRunBody(BaseModel):
+    account_id: int | None = None
+    sender_query: str | None = None
+    subject_query: str | None = None
+    try_html_on_missing_fields: bool = False
+    lookback_days: int = 30
+    limit: int = 40
 
 
 def _normalize_amount_str(v: str) -> str:
@@ -360,7 +472,9 @@ def _extract_from_match(m: re.Match[str], field_map: dict[str, Any], received_at
     if not time_val:
         time_val = _time_from_received_at(received_at)
     merchant_val = _extract_group(m, merchant_g)
-    if not merchant_val:
+    merchant_val = re.sub(r"^[\s,.:;|\-]+|[\s,.:;|\-]+$", "", str(merchant_val or "").strip())
+    merchant_val = re.sub(r"\s{2,}", " ", merchant_val).strip()
+    if not merchant_val or len(merchant_val) < 2 or not re.search(r"[A-Za-z0-9]", merchant_val):
         merchant_val = "Unknown"
     return {
         "amount": _extract_group(m, amount_g),
@@ -368,6 +482,275 @@ def _extract_from_match(m: re.Match[str], field_map: dict[str, Any], received_at
         "date": _extract_group(m, date_g),
         "time": time_val,
     }
+
+
+def _boundary_label_pattern(v: str) -> str:
+    parts = [re.escape(p) for p in str(v or "").strip().split() if p]
+    if not parts:
+        return ""
+    return rf"(?<!\w){r'\s+'.join(parts)}(?!\w)"
+
+
+def _guided_amount_present(text: str, guided: dict[str, Any]) -> bool:
+    body = str(text or "")
+    amount_core = r"\$?[-]?[\d,]+\.\d{2}"
+    label = str((guided or {}).get("amount_label") or "").strip()
+    if label:
+        lpat = _boundary_label_pattern(label)
+        if lpat:
+            return bool(re.search(rf"{lpat}\s*[:\-]?\s*{amount_core}", body, re.IGNORECASE))
+    return bool(re.search(amount_core, body, re.IGNORECASE))
+
+
+def _guided_extract_line_or_label(text: str, label: str, value_pattern: str, from_idx: int) -> tuple[str, int] | None:
+    t = str(text or "")
+    start = max(0, int(from_idx or 0))
+    sub = t[start:]
+    if label:
+        lpat = _boundary_label_pattern(label)
+        rx = re.compile(rf"{lpat}\s*[:\-]?\s*{value_pattern}", re.IGNORECASE)
+        m = rx.search(sub)
+        if not m:
+            m = rx.search(t)
+            if not m:
+                return None
+            return str(m.group(1) or "").strip(), m.end()
+        return str(m.group(1) or "").strip(), start + m.end()
+    rx_line = re.compile(rf"(?:^|\r?\n)\s*{value_pattern}", re.IGNORECASE)
+    m = rx_line.search(sub)
+    if not m:
+        m = rx_line.search(t)
+        if not m:
+            return None
+        return str(m.group(1) or "").strip(), m.end()
+    return str(m.group(1) or "").strip(), start + m.end()
+
+
+def _guided_extract_merchant(text: str, label: str, end_mode: str, end_text: str, from_idx: int) -> tuple[str, int] | None:
+    t = str(text or "")
+    start = max(0, int(from_idx or 0))
+    sub = t[start:]
+    start_pos = -1
+    if label:
+        lpat = _boundary_label_pattern(label)
+        m = re.search(rf"{lpat}\s*[:\-]?\s*", sub, re.IGNORECASE)
+        if not m:
+            m0 = re.search(rf"{lpat}\s*[:\-]?\s*", t, re.IGNORECASE)
+            if not m0:
+                return None
+            start_pos = m0.end()
+        else:
+            start_pos = start + m.end()
+    else:
+        m = re.search(r"(?:^|\r?\n)\s*([A-Za-z0-9][^\r\n]{1,140})", sub)
+        if not m:
+            m0 = re.search(r"(?:^|\r?\n)\s*([A-Za-z0-9][^\r\n]{1,140})", t)
+            if not m0:
+                return None
+            start_pos = m0.start(1)
+        else:
+            start_pos = start + m.start(1)
+
+    after = t[start_pos:]
+    mode = str(end_mode or "auto").strip().lower()
+    end = -1
+    if mode in ("comma", "auto"):
+        m = re.search(r"\s*,", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "period":
+        m = re.search(r"\s*\.", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "newline":
+        m = re.search(r"\r?\n", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "sentence_end":
+        m = re.search(r"[.!?]", after)
+        end = m.start() if m else -1
+    if end < 0 and mode == "text":
+        needle = str(end_text or "").strip()
+        if needle:
+            idx = after.lower().find(needle.lower())
+            if idx >= 0:
+                end = idx
+    if end < 0 and mode == "auto":
+        m = re.search(r"\s+(?:in\s+the\s+amount\s+of|amount\s+of|on\s+\d{1,2}/\d{1,2}/\d{2,4}|on\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})", after, re.IGNORECASE)
+        end = m.start() if m else -1
+    if end < 0:
+        end = min(len(after), 160)
+    raw = str(after[:end]).strip()
+    clean = re.sub(r"^[\s,.:;|\-]+|[\s,.:;|\-]+$", "", raw)
+    clean = re.sub(r"\s{2,}", " ", clean).strip()
+    if not clean or len(clean) < 2 or not re.search(r"[A-Za-z0-9]", clean):
+        return None
+    return clean, start_pos + end
+
+
+def _extract_from_guided(body: str, guided: dict[str, Any], received_at: str) -> dict[str, str] | None:
+    text = str(body or "")
+    g = guided or {}
+    ord_map = {
+        "amount": int(g.get("amount_order") or 0),
+        "merchant": int(g.get("merchant_order") or 0),
+        "date": int(g.get("date_order") or 0),
+        "time": int(g.get("time_order") or 0),
+    }
+    if ord_map["amount"] <= 0 and _guided_amount_present(text, g):
+        return None
+    ordered = [k for k in ("amount", "merchant", "date", "time") if int(ord_map.get(k) or 0) > 0]
+    ordered.sort(key=lambda k: int(ord_map.get(k) or 0))
+    if not ordered:
+        return None
+
+    acct_before = str(g.get("account_before") or "").strip()
+    acct_exact = str(g.get("account_exact") or "").strip()
+    if acct_before and acct_exact:
+        bpat = _boundary_label_pattern(acct_before)
+        epat = re.escape(acct_exact)
+        if not re.search(rf"{bpat}\s*[:\-]?\s*[^\r\n]*?{epat}", text, re.IGNORECASE):
+            return None
+
+    amount_re = r"(\$?[-]?[\d,]+\.\d{2})"
+    date_re = r"([A-Za-z]{3},?\s+[A-Za-z]{3}\s+\d{1,2},\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}|\d{1,2}/\d{1,2}/\d{2,4})"
+    time_re = r"([0-1]?\d:[0-5]\d\s*(?:AM|PM)(?:\s*[A-Z]{2,4})?)"
+    out = {"amount": "", "merchant": "Unknown", "date": "", "time": ""}
+    cursor = 0
+    for field in ordered:
+        if field == "amount":
+            got = _guided_extract_line_or_label(text, str(g.get("amount_label") or "").strip(), amount_re, cursor)
+            if not got:
+                return None
+            out["amount"], cursor = got
+        elif field == "date":
+            got = _guided_extract_line_or_label(text, str(g.get("date_label") or "").strip(), date_re, cursor)
+            if not got:
+                return None
+            out["date"], cursor = got
+        elif field == "time":
+            got = _guided_extract_line_or_label(text, str(g.get("time_label") or "").strip(), time_re, cursor)
+            if got:
+                out["time"], cursor = got
+        elif field == "merchant":
+            got = _guided_extract_merchant(
+                text,
+                str(g.get("merchant_label") or "").strip(),
+                str(g.get("merchant_end") or "auto").strip().lower(),
+                str(g.get("merchant_end_text") or "").strip(),
+                cursor,
+            )
+            if not got:
+                return None
+            out["merchant"], cursor = got
+
+    if not out["time"]:
+        out["time"] = _time_from_received_at(received_at)
+    return out
+
+
+def _scope_match(cfg: dict[str, Any], sender: str, subject: str) -> bool:
+    sp = str(cfg.get("sender_pattern") or "").strip().lower()
+    sc = str(cfg.get("subject_contains") or "").strip().lower()
+    snd = str(sender or "").strip().lower()
+    sub = str(subject or "").strip().lower()
+    if sp and sp not in snd:
+        return False
+    if sc and sc not in sub:
+        return False
+    return True
+
+
+def _subject_scoped_parsers(parsers: list[dict[str, Any]], subject: str) -> list[dict[str, Any]]:
+    sub = str(subject or "").strip().lower()
+    specific = [
+        p for p in parsers
+        if str(p.get("subject_contains") or "").strip()
+        and str(p.get("subject_contains") or "").strip().lower() in sub
+    ]
+    if specific:
+        return specific
+    blank = [p for p in parsers if not str(p.get("subject_contains") or "").strip()]
+    return blank
+
+
+def _load_saved_parsers(cur, tenant_id: int, user_email: str, account_id: int | None = None) -> list[dict[str, Any]]:
+    if account_id is None:
+        cur.execute(
+            """
+            SELECT d.id, d.name, d.account_id, d.draft_json, d.updated_at,
+                   a.institution, a.name AS account_name
+            FROM email_parser_trial_drafts d
+            LEFT JOIN accounts a ON a.id = d.account_id
+            WHERE d.tenant_id = %s
+              AND d.user_email = %s
+            ORDER BY d.updated_at DESC, d.id DESC
+            """,
+            (int(tenant_id), user_email),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT d.id, d.name, d.account_id, d.draft_json, d.updated_at,
+                   a.institution, a.name AS account_name
+            FROM email_parser_trial_drafts d
+            LEFT JOIN accounts a ON a.id = d.account_id
+            WHERE d.tenant_id = %s
+              AND d.user_email = %s
+              AND d.account_id = %s
+            ORDER BY d.updated_at DESC, d.id DESC
+            """,
+            (int(tenant_id), user_email, int(account_id)),
+        )
+    rows = [dict(r) for r in (cur.fetchall() or [])]
+    parsers: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for r in rows:
+        rid = int(r.get("id") or 0)
+        cfg_raw = r.get("draft_json")
+        cfg: dict[str, Any] = {}
+        if isinstance(cfg_raw, str):
+            try:
+                cfg = json.loads(cfg_raw) or {}
+            except Exception:
+                cfg = {}
+        elif isinstance(cfg_raw, dict):
+            cfg = cfg_raw
+        body_regex = str(cfg.get("body_regex") or "").strip()
+        if not body_regex:
+            continue
+        flags = str(cfg.get("flags") or "i").strip() or "i"
+        try:
+            rx = re.compile(body_regex, _to_regex_flags(flags))
+        except re.error:
+            continue
+        slot = str(cfg.get("parser_slot") or "primary").strip().lower()
+        if slot not in ("primary", "backup"):
+            slot = "primary"
+        sender_pattern = str(cfg.get("sender_pattern") or "").strip()
+        subject_contains = str(cfg.get("subject_contains") or "").strip()
+        parser_account_id = int(cfg.get("account_id") or r.get("account_id") or 0)
+        dedupe_key = f"{parser_account_id}|{sender_pattern.lower()}|{subject_contains.lower()}|{slot}"
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        parsers.append(
+            {
+                "draft_id": rid,
+                "name": str(cfg.get("name") or r.get("name") or "").strip(),
+                "account_id": parser_account_id,
+                "account_label": (
+                    f"{str(r.get('institution') or '').strip()} {str(r.get('account_name') or '').strip()}".strip()
+                ),
+                "parser_slot": slot,
+                "override_on_primary": bool(cfg.get("override_on_primary")),
+                "backup_assume_unknown": bool(cfg.get("backup_assume_unknown")),
+                "sender_pattern": sender_pattern,
+                "subject_contains": subject_contains,
+                "field_map": cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {},
+                "rx": rx,
+            }
+        )
+    slot_rank = {"primary": 0, "backup": 1}
+    parsers.sort(key=lambda p: (slot_rank.get(str(p.get("parser_slot") or ""), 9), int(p.get("draft_id") or 0)))
+    return parsers
 
 
 @router.get("/email-parser/trial/accounts")
@@ -448,57 +831,29 @@ def trial_samples(body: TrialSamplesBody, request: Request):
         lookback_days=max(1, min(int(body.lookback_days or 30), 365)),
         limit=max(1, min(int(body.limit or 40), 100)),
     )
+    # Deterministic lock/update order across concurrent requests reduces deadlock risk.
+    message_ids = sorted(dict.fromkeys(message_ids))
 
     items: list[dict[str, Any]] = []
-    with with_db_cursor() as (conn, cur):
-        _ensure_trial_tables(cur)
-        tid0 = int(tid or 0)
-        for mid in message_ids:
-            msg = _gmail_get_message(access_token, mid)
-            h = _headers_map(msg)
-            body_text = _extract_gmail_body(
-                msg.get("payload") or {},
-                try_html_on_missing_fields=bool(body.try_html_on_missing_fields),
-            )
-            snippet = str(msg.get("snippet") or "")[:600]
-            item = {
-                "sample_id": mid,
-                "sender": h.get("from", ""),
-                "subject": h.get("subject", ""),
-                "received_at": h.get("date", ""),
-                "snippet": snippet,
-                "body": body_text,
-            }
-            items.append(item)
-            cur.execute(
-                """
-                INSERT INTO email_parser_trial_samples
-                    (tenant_id, user_email, sample_id, account_id, sender, subject, received_at, snippet, body, updated_at)
-                VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-                ON CONFLICT (tenant_id, sample_id) DO UPDATE SET
-                    user_email = EXCLUDED.user_email,
-                    account_id = EXCLUDED.account_id,
-                    sender = EXCLUDED.sender,
-                    subject = EXCLUDED.subject,
-                    received_at = EXCLUDED.received_at,
-                    snippet = EXCLUDED.snippet,
-                    body = EXCLUDED.body,
-                    updated_at = now()
-                """,
-                (
-                    tid0,
-                    session_email,
-                    mid,
-                    int(body.account_id),
-                    item["sender"],
-                    item["subject"],
-                    item["received_at"],
-                    item["snippet"],
-                    item["body"],
-                ),
-            )
-        conn.commit()
+    for mid in message_ids:
+        msg = _gmail_get_message(access_token, mid)
+        h = _headers_map(msg)
+        body_text = _extract_gmail_body(
+            msg.get("payload") or {},
+            try_html_on_missing_fields=bool(body.try_html_on_missing_fields),
+        )
+        snippet = str(msg.get("snippet") or "")[:600]
+        item = {
+            "sample_id": mid,
+            "sender": h.get("from", ""),
+            "subject": h.get("subject", ""),
+            "received_at": h.get("date", ""),
+            "snippet": snippet,
+            "body": body_text,
+            "account_id": int(body.account_id),
+        }
+        items.append(item)
+    _cache_trial_samples(tid, session_email, items)
 
     return {"ok": True, "items": items, "count": len(items)}
 
@@ -524,7 +879,7 @@ def trial_account_settings(account_id: int, request: Request):
         conn.commit()
 
     settings: list[dict[str, Any]] = []
-    seen_subjects: set[str] = set()
+    seen_keys: set[str] = set()
     for r in rows:
         raw = r.get("draft_json")
         cfg: dict[str, Any] = {}
@@ -537,19 +892,25 @@ def trial_account_settings(account_id: int, request: Request):
             cfg = raw
 
         subject = str(cfg.get("subject_contains") or "").strip()
-        key = subject.lower()
-        if key in seen_subjects:
+        sender = str(cfg.get("sender_pattern") or "").strip()
+        slot = str(cfg.get("parser_slot") or "primary").strip().lower()
+        if slot not in ("primary", "backup"):
+            slot = "primary"
+        key = f"{sender.lower()}|{subject.lower()}|{slot}"
+        if key in seen_keys:
             continue
-        seen_subjects.add(key)
+        seen_keys.add(key)
         settings.append(
             {
                 "draft_id": int(r.get("id") or 0),
                 "name": str(cfg.get("name") or r.get("name") or "").strip(),
                 "subject_contains": subject,
-                "sender_pattern": str(cfg.get("sender_pattern") or "").strip(),
+                "sender_pattern": sender,
                 "parser_mode": str(cfg.get("parser_mode") or "").strip(),
                 "parsing_method": str(cfg.get("parsing_method") or "").strip(),
-                "rule_role": str(cfg.get("rule_role") or "standard").strip().lower(),
+                "parser_slot": slot,
+                "override_on_primary": bool(cfg.get("override_on_primary")),
+                "backup_assume_unknown": bool(cfg.get("backup_assume_unknown")),
                 "pending_ttl_minutes": max(1, min(_safe_int(cfg.get("pending_ttl_minutes"), 30), 24 * 60)),
                 "body_regex": str(cfg.get("body_regex") or "").strip(),
                 "flags": str(cfg.get("flags") or "i").strip() or "i",
@@ -567,30 +928,18 @@ def trial_preview(body: TrialPreviewBody, request: Request):
     ids = [str(x).strip() for x in (body.sample_ids or []) if str(x).strip()]
     if not ids:
         raise HTTPException(status_code=422, detail="sample_ids_required")
-    rx_txt = (body.body_regex or "").strip()
-    if not rx_txt:
-        raise HTTPException(status_code=422, detail="body_regex_required")
+    parser_mode = str(body.parser_mode or "advanced").strip().lower()
+    rx = None
+    if parser_mode != "guided":
+        rx_txt = (body.body_regex or "").strip()
+        if not rx_txt:
+            raise HTTPException(status_code=422, detail="body_regex_required")
+        try:
+            rx = re.compile(rx_txt, _to_regex_flags(body.flags or "i"))
+        except re.error as e:
+            raise HTTPException(status_code=422, detail=f"invalid_regex:{e}")
 
-    try:
-        rx = re.compile(rx_txt, _to_regex_flags(body.flags or "i"))
-    except re.error as e:
-        raise HTTPException(status_code=422, detail=f"invalid_regex:{e}")
-
-    with with_db_cursor() as (conn, cur):
-        _ensure_trial_tables(cur)
-        tid0 = int(tid or 0)
-        cur.execute(
-            """
-            SELECT sample_id, body, received_at
-            FROM email_parser_trial_samples
-            WHERE tenant_id = %s
-              AND user_email = %s
-              AND sample_id = ANY(%s)
-            """,
-            (tid0, session_email, ids),
-        )
-        rows = [dict(r) for r in (cur.fetchall() or [])]
-        conn.commit()
+    rows = _get_cached_trial_samples(tid, session_email, ids)
 
     by_id = {
         str(r.get("sample_id") or ""): {
@@ -600,10 +949,6 @@ def trial_preview(body: TrialPreviewBody, request: Request):
         for r in rows
     }
     fm = body.field_map or {}
-    amount_g = int(fm.get("amount_group") or 0)
-    merchant_g = int(fm.get("merchant_group") or 0)
-    date_g = int(fm.get("date_group") or 0)
-    time_g = int(fm.get("time_group") or 0)
 
     out: list[dict[str, Any]] = []
     for sid in ids:
@@ -613,25 +958,23 @@ def trial_preview(body: TrialPreviewBody, request: Request):
         if not btxt:
             out.append({"sample_id": sid, "matched": False, "extracted": None, "error": "sample_not_found"})
             continue
-        m = rx.search(btxt)
-        if not m:
-            out.append({"sample_id": sid, "matched": False, "extracted": None, "error": "No match"})
+        if parser_mode == "guided":
+            ext = _extract_from_guided(btxt, body.guided or {}, received_at)
+            if not ext:
+                out.append({"sample_id": sid, "matched": False, "extracted": None, "error": "No guided match"})
+                continue
+            out.append({"sample_id": sid, "matched": True, "extracted": ext})
             continue
-        time_val = _extract_group(m, time_g)
-        if not time_val:
-            time_val = _time_from_received_at(received_at)
-        out.append(
-            {
-                "sample_id": sid,
-                "matched": True,
-                "extracted": {
-                    "amount": _extract_group(m, amount_g),
-                    "merchant": _extract_group(m, merchant_g) or "Unknown",
-                    "date": _extract_group(m, date_g),
-                    "time": time_val,
-                },
-            }
-        )
+
+        amount_g = int(fm.get("amount_group") or 0)
+        merchant_g = int(fm.get("merchant_group") or 0)
+        date_g = int(fm.get("date_group") or 0)
+        time_g = int(fm.get("time_group") or 0)
+        m = rx.search(btxt) if rx else None
+        if not m:
+            out.append({"sample_id": sid, "matched": False, "extracted": None, "error": "No regex match"})
+            continue
+        out.append({"sample_id": sid, "matched": True, "extracted": _extract_from_match(m, fm, received_at)})
 
     return {"ok": True, "rows": out, "matched": sum(1 for r in out if r.get("matched"))}
 
@@ -644,11 +987,16 @@ def trial_save(body: TrialSaveBody, request: Request):
     if not name:
         raise HTTPException(status_code=422, detail="name_required")
 
+    parser_slot = (body.parser_slot or "primary").strip().lower()
+    if parser_slot not in ("primary", "backup"):
+        parser_slot = "primary"
     draft_json = {
         "name": name,
         "parser_mode": (body.parser_mode or "").strip().lower(),
         "parsing_method": (body.parsing_method or "anchor").strip().lower(),
-        "rule_role": (body.rule_role or "standard").strip().lower(),
+        "parser_slot": parser_slot,
+        "override_on_primary": bool(body.override_on_primary),
+        "backup_assume_unknown": bool(body.backup_assume_unknown),
         "pending_ttl_minutes": max(1, min(int(body.pending_ttl_minutes or 30), 24 * 60)),
         "account_id": int(body.account_id),
         "sender_pattern": (body.sender_pattern or "").strip(),
@@ -665,23 +1013,69 @@ def trial_save(body: TrialSaveBody, request: Request):
     with with_db_cursor() as (conn, cur):
         _ensure_trial_tables(cur)
         tid0 = int(tid or 0)
+        sender_pattern = (body.sender_pattern or "").strip()
+        subject_contains = (body.subject_contains or "").strip()
+        # Upsert behavior for parser slots within the same email scope.
         cur.execute(
             """
-            INSERT INTO email_parser_trial_drafts
-                (tenant_id, user_email, name, account_id, status, draft_json, updated_at)
-            VALUES
-                (%s, %s, %s, %s, %s, %s, now())
-            RETURNING id
+            SELECT id
+            FROM email_parser_trial_drafts
+            WHERE tenant_id = %s
+              AND user_email = %s
+              AND account_id = %s
+              AND lower(COALESCE((draft_json::jsonb->>'sender_pattern'), '')) = lower(%s)
+              AND lower(COALESCE((draft_json::jsonb->>'subject_contains'), '')) = lower(%s)
+              AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
             """,
             (
                 tid0,
                 session_email,
-                name,
                 int(body.account_id),
-                (body.status or "trial_inactive").strip().lower(),
-                json.dumps(draft_json),
+                sender_pattern,
+                subject_contains,
+                parser_slot,
             ),
         )
+        existing = cur.fetchone() or {}
+        existing_id = int(existing.get("id") or 0)
+        if existing_id > 0:
+            cur.execute(
+                """
+                UPDATE email_parser_trial_drafts
+                SET name = %s,
+                    status = %s,
+                    draft_json = %s,
+                    updated_at = now()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    name,
+                    (body.status or "trial_inactive").strip().lower(),
+                    json.dumps(draft_json),
+                    existing_id,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO email_parser_trial_drafts
+                    (tenant_id, user_email, name, account_id, status, draft_json, updated_at)
+                VALUES
+                    (%s, %s, %s, %s, %s, %s, now())
+                RETURNING id
+                """,
+                (
+                    tid0,
+                    session_email,
+                    name,
+                    int(body.account_id),
+                    (body.status or "trial_inactive").strip().lower(),
+                    json.dumps(draft_json),
+                ),
+            )
         row = cur.fetchone() or {}
         conn.commit()
     return {"ok": True, "draft_id": int(row.get("id") or 0)}
@@ -740,18 +1134,8 @@ def trial_correlation_preview(body: CorrelationPreviewBody, request: Request):
         except re.error as e:
             raise HTTPException(status_code=422, detail=f"invalid_regex:{e}")
 
-        cur.execute(
-            """
-            SELECT sample_id, subject, sender, received_at, body
-            FROM email_parser_trial_samples
-            WHERE tenant_id = %s
-              AND user_email = %s
-              AND sample_id = ANY(%s)
-            """,
-            (tid0, session_email, ids),
-        )
-        sample_rows = [dict(r) for r in (cur.fetchall() or [])]
         conn.commit()
+    sample_rows = _get_cached_trial_samples(tid, session_email, ids)
 
     def _sort_key(r: dict[str, Any]):
         d = str(r.get("received_at") or "").strip()
@@ -902,3 +1286,157 @@ def trial_reset_drafts(body: TrialDraftResetBody, request: Request):
         deleted = int(cur.rowcount or 0)
         conn.commit()
     return {"ok": True, "deleted": deleted}
+
+
+@router.post("/email-parser/trial/test-run")
+def trial_test_run(body: TrialTestRunBody, request: Request):
+    tid = _require_tenant_id()
+    session_email = _require_session_email(request)
+    sender_query = (body.sender_query or "").strip()
+    subject_query = (body.subject_query or "").strip()
+
+    access_token, err = _refresh_google_access_token_if_needed()
+    if not access_token:
+        raise HTTPException(status_code=401, detail=f"gmail_not_connected:{err or 'unknown'}")
+
+    message_ids = _gmail_list_messages(
+        access_token,
+        sender_query=sender_query,
+        subject_query=subject_query,
+        lookback_days=max(1, min(int(body.lookback_days or 30), 365)),
+        limit=max(1, min(int(body.limit or 40), 100)),
+    )
+
+    with with_db_cursor() as (conn, cur):
+        _ensure_trial_tables(cur)
+        parsers = _load_saved_parsers(cur, int(tid or 0), session_email, None)
+        conn.commit()
+
+    rows: list[dict[str, Any]] = []
+    summary = {
+        "fetched": len(message_ids),
+        "parsers": len(parsers),
+        "matched": 0,
+        "skipped": 0,
+        "would_insert": 0,
+        "would_skip_insert": 0,
+    }
+    if not parsers:
+        return {"ok": True, "summary": summary, "rows": rows, "detail": "no_parsers_for_account"}
+
+    for mid in message_ids:
+        msg = _gmail_get_message(access_token, mid)
+        h = _headers_map(msg)
+        sender = h.get("from", "")
+        subject = h.get("subject", "")
+        received_at = h.get("date", "")
+        body_text = _extract_gmail_body(
+            msg.get("payload") or {},
+            try_html_on_missing_fields=bool(body.try_html_on_missing_fields),
+        )
+        scoped_parsers = _subject_scoped_parsers(parsers, subject)
+        matched_row = None
+        parser_fail_reasons: list[str] = []
+        if not scoped_parsers:
+            summary["skipped"] += 1
+            summary["would_skip_insert"] += 1
+            rows.append(
+                {
+                    "sample_id": mid,
+                    "subject": subject,
+                    "sender": sender,
+                    "received_at": received_at,
+                    "matched": False,
+                    "skip_reason": "no_subject_parser",
+                    "would_insert": False,
+                    "extracted": None,
+                    "would_db_row": None,
+                    "parser": None,
+                }
+            )
+            continue
+        for p in scoped_parsers:
+            # Subject already scoped candidates; sender is optional additional scope.
+            if str(p.get("sender_pattern") or "").strip() and not _scope_match(p, sender, subject):
+                continue
+            m = p["rx"].search(body_text or "")
+            if not m:
+                continue
+            ext = _extract_from_match(m, p.get("field_map") if isinstance(p.get("field_map"), dict) else {}, received_at)
+            amt_raw = str(ext.get("amount") or "").strip()
+            amt_norm = _normalize_amount_str(amt_raw)
+            merchant = str(ext.get("merchant") or "").strip() or "Unknown"
+            if p.get("backup_assume_unknown") and str(p.get("parser_slot") or "") == "backup":
+                merchant = "Unknown"
+            date_norm = _normalize_date_str(str(ext.get("date") or "").strip())
+            time_norm = _normalize_time_str(str(ext.get("time") or "").strip(), received_at)
+            would_insert = bool(amt_norm)
+            if not would_insert:
+                parser_fail_reasons.append(
+                    f"{str(p.get('name') or '(unnamed)')}#{int(p.get('draft_id') or 0)}:amount_missing_or_invalid"
+                )
+                continue
+            summary["would_insert"] += 1
+            matched_row = {
+                "sample_id": mid,
+                "subject": subject,
+                "sender": sender,
+                "received_at": received_at,
+                "matched": True,
+                "parser": {
+                    "draft_id": int(p.get("draft_id") or 0),
+                    "name": str(p.get("name") or "").strip(),
+                    "account_id": int(p.get("account_id") or 0),
+                    "account_label": str(p.get("account_label") or "").strip(),
+                    "slot": str(p.get("parser_slot") or "").strip(),
+                    "override_on_primary": bool(p.get("override_on_primary")),
+                    "backup_assume_unknown": bool(p.get("backup_assume_unknown")),
+                },
+                "would_insert": would_insert,
+                "skip_reason": "" if would_insert else "amount_missing_or_invalid",
+                "extracted": {
+                    "amount": amt_norm,
+                    "merchant": merchant,
+                    "date": date_norm,
+                    "time": time_norm,
+                },
+                "would_db_row": (
+                    {
+                        "account_id": int(p.get("account_id") or 0),
+                        "amount": amt_norm,
+                        "merchant": merchant,
+                        "purchasedate": date_norm,
+                        "time": time_norm,
+                        "source": "email",
+                    }
+                    if would_insert
+                    else None
+                ),
+            }
+            break
+        if matched_row:
+            summary["matched"] += 1
+            rows.append(matched_row)
+        else:
+            summary["skipped"] += 1
+            summary["would_skip_insert"] += 1
+            reason = "no_parser_match_for_subject"
+            if parser_fail_reasons:
+                reason = "parser_matched_but_invalid_amount"
+            rows.append(
+                {
+                    "sample_id": mid,
+                    "subject": subject,
+                    "sender": sender,
+                    "received_at": received_at,
+                    "matched": False,
+                    "skip_reason": reason,
+                    "attempted_parsers": parser_fail_reasons,
+                    "would_insert": False,
+                    "extracted": None,
+                    "would_db_row": None,
+                    "parser": None,
+                }
+            )
+
+    return {"ok": True, "summary": summary, "rows": rows}
