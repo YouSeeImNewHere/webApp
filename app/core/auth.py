@@ -390,6 +390,31 @@ def _is_notif_secret_authorized(request: Request) -> bool:
     return bool(expected) and provided == expected
 
 
+def _extract_widget_token(request: Request) -> str:
+    # Primary header used by the Scriptable widget.
+    token = (request.headers.get("x-widget-token") or "").strip()
+    if token:
+        return token
+
+    # Common API auth convention.
+    authz = (request.headers.get("authorization") or "").strip()
+    if authz.lower().startswith("bearer "):
+        bearer = authz[7:].strip()
+        if bearer:
+            return bearer
+
+    # Back-compat fallback for older clients.
+    legacy = (request.headers.get("x-widget-secret") or "").strip()
+    if legacy:
+        return legacy
+
+    # Last-resort fallback for clients that cannot set custom headers.
+    qp = (request.query_params.get("widget_token") or "").strip()
+    if qp:
+        return qp
+    return ""
+
+
 def _start_gmail_watch():
     if not GOOGLE_PUBSUB_TOPIC:
         return JSONResponse(
@@ -726,7 +751,7 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
         try:
             # Widget endpoints: OAuth-bound widget token auth.
             if path.startswith("/widget/"):
-                widget_token = (request.headers.get("x-widget-token") or "").strip()
+                widget_token = _extract_widget_token(request)
                 if widget_token:
                     subject = resolve_widget_token(widget_token)
                     if not subject:

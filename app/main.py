@@ -73,11 +73,16 @@ def create_app() -> FastAPI:
             lower = path.lower()
             query = request.url.query or ""
             has_build_version = ("v=" in query)
+            is_email_wizard_asset = lower.startswith("/static/pages/email-parser-wizard/")
             is_versioned_partial = (
                 has_build_version
                 and (lower.startswith("/static/partials/") or lower == "/static/shared/shared.html")
             )
-            if is_versioned_partial:
+            if is_email_wizard_asset:
+                # Wizard assets are referenced from a static FileResponse HTML page
+                # without build query params, so force revalidation to avoid stale JS.
+                response.headers["Cache-Control"] = "no-cache"
+            elif is_versioned_partial:
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             elif lower.endswith((".html", ".webmanifest")) or lower.endswith("/sw.js"):
                 response.headers["Cache-Control"] = "no-cache"
