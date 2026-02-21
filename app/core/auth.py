@@ -437,12 +437,29 @@ def _start_gmail_watch():
         timeout=20,
     )
     if resp.status_code != 200:
+        body_txt = resp.text[:500]
+        body_l = body_txt.lower()
+        if resp.status_code == 403 and (
+            "insufficient authentication scopes" in body_l
+            or "insufficient permission" in body_l
+            or "access_token_scope_insufficient" in body_l
+        ):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "gmail_reauth_required_scopes",
+                    "status": 403,
+                    "hint": "Reconnect Google in Settings to grant required Gmail scopes.",
+                    "body": body_txt,
+                },
+                status_code=403,
+            )
         return JSONResponse(
             {
                 "ok": False,
                 "error": "gmail_watch_failed",
                 "status": resp.status_code,
-                "body": resp.text[:500],
+                "body": body_txt,
             },
             status_code=502,
         )
@@ -479,6 +496,7 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         "email",
         "profile",
         "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
     ]
     params = {
         "client_id": GOOGLE_CLIENT_ID,

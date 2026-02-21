@@ -110,6 +110,14 @@ def _get_cached_trial_samples(tenant_id: int | None, user_email: str, sample_ids
         return out
 
 
+def _get_recent_cached_trial_samples(tenant_id: int | None, user_email: str, limit: int = 40) -> list[dict[str, Any]]:
+    with _SAMPLES_CACHE_LOCK:
+        bucket = _read_sample_bucket(tenant_id, user_email)
+        rows = [dict(v) for v in bucket.values() if isinstance(v, dict)]
+        rows.sort(key=lambda r: str(r.get("_cached_at") or ""), reverse=True)
+        return rows[: max(1, min(int(limit or 40), 100))]
+
+
 def _require_tenant_id() -> int | None:
     if not MULTI_TENANT_ENABLED:
         return None
@@ -864,19 +872,40 @@ def trial_samples(body: TrialSamplesBody, request: Request):
     if not access_token:
         raise HTTPException(status_code=401, detail=f"gmail_not_connected:{err or 'unknown'}")
 
-    message_ids = _gmail_list_messages(
-        access_token,
-        sender_query=sender_query,
-        subject_query=subject_query,
-        lookback_days=max(1, min(int(body.lookback_days or 30), 365)),
-        limit=max(1, min(int(body.limit or 40), 100)),
-    )
+    limit_n = max(1, min(int(body.limit or 40), 100))
+    lookback_n = max(1, min(int(body.lookback_days or 30), 365))
+    try:
+        message_ids = _gmail_list_messages(
+            access_token,
+            sender_query=sender_query,
+            subject_query=subject_query,
+            lookback_days=lookback_n,
+            limit=limit_n,
+        )
+    except HTTPException as e:
+        if int(getattr(e, "status_code", 0) or 0) == 502:
+            cached = _get_recent_cached_trial_samples(tid, session_email, limit=limit_n)
+            return {
+                "ok": True,
+                "items": cached,
+                "count": len(cached),
+                "stale": True,
+                "warning": str(getattr(e, "detail", "gmail_upstream_unavailable")),
+            }
+        raise
     # Deterministic lock/update order across concurrent requests reduces deadlock risk.
     message_ids = sorted(dict.fromkeys(message_ids))
 
     items: list[dict[str, Any]] = []
+    fetch_errors: list[str] = []
     for mid in message_ids:
-        msg = _gmail_get_message(access_token, mid)
+        try:
+            msg = _gmail_get_message(access_token, mid)
+        except HTTPException as e:
+            if int(getattr(e, "status_code", 0) or 0) == 502:
+                fetch_errors.append(str(getattr(e, "detail", "gmail_get_failed")))
+                continue
+            raise
         h = _headers_map(msg)
         body_text = _extract_gmail_body(
             msg.get("payload") or {},
@@ -893,9 +922,23 @@ def trial_samples(body: TrialSamplesBody, request: Request):
             "account_id": int(body.account_id),
         }
         items.append(item)
-    _cache_trial_samples(tid, session_email, items)
+    if items:
+        _cache_trial_samples(tid, session_email, items)
 
-    return {"ok": True, "items": items, "count": len(items)}
+    if not items and fetch_errors:
+        cached = _get_recent_cached_trial_samples(tid, session_email, limit=limit_n)
+        return {
+            "ok": True,
+            "items": cached,
+            "count": len(cached),
+            "stale": True,
+            "warning": fetch_errors[0],
+        }
+
+    out = {"ok": True, "items": items, "count": len(items)}
+    if fetch_errors:
+        out["warning"] = f"partial_fetch_errors:{len(fetch_errors)}"
+    return out
 
 
 @router.get("/email-parser/trial/account-settings/{account_id}")

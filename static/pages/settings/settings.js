@@ -350,11 +350,11 @@ function formatBackfillLog(out) {
 
 function esc(v) {
   return String(v == null ? "" : v)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function renderBackfillRows(out) {
@@ -407,7 +407,7 @@ function renderBackfillRows(out) {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-toggle");
       if (!id) return;
-      const target = host.querySelector(`#${CSS.escape(id)}`);
+      const target = document.getElementById(id);
       if (!target) return;
       target.style.display = target.style.display === "none" ? "" : "none";
     });
