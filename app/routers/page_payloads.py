@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List
 from datetime import date, datetime, timedelta
 from copy import deepcopy
+import json
 import time
 from threading import Lock
 
@@ -40,7 +41,6 @@ from app.routers.les import les_paychecks, LESPaychecksRequest, LESProfileModel
 
 router = APIRouter()
 
-WIDGET_SUMMARY_CACHE_TTL_SEC = 90
 _WIDGET_SUMMARY_CACHE: Dict[str, Dict[str, Any]] = {}
 _WIDGET_REFRESH_READY = False
 WIDGET_VERSION_CACHE_TTL_SEC = 15 * 60
@@ -50,6 +50,8 @@ PAGE_PAYLOAD_CACHE_TTL_SEC = 30
 _PAGE_PAYLOAD_CACHE: dict[str, dict[str, Any]] = {}
 _PAGE_PAYLOAD_CACHE_LOCK = Lock()
 DAY_LIMIT_CACHE_TTL_SEC = 20
+MIN_WIDGET_SCRIPT_VERSION = 2
+_WIDGET_SUMMARY_SNAPSHOT_READY = False
 
 # =============================================================================
 # Page payload endpoints (one request per page)
@@ -120,6 +122,70 @@ def _ensure_widget_refresh_tracking_pg() -> None:
         )
         conn.commit()
     _WIDGET_REFRESH_READY = True
+
+
+def _ensure_widget_summary_snapshot_pg() -> None:
+    global _WIDGET_SUMMARY_SNAPSHOT_READY
+    if _WIDGET_SUMMARY_SNAPSHOT_READY:
+        return
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS widget_summary_snapshot (
+              tenant_id INT PRIMARY KEY,
+              source_version BIGINT NOT NULL DEFAULT 0,
+              payload_json JSONB NOT NULL,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        conn.commit()
+    _WIDGET_SUMMARY_SNAPSHOT_READY = True
+
+
+def _load_widget_summary_snapshot(tid: Optional[int], source_version: int) -> Dict[str, Any] | None:
+    _ensure_widget_summary_snapshot_pg()
+    tkey = _widget_tenant_key(tid)
+    rows = query_db(
+        """
+        SELECT payload_json
+        FROM widget_summary_snapshot
+        WHERE tenant_id = %s
+          AND source_version = %s
+        LIMIT 1
+        """,
+        (int(tkey), int(source_version)),
+    )
+    if not rows:
+        return None
+    payload = rows[0].get("payload_json")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _upsert_widget_summary_snapshot(tid: Optional[int], source_version: int, payload: Dict[str, Any]) -> None:
+    _ensure_widget_summary_snapshot_pg()
+    tkey = _widget_tenant_key(tid)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO widget_summary_snapshot (tenant_id, source_version, payload_json, updated_at)
+            VALUES (%s, %s, %s::jsonb, now())
+            ON CONFLICT (tenant_id)
+            DO UPDATE SET
+              source_version = EXCLUDED.source_version,
+              payload_json = EXCLUDED.payload_json,
+              updated_at = now()
+            """,
+            (int(tkey), int(source_version), json.dumps(payload)),
+        )
+        conn.commit()
 
 
 def _widget_version_for_tenant(tid: Optional[int]) -> int:
@@ -475,21 +541,52 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
 @router.get("/widget/summary")
 def widget_summary(
     widget_version: Optional[int] = Query(default=None),
+    widget_script_version: Optional[int] = Query(default=None),
 ):
     tid = _require_tenant_id()
-    version = int(widget_version) if widget_version is not None else _widget_version_for_tenant_cached(tid)
+    current_version = _widget_version_for_tenant(tid)
+    script_v = int(widget_script_version) if widget_script_version is not None else 0
+    if script_v < int(MIN_WIDGET_SCRIPT_VERSION):
+        return {
+            "ok": True,
+            "changed": False,
+            "update_required": True,
+            "message": "Go to settings and update your widget",
+            "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
+            "widget_version": int(current_version),
+        }
+
+    if widget_version is not None and int(widget_version) == int(current_version):
+        return {
+            "ok": True,
+            "changed": False,
+            "update_required": False,
+            "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
+            "widget_version": int(current_version),
+        }
+
     cache_key = f"tenant={_widget_tenant_key(tid)}"
-    now_ts = time.time()
     cache_row = _WIDGET_SUMMARY_CACHE.get(cache_key) or {}
-    cached_ts = float(cache_row.get("ts") or 0.0)
-    cached_data = cache_row.get("data")
     cached_version = int(cache_row.get("version") or -1)
-    if (
-        cached_data
-        and cached_version == version
-        and (now_ts - cached_ts) < WIDGET_SUMMARY_CACHE_TTL_SEC
-    ):
-        return deepcopy(cached_data)
+    cached_data = cache_row.get("data")
+    if isinstance(cached_data, dict) and cached_version == int(current_version):
+        out = deepcopy(cached_data)
+        out["ok"] = True
+        out["changed"] = True
+        out["update_required"] = False
+        out["widget_version"] = int(current_version)
+        out["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
+        return out
+
+    snap = _load_widget_summary_snapshot(tid, int(current_version))
+    if isinstance(snap, dict):
+        snap["ok"] = True
+        snap["changed"] = True
+        snap["update_required"] = False
+        snap["widget_version"] = int(current_version)
+        snap["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
+        _WIDGET_SUMMARY_CACHE[cache_key] = {"version": int(current_version), "data": deepcopy(snap)}
+        return deepcopy(snap)
 
     bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
     n = now_local()
@@ -514,6 +611,8 @@ def widget_summary(
 
     payload = {
         "ok": True,
+        "changed": True,
+        "update_required": False,
 
         "credit": {
             "used": round(used_sum, 2),
@@ -541,17 +640,22 @@ def widget_summary(
             "spent_today_free": dl.get("spent_today_free", 0.0),
             "day": dl.get("day"),
         },
-        "widget_version": version,
+        "widget_version": int(current_version),
+        "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
         "meta": {"cron": "OK"}
     }
-    _WIDGET_SUMMARY_CACHE[cache_key] = {"ts": now_ts, "version": version, "data": payload}
+    _WIDGET_SUMMARY_CACHE[cache_key] = {"version": int(current_version), "data": deepcopy(payload)}
+    try:
+        _upsert_widget_summary_snapshot(tid, int(current_version), payload)
+    except Exception:
+        pass
     return deepcopy(payload)
 
 
 @router.get("/widget/version")
 def widget_version():
     tid = _require_tenant_id()
-    version = _widget_version_for_tenant_cached(tid)
+    version = _widget_version_for_tenant(tid)
     return {"ok": True, "widget_version": version}
 
 def _ensure_budget_tables_pg():

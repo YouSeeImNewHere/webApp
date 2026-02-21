@@ -1,8 +1,8 @@
 // Scriptable Finance Widget (repo-managed)
 // Copy/paste this file into Scriptable.
 // Optimized to reduce backend/Neon CPU:
-// - Widget rendering prefers local cache.
-// - Network refresh happens in Shortcut mode (or first run with no cache).
+// - Widget sends cached version to server.
+// - Server returns changed=false when no transaction changes.
 
 // ===== TOGGLE =====
 const WIDGET_ENABLED = true;
@@ -11,6 +11,7 @@ const WIDGET_ENABLED = true;
 const BASE_URL = "https://webapp-pe3q.onrender.com";
 const WIDGET_TOKEN = ""; // Create via POST /settings/widget-token from an OAuth-authenticated session.
 const ENDPOINT = "/widget/summary";
+const WIDGET_SCRIPT_VERSION = 2;
 
 const fm = FileManager.local();
 const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), "finance_widget_cache.json");
@@ -35,10 +36,20 @@ function cacheAgeMinutes(cache) {
   return (Date.now() - cache.ts) / 60000;
 }
 
+function updateRequiredWidget() {
+  const w = new ListWidget();
+  w.setPadding(14, 14, 14, 14);
+  w.addText("FINANCE").font = Font.boldSystemFont(12);
+  w.addSpacer(6);
+  w.addText("Go to settings and update your widget").font = Font.boldSystemFont(13);
+  return w;
+}
+
 function isValidPayload(payload) {
   return !!(
     payload &&
     payload.ok === true &&
+    payload.changed === true &&
     payload.today &&
     typeof payload.today.remaining_today !== "undefined"
   );
@@ -48,18 +59,20 @@ function normalizedWidgetToken() {
   return String(WIDGET_TOKEN || "").trim();
 }
 
-async function fetchFresh() {
-  const req = new Request(BASE_URL + ENDPOINT);
+async function fetchSummary(currentVersion = null) {
+  const params = [];
+  if (currentVersion !== null && Number.isFinite(Number(currentVersion))) {
+    params.push(`widget_version=${encodeURIComponent(String(Number(currentVersion)))}`);
+  }
+  params.push(`widget_script_version=${encodeURIComponent(String(Number(WIDGET_SCRIPT_VERSION || 0)))}`);
+  const qs = params.length ? `?${params.join("&")}` : "";
+  const req = new Request(BASE_URL + ENDPOINT + qs);
   const token = normalizedWidgetToken();
   if (!token) throw new Error("widget_token_required");
   const headers = { "x-widget-token": token };
   req.headers = headers;
   req.timeoutInterval = 10;
-  const payload = await req.loadJSON();
-  if (!isValidPayload(payload)) {
-    throw new Error("invalid_widget_payload");
-  }
-  return payload;
+  return await req.loadJSON();
 }
 
 function colorGreen()  { return Color.dynamic(new Color("#34C759"), new Color("#30D158")); }
@@ -289,15 +302,26 @@ const fam = String(config.widgetFamily || "");
 // Shortcut mode: refresh network + cache, no widget draw needed.
 if (!fam) {
   try {
-    const fresh = await fetchFresh();
-    saveCache(fresh);
+    const cache = loadCache();
+    const cachedVersion = Number(cache && cache.data ? cache.data.widget_version : null);
+    const resp = await fetchSummary(Number.isFinite(cachedVersion) ? cachedVersion : null);
+    if (resp && resp.ok === true && resp.update_required === true) {
+      return finish(null, "Update required");
+    }
+    if (resp && resp.ok === true && resp.changed === false) {
+      return finish(null, "No changes");
+    }
+    if (!isValidPayload(resp)) {
+      throw new Error("invalid_widget_payload");
+    }
+    saveCache(resp);
     return finish(null, "Refreshed");
   } catch (e) {
     return finish(null, "Refresh failed");
   }
 }
 
-// Widget mode: prefer cache; do periodic network refresh.
+// Widget mode: ping server with cached version; render cache when unchanged.
 let payload = null;
 let usedCache = true;
 let cacheAgeMin = Infinity;
@@ -308,24 +332,26 @@ if (cache && isValidPayload(cache.data)) {
   cacheAgeMin = cacheAgeMinutes(cache);
 }
 
-if (!payload) {
-  try {
-    payload = await fetchFresh();
-    usedCache = false;
-    saveCache({
-      ...payload,
-      widget_version: Number.isFinite(Number(payload.widget_version)) ? Number(payload.widget_version) : null,
-    });
-    cacheAgeMin = 0;
-  } catch (e) {
-    const w = new ListWidget();
-    w.setPadding(14, 14, 14, 14);
-    w.addText("FINANCE").font = Font.boldSystemFont(12);
-    w.addSpacer(6);
-    w.addText("No cached data yet").font = Font.boldSystemFont(14);
-    w.addText("Run shortcut once while online.").font = Font.systemFont(11);
-    return finish(w, "No cache");
+const cachedVersion = Number(payload && Number.isFinite(Number(payload.widget_version)) ? Number(payload.widget_version) : null);
+try {
+  const resp = await fetchSummary(Number.isFinite(cachedVersion) ? cachedVersion : null);
+  if (resp && resp.ok === true && resp.update_required === true) {
+    return finish(updateRequiredWidget(), "Update required");
   }
+  if (resp && resp.ok === true && resp.changed === true) {
+    if (!isValidPayload(resp)) {
+      return finish(updateRequiredWidget(), "Update required");
+    }
+    payload = resp;
+    usedCache = false;
+    cacheAgeMin = 0;
+    saveCache(resp);
+  }
+} catch (_) {
+}
+
+if (!payload || !isValidPayload(payload)) {
+  return finish(updateRequiredWidget(), "Update required");
 }
 
 const data = payload || {};
