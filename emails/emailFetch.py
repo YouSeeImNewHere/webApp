@@ -1180,6 +1180,20 @@ def _guided_extract_line_or_label(text: str, label: str, value_pattern: str, fro
     return str(m.group(1) or "").strip(), start + m.end()
 
 
+def _guided_extract_anywhere(text: str, value_pattern: str, from_idx: int) -> tuple[str, int] | None:
+    t = str(text or "")
+    start = max(0, int(from_idx or 0))
+    sub = t[start:]
+    rx = re.compile(value_pattern, re.IGNORECASE)
+    m = rx.search(sub)
+    if m:
+        return str(m.group(1) or "").strip(), start + m.end()
+    m = rx.search(t)
+    if not m:
+        return None
+    return str(m.group(1) or "").strip(), m.end()
+
+
 def _guided_extract_merchant(text: str, label: str, end_mode: str, end_text: str, from_idx: int) -> tuple[str, int] | None:
     t = str(text or "")
     start = max(0, int(from_idx or 0))
@@ -1273,17 +1287,32 @@ def _guided_extract_fields(body: str, guided: dict, header_date: str) -> dict | 
     cursor = 0
     for field in ordered:
         if field == "amount":
-            got = _guided_extract_line_or_label(text, str(g.get("amount_label") or "").strip(), amount_re, cursor)
+            label = str(g.get("amount_label") or "").strip()
+            got = _guided_extract_line_or_label(text, label, amount_re, cursor)
+            if not got and label:
+                got = _guided_extract_line_or_label(text, "", amount_re, cursor)
+            if not got:
+                got = _guided_extract_anywhere(text, amount_re, cursor)
             if not got:
                 return None
             out["amount"], cursor = got
         elif field == "date":
-            got = _guided_extract_line_or_label(text, str(g.get("date_label") or "").strip(), date_re, cursor)
+            label = str(g.get("date_label") or "").strip()
+            got = _guided_extract_line_or_label(text, label, date_re, cursor)
+            if not got and label:
+                got = _guided_extract_line_or_label(text, "", date_re, cursor)
+            if not got:
+                got = _guided_extract_anywhere(text, date_re, cursor)
             if not got:
                 return None
             out["date"], cursor = got
         elif field == "time":
-            got = _guided_extract_line_or_label(text, str(g.get("time_label") or "").strip(), time_re, cursor)
+            label = str(g.get("time_label") or "").strip()
+            got = _guided_extract_line_or_label(text, label, time_re, cursor)
+            if not got and label:
+                got = _guided_extract_line_or_label(text, "", time_re, cursor)
+            if not got:
+                got = _guided_extract_anywhere(text, time_re, cursor)
             if got:
                 out["time"], cursor = got
         elif field == "merchant":
@@ -1296,7 +1325,13 @@ def _guided_extract_fields(body: str, guided: dict, header_date: str) -> dict | 
             )
             if not got:
                 return None
-            out["merchant"], cursor = got
+            merchant_val, cursor = got
+            label = str(g.get("merchant_label") or "")
+            if re.search(r"description:?", label, re.IGNORECASE) and re.search(r"\s-\s", merchant_val):
+                parts = [x.strip() for x in re.split(r"\s-\s", merchant_val) if x.strip()]
+                if parts:
+                    merchant_val = parts[-1]
+            out["merchant"] = merchant_val
 
     if not out["time"]:
         out["time"] = received_time_from_header(header_date)
@@ -1604,10 +1639,17 @@ def process_wizard_email(
         return True
 
     if return_detail:
+        attempted_modes = {str((a or {}).get("parser_mode") or "").strip().lower() for a in attempted}
+        if attempted_modes and attempted_modes == {"guided"}:
+            fail_reason = "subject_matched_but_guided_failed"
+        elif attempted_modes and attempted_modes == {"advanced"}:
+            fail_reason = "subject_matched_but_regex_failed"
+        else:
+            fail_reason = "subject_matched_but_parser_failed"
         return {
             "matched": False,
             "status": "skipped",
-            "reason": "subject_matched_but_regex_failed",
+            "reason": fail_reason,
             "parser": None,
             "inserted": False,
             "notified": False,

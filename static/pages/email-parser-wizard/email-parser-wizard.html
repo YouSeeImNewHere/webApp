@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -31,7 +31,6 @@
         <label class="epw-field">
           Account
           <select id="epwAccount"></select>
-          <span class="epw-muted epw-inline-muted">🟢 parser configured  |  🟠 parser not configured</span>
         </label>
         <label id="epwSubjectSettingWrap" class="epw-field" style="display:none;">
           Subject setting
@@ -56,7 +55,7 @@
         </label>
         <label class="epw-field">
           Max samples
-          <input id="epwSampleLimit" type="number" min="5" max="200" value="40">
+          <input id="epwSampleLimit" type="number" min="5" max="200" value="10">
         </label>
       </div>
       <label class="epw-field" style="margin-top:8px;">
@@ -68,9 +67,7 @@
       </label>
       <div class="epw-actions">
         <button id="epwLoadSamplesBtn" class="epw-btn primary" type="button">Load Samples</button>
-        <button id="epwTestParsersBtn" class="epw-btn secondary" type="button">Fetch + Test All Parsers (7d)</button>
       </div>
-      <div class="epw-muted">This test ignores selected account/sender/subject and validates every saved parser across all accounts against the last 7 days of emails.</div>
     </section>
 
     <section class="epw-card">
@@ -91,8 +88,6 @@
             <option value="advanced">Advanced (Regex)</option>
           </select>
         </label>
-      </div>
-      <div class="epw-grid epw-grid-2">
         <label class="epw-field">
           Parser slot
           <select id="epwParserSlot">
@@ -100,25 +95,11 @@
             <option value="backup">Backup parser</option>
           </select>
         </label>
+      </div>
+      <div class="epw-grid epw-grid-2">
         <label id="epwSubjectFallbackWrap" class="epw-field" style="display:none;">
           Subject contains (used when Step 1 subject is blank)
           <input id="epwSubjectFallback" type="text" placeholder="Transaction Notification">
-        </label>
-      </div>
-      <div class="epw-grid epw-grid-2">
-        <label class="epw-field">
-          Primary override notifications
-          <span class="epw-toggle-wrap">
-            <input id="epwPrimaryOverride" type="checkbox">
-            <span>When primary and backup both match the same transaction, allow primary to send/override alert behavior.</span>
-          </span>
-        </label>
-        <label class="epw-field">
-          Backup pending-first mode
-          <span class="epw-toggle-wrap">
-            <input id="epwBackupAssumeUnknown" type="checkbox">
-            <span>For backup parser, treat merchant as unknown and hold as pending until primary resolves it.</span>
-          </span>
         </label>
       </div>
       <div id="epwGuidedFields" class="epw-guided-table">
@@ -243,24 +224,6 @@
         <button id="epwPreviewBtn" class="epw-btn primary" type="button">Run Dry-Run Preview</button>
       </div>
       <div class="epw-field" style="margin-top:10px;">
-        Correlation Preview
-        <div class="epw-grid epw-grid-2">
-          <label class="epw-field">
-            Primary parser
-            <select id="epwCorrPrimaryDraft"></select>
-          </label>
-          <label class="epw-field">
-            Backup parser
-            <select id="epwCorrSecondaryDraft"></select>
-          </label>
-        </div>
-        <div class="epw-actions">
-          <button id="epwCorrPreviewBtn" class="epw-btn secondary" type="button">Run Correlation Preview</button>
-        </div>
-        <div id="epwCorrSummary" class="epw-muted">No correlation preview run yet.</div>
-        <div id="epwCorrRows" class="epw-list"></div>
-      </div>
-      <div class="epw-field" style="margin-top:10px;">
         Live capture preview
         <div id="epwLiveCaptureStatus" class="epw-muted">Fill rule fields to preview captures.</div>
         <div id="epwLiveCaptureFields" class="epw-row-sub"></div>
@@ -279,7 +242,7 @@
       </div>
       <div class="epw-actions">
         <button id="epwSaveDraftBtn" class="epw-btn" type="button">Save Parser</button>
-        <button id="epwResetDraftsBtn" class="epw-btn secondary" type="button">Delete All Parsers</button>
+        <button id="epwResetDraftsBtn" class="epw-btn secondary" type="button">Delete This Parser</button>
       </div>
     </section>
   </div>
@@ -289,3 +252,4 @@
   <script src="/static/shared/shared.js" defer></script>
 </body>
 </html>
+

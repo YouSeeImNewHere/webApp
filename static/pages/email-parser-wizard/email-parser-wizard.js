@@ -160,6 +160,42 @@
     renderLiveCapture();
   }
 
+  function clearParserFormForAccount() {
+    if (byId("epwSubjectSetting")) byId("epwSubjectSetting").value = "";
+    if (byId("epwSubjectFallback")) byId("epwSubjectFallback").value = "";
+    if (byId("epwParserMode")) byId("epwParserMode").value = "guided";
+    if (byId("epwParserSlot")) byId("epwParserSlot").value = "primary";
+    if (byId("epwBodyRegex")) byId("epwBodyRegex").value = "";
+    if (byId("epwRegexFlags")) byId("epwRegexFlags").value = "i";
+    if (byId("epwMapAmount")) byId("epwMapAmount").value = "1";
+    if (byId("epwMapMerchant")) byId("epwMapMerchant").value = "2";
+    if (byId("epwMapDate")) byId("epwMapDate").value = "3";
+    if (byId("epwMapTime")) byId("epwMapTime").value = "0";
+    if (byId("epwGuidedAmountLabel")) byId("epwGuidedAmountLabel").value = "";
+    if (byId("epwGuidedMerchantLabel")) byId("epwGuidedMerchantLabel").value = "";
+    if (byId("epwGuidedDateLabel")) byId("epwGuidedDateLabel").value = "";
+    if (byId("epwGuidedTimeLabel")) byId("epwGuidedTimeLabel").value = "";
+    if (byId("epwGuidedMerchantOrder")) byId("epwGuidedMerchantOrder").value = "2";
+    if (byId("epwGuidedDateOrder")) byId("epwGuidedDateOrder").value = "1";
+    if (byId("epwGuidedAmountOrder")) byId("epwGuidedAmountOrder").value = "3";
+    if (byId("epwGuidedTimeOrder")) byId("epwGuidedTimeOrder").value = "0";
+    if (byId("epwGuidedAmountEnd")) byId("epwGuidedAmountEnd").value = "auto";
+    if (byId("epwGuidedMerchantEnd")) byId("epwGuidedMerchantEnd").value = "auto";
+    if (byId("epwGuidedDateEnd")) byId("epwGuidedDateEnd").value = "auto";
+    if (byId("epwGuidedTimeEnd")) byId("epwGuidedTimeEnd").value = "auto";
+    if (byId("epwGuidedAmountEndText")) byId("epwGuidedAmountEndText").value = "";
+    if (byId("epwGuidedMerchantEndText")) byId("epwGuidedMerchantEndText").value = "";
+    if (byId("epwGuidedDateEndText")) byId("epwGuidedDateEndText").value = "";
+    if (byId("epwGuidedTimeEndText")) byId("epwGuidedTimeEndText").value = "";
+    if (byId("epwGuidedAccountBefore")) byId("epwGuidedAccountBefore").value = "";
+    if (byId("epwGuidedAccountExact")) byId("epwGuidedAccountExact").value = "";
+    applyParserModeVisibility();
+    syncGuidedEndTextInputs();
+    syncSubjectFallbackVisibility();
+    syncAdvancedRegexFromGuided();
+    renderLiveCapture();
+  }
+
   function renderSubjectSettings() {
     const wrap = byId("epwSubjectSettingWrap");
     const sel = byId("epwSubjectSetting");
@@ -253,10 +289,12 @@
       state.accountSettings = Array.isArray(data.settings) ? data.settings : [];
       renderSubjectSettings();
       renderCorrelationDraftSelectors();
+      if (!state.accountSettings.length) clearParserFormForAccount();
     } catch (_e) {
       state.accountSettings = [];
       renderSubjectSettings();
       renderCorrelationDraftSelectors();
+      clearParserFormForAccount();
     }
   }
 
@@ -493,6 +531,14 @@
       }
       if (!guidedAccountGuardPass(body, payload?.guided || {})) {
         return { matched: false, error: "Account sequence guard failed", extracted: null };
+      }
+      const direct = extractGuidedDirect(body, payload?.guided || {}, receivedAt);
+      if (direct) {
+        return {
+          matched: true,
+          error: "",
+          extracted: direct,
+        };
       }
     }
     let rx = null;
@@ -1168,7 +1214,7 @@
     const subjectQuery = (byId("epwSubjectQuery")?.value || "").trim();
     const accountId = Number(byId("epwAccount")?.value || 0);
     const lookbackDays = Number(byId("epwLookbackDays")?.value || 30);
-    const limit = Number(byId("epwSampleLimit")?.value || 40);
+    const limit = Number(byId("epwSampleLimit")?.value || 10);
     const tryHtmlOnMissing = !!byId("epwTryHtmlMissing")?.checked;
     setStatus("Loading samples...", false);
     if (!accountId) {
@@ -1328,22 +1374,28 @@
   }
 
   async function resetAllDrafts() {
-    const ok = window.confirm("Delete all saved parsers and start fresh?");
+    const accountId = Number(byId("epwAccount")?.value || 0);
+    const parserSlot = String(byId("epwParserSlot")?.value || "primary").trim().toLowerCase();
+    if (!accountId) {
+      setStatus("Select an account first.", true);
+      return;
+    }
+    const ok = window.confirm(`Delete this ${parserSlot} parser for the selected account?`);
     if (!ok) return;
-    setStatus("Deleting parsers...", false);
+    setStatus("Deleting parser...", false);
     try {
-      const data = await fetchJson("/email-parser/trial/drafts/reset", {
+      const data = await fetchJson("/email-parser/trial/draft/delete-one", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ account_id: accountId, parser_slot: parserSlot }),
       });
       await loadAccountSettings();
       state.corrRows = [];
       state.corrSummary = null;
       renderCorrelationPreview();
-      setStatus(`Deleted ${Number(data.deleted || 0)} parsers.`, false);
+      setStatus(`Deleted ${Number(data.deleted || 0)} parser(s) from ${parserSlot} slot.`, false);
     } catch (e) {
-      setStatus(`Delete parsers failed: ${e.message}`, true);
+      setStatus(`Delete parser failed: ${e.message}`, true);
     }
   }
 

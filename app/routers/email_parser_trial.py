@@ -417,6 +417,11 @@ class TrialDraftResetBody(BaseModel):
     account_id: int | None = None
 
 
+class TrialDeleteOneBody(BaseModel):
+    account_id: int
+    parser_slot: str = "primary"
+
+
 class TrialTestRunBody(BaseModel):
     account_id: int | None = None
     sender_query: str | None = None
@@ -526,6 +531,20 @@ def _guided_extract_line_or_label(text: str, label: str, value_pattern: str, fro
     return str(m.group(1) or "").strip(), start + m.end()
 
 
+def _guided_extract_anywhere(text: str, value_pattern: str, from_idx: int) -> tuple[str, int] | None:
+    t = str(text or "")
+    start = max(0, int(from_idx or 0))
+    sub = t[start:]
+    rx = re.compile(value_pattern, re.IGNORECASE)
+    m = rx.search(sub)
+    if m:
+        return str(m.group(1) or "").strip(), start + m.end()
+    m = rx.search(t)
+    if not m:
+        return None
+    return str(m.group(1) or "").strip(), m.end()
+
+
 def _guided_extract_merchant(text: str, label: str, end_mode: str, end_text: str, from_idx: int) -> tuple[str, int] | None:
     t = str(text or "")
     start = max(0, int(from_idx or 0))
@@ -616,17 +635,32 @@ def _extract_from_guided(body: str, guided: dict[str, Any], received_at: str) ->
     cursor = 0
     for field in ordered:
         if field == "amount":
-            got = _guided_extract_line_or_label(text, str(g.get("amount_label") or "").strip(), amount_re, cursor)
+            label = str(g.get("amount_label") or "").strip()
+            got = _guided_extract_line_or_label(text, label, amount_re, cursor)
+            if not got and label:
+                got = _guided_extract_line_or_label(text, "", amount_re, cursor)
+            if not got:
+                got = _guided_extract_anywhere(text, amount_re, cursor)
             if not got:
                 return None
             out["amount"], cursor = got
         elif field == "date":
-            got = _guided_extract_line_or_label(text, str(g.get("date_label") or "").strip(), date_re, cursor)
+            label = str(g.get("date_label") or "").strip()
+            got = _guided_extract_line_or_label(text, label, date_re, cursor)
+            if not got and label:
+                got = _guided_extract_line_or_label(text, "", date_re, cursor)
+            if not got:
+                got = _guided_extract_anywhere(text, date_re, cursor)
             if not got:
                 return None
             out["date"], cursor = got
         elif field == "time":
-            got = _guided_extract_line_or_label(text, str(g.get("time_label") or "").strip(), time_re, cursor)
+            label = str(g.get("time_label") or "").strip()
+            got = _guided_extract_line_or_label(text, label, time_re, cursor)
+            if not got and label:
+                got = _guided_extract_line_or_label(text, "", time_re, cursor)
+            if not got:
+                got = _guided_extract_anywhere(text, time_re, cursor)
             if got:
                 out["time"], cursor = got
         elif field == "merchant":
@@ -639,7 +673,13 @@ def _extract_from_guided(body: str, guided: dict[str, Any], received_at: str) ->
             )
             if not got:
                 return None
-            out["merchant"], cursor = got
+            merchant_val, cursor = got
+            label = str(g.get("merchant_label") or "")
+            if re.search(r"description:?", label, re.IGNORECASE) and re.search(r"\s-\s", merchant_val):
+                parts = [x.strip() for x in re.split(r"\s-\s", merchant_val) if x.strip()]
+                if parts:
+                    merchant_val = parts[-1]
+            out["merchant"] = merchant_val
 
     if not out["time"]:
         out["time"] = _time_from_received_at(received_at)
@@ -727,7 +767,7 @@ def _load_saved_parsers(cur, tenant_id: int, user_email: str, account_id: int | 
         sender_pattern = str(cfg.get("sender_pattern") or "").strip()
         subject_contains = str(cfg.get("subject_contains") or "").strip()
         parser_account_id = int(cfg.get("account_id") or r.get("account_id") or 0)
-        dedupe_key = f"{parser_account_id}|{sender_pattern.lower()}|{subject_contains.lower()}|{slot}"
+        dedupe_key = f"{parser_account_id}|{slot}"
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
@@ -896,7 +936,7 @@ def trial_account_settings(account_id: int, request: Request):
         slot = str(cfg.get("parser_slot") or "primary").strip().lower()
         if slot not in ("primary", "backup"):
             slot = "primary"
-        key = f"{sender.lower()}|{subject.lower()}|{slot}"
+        key = slot
         if key in seen_keys:
             continue
         seen_keys.add(key)
@@ -1013,9 +1053,8 @@ def trial_save(body: TrialSaveBody, request: Request):
     with with_db_cursor() as (conn, cur):
         _ensure_trial_tables(cur)
         tid0 = int(tid or 0)
-        sender_pattern = (body.sender_pattern or "").strip()
-        subject_contains = (body.subject_contains or "").strip()
-        # Upsert behavior for parser slots within the same email scope.
+        # Upsert behavior for parser slots at account-level:
+        # one primary + one backup max per account.
         cur.execute(
             """
             SELECT id
@@ -1023,8 +1062,6 @@ def trial_save(body: TrialSaveBody, request: Request):
             WHERE tenant_id = %s
               AND user_email = %s
               AND account_id = %s
-              AND lower(COALESCE((draft_json::jsonb->>'sender_pattern'), '')) = lower(%s)
-              AND lower(COALESCE((draft_json::jsonb->>'subject_contains'), '')) = lower(%s)
               AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
@@ -1033,8 +1070,6 @@ def trial_save(body: TrialSaveBody, request: Request):
                 tid0,
                 session_email,
                 int(body.account_id),
-                sender_pattern,
-                subject_contains,
                 parser_slot,
             ),
         )
@@ -1077,6 +1112,19 @@ def trial_save(body: TrialSaveBody, request: Request):
                 ),
             )
         row = cur.fetchone() or {}
+        saved_id = int(row.get("id") or 0)
+        if saved_id > 0:
+            cur.execute(
+                """
+                DELETE FROM email_parser_trial_drafts
+                WHERE tenant_id = %s
+                  AND user_email = %s
+                  AND account_id = %s
+                  AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
+                  AND id <> %s
+                """,
+                (tid0, session_email, int(body.account_id), parser_slot, saved_id),
+            )
         conn.commit()
     return {"ok": True, "draft_id": int(row.get("id") or 0)}
 
@@ -1286,6 +1334,31 @@ def trial_reset_drafts(body: TrialDraftResetBody, request: Request):
         deleted = int(cur.rowcount or 0)
         conn.commit()
     return {"ok": True, "deleted": deleted}
+
+
+@router.post("/email-parser/trial/draft/delete-one")
+def trial_delete_one_draft(body: TrialDeleteOneBody, request: Request):
+    tid = _require_tenant_id()
+    session_email = _require_session_email(request)
+    slot = str(body.parser_slot or "primary").strip().lower()
+    if slot not in ("primary", "backup"):
+        slot = "primary"
+    with with_db_cursor() as (conn, cur):
+        _ensure_trial_tables(cur)
+        tid0 = int(tid or 0)
+        cur.execute(
+            """
+            DELETE FROM email_parser_trial_drafts
+            WHERE tenant_id = %s
+              AND user_email = %s
+              AND account_id = %s
+              AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
+            """,
+            (tid0, session_email, int(body.account_id), slot),
+        )
+        deleted = int(cur.rowcount or 0)
+        conn.commit()
+    return {"ok": True, "deleted": deleted, "account_id": int(body.account_id), "parser_slot": slot}
 
 
 @router.post("/email-parser/trial/test-run")
