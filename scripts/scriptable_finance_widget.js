@@ -9,7 +9,7 @@ const WIDGET_ENABLED = true;
 
 // ===== CONFIG =====
 const BASE_URL = "https://webapp-pe3q.onrender.com";
-const WIDGET_TOKEN = ""; // Create via POST /settings/widget-token from an OAuth-authenticated session.
+const WIDGET_TOKEN = "wgt_u2vjLGqwFhXIEg-0YmLLn1QlUP0z7Uasub-PgdpP5o0"; // Create via POST /settings/widget-token from an OAuth-authenticated session.
 const ENDPOINT = "/widget/summary";
 const WIDGET_SCRIPT_VERSION = 2;
 
