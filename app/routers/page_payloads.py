@@ -761,6 +761,7 @@ def widget_summary(
     widget_script_version: Optional[int] = Query(default=None),
 ):
     tid = _require_tenant_id()
+    tenant_out = int(tid or 0)
     _widget_refresh_on_day_rollover(tid)
     current_version = _widget_redis_get_version(tid)
     script_v = int(widget_script_version) if widget_script_version is not None else 0
@@ -772,6 +773,7 @@ def widget_summary(
             "message": "Go to settings and update your widget",
             "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
             "widget_version": int(current_version),
+            "tenant_id": tenant_out,
         }
 
     if widget_version is not None and int(widget_version) == int(current_version):
@@ -781,6 +783,7 @@ def widget_summary(
             "update_required": False,
             "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
             "widget_version": int(current_version),
+            "tenant_id": tenant_out,
         }
 
     payload = _widget_redis_get_payload(tid)
@@ -792,6 +795,7 @@ def widget_summary(
             "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
             "widget_version": int(current_version),
             "warming": True,
+            "tenant_id": tenant_out,
         }
 
     out = deepcopy(payload)
@@ -800,6 +804,7 @@ def widget_summary(
     out["update_required"] = False
     out["widget_version"] = int(current_version)
     out["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
+    out["tenant_id"] = tenant_out
     return out
 
 

@@ -73,6 +73,14 @@ def _session_email(request: Request) -> str:
             return val
     return ""
 
+
+def _refresh_widget_cache_for_tenant_best_effort(tenant_id: int) -> int | None:
+    try:
+        from app.routers.page_payloads import refresh_widget_cache_for_tenant
+        return int(refresh_widget_cache_for_tenant(int(tenant_id), bump_version=True) or 0)
+    except Exception:
+        return None
+
 # -----------------------------
 # Table ensure helpers (Postgres)
 # -----------------------------
@@ -482,6 +490,7 @@ def create_widget_token(request: Request):
     tenant_id, session_email = _require_approved_session_user(request)
 
     token = issue_widget_token(tenant_id=tenant_id, user_email=session_email)
+    _refresh_widget_cache_for_tenant_best_effort(int(tenant_id))
     return {"ok": True, "widget_token": token, "tenant_id": tenant_id}
 
 
@@ -491,6 +500,7 @@ def create_widget_script(request: Request):
         raise HTTPException(status_code=400, detail="widget_token_requires_multi_tenant")
     tenant_id, session_email = _require_approved_session_user(request)
     token = issue_widget_token(tenant_id=tenant_id, user_email=session_email)
+    widget_version = _refresh_widget_cache_for_tenant_best_effort(int(tenant_id))
 
     script_path = Path("scripts") / "scriptable_finance_widget.js"
     script_template = script_path.read_text(encoding="utf-8")
@@ -508,7 +518,32 @@ def create_widget_script(request: Request):
         script,
         count=1,
     )
-    return {"ok": True, "tenant_id": tenant_id, "script": script}
+    expected_script = re.sub(
+        r"const\s+EXPECTED_TENANT_ID\s*=\s*\d+\s*;",
+        f"const EXPECTED_TENANT_ID = {int(tenant_id)};",
+        script,
+        count=1,
+    )
+    if expected_script == script:
+        raise HTTPException(status_code=500, detail="widget_script_missing_expected_tenant_anchor")
+    script = expected_script
+    return {
+        "ok": True,
+        "tenant_id": tenant_id,
+        "widget_version": int(widget_version or 0),
+        "script": script,
+    }
+
+
+@router.post("/settings/widget-refresh")
+def force_widget_refresh(request: Request):
+    if not MULTI_TENANT_ENABLED:
+        raise HTTPException(status_code=400, detail="widget_refresh_requires_multi_tenant")
+    tenant_id, _ = _require_approved_session_user(request)
+    version = _refresh_widget_cache_for_tenant_best_effort(int(tenant_id))
+    if not version:
+        return {"ok": False, "tenant_id": int(tenant_id), "error": "widget_refresh_unavailable"}
+    return {"ok": True, "tenant_id": int(tenant_id), "widget_version": int(version)}
 
 
 @router.post("/settings/email-parser/run")

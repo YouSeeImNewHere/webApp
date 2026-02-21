@@ -10,6 +10,7 @@ const WIDGET_ENABLED = true;
 // ===== CONFIG =====
 const BASE_URL = "https://webapp-pe3q.onrender.com";
 const WIDGET_TOKEN = "wgt_u2vjLGqwFhXIEg-0YmLLn1QlUP0z7Uasub-PgdpP5o0"; // Create via POST /settings/widget-token from an OAuth-authenticated session.
+const EXPECTED_TENANT_ID = 0;
 const ENDPOINT = "/widget/summary";
 const WIDGET_SCRIPT_VERSION = 3;
 
@@ -60,6 +61,13 @@ function isValidPayload(payload) {
     payload.today &&
     typeof payload.today.remaining_today !== "undefined"
   );
+}
+
+function isExpectedTenantPayload(payload) {
+  const expected = Number(EXPECTED_TENANT_ID || 0);
+  if (!(expected > 0)) return true;
+  const got = Number((payload && payload.tenant_id) || 0);
+  return got === expected;
 }
 
 function normalizedWidgetToken() {
@@ -345,8 +353,10 @@ let cacheAgeMin = Infinity;
 
 const cache = loadCache();
 if (cache && isValidPayload(cache.data)) {
-  payload = cache.data;
-  cacheAgeMin = cacheAgeMinutes(cache);
+  if (isExpectedTenantPayload(cache.data)) {
+    payload = cache.data;
+    cacheAgeMin = cacheAgeMinutes(cache);
+  }
 }
 
 const cachedVersion = (
@@ -357,6 +367,9 @@ const cachedVersion = (
   : null;
 try {
   let resp = await fetchSummary(cachedVersion);
+  if (resp && !isExpectedTenantPayload(resp)) {
+    throw new Error("tenant_mismatch");
+  }
   if (resp && resp.ok === true && resp.update_required === true) {
     return finish(updateRequiredWidget(), "Update required");
   }
@@ -367,6 +380,9 @@ try {
   if (resp && resp.ok === true && resp.changed === true) {
     if (!isValidPayload(resp)) {
       return finish(updateRequiredWidget(), "Update required");
+    }
+    if (!isExpectedTenantPayload(resp)) {
+      return finish(updateRequiredWidget(), "Tenant mismatch");
     }
     payload = resp;
     usedCache = false;
