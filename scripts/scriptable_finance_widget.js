@@ -303,10 +303,20 @@ const fam = String(config.widgetFamily || "");
 if (!fam) {
   try {
     const cache = loadCache();
-    const cachedVersion = Number(cache && cache.data ? cache.data.widget_version : null);
-    const resp = await fetchSummary(Number.isFinite(cachedVersion) ? cachedVersion : null);
+    const cachedVersion = (
+      cache &&
+      cache.data &&
+      Number.isFinite(Number(cache.data.widget_version))
+    )
+      ? Number(cache.data.widget_version)
+      : null;
+    let resp = await fetchSummary(cachedVersion);
     if (resp && resp.ok === true && resp.update_required === true) {
       return finish(null, "Update required");
+    }
+    if ((!cache || !cache.data) && resp && resp.ok === true && resp.changed === false) {
+      // No local payload to render yet: request full payload once.
+      resp = await fetchSummary(null);
     }
     if (resp && resp.ok === true && resp.changed === false) {
       return finish(null, "No changes");
@@ -332,11 +342,20 @@ if (cache && isValidPayload(cache.data)) {
   cacheAgeMin = cacheAgeMinutes(cache);
 }
 
-const cachedVersion = Number(payload && Number.isFinite(Number(payload.widget_version)) ? Number(payload.widget_version) : null);
+const cachedVersion = (
+  payload &&
+  Number.isFinite(Number(payload.widget_version))
+)
+  ? Number(payload.widget_version)
+  : null;
 try {
-  const resp = await fetchSummary(Number.isFinite(cachedVersion) ? cachedVersion : null);
+  let resp = await fetchSummary(cachedVersion);
   if (resp && resp.ok === true && resp.update_required === true) {
     return finish(updateRequiredWidget(), "Update required");
+  }
+  if (!payload && resp && resp.ok === true && resp.changed === false) {
+    // No cache available: request full payload once.
+    resp = await fetchSummary(null);
   }
   if (resp && resp.ok === true && resp.changed === true) {
     if (!isValidPayload(resp)) {
