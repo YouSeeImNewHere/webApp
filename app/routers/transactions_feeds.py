@@ -206,6 +206,15 @@ def _normalize_posted_date(v: Optional[str]) -> Optional[str]:
     raise HTTPException(status_code=400, detail={"ok": False, "error": "invalid_postedDate"})
 
 
+def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
+    try:
+        from app.routers.page_payloads import touch_widget_cache_for_tenant
+
+        touch_widget_cache_for_tenant(tid)
+    except Exception:
+        pass
+
+
 @router.post("/transaction/{tx_id}/category")
 def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
     category = (body.category or "").strip()
@@ -235,6 +244,7 @@ def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
             raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
 
         conn.commit()
+    _refresh_widget_cache_for_tenant(tid)
 
     return {"ok": True, "id": tx_id, "category": category}
 
@@ -275,6 +285,7 @@ def transaction_update_meta(tx_id: str, body: TxMetaUpdate):
             conn.rollback()
             raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
         conn.commit()
+    _refresh_widget_cache_for_tenant(tid)
 
     return {
         "ok": True,
@@ -302,6 +313,7 @@ def transaction_delete(tx_id: str):
                     detail={"ok": False, "error": "not_found", "id": tx_id},
                 )
             conn.commit()
+            _refresh_widget_cache_for_tenant(tid)
             return {"ok": True, "deleted": tx_id}
         except HTTPException:
             raise

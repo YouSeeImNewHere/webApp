@@ -1,5 +1,5 @@
 body.setup-page { margin: 0; background: var(--bg, #f5f7fb); color: var(--text, #121826); }
-.setup-wrap { max-width: 840px; margin: calc(var(--topbar-h, 56px) + 16px) auto 90px; padding: 0 16px; }
+.setup-wrap { width: min(1320px, calc(100vw - 28px)); max-width: none; margin: calc(var(--topbar-h, 56px) + 16px) auto 90px; padding: 0 4px; }
 .setup-card { background: var(--card, #fff); border: 1px solid var(--border, #dbe2f0); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
 h1 { margin: 0 0 8px; font-size: 24px; }
 h2 { margin: 0 0 8px; font-size: 18px; }
@@ -21,3 +21,9 @@ p, li { line-height: 1.4; }
 .setup-list-row:first-child { border-top: none; }
 .setup-list-meta { font-size: 12px; color: var(--muted, #637089); }
 .setup-list-actions button { width: auto; padding: 6px 10px; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .setup-wrap { width: calc(100vw - 16px); padding: 0; }
+  .setup-row,
+  .setup-row3 { grid-template-columns: 1fr; }
+}

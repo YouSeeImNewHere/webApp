@@ -38,3 +38,4 @@ uvicorn==0.39.0
 watchfiles==1.1.1
 websockets==15.0.1
 jinja2
+redis[hiredis]==5.2.1

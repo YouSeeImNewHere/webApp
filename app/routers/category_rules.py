@@ -917,6 +917,15 @@ def _rule_match_count(pattern: str, flags: str) -> int:
     )
     return int(rows[0]["n"]) if rows else 0
 
+
+def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
+    try:
+        from app.routers.page_payloads import touch_widget_cache_for_tenant
+
+        touch_widget_cache_for_tenant(tid)
+    except Exception:
+        pass
+
 def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
     """
     Apply rule only to transactions with empty/NULL category.
@@ -939,6 +948,8 @@ def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
         )
         updated = int(cur.rowcount or 0)
         conn.commit()
+        if updated > 0:
+            _refresh_widget_cache_for_tenant(tid)
         return updated
 
 def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
@@ -962,6 +973,8 @@ def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
         )
         updated = int(cur.rowcount or 0)
         conn.commit()
+        if updated > 0:
+            _refresh_widget_cache_for_tenant(tid)
         return updated
 
 # -----------------------------

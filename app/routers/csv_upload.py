@@ -51,6 +51,15 @@ TIP_PCT_MED = 0.50
 TIP_PCT_LARGE = 0.35
 
 
+def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
+    try:
+        from app.routers.page_payloads import touch_widget_cache_for_tenant
+
+        touch_widget_cache_for_tenant(tid)
+    except Exception:
+        pass
+
+
 def _safe_target_filename(name: str) -> str:
     """
     Enforce a simple safe filename rule; also force .csv extension.
@@ -1620,6 +1629,8 @@ async def ingest_csv_mapped(
             window_days=2,
         )
         conn.commit()
+    if (inserted + updated + int(reconciled or 0)) > 0:
+        _refresh_widget_cache_for_tenant(tid)
 
     skipped = int(mapped["summary"]["invalid_rows"]) + max(0, int(mapped["summary"]["valid_rows"]) - inserted - updated)
     return {
@@ -1708,6 +1719,7 @@ async def ingest_csvs(
                 },
             )
 
+        _refresh_widget_cache_for_tenant(_require_tenant_id_or_none())
         return JSONResponse(
             {
                 "ok": True,

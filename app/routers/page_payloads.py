@@ -21,7 +21,8 @@ from app.core.home_snapshot_cache import (
     upsert_page_home_snapshot,
 )
 from app.core.time import today_local, now_local
-from app.core.tenancy import current_tenant_id
+from app.core.tenancy import current_tenant_id, set_current_tenant_id, reset_current_tenant_id
+from app.core.redis_cache import get_redis
 from app.core.roundups import (
     ROUNDUP_CATEGORY_DEFAULT,
     get_roundup_settings,
@@ -43,7 +44,9 @@ router = APIRouter()
 
 _WIDGET_SUMMARY_CACHE: Dict[str, Dict[str, Any]] = {}
 _WIDGET_REFRESH_READY = False
-WIDGET_VERSION_CACHE_TTL_SEC = 15 * 60
+# Keep this short: it reduces DB chatter for widget polling while limiting
+# how long a version bump can be hidden by process-local cache staleness.
+WIDGET_VERSION_CACHE_TTL_SEC = 15
 _WIDGET_VERSION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WIDGET_VERSION_CACHE_LOCK = Lock()
 PAGE_PAYLOAD_CACHE_TTL_SEC = 30
@@ -52,6 +55,190 @@ _PAGE_PAYLOAD_CACHE_LOCK = Lock()
 DAY_LIMIT_CACHE_TTL_SEC = 20
 MIN_WIDGET_SCRIPT_VERSION = 2
 _WIDGET_SUMMARY_SNAPSHOT_READY = False
+
+_WIDGET_REDIS_KEY_PREFIX = "widget:v1"
+
+
+def _widget_redis_version_key(tid: Optional[int]) -> str:
+    return f"{_WIDGET_REDIS_KEY_PREFIX}:version:{_widget_tenant_key(tid)}"
+
+
+def _widget_redis_payload_key(tid: Optional[int]) -> str:
+    return f"{_WIDGET_REDIS_KEY_PREFIX}:payload:{_widget_tenant_key(tid)}"
+
+
+def _widget_redis_get_version(tid: Optional[int]) -> int:
+    r = get_redis()
+    if r is None:
+        return 0
+    try:
+        raw = r.get(_widget_redis_version_key(tid))
+        return int(raw or 0)
+    except Exception:
+        return 0
+
+
+def _widget_redis_get_payload(tid: Optional[int]) -> Dict[str, Any] | None:
+    r = get_redis()
+    if r is None:
+        return None
+    try:
+        raw = r.get(_widget_redis_payload_key(tid))
+        if not raw:
+            return None
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def _widget_redis_set_state(tid: Optional[int], version: int, payload: Dict[str, Any]) -> None:
+    r = get_redis()
+    if r is None:
+        return
+    version_key = _widget_redis_version_key(tid)
+    payload_key = _widget_redis_payload_key(tid)
+    body = json.dumps(payload, separators=(",", ":"))
+    try:
+        with r.pipeline() as p:
+            p.set(version_key, int(version))
+            p.set(payload_key, body)
+            p.execute()
+    except Exception:
+        return
+
+
+def _widget_redis_incr_version(tid: Optional[int]) -> int:
+    r = get_redis()
+    if r is None:
+        return 0
+    try:
+        return int(r.incr(_widget_redis_version_key(tid)))
+    except Exception:
+        return 0
+
+
+def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version: int) -> Dict[str, Any]:
+    token = set_current_tenant_id(int(tid) if tid else None)
+    try:
+        bt = bank_totals()
+        n = now_local()
+        mb = month_budget_home_cached(n.year, n.month)
+        dl = day_limit(recalc=0)
+    finally:
+        reset_current_tenant_id(token)
+
+    credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
+
+    limit_sum = 0.0
+    used_sum = 0.0
+
+    for a in credit_accounts:
+        lim = float(a.get("credit_limit") or 0)
+        if lim > 0:
+            limit_sum += lim
+
+        bal = float(a.get("total") or 0)
+        used_sum += max(0.0, -bal)
+
+    cap_limit = limit_sum * CREDIT_UTILIZATION_CAP
+    available = max(0.0, cap_limit - used_sum)
+    pct_used = int(round((used_sum / cap_limit) * 100)) if cap_limit > 0 else 0
+
+    return {
+        "credit": {
+            "used": round(used_sum, 2),
+            "cap": round(cap_limit, 2),
+            "pct": pct_used,
+            "available": round(available, 2),
+            "limit_sum": round(limit_sum, 2),
+        },
+        "safe_to_spend": mb["safe_to_spend"],
+        "month": mb,
+        "cost_per_day": dl.get("baseline", 0.0),
+        "days_left": mb.get("days_left", 0),
+        "as_of": mb.get("as_of"),
+        "totals": {
+            "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
+            "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
+        },
+        "today": {
+            "baseline": dl.get("baseline", 0.0),
+            "remaining_today": dl.get("remaining_today", 0.0),
+            "spent_today_free": dl.get("spent_today_free", 0.0),
+            "day": dl.get("day"),
+        },
+        "widget_version": int(current_version),
+        "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
+        "meta": {"cron": "OK"},
+    }
+
+
+def refresh_widget_cache_for_tenant(tid: Optional[int], *, bump_version: bool = True) -> int:
+    """
+    Rebuilds Redis widget payload for one tenant.
+    Returns the version written (or 0 when Redis is unavailable).
+    """
+    if get_redis() is None:
+        return 0
+
+    if bump_version:
+        next_version = _widget_redis_incr_version(tid)
+    else:
+        next_version = _widget_redis_get_version(tid)
+        if next_version <= 0:
+            next_version = _widget_redis_incr_version(tid)
+    if next_version <= 0:
+        return 0
+
+    payload = _build_widget_payload_for_tenant_version(tid, int(next_version))
+    _widget_redis_set_state(tid, int(next_version), payload)
+    return int(next_version)
+
+
+def prime_widget_cache_from_db() -> int:
+    """
+    One-time warmup for tenants with transactions. This runs at startup only.
+    """
+    if get_redis() is None:
+        return 0
+    rows = query_db(
+        """
+        SELECT DISTINCT COALESCE(tenant_id, 0) AS tenant_id
+        FROM transactions
+        ORDER BY COALESCE(tenant_id, 0) ASC
+        """
+    ) or []
+    seeded = 0
+    for row in rows:
+        tid = int((row or {}).get("tenant_id") or 0)
+        existing = _widget_redis_get_payload(tid)
+        if isinstance(existing, dict):
+            continue
+        try:
+            refresh_widget_cache_for_tenant(tid, bump_version=False)
+            seeded += 1
+        except Exception:
+            continue
+    return int(seeded)
+
+
+def touch_widget_cache_for_current_tenant() -> None:
+    """
+    Best-effort helper for callers after transaction INSERT/UPDATE/DELETE.
+    """
+    tid = current_tenant_id()
+    try:
+        refresh_widget_cache_for_tenant(int(tid) if tid else None, bump_version=True)
+    except Exception:
+        pass
+
+
+def touch_widget_cache_for_tenant(tid: Optional[int]) -> None:
+    try:
+        refresh_widget_cache_for_tenant(int(tid) if tid else None, bump_version=True)
+    except Exception:
+        pass
 
 # =============================================================================
 # Page payload endpoints (one request per page)
@@ -544,7 +731,7 @@ def widget_summary(
     widget_script_version: Optional[int] = Query(default=None),
 ):
     tid = _require_tenant_id()
-    current_version = _widget_version_for_tenant(tid)
+    current_version = _widget_redis_get_version(tid)
     script_v = int(widget_script_version) if widget_script_version is not None else 0
     if script_v < int(MIN_WIDGET_SCRIPT_VERSION):
         return {
@@ -565,98 +752,32 @@ def widget_summary(
             "widget_version": int(current_version),
         }
 
-    cache_key = f"tenant={_widget_tenant_key(tid)}"
-    cache_row = _WIDGET_SUMMARY_CACHE.get(cache_key) or {}
-    cached_version = int(cache_row.get("version") or -1)
-    cached_data = cache_row.get("data")
-    if isinstance(cached_data, dict) and cached_version == int(current_version):
-        out = deepcopy(cached_data)
-        out["ok"] = True
-        out["changed"] = True
-        out["update_required"] = False
-        out["widget_version"] = int(current_version)
-        out["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
-        return out
+    payload = _widget_redis_get_payload(tid)
+    if not isinstance(payload, dict):
+        return {
+            "ok": True,
+            "changed": False,
+            "update_required": False,
+            "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
+            "widget_version": int(current_version),
+            "warming": True,
+        }
 
-    snap = _load_widget_summary_snapshot(tid, int(current_version))
-    if isinstance(snap, dict):
-        snap["ok"] = True
-        snap["changed"] = True
-        snap["update_required"] = False
-        snap["widget_version"] = int(current_version)
-        snap["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
-        _WIDGET_SUMMARY_CACHE[cache_key] = {"version": int(current_version), "data": deepcopy(snap)}
-        return deepcopy(snap)
-
-    bt = bank_totals()     # uses your existing logic :contentReference[oaicite:3]{index=3}
-    n = now_local()
-    mb = month_budget_home_cached(n.year, n.month)
-    dl = day_limit(recalc=0)
-    credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
-
-    limit_sum = 0.0
-    used_sum = 0.0
-
-    for a in credit_accounts:
-        lim = float(a.get("credit_limit") or 0)
-        if lim > 0:
-            limit_sum += lim
-
-        bal = float(a.get("total") or 0)
-        used_sum += max(0.0, -bal)  # only debt counts
-
-    cap_limit = limit_sum * CREDIT_UTILIZATION_CAP
-    available = max(0.0, cap_limit - used_sum)
-    pct_used = int(round((used_sum / cap_limit) * 100)) if cap_limit > 0 else 0
-
-    payload = {
-        "ok": True,
-        "changed": True,
-        "update_required": False,
-
-        "credit": {
-            "used": round(used_sum, 2),
-            "cap": round(cap_limit, 2),
-            "pct": pct_used,
-            "available": round(available, 2),
-            "limit_sum": round(limit_sum, 2),
-        },
-
-        # existing (keep)
-        "safe_to_spend": mb["safe_to_spend"],
-        "month": mb,
-
-        # ✅ NEW: same as Home "$/day"
-        "cost_per_day": dl.get("baseline", 0.0),
-        "days_left": mb.get("days_left", 0),
-        "as_of": mb.get("as_of"),
-        "totals": {
-            "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
-            "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
-        },
-        "today": {
-            "baseline": dl.get("baseline", 0.0),
-            "remaining_today": dl.get("remaining_today", 0.0),
-            "spent_today_free": dl.get("spent_today_free", 0.0),
-            "day": dl.get("day"),
-        },
-        "widget_version": int(current_version),
-        "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
-        "meta": {"cron": "OK"}
-    }
-    _WIDGET_SUMMARY_CACHE[cache_key] = {"version": int(current_version), "data": deepcopy(payload)}
-    try:
-        _upsert_widget_summary_snapshot(tid, int(current_version), payload)
-    except Exception:
-        pass
-    return deepcopy(payload)
+    out = deepcopy(payload)
+    out["ok"] = True
+    out["changed"] = True
+    out["update_required"] = False
+    out["widget_version"] = int(current_version)
+    out["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
+    return out
 
 
 @router.get("/widget/version")
 def widget_version():
     tid = _require_tenant_id()
-    version = _widget_version_for_tenant(tid)
+    version = _widget_redis_get_version(tid)
     return {"ok": True, "widget_version": version}
+
 
 def _ensure_budget_tables_pg():
     with with_db_cursor() as (conn, cur):

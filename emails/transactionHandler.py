@@ -306,6 +306,7 @@ def insert_transaction(
             RETURNING
               id AS tx_id,
               account_id,
+              tenant_id,
               (xmax = 0) AS inserted
             """,
             (
@@ -329,13 +330,21 @@ def insert_transaction(
 
         row = cur.fetchone()
         conn.commit()
+        try:
+            from app.routers.page_payloads import touch_widget_cache_for_tenant
+
+            tenant_id = row["tenant_id"] if isinstance(row, dict) else row[2]
+            touch_widget_cache_for_tenant(int(tenant_id) if tenant_id is not None else None)
+        except Exception:
+            pass
 
         # row always exists for INSERT or UPDATE in this statement
         # inserted=True means brand new row was created
         return {
             "tx_id": row["tx_id"] if isinstance(row, dict) else row[0],
             "account_id": row["account_id"] if isinstance(row, dict) else row[1],
-            "inserted": row["inserted"] if isinstance(row, dict) else row[2],
+            "tenant_id": row["tenant_id"] if isinstance(row, dict) else row[2],
+            "inserted": row["inserted"] if isinstance(row, dict) else row[3],
 
             # add these so pushover is always accurate
             "merchant": where,

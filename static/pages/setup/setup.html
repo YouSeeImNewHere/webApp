@@ -41,16 +41,20 @@
           <option value="credit">credit</option>
           <option value="investment">investment</option>
         </select>
-        <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional)" />
         <input id="startingDate" type="date" />
-      </div>
-      <div class="setup-row">
-        <input id="creditLimit" type="number" step="0.01" placeholder="Credit Limit (credit only)" />
-        <input id="apyPercent" type="number" step="0.001" min="0" max="100" placeholder="APY % (checking/savings/investment)" />
-      </div>
-      <div class="setup-row">
-        <input id="interestPostDay" type="number" min="1" max="31" placeholder="Interest Post Day (optional)" />
         <div></div>
+      </div>
+      <div class="setup-row" id="startingBalanceRow">
+        <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional)" />
+        <div></div>
+      </div>
+      <div class="setup-row" id="creditLimitRow">
+        <input id="creditLimit" type="number" step="0.01" placeholder="Credit Limit (credit only)" />
+        <div></div>
+      </div>
+      <div class="setup-row" id="apyRow">
+        <input id="apyPercent" type="number" step="0.001" min="0" max="100" placeholder="APY % (checking/savings/investment)" />
+        <input id="interestPostDay" type="number" min="1" max="31" placeholder="Interest Post Day (optional)" />
       </div>
       <div class="setup-row">
         <label class="setup-check"><input id="receivesEmails" type="checkbox" checked /> Receives email transaction alerts</label>
@@ -75,8 +79,11 @@
 
     <div class="setup-card">
       <h2>Step 2: Import CSV Data</h2>
-      <p>Use your existing CSV importer in settings after accounts are added.</p>
-      <p class="setup-mono">Go to: <a href="/settings">/settings</a></p>
+      <p class="setup-muted">Use the same CSV/Excel importer as Home directly from this wizard.</p>
+      <div class="setup-row">
+        <button id="openCsvImportBtn" type="button">Import CSV/Excel</button>
+        <div></div>
+      </div>
       <p class="setup-muted">Import at least one transaction file for this tenant.</p>
     </div>
 

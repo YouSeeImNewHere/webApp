@@ -17,6 +17,7 @@ from app.core.config import BUILD_ID
 from app.core.tenancy import initialize_tenancy
 from app.core.account_totals_cache import ensure_account_totals_cache_pg
 from app.core.home_snapshot_cache import ensure_home_snapshot_cache_pg
+from app.core.widget_tokens import prime_widget_tokens_cache_from_db
 
 # Routers
 from app.routers import (
@@ -43,6 +44,7 @@ from app.routers import (
     onboarding,
     email_parser_trial,
 )
+from app.routers.page_payloads import prime_widget_cache_from_db
 
 def create_app() -> FastAPI:
     app = FastAPI()
@@ -109,6 +111,8 @@ def create_app() -> FastAPI:
         ensure_account_totals_cache_pg()
         ensure_home_snapshot_cache_pg()
         initialize_tenancy()
+        prime_widget_tokens_cache_from_db()
+        prime_widget_cache_from_db()
 
     @app.on_event("shutdown")
     def _shutdown():
