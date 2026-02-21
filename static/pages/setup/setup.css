@@ -38,9 +38,27 @@ p, li { line-height: 1.4; }
 .setup-csv-actions .settings-btn { width: auto !important; min-width: 120px; }
 .setup-wrap .setup-csv-actions button { width: auto !important; display: inline-flex; flex: 0 0 auto; }
 
+#setupStep2Card { max-width: 980px; margin-left: auto; margin-right: auto; }
+.setup-csv-top-actions { display: flex; gap: 8px; margin: 6px 0 8px; flex-wrap: wrap; }
+.setup-csv-top-grid { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 10px; align-items: end; }
+.setup-csv-map-title { font-weight: 900; font-size: 14px; margin-bottom: 6px; }
+.setup-csv-map-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 8px; }
+.setup-csv-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 8px; margin-top: 8px; }
+.setup-csv-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; }
+.setup-csv-field select,
+.setup-csv-field input { margin-top: 0 !important; padding: 8px !important; min-height: 36px; }
+.setup-csv-check-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
+#csvMapArea { margin-top: 10px !important; }
+#csvFinalizeActions { margin-top: 8px !important; }
+#csvPreviewWrap { max-height: 180px !important; }
+
 @media (max-width: 900px) {
   .setup-wrap { padding: 16px 8px 0; }
   .setup-row,
   .setup-row3 { grid-template-columns: 1fr; }
+  #setupStep2Card { max-width: none; }
+  .setup-csv-top-grid,
+  .setup-csv-map-grid,
+  .setup-csv-meta-grid { grid-template-columns: 1fr; }
   .setup-csv-inline div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
 }

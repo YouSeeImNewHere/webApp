@@ -11,10 +11,17 @@ const WIDGET_ENABLED = true;
 const BASE_URL = "https://webapp-pe3q.onrender.com";
 const WIDGET_TOKEN = "wgt_u2vjLGqwFhXIEg-0YmLLn1QlUP0z7Uasub-PgdpP5o0"; // Create via POST /settings/widget-token from an OAuth-authenticated session.
 const ENDPOINT = "/widget/summary";
-const WIDGET_SCRIPT_VERSION = 2;
+const WIDGET_SCRIPT_VERSION = 3;
 
 const fm = FileManager.local();
-const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), "finance_widget_cache.json");
+function cacheKeyForToken() {
+  const t = String(WIDGET_TOKEN || "").trim().toLowerCase();
+  if (!t) return "anon";
+  // Keep filename-safe and short; enough entropy to isolate per-token cache files.
+  const safe = t.replace(/[^a-z0-9_-]/g, "");
+  return safe.slice(0, 24) || "anon";
+}
+const CACHE_PATH = fm.joinPath(fm.documentsDirectory(), `finance_widget_cache_${cacheKeyForToken()}.json`);
 
 function finish(widget, output = "Widget refreshed") {
   try { Script.setShortcutOutput(output); } catch (_) {}
