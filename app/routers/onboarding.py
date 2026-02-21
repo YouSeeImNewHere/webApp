@@ -14,6 +14,7 @@ from app.core.tenancy import (
     set_onboarding_completed,
     get_user_pushover_key_by_email,
     set_user_pushover_key_by_email,
+    get_user_by_email,
 )
 from app.core.pushover import send_pushover
 from db import query_db, with_db_cursor
@@ -75,6 +76,8 @@ def onboarding_status(request: Request):
     state = get_or_create_onboarding_state(tid)
     session_email = (request.session.get("google_email") or "").strip().lower()
     pushover_user_key_set = bool(get_user_pushover_key_by_email(session_email))
+    user = get_user_by_email(session_email) if session_email else None
+    can_set_starting_balance = bool((user or {}).get("is_owner"))
 
     account_count = int(
         (query_db("SELECT COUNT(*)::int AS n FROM accounts WHERE tenant_id = %s", (tid,))[0] or {}).get("n") or 0
@@ -101,6 +104,7 @@ def onboarding_status(request: Request):
     return {
         "ok": True,
         "tenant_id": tid,
+        "can_set_starting_balance": can_set_starting_balance,
         "wizard_completed": bool(state.get("wizard_completed")),
         "steps": {
             "accounts_added": account_count > 0,
@@ -116,10 +120,9 @@ def onboarding_status(request: Request):
         "accounts": [dict(r) for r in accounts],
         "next_actions": [
             "Add at least one account",
-            "Add a starting balance for each account",
             "Run CSV import from Settings",
             "Optionally save your Pushover user key",
-        ],
+        ] + (["Add a starting balance for each account"] if can_set_starting_balance else []),
     }
 
 

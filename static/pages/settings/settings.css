@@ -1,3 +1,69 @@
+.notification-settings-list {
+  display: grid;
+  gap: 10px;
+}
+
+.notification-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.notification-setting-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.notification-setting-copy {
+  min-width: 0;
+}
+
+.notification-setting-title {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.notification-setting-muted {
+  margin: 2px 0 0;
+}
+
+.setup-progress-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.setup-progress-track {
+  width: 100%;
+  height: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+  overflow: hidden;
+}
+
+.setup-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+  transition: width 220ms ease;
+}
+
+.setup-progress-sub {
+  margin: 0;
+}
+
 /* Daily weights section layout */
 .daily-weights-card {
   display: grid;

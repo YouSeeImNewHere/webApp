@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+import json
+from typing import Optional, Dict
 
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
@@ -11,6 +12,12 @@ from app.core.tenancy import current_tenant_id, get_owner_tenant_id
 from db import with_db_cursor, query_db
 
 router = APIRouter()
+
+DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
+    "credit_usage": True,
+    "credit_usage_total": True,
+    "budget_over": True,
+}
 
 # =============================================================================
 # Notifications (Postgres) — ported from notifications.py
@@ -27,6 +34,56 @@ def _require_tenant_id(for_secret_push: bool = False) -> int | None:
         if owner_tid:
             return int(owner_tid)
     raise HTTPException(status_code=403, detail="tenant_required")
+
+
+def _settings_key_for_tenant(raw_key: str, tenant_id: int | None = None) -> str:
+    if MULTI_TENANT_ENABLED and tenant_id:
+        return f"t{int(tenant_id)}:{raw_key}"
+    return raw_key
+
+
+def _ensure_app_settings_pg() -> None:
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+              key TEXT PRIMARY KEY,
+              value_json TEXT NOT NULL DEFAULT '{}',
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """
+        )
+        cur.execute("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_app_settings_tenant_id ON app_settings(tenant_id)")
+        conn.commit()
+
+
+def _notification_prefs_for_tenant(tenant_id: int | None) -> Dict[str, bool]:
+    _ensure_app_settings_pg()
+    key = _settings_key_for_tenant("notification_prefs", tenant_id=tenant_id)
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
+        (key,),
+    )
+    if not rows:
+        return dict(DEFAULT_NOTIFICATION_PREFS)
+    try:
+        raw = json.loads(rows[0].get("value_json") or "{}")
+    except Exception:
+        raw = {}
+    out = dict(DEFAULT_NOTIFICATION_PREFS)
+    if isinstance(raw, dict):
+        for k in out.keys():
+            if k in raw:
+                out[k] = bool(raw.get(k))
+    return out
+
+
+def _notification_kind_enabled(kind: str, tenant_id: int | None) -> bool:
+    prefs = _notification_prefs_for_tenant(tenant_id)
+    if kind not in prefs:
+        return True
+    return bool(prefs.get(kind))
 
 
 def ensure_notifications_table_pg():
@@ -79,6 +136,8 @@ def create_notification(
     Returns True if created, False if deduped/no-op.
     """
     ensure_notifications_table_pg()
+    if not _notification_kind_enabled(str(kind or "").strip(), tenant_id):
+        return False
     dkey = str(dedupe_key or "").strip()
     if not dkey:
         return False

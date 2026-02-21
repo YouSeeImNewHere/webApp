@@ -1,5 +1,5 @@
 body.setup-page { margin: 0; background: var(--bg, #f5f7fb); color: var(--text, #121826); }
-.setup-wrap { width: min(1320px, calc(100vw - 28px)); max-width: none; margin: calc(var(--topbar-h, 56px) + 16px) auto 90px; padding: 0 4px; }
+.setup-wrap { max-width: 1200px; margin: 0 auto; padding: 18px 16px 0; }
 .setup-card { background: var(--card, #fff); border: 1px solid var(--border, #dbe2f0); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
 h1 { margin: 0 0 8px; font-size: 24px; }
 h2 { margin: 0 0 8px; font-size: 18px; }
@@ -21,9 +21,26 @@ p, li { line-height: 1.4; }
 .setup-list-row:first-child { border-top: none; }
 .setup-list-meta { font-size: 12px; color: var(--muted, #637089); }
 .setup-list-actions button { width: auto; padding: 6px 10px; font-size: 12px; }
+.setup-accordion { border: 1px solid var(--border, #c6cfdf); border-radius: 10px; overflow: hidden; background: color-mix(in srgb, var(--card, #fff) 84%, transparent); }
+.setup-accordion > summary { list-style: none; cursor: pointer; padding: 10px 12px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.setup-accordion > summary::-webkit-details-marker { display: none; }
+.setup-accordion > summary::after { content: "▾"; margin-left: auto; opacity: 0.65; transition: transform .12s ease; }
+.setup-accordion[open] > summary::after { transform: rotate(180deg); }
+.setup-accordion-body { border-top: 1px solid var(--border, #c6cfdf); padding: 10px; }
+.setup-count-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--border, #c6cfdf); font-size: 12px; font-weight: 900; }
+.setup-csv-card { border: 1px solid var(--border, #c6cfdf); border-radius: 12px; background: color-mix(in srgb, var(--card, #fff) 92%, transparent); overflow: hidden; margin-top: 8px; }
+.setup-csv-head { padding: 10px 12px; border-bottom: 1px solid var(--border, #c6cfdf); }
+.setup-csv-title { font-size: 14px; font-weight: 900; line-height: 1.2; }
+.setup-csv-sub { font-size: 12px; opacity: .72; margin-top: 2px; }
+.setup-csv-body { padding: 12px; }
+.setup-csv-inline .settings-btn { width: auto; }
+.setup-csv-inline input[type="checkbox"] { width: auto; margin: 0; }
+.setup-csv-actions .settings-btn { width: auto !important; min-width: 120px; }
+.setup-wrap .setup-csv-actions button { width: auto !important; display: inline-flex; flex: 0 0 auto; }
 
 @media (max-width: 900px) {
-  .setup-wrap { width: calc(100vw - 16px); padding: 0; }
+  .setup-wrap { padding: 16px 8px 0; }
   .setup-row,
   .setup-row3 { grid-template-columns: 1fr; }
+  .setup-csv-inline div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
 }

@@ -11,7 +11,7 @@ from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenant_keys import scoped_key
 from app.core.roundups import get_roundup_settings, set_roundup_settings
 from app.core.home_snapshot_cache import bump_home_snapshot_version
-from app.core.tenancy import current_tenant_id, get_user_by_email
+from app.core.tenancy import current_tenant_id, get_user_by_email, get_user_pushover_key_by_email
 from app.core.widget_tokens import issue_widget_token
 
 router = APIRouter()
@@ -53,6 +53,17 @@ class EmailParserBackfillIn(BaseModel):
     days: int = 1
     include_processed: bool = True
     max_emails: int = 2000
+
+class NotificationPrefsIn(BaseModel):
+    credit_usage: Optional[bool] = None
+    credit_usage_total: Optional[bool] = None
+    budget_over: Optional[bool] = None
+
+DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
+    "credit_usage": True,
+    "credit_usage_total": True,
+    "budget_over": True,
+}
 
 # -----------------------------
 # Table ensure helpers (Postgres)
@@ -138,6 +149,154 @@ def _ensure_interest_rates_table_pg():
         conn.commit()
 
 
+def _ensure_csv_mapping_presets_table_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS csv_mapping_presets (
+              id BIGSERIAL PRIMARY KEY,
+              tenant_id BIGINT,
+              account_id BIGINT NOT NULL,
+              institution_key TEXT NOT NULL,
+              preset_json TEXT NOT NULL DEFAULT '{}',
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_csv_mapping_presets_scope
+            ON csv_mapping_presets (
+              COALESCE(tenant_id, 0),
+              account_id,
+              lower(institution_key)
+            )
+            """
+        )
+        conn.commit()
+
+
+def _ensure_email_parser_trial_drafts_table_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_parser_trial_drafts (
+                id BIGSERIAL PRIMARY KEY,
+                tenant_id BIGINT NOT NULL DEFAULT 0,
+                user_email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                account_id BIGINT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'trial_inactive',
+                draft_json TEXT NOT NULL DEFAULT '{}',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        conn.commit()
+
+
+@router.get("/settings/initial-setup-status")
+def get_initial_setup_status():
+    _ensure_csv_mapping_presets_table_pg()
+    _ensure_email_parser_trial_drafts_table_pg()
+    tid = current_tenant_id()
+    tid0 = int(tid or 0)
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS receives_emails BOOLEAN NOT NULL DEFAULT TRUE")
+        if MULTI_TENANT_ENABLED and tid:
+            cur.execute(
+                """
+                SELECT id, institution, name, COALESCE(receives_emails, TRUE) AS receives_emails
+                FROM accounts
+                WHERE tenant_id = %s
+                ORDER BY institution ASC, name ASC, id ASC
+                """,
+                (int(tid),),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, institution, name, COALESCE(receives_emails, TRUE) AS receives_emails
+                FROM accounts
+                ORDER BY institution ASC, name ASC, id ASC
+                """
+            )
+        accounts = [dict(r) for r in (cur.fetchall() or [])]
+        account_ids = [int(r.get("id") or 0) for r in accounts if int(r.get("id") or 0) > 0]
+
+        csv_ready_ids: set[int] = set()
+        parser_ready_ids: set[int] = set()
+
+        if account_ids:
+            cur.execute(
+                """
+                SELECT DISTINCT account_id
+                FROM csv_mapping_presets
+                WHERE COALESCE(tenant_id, 0) = %s
+                  AND lower(institution_key) = lower(%s)
+                  AND account_id = ANY(%s)
+                """,
+                (tid0, "__account__", account_ids),
+            )
+            csv_ready_ids = {int((r or {}).get("account_id") or 0) for r in (cur.fetchall() or [])}
+
+            cur.execute(
+                """
+                SELECT DISTINCT account_id
+                FROM email_parser_trial_drafts
+                WHERE tenant_id = %s
+                  AND account_id = ANY(%s)
+                """,
+                (tid0, account_ids),
+            )
+            parser_ready_ids = {int((r or {}).get("account_id") or 0) for r in (cur.fetchall() or [])}
+        conn.commit()
+
+    total_accounts = len(account_ids)
+    email_required_ids = [int(r.get("id") or 0) for r in accounts if bool(r.get("receives_emails", True))]
+    csv_ready_count = sum(1 for aid in account_ids if aid in csv_ready_ids)
+    parser_ready_count = sum(1 for aid in email_required_ids if aid in parser_ready_ids)
+
+    total_requirements = int(total_accounts + len(email_required_ids))
+    completed_requirements = int(csv_ready_count + parser_ready_count)
+    percent = int(round((completed_requirements * 100.0) / total_requirements)) if total_requirements > 0 else 0
+    if percent < 0:
+        percent = 0
+    if percent > 100:
+        percent = 100
+
+    missing_csv = []
+    missing_parser = []
+    for a in accounts:
+        aid = int(a.get("id") or 0)
+        label = f"{str(a.get('institution') or '').strip()} - {str(a.get('name') or '').strip()}".strip(" -")
+        if aid and aid not in csv_ready_ids:
+            missing_csv.append(label or f"Account {aid}")
+        if bool(a.get("receives_emails", True)) and aid and aid not in parser_ready_ids:
+            missing_parser.append(label or f"Account {aid}")
+
+    complete = bool(total_requirements > 0 and completed_requirements >= total_requirements)
+    return {
+        "ok": True,
+        "complete": complete,
+        "percent": percent,
+        "counts": {
+            "accounts_total": total_accounts,
+            "accounts_with_csv_mapping": csv_ready_count,
+            "accounts_expect_email": len(email_required_ids),
+            "accounts_with_parser": parser_ready_count,
+            "requirements_total": total_requirements,
+            "requirements_done": completed_requirements,
+        },
+        "missing": {
+            "csv_mapping": missing_csv,
+            "email_parser": missing_parser,
+        },
+    }
+
+
 def _coerce_points(v: object, default: float) -> float:
     try:
         x = float(v)
@@ -148,6 +307,75 @@ def _coerce_points(v: object, default: float) -> float:
     if x > 10:
         return 10.0
     return x
+
+
+def _normalize_notification_prefs(raw: object) -> Dict[str, bool]:
+    if not isinstance(raw, dict):
+        raw = {}
+    out: Dict[str, bool] = dict(DEFAULT_NOTIFICATION_PREFS)
+    for key in out.keys():
+        if key in raw:
+            out[key] = bool(raw.get(key))
+    return out
+
+
+@router.get("/settings/notifications")
+def get_notification_settings(request: Request):
+    _ensure_app_settings_pg()
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
+        (scoped_key("notification_prefs"),),
+    )
+    raw: object = {}
+    if rows:
+        try:
+            raw = json.loads(rows[0].get("value_json") or "{}")
+        except Exception:
+            raw = {}
+    prefs = _normalize_notification_prefs(raw)
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    user_key = get_user_pushover_key_by_email(session_email) if session_email else None
+    return {
+        "prefs": prefs,
+        "pushover_user_key_set": bool(user_key),
+        "pushover_user_key": (str(user_key) if user_key else None),
+    }
+
+
+@router.post("/settings/notifications")
+def set_notification_settings(body: NotificationPrefsIn):
+    _ensure_app_settings_pg()
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
+        (scoped_key("notification_prefs"),),
+    )
+    raw: object = {}
+    if rows:
+        try:
+            raw = json.loads(rows[0].get("value_json") or "{}")
+        except Exception:
+            raw = {}
+    prefs = _normalize_notification_prefs(raw)
+
+    updates = body.model_dump(exclude_none=True)
+    for k in DEFAULT_NOTIFICATION_PREFS.keys():
+        if k in updates:
+            prefs[k] = bool(updates[k])
+
+    payload = json.dumps(prefs)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO app_settings(key, value_json, updated_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (key)
+            DO UPDATE SET value_json = EXCLUDED.value_json,
+                          updated_at = now()
+            """,
+            (scoped_key("notification_prefs"), payload),
+        )
+        conn.commit()
+    return {"ok": True, "prefs": prefs}
 
 
 @router.get("/settings/daily-weights")
@@ -292,3 +520,12 @@ def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"email_parser_backfill_failed:{type(e).__name__}:{e}")
+
+
+@router.get("/settings/view-flags")
+def get_settings_view_flags(request: Request):
+    session_email = (request.session.get("google_email") or "").strip().lower()
+    if not session_email:
+        return {"ok": True, "is_owner": False}
+    user = get_user_by_email(session_email) or {}
+    return {"ok": True, "is_owner": bool(user.get("is_owner"))}

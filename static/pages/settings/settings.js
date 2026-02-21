@@ -1,5 +1,6 @@
 let _monthBudgetSnapshot = null;
 let _lastWidgetScript = "";
+let _notifSaveTimer = null;
 
 function money(n) {
   const v = Number(n || 0);
@@ -454,8 +455,160 @@ function bindEmailParserBackfill() {
       statusEl.textContent = `Backfill failed: ${err?.message || err}`;
     } finally {
       btn.disabled = false;
+      loadInitialSetupProgress().catch(() => {});
     }
   });
+}
+
+function renderInitialSetupProgress(out) {
+  const pct = Math.max(0, Math.min(100, Number(out?.percent || 0)));
+  const counts = out?.counts || {};
+  const missing = out?.missing || {};
+  const fillEl = document.getElementById("initialSetupProgressFill");
+  const textEl = document.getElementById("initialSetupProgressText");
+  const subEl = document.getElementById("initialSetupProgressSub");
+  const trackEl = document.querySelector(".setup-progress-track");
+  if (fillEl) fillEl.style.width = `${pct}%`;
+  if (trackEl) trackEl.setAttribute("aria-valuenow", String(pct));
+  if (textEl) {
+    textEl.textContent = `${pct}% complete (${Number(counts.requirements_done || 0)}/${Number(counts.requirements_total || 0)} setup checks)`;
+  }
+  if (!subEl) return;
+  const missingCsv = Array.isArray(missing.csv_mapping) ? missing.csv_mapping : [];
+  const missingParser = Array.isArray(missing.email_parser) ? missing.email_parser : [];
+  const bits = [
+    `CSV mapping: ${Number(counts.accounts_with_csv_mapping || 0)}/${Number(counts.accounts_total || 0)}`,
+    `Email parser: ${Number(counts.accounts_with_parser || 0)}/${Number(counts.accounts_expect_email || 0)}`,
+  ];
+  if (missingCsv.length) bits.push(`Missing CSV mapping: ${missingCsv.slice(0, 4).join(", ")}${missingCsv.length > 4 ? "..." : ""}`);
+  if (missingParser.length) bits.push(`Missing parser: ${missingParser.slice(0, 4).join(", ")}${missingParser.length > 4 ? "..." : ""}`);
+  subEl.textContent = bits.join(" | ");
+}
+
+async function loadInitialSetupProgress() {
+  const textEl = document.getElementById("initialSetupProgressText");
+  const subEl = document.getElementById("initialSetupProgressSub");
+  if (textEl) textEl.textContent = "Loading setup progress...";
+  if (subEl) subEl.textContent = "";
+  try {
+    const res = await fetch("/settings/initial-setup-status", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const out = await res.json();
+    renderInitialSetupProgress(out || {});
+  } catch (_) {
+    if (textEl) textEl.textContent = "Setup progress unavailable";
+    if (subEl) subEl.textContent = "Could not load setup completion status.";
+  }
+}
+
+function setNotifStatus(message, isError = false) {
+  const el = document.getElementById("notifSettingsStatus");
+  if (!el) return;
+  el.textContent = String(message || "");
+  el.style.opacity = isError ? "1" : "";
+}
+
+function setNotifInputsDisabled(disabled) {
+  const ids = ["notifCreditUsageToggle", "notifCreditUsageTotalToggle", "notifBudgetOverToggle"];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !!disabled;
+  }
+}
+
+function readNotifPrefsFromUi() {
+  return {
+    credit_usage: !!document.getElementById("notifCreditUsageToggle")?.checked,
+    credit_usage_total: !!document.getElementById("notifCreditUsageTotalToggle")?.checked,
+    budget_over: !!document.getElementById("notifBudgetOverToggle")?.checked,
+  };
+}
+
+function applyNotifPrefsToUi(prefs) {
+  const p = prefs || {};
+  const creditUsageEl = document.getElementById("notifCreditUsageToggle");
+  const creditUsageTotalEl = document.getElementById("notifCreditUsageTotalToggle");
+  const budgetOverEl = document.getElementById("notifBudgetOverToggle");
+  if (creditUsageEl) creditUsageEl.checked = !!p.credit_usage;
+  if (creditUsageTotalEl) creditUsageTotalEl.checked = !!p.credit_usage_total;
+  if (budgetOverEl) budgetOverEl.checked = !!p.budget_over;
+}
+
+function applyPushoverKeyToUi(userKey) {
+  const el = document.getElementById("settingsPushoverUserKey");
+  if (!el) return;
+  const key = String(userKey || "").trim();
+  el.textContent = key || "Not set";
+}
+
+async function loadNotificationSettings() {
+  setNotifStatus("Loading...");
+  setNotifInputsDisabled(true);
+  try {
+    const res = await fetch("/settings/notifications", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const out = await res.json();
+    applyNotifPrefsToUi(out.prefs || {});
+    applyPushoverKeyToUi(out.pushover_user_key || "");
+    setNotifStatus("");
+  } catch (_) {
+    setNotifStatus("Failed to load notification settings.", true);
+  } finally {
+    setNotifInputsDisabled(false);
+  }
+}
+
+async function saveNotificationSettings() {
+  const payload = readNotifPrefsFromUi();
+  setNotifInputsDisabled(true);
+  setNotifStatus("Saving...");
+  try {
+    const res = await fetch("/settings/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const out = await res.json().catch(() => ({}));
+    applyNotifPrefsToUi(out.prefs || payload);
+    setNotifStatus("Saved.");
+    setTimeout(() => setNotifStatus(""), 1200);
+  } catch (_) {
+    setNotifStatus("Failed to save notification settings.", true);
+  } finally {
+    setNotifInputsDisabled(false);
+  }
+}
+
+function queueNotificationSettingsSave() {
+  if (_notifSaveTimer) window.clearTimeout(_notifSaveTimer);
+  _notifSaveTimer = window.setTimeout(() => {
+    _notifSaveTimer = null;
+    saveNotificationSettings().catch(() => {});
+  }, 120);
+}
+
+function bindNotificationSettings() {
+  const ids = ["notifCreditUsageToggle", "notifCreditUsageTotalToggle", "notifBudgetOverToggle"];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.addEventListener("change", () => queueNotificationSettingsSave());
+  }
+}
+
+async function loadAdminVisibility() {
+  const adminSection = document.getElementById("settingsAdminSection");
+  if (!adminSection) return;
+  adminSection.style.display = "none";
+  try {
+    const res = await fetch("/settings/view-flags", { cache: "no-store" });
+    if (!res.ok) return;
+    const out = await res.json().catch(() => ({}));
+    adminSection.style.display = out?.is_owner ? "" : "none";
+  } catch (_) {
+    adminSection.style.display = "none";
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -485,7 +638,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   loadDailyWeightsSettings().catch((err) => console.error(err));
+  loadInitialSetupProgress().catch((err) => console.error(err));
+  loadNotificationSettings().catch((err) => console.error(err));
+  loadAdminVisibility().catch((err) => console.error(err));
   loadWidgetPreview().catch((err) => console.error(err));
   bindWidgetActions();
   bindEmailParserBackfill();
+  bindNotificationSettings();
 });

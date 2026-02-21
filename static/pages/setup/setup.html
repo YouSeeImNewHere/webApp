@@ -26,27 +26,31 @@
       <div style="margin-top: 10px;">
         <button class="secondary" id="refreshBtn" type="button">Refresh Status</button>
       </div>
+      <details class="setup-accordion" style="margin-top:12px;">
+        <summary>Existing accounts <span id="accountsCountChip" class="setup-count-chip">0</span></summary>
+        <div class="setup-accordion-body">
+          <div id="accountsList"></div>
+        </div>
+      </details>
     </div>
 
     <div class="setup-card">
       <h2>Step 1: Add Account</h2>
-      <div class="setup-row">
+      <div class="setup-row3">
         <input id="institution" placeholder="Institution (e.g. Navy Federal)" />
         <input id="name" placeholder="Account Name (e.g. Active Duty Checking)" />
-      </div>
-      <div class="setup-row3">
         <select id="accounttype">
           <option value="checking">checking</option>
           <option value="savings">savings</option>
           <option value="credit">credit</option>
           <option value="investment">investment</option>
         </select>
-        <input id="startingDate" type="date" />
-        <div></div>
       </div>
-      <div class="setup-row" id="startingBalanceRow">
-        <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional)" />
-        <div></div>
+      <div class="setup-row">
+        <input id="startingDate" type="date" />
+        <div id="startingBalanceWrap">
+          <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional)" />
+        </div>
       </div>
       <div class="setup-row" id="creditLimitRow">
         <input id="creditLimit" type="number" step="0.01" placeholder="Credit Limit (credit only)" />
@@ -71,20 +75,86 @@
       <button id="addAccountBtn" type="button">Add Account</button>
       <button id="cancelEditBtn" type="button" class="secondary" style="display:none; margin-top:8px;">Cancel Edit</button>
       <div id="addResult" class="setup-muted" style="margin-top:8px;"></div>
-      <div style="margin-top:14px;">
-        <div class="setup-muted" style="margin-bottom:6px;">Existing accounts</div>
-        <div id="accountsList"></div>
-      </div>
     </div>
 
     <div class="setup-card">
       <h2>Step 2: Import CSV Data</h2>
-      <p class="setup-muted">Use the same CSV/Excel importer as Home directly from this wizard.</p>
-      <div class="setup-row">
-        <button id="openCsvImportBtn" type="button">Import CSV/Excel</button>
-        <div></div>
+      <div class="setup-csv-card setup-csv-inline">
+        <div class="setup-csv-head">
+          <div>
+            <div class="setup-csv-title">Import CSV/Excel</div>
+            <div id="csvUploadSub" class="setup-csv-sub">Drop a CSV or Excel file, preview it, map columns, then import.</div>
+          </div>
+        </div>
+        <div class="setup-csv-body">
+        <div id="csvDropZone" style="border:1px dashed rgba(0,0,0,.25); border-radius:12px; padding:12px; margin-bottom:10px;">
+          <div style="font-weight:700;">Drag and drop CSV/Excel here</div>
+          <div style="opacity:.75; font-size:12px; margin-top:4px;">or choose a file manually</div>
+          <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+            <button id="csvPickFileBtn" class="settings-btn" type="button">Choose file</button>
+            <div id="csvPickedName" style="font-size:12px; opacity:.75;">No file selected</div>
+          </div>
+          <input id="csvFileInput" type="file" accept=".csv,text/csv,.xlsx,.xls,.xlsm,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" style="display:none;" />
+        </div>
+
+        <div id="csvAccountSummary" class="setup-muted" style="margin-bottom:8px;">Using account: none</div>
+        <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+          <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
+          <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="font-size:12px; font-weight:700;">Delimiter
+            <select id="csvDelimiter" style="width:100%; margin-top:4px;">
+              <option value="auto">Auto-detect</option>
+              <option value=",">Comma</option>
+              <option value=";">Semicolon</option>
+              <option value="	">Tab</option>
+              <option value="|">Pipe</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="csvMapArea" style="margin-top:12px; display:none;">
+          <div style="font-weight:800; margin-bottom:6px;">Map columns</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <label style="font-size:12px;">Transaction date*<select id="csvMapPurchase" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
+            <label style="font-size:12px; font-weight:700;">Header row
+              <input id="csvHeaderRow" type="number" min="1" value="1" style="width:100%; margin-top:4px;" />
+            </label>
+            <label style="font-size:12px; font-weight:700;">First data row
+              <input id="csvDataStartRow" type="number" min="1" value="2" style="width:100%; margin-top:4px;" />
+            </label>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
+            <label style="font-size:12px;">Indicator value treated as credit
+              <input id="csvCreditIndicatorValue" type="text" value="credit" style="width:100%; margin-top:4px;" />
+            </label>
+            <label style="font-size:12px; display:flex; align-items:center; gap:8px; margin-top:18px;">
+              <input id="csvInvertAmount" type="checkbox" />
+              Invert all amounts
+            </label>
+          </div>
+          <div id="csvIndicatorTypesHint" class="setup-muted" style="margin-top:6px; display:none;"></div>
+        </div>
+
+        <div id="csvFinalizeActions" class="setup-csv-actions" style="display:none; gap:10px; margin-top:12px; justify-content:flex-start; flex-wrap:wrap;">
+          <button id="csvSavePresetBtn" class="settings-btn" type="button">Save mapping</button>
+          <button id="csvUploadRun" class="settings-btn primary" type="button" disabled>Import</button>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div style="font-weight:800; margin-bottom:6px;">Preview</div>
+          <div id="csvPreviewWrap" style="max-height:220px; overflow:auto; border:1px solid rgba(0,0,0,.12); border-radius:10px; padding:6px;"></div>
+        </div>
+        <div id="csvUploadMsg" style="margin-top:8px; font-size:12px; white-space:pre-wrap; opacity:.85;"></div>
       </div>
-      <p class="setup-muted">Import at least one transaction file for this tenant.</p>
+      </div>
     </div>
 
     <div class="setup-card">

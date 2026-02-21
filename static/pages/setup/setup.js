@@ -8,15 +8,56 @@
     return body;
   }
 
+  async function apiGetJson(path) {
+    const res = await fetch(path, { cache: "no-store" });
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : {}; } catch (_e) { body = { raw: text }; }
+    if (!res.ok) throw new Error((body && (body.detail || body.error)) || `${res.status}`);
+    return body;
+  }
+
+  async function apiPostForm(path, formData) {
+    const res = await fetch(path, { method: "POST", body: formData });
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : {}; } catch (_e) { body = { raw: text }; }
+    if (!res.ok) throw new Error((body && (body.detail || body.error)) || `${res.status}`);
+    return body;
+  }
+
   const statusEl = document.getElementById("status");
   const addResultEl = document.getElementById("addResult");
   const pushoverResultEl = document.getElementById("pushoverResult");
   const accountsListEl = document.getElementById("accountsList");
+  const accountsCountChipEl = document.getElementById("accountsCountChip");
   const addAccountBtnEl = document.getElementById("addAccountBtn");
   const cancelEditBtnEl = document.getElementById("cancelEditBtn");
 
   let editingAccountId = null;
   let latestAccounts = [];
+  let canSetStartingBalance = false;
+  let csvPreferredAccountId = 0;
+  let csvMappingSaved = false;
+  const CSV_MODAL_STATE = {
+    file: null,
+    columns: [],
+    previewRows: [],
+    accounts: [],
+    selectedAccountId: 0,
+    activePreset: null,
+    activePresetAccountId: 0,
+  };
+  const CSV_ACCOUNT_PRESET_KEY = "__account__";
+  const CSV_MAPPING_FIELD_LABELS = {
+    csvMapPurchase: "Transaction date",
+    csvMapPosted: "Posted date",
+    csvMapAmount: "Amount",
+    csvMapMerchant: "Merchant",
+    csvMapIndicator: "Credit/Debit indicator",
+  };
+  let CSV_IMPORT_PROGRESS_TIMER = null;
+  let CSV_IMPORT_PROGRESS_PCT = 0;
 
   function pill(ok, label) {
     const cls = ok ? "ok" : "todo";
@@ -24,23 +65,44 @@
     return `<span class="setup-pill ${cls}">${txt}</span>${label}`;
   }
 
+  function csvEscapeHtml(v) {
+    return String(v == null ? "" : v)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function csvMoney(n) {
+    const v = Number(n || 0);
+    return v.toLocaleString(undefined, { style: "currency", currency: "USD" });
+  }
+
   function updateAccountFieldHints() {
     const accountType = (document.getElementById("accounttype").value || "").trim().toLowerCase();
     const creditEl = document.getElementById("creditLimit");
     const apyEl = document.getElementById("apyPercent");
+    const creditLimitRow = document.getElementById("creditLimitRow");
+    const apyRow = document.getElementById("apyRow");
     const benefitsWrap = document.getElementById("creditBenefitsWrap");
     const addBenefitBtn = document.getElementById("addBenefitBtn");
     const benefitInputs = document.querySelectorAll(".benefit-input");
     const creditMode = accountType === "credit";
+    const apyMode = accountType === "checking" || accountType === "savings" || accountType === "investment";
+
+    if (creditLimitRow) creditLimitRow.style.display = creditMode ? "" : "none";
+    if (apyRow) apyRow.style.display = apyMode ? "" : "none";
+    if (benefitsWrap) benefitsWrap.style.display = creditMode ? "" : "none";
+
     if (creditEl) {
       creditEl.disabled = !creditMode;
       if (!creditMode) creditEl.value = "";
     }
     if (apyEl) {
-      apyEl.disabled = creditMode;
-      if (creditMode) apyEl.value = "";
+      apyEl.disabled = !apyMode;
+      if (!apyMode) apyEl.value = "";
     }
-    if (benefitsWrap) benefitsWrap.style.opacity = creditMode ? "1" : "0.55";
     if (addBenefitBtn) addBenefitBtn.disabled = !creditMode;
     benefitInputs.forEach((el) => {
       el.disabled = !creditMode;
@@ -62,6 +124,7 @@
     document.getElementById("benefitRows").innerHTML = "";
     addBenefitRow("", "");
     updateAccountFieldHints();
+    applyStartingBalanceVisibility();
   }
 
   function setEditMode(on, account) {
@@ -87,6 +150,7 @@
 
   function renderAccountsList() {
     if (!accountsListEl) return;
+    if (accountsCountChipEl) accountsCountChipEl.textContent = String(latestAccounts.length || 0);
     if (!latestAccounts.length) {
       accountsListEl.innerHTML = `<div class="setup-muted">No accounts yet.</div>`;
       return;
@@ -113,6 +177,15 @@
     });
   }
 
+  function applyStartingBalanceVisibility() {
+    const row = document.getElementById("startingBalanceWrap");
+    const input = document.getElementById("startingBalance");
+    if (!row || !input) return;
+    row.style.display = canSetStartingBalance ? "" : "none";
+    input.disabled = !canSetStartingBalance;
+    if (!canSetStartingBalance) input.value = "";
+  }
+
   function addBenefitRow(initialCategory, initialPercent) {
     const host = document.getElementById("benefitRows");
     if (!host) return;
@@ -131,6 +204,622 @@
       });
     }
     updateAccountFieldHints();
+  }
+
+  function csvSelectHasOption(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    const sval = String(val);
+    return Array.from(el.options || []).some((o) => String(o.value) === sval);
+  }
+
+  function ensureCsvMappingOption(id, val) {
+    const el = document.getElementById(id);
+    if (!el || val === null || val === undefined) return;
+    if (csvSelectHasOption(id, val)) return;
+    const n = Number(val);
+    const colLabel = Number.isInteger(n) && n >= 0 ? `column ${n + 1}` : `value ${String(val)}`;
+    const friendly = CSV_MAPPING_FIELD_LABELS[id] || "Saved mapping";
+    const opt = document.createElement("option");
+    opt.value = String(val);
+    opt.textContent = `${friendly}: ${colLabel} (saved)`;
+    el.appendChild(opt);
+  }
+
+  function csvGetSelectInt(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const v = String(el.value || "").trim();
+    if (!v || v === "-1") return null;
+    const n = Number(v);
+    return Number.isInteger(n) ? n : null;
+  }
+
+  function guessCsvColumn(columns, candidates) {
+    const terms = candidates.map((s) => s.toLowerCase());
+    for (const c of columns) {
+      const label = String(c.label || "").toLowerCase();
+      if (terms.some((t) => label.includes(t))) return c.index;
+    }
+    return null;
+  }
+
+  function populateCsvMappingSelects(columns) {
+    const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapMerchant", "csvMapIndicator"];
+    const opts = ['<option value="-1">Not mapped</option>']
+      .concat((columns || []).map((c) => `<option value="${c.index}">${csvEscapeHtml(c.label)} (col ${c.index + 1})</option>`))
+      .join("");
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = opts;
+    });
+    const guesses = {
+      csvMapPurchase: ["transaction date", "trans date", "date"],
+      csvMapPosted: ["posted date", "post date", "posting date"],
+      csvMapAmount: ["amount", "transaction amount"],
+      csvMapMerchant: ["description", "merchant", "payee", "transaction description"],
+      csvMapIndicator: ["credit/debit", "credit debit", "indicator", "type"],
+    };
+    Object.entries(guesses).forEach(([id, terms]) => {
+      const guess = guessCsvColumn(columns || [], terms);
+      const el = document.getElementById(id);
+      if (el && guess !== null) el.value = String(guess);
+    });
+  }
+
+  function renderCsvPreview(previewRows, columns) {
+    const wrap = document.getElementById("csvPreviewWrap");
+    if (!wrap) return;
+    if (!columns?.length || !previewRows?.length) {
+      wrap.innerHTML = `<div style="opacity:.65; padding:6px;">No rows to preview.</div>`;
+      return;
+    }
+    const head = columns.map((c) => `<th style="text-align:left; border-bottom:1px solid rgba(0,0,0,.15); padding:4px 6px;">${csvEscapeHtml(c.label)}</th>`).join("");
+    const body = previewRows.map((r) => {
+      const cells = columns.map((c, i) => `<td style="padding:4px 6px; border-bottom:1px solid rgba(0,0,0,.06);">${csvEscapeHtml((r.cells && r.cells[i]) || "")}</td>`).join("");
+      return `<tr>${cells}</tr>`;
+    }).join("");
+    wrap.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function updateCsvIndicatorTypesHint() {
+    const hintEl = document.getElementById("csvIndicatorTypesHint");
+    if (!hintEl) return;
+    const indicatorCol = csvGetSelectInt("csvMapIndicator");
+    if (indicatorCol === null) {
+      hintEl.style.display = "none";
+      hintEl.textContent = "";
+      return;
+    }
+
+    const rows = Array.isArray(CSV_MODAL_STATE.previewRows) ? CSV_MODAL_STATE.previewRows : [];
+    const uniq = new Set();
+    rows.forEach((r) => {
+      const cells = Array.isArray(r?.cells) ? r.cells : [];
+      const raw = String(cells[indicatorCol] ?? "").trim();
+      if (raw) uniq.add(raw);
+    });
+    const vals = Array.from(uniq.values());
+    if (!vals.length) {
+      hintEl.style.display = "";
+      hintEl.textContent = "No indicator values found in current preview rows.";
+      return;
+    }
+    hintEl.style.display = "";
+    hintEl.textContent = `Detected indicator values: ${vals.join(", ")}`;
+  }
+
+  function selectedCsvAccountMeta() {
+    const accountId = Number(CSV_MODAL_STATE.selectedAccountId || 0);
+    const meta = (CSV_MODAL_STATE.accounts || []).find((a) => Number(a.id) === accountId);
+    return { accountId, meta };
+  }
+
+  function syncCsvSelectedAccount() {
+    const summaryEl = document.getElementById("csvAccountSummary");
+    const rows = Array.isArray(latestAccounts) ? latestAccounts : [];
+    CSV_MODAL_STATE.accounts = rows.map((a) => ({
+      id: Number(a.id),
+      label: `${String(a.institution || "")} - ${String(a.name || "")}`,
+    }));
+
+    if (!CSV_MODAL_STATE.accounts.length) {
+      CSV_MODAL_STATE.selectedAccountId = 0;
+      if (summaryEl) summaryEl.textContent = "Using account: none (add one in Step 1)";
+      return;
+    }
+
+    const validIds = new Set(CSV_MODAL_STATE.accounts.map((a) => Number(a.id)));
+    const preferred = Number(csvPreferredAccountId || 0);
+    const current = Number(CSV_MODAL_STATE.selectedAccountId || 0);
+    if (preferred && validIds.has(preferred)) {
+      CSV_MODAL_STATE.selectedAccountId = preferred;
+    } else if (current && validIds.has(current)) {
+      CSV_MODAL_STATE.selectedAccountId = current;
+    } else {
+      CSV_MODAL_STATE.selectedAccountId = Number(CSV_MODAL_STATE.accounts[0].id || 0);
+    }
+
+    const selected = CSV_MODAL_STATE.accounts.find((a) => Number(a.id) === Number(CSV_MODAL_STATE.selectedAccountId));
+    if (summaryEl) summaryEl.textContent = selected ? `Using account: ${selected.label}` : "Using account: none";
+  }
+
+  function buildCsvPresetPayload() {
+    return {
+      delimiter: document.getElementById("csvDelimiter")?.value || "auto",
+      header_row: Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1)),
+      data_start_row: Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2)),
+      purchase_col: csvGetSelectInt("csvMapPurchase"),
+      posted_col: csvGetSelectInt("csvMapPosted"),
+      amount_col: csvGetSelectInt("csvMapAmount"),
+      merchant_col: csvGetSelectInt("csvMapMerchant"),
+      indicator_col: csvGetSelectInt("csvMapIndicator"),
+      credit_indicator_value: String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"),
+      invert_amount: !!document.getElementById("csvInvertAmount")?.checked,
+    };
+  }
+
+  function applyCsvPreset(preset) {
+    if (!preset || typeof preset !== "object") return;
+    CSV_MODAL_STATE.activePreset = preset;
+    const setIf = (id, val) => {
+      const el = document.getElementById(id);
+      if (!el || val === null || val === undefined) return;
+      if (id in CSV_MAPPING_FIELD_LABELS) ensureCsvMappingOption(id, val);
+      el.value = String(val);
+    };
+    setIf("csvDelimiter", preset.delimiter);
+    setIf("csvHeaderRow", preset.header_row);
+    setIf("csvDataStartRow", preset.data_start_row);
+    setIf("csvMapPurchase", preset.purchase_col);
+    setIf("csvMapPosted", preset.posted_col);
+    setIf("csvMapAmount", preset.amount_col);
+    setIf("csvMapMerchant", preset.merchant_col);
+    setIf("csvMapIndicator", preset.indicator_col);
+    setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
+    const invert = document.getElementById("csvInvertAmount");
+    if (invert && typeof preset.invert_amount === "boolean") invert.checked = preset.invert_amount;
+  }
+
+  async function loadCsvPreset(preferredAccountId = null) {
+    const sub = document.getElementById("csvUploadSub");
+    const accountId = Number(preferredAccountId || CSV_MODAL_STATE.selectedAccountId || 0);
+    if (!accountId) {
+      CSV_MODAL_STATE.activePreset = null;
+      CSV_MODAL_STATE.activePresetAccountId = 0;
+      return false;
+    }
+    try {
+      const q = `/csv/mapping-presets?account_id=${encodeURIComponent(accountId)}&institution_key=${encodeURIComponent(CSV_ACCOUNT_PRESET_KEY)}`;
+      const out = await apiGetJson(q);
+      if (out?.ok && out?.found && out?.preset) {
+        applyCsvPreset(out.preset);
+        CSV_MODAL_STATE.activePresetAccountId = accountId;
+        if (sub) sub.textContent = "Saved mapping loaded for selected account.";
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    CSV_MODAL_STATE.activePreset = null;
+    CSV_MODAL_STATE.activePresetAccountId = 0;
+    return false;
+  }
+
+  async function saveCsvPreset() {
+    const sub = document.getElementById("csvUploadSub");
+    const { accountId } = selectedCsvAccountMeta();
+    if (!accountId) {
+      if (sub) sub.textContent = "Choose account before saving mapping.";
+      return;
+    }
+    try {
+      await api("/csv/mapping-presets", {
+        method: "POST",
+        body: JSON.stringify({
+          account_id: accountId,
+          institution_key: CSV_ACCOUNT_PRESET_KEY,
+          preset: buildCsvPresetPayload(),
+        }),
+      });
+      CSV_MODAL_STATE.activePreset = buildCsvPresetPayload();
+      CSV_MODAL_STATE.activePresetAccountId = accountId;
+      csvMappingSaved = true;
+      const runBtn = document.getElementById("csvUploadRun");
+      if (runBtn) runBtn.disabled = false;
+      if (sub) sub.textContent = "Mapping saved for selected account.";
+    } catch (e) {
+      console.error(e);
+      if (sub) sub.textContent = `Mapping save failed: ${e?.message || e}`;
+    }
+  }
+
+  function updateCsvPickedName() {
+    const el = document.getElementById("csvPickedName");
+    if (!el) return;
+    const f = CSV_MODAL_STATE.file;
+    el.textContent = f ? `${f.name} (${Math.round(f.size / 1024)} KB)` : "No file selected";
+  }
+
+  function setCsvFileForPanel(f) {
+    if (!f) return;
+    CSV_MODAL_STATE.file = f;
+    CSV_MODAL_STATE.columns = [];
+    const { accountId } = selectedCsvAccountMeta();
+    updateCsvPickedName();
+    populateCsvMappingSelects([]);
+    if (CSV_MODAL_STATE.activePreset && CSV_MODAL_STATE.activePresetAccountId === accountId) {
+      applyCsvPreset(CSV_MODAL_STATE.activePreset);
+    }
+    const preview = document.getElementById("csvPreviewWrap");
+    const sub = document.getElementById("csvUploadSub");
+    const msg = document.getElementById("csvUploadMsg");
+    if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
+    if (msg) msg.textContent = "";
+    if (sub) sub.textContent = "File selected. Click Preview File when ready.";
+  }
+
+  async function refreshCsvPreview() {
+    const msg = document.getElementById("csvUploadMsg");
+    const sub = document.getElementById("csvUploadSub");
+    const btn = document.getElementById("csvPreviewBtn");
+    const mapArea = document.getElementById("csvMapArea");
+    const finalizeActions = document.getElementById("csvFinalizeActions");
+    const runBtn = document.getElementById("csvUploadRun");
+    if (mapArea) mapArea.style.display = "";
+    if (finalizeActions) finalizeActions.style.display = "flex";
+    csvMappingSaved = false;
+    if (runBtn) runBtn.disabled = true;
+    if (msg) msg.textContent = "";
+    if (!CSV_MODAL_STATE.file) {
+      if (sub) sub.textContent = "Pick a file first.";
+      return;
+    }
+    if (sub) sub.textContent = "Building preview...";
+    if (btn) btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
+      fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
+      fd.append("has_header", "true");
+      fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
+      fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
+      fd.append("max_rows", "12");
+      const out = await apiPostForm("/csv/preview", fd);
+      if (!out?.ok) throw new Error("Preview failed");
+      CSV_MODAL_STATE.columns = Array.isArray(out.columns) ? out.columns : [];
+      CSV_MODAL_STATE.previewRows = Array.isArray(out.preview_rows) ? out.preview_rows : [];
+      populateCsvMappingSelects(CSV_MODAL_STATE.columns);
+      await loadCsvPreset();
+      renderCsvPreview(out.preview_rows || [], CSV_MODAL_STATE.columns);
+      updateCsvIndicatorTypesHint();
+      if (sub) sub.textContent = `Preview loaded (${out.row_count || 0} rows).`;
+    } catch (e) {
+      console.error(e);
+      if (sub) sub.textContent = "Preview failed";
+      if (msg) msg.textContent = String(e?.message || e);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function appendCsvMappingFields(fd, accountId, requireAccount = true) {
+    const purchaseCol = csvGetSelectInt("csvMapPurchase");
+    const amountCol = csvGetSelectInt("csvMapAmount");
+    const merchantCol = csvGetSelectInt("csvMapMerchant");
+    if ((requireAccount && !accountId) || purchaseCol === null || amountCol === null || merchantCol === null) {
+      throw new Error(requireAccount
+        ? "Map required fields: transaction date, amount, merchant, and account."
+        : "Map required fields: transaction date, amount, and merchant.");
+    }
+    if (requireAccount) fd.append("account_id", String(accountId));
+    fd.append("purchase_col", String(purchaseCol));
+    fd.append("amount_col", String(amountCol));
+    fd.append("merchant_col", String(merchantCol));
+    fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
+    fd.append("has_header", "true");
+    fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
+    fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
+    fd.append("credit_indicator_value", String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"));
+    fd.append("invert_amount", document.getElementById("csvInvertAmount")?.checked ? "true" : "false");
+    const posted = csvGetSelectInt("csvMapPosted");
+    const indicator = csvGetSelectInt("csvMapIndicator");
+    if (posted !== null) fd.append("posted_col", String(posted));
+    if (indicator !== null) fd.append("indicator_col", String(indicator));
+  }
+
+  function ensureCsvDryRunCompareModal() {
+    let root = document.getElementById("csvDryRunCompareRoot");
+    if (root) return root;
+    root = document.createElement("div");
+    root.id = "csvDryRunCompareRoot";
+    root.className = "tx-inspect hidden";
+    root.innerHTML = `
+      <div class="tx-inspect__backdrop" data-csv-dry-close></div>
+      <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="CSV dry run comparison">
+        <div class="tx-inspect__head">
+          <div>
+            <div class="tx-inspect__title">CSV Dry Run Comparison</div>
+            <div id="csvDryRunCompareSub" class="tx-inspect__sub"></div>
+          </div>
+          <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">X</button>
+        </div>
+        <div id="csvDryRunCompareBody" class="tx-inspect__body csv-dryrun__body"></div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    root.addEventListener("click", (e) => {
+      if (e.target?.matches?.("[data-csv-dry-close]")) root.classList.add("hidden");
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") root.classList.add("hidden");
+    });
+    return root;
+  }
+
+  function csvDryRowsTable(rows, { showMatch = false, showId = false } = {}) {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return `<div class="csv-dryrun__empty">None</div>`;
+    const matchHead = showMatch ? `<th>Match</th>` : "";
+    const idHead = showId ? `<th>ID</th>` : "";
+    const body = list.map((r) => {
+      const date = csvEscapeHtml(String(r.purchaseDate || ""));
+      const amt = csvMoney(r.amount);
+      const merch = csvEscapeHtml(String(r.merchant || ""));
+      const matchCell = showMatch ? `<td class="csv-dryrun__mono">${csvEscapeHtml(String(r.match_id || ""))}</td>` : "";
+      const idCell = showId ? `<td class="csv-dryrun__mono">${csvEscapeHtml(String(r.id || ""))}</td>` : "";
+      return `<tr><td>${date}</td><td class="csv-dryrun__num">${amt}</td><td>${merch}</td>${matchCell}${idCell}</tr>`;
+    }).join("");
+    return `<div class="csv-dryrun__table-wrap"><table class="csv-dryrun__table"><thead><tr><th>Date</th><th class="csv-dryrun__num">Amount</th><th>Merchant</th>${matchHead}${idHead}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  function openCsvDryRunCompareModal(compare, summary) {
+    const root = ensureCsvDryRunCompareModal();
+    const sub = document.getElementById("csvDryRunCompareSub");
+    const body = document.getElementById("csvDryRunCompareBody");
+    if (!root || !sub || !body) return;
+    const s = summary || {};
+    const updExact = Array.isArray(compare?.would_update_exact) ? compare.would_update_exact : [];
+    const updTip = Array.isArray(compare?.would_update_tip) ? compare.would_update_tip : [];
+    const toInsert = Array.isArray(compare?.would_insert) ? compare.would_insert : [];
+    const matchedIds = new Set([...updExact, ...updTip].map((r) => String(r?.match_id || "").trim()).filter(Boolean));
+    const pendingAll = Array.isArray(compare?.pending) ? compare.pending : [];
+    const pending = pendingAll.filter((r) => !matchedIds.has(String(r?.id || "").trim()));
+    sub.textContent = `Valid ${s.valid_rows || 0}  Invalid ${s.invalid_rows || 0}  Start ${compare?.import_start_date || "none"}  Pending ${pending.length}`;
+    body.innerHTML = `
+      <div class="csv-dryrun__summary">
+        <div class="csv-dryrun__card"><div class="csv-dryrun__k">Update exact</div><div class="csv-dryrun__v">${updExact.length}</div></div>
+        <div class="csv-dryrun__card csv-dryrun__card--tip"><div class="csv-dryrun__k">Update tip</div><div class="csv-dryrun__v">${updTip.length}</div></div>
+        <div class="csv-dryrun__card"><div class="csv-dryrun__k">Insert</div><div class="csv-dryrun__v">${toInsert.length}</div></div>
+        <div class="csv-dryrun__card"><div class="csv-dryrun__k">Pending now</div><div class="csv-dryrun__v">${pending.length}</div></div>
+      </div>
+      <section class="csv-dryrun__section"><header class="csv-dryrun__section-head"><h4>Will Update (Exact)</h4><span>${updExact.length}</span></header>${csvDryRowsTable(updExact.slice(0, 250), { showMatch: true })}</section>
+      <section class="csv-dryrun__section"><header class="csv-dryrun__section-head"><h4>Will Update (Tip Adjust)</h4><span>${updTip.length}</span></header>${csvDryRowsTable(updTip.slice(0, 250), { showMatch: true })}</section>
+      <section class="csv-dryrun__section"><header class="csv-dryrun__section-head"><h4>Will Insert</h4><span>${toInsert.length}</span></header>${csvDryRowsTable(toInsert.slice(0, 250))}</section>
+      <section class="csv-dryrun__section"><header class="csv-dryrun__section-head"><h4>Current Pending Email Transactions</h4><span>${pending.length}</span></header>${csvDryRowsTable(pending.slice(0, 500), { showId: true })}</section>
+    `;
+    root.classList.remove("hidden");
+  }
+
+  async function runCsvDryRun() {
+    const msg = document.getElementById("csvUploadMsg");
+    const sub = document.getElementById("csvUploadSub");
+    const btn = document.getElementById("csvDryRunBtn");
+    if (msg) msg.textContent = "";
+    if (!CSV_MODAL_STATE.file) {
+      if (sub) sub.textContent = "Pick a file first.";
+      return;
+    }
+    const accountId = Number(CSV_MODAL_STATE.selectedAccountId || 0);
+    if (!accountId) {
+      if (sub) sub.textContent = "Choose an account first.";
+      return;
+    }
+    if (sub) sub.textContent = "Running dry run...";
+    if (btn) btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
+      fd.append("account_id", String(accountId));
+      appendCsvMappingFields(fd, 0, false);
+      const out = await apiPostForm("/csv/ingest-mapped/dry-run", fd);
+      if (!out?.ok) throw new Error("Dry run failed");
+      const s = out.summary || {};
+      if (sub) sub.textContent = `Dry run: ${s.valid_rows || 0} valid, ${s.invalid_rows || 0} invalid (${s.total_rows || 0} total).`;
+      const compare = out.compare || null;
+      if (compare) {
+        openCsvDryRunCompareModal(compare, s);
+        if (msg) msg.textContent = "Dry run compare opened.";
+      } else {
+        const samples = Array.isArray(s.sample_errors) ? s.sample_errors.slice(0, 10) : [];
+        if (msg) msg.textContent = samples.length ? JSON.stringify(samples, null, 2) : "No sample errors.";
+      }
+    } catch (e) {
+      console.error(e);
+      if (sub) sub.textContent = "Dry run failed";
+      if (msg) msg.textContent = String(e?.message || e);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function stopCsvImportProgress() {
+    if (CSV_IMPORT_PROGRESS_TIMER) {
+      clearInterval(CSV_IMPORT_PROGRESS_TIMER);
+      CSV_IMPORT_PROGRESS_TIMER = null;
+    }
+  }
+
+  function renderCsvImportProgress() {
+    const sub = document.getElementById("csvUploadSub");
+    if (!sub) return;
+    const pct = Math.max(0, Math.min(99, Math.round(CSV_IMPORT_PROGRESS_PCT)));
+    sub.textContent = `Importing... ${pct}%`;
+  }
+
+  function startCsvImportProgress() {
+    stopCsvImportProgress();
+    CSV_IMPORT_PROGRESS_PCT = 4;
+    renderCsvImportProgress();
+    CSV_IMPORT_PROGRESS_TIMER = setInterval(() => {
+      if (CSV_IMPORT_PROGRESS_PCT >= 96) return;
+      const remaining = 96 - CSV_IMPORT_PROGRESS_PCT;
+      const step = Math.max(0.6, remaining * 0.08);
+      CSV_IMPORT_PROGRESS_PCT += step;
+      renderCsvImportProgress();
+    }, 180);
+  }
+
+  function completeCsvImportProgress() {
+    stopCsvImportProgress();
+    CSV_IMPORT_PROGRESS_PCT = 100;
+    const sub = document.getElementById("csvUploadSub");
+    if (sub) sub.textContent = "Importing... 100%";
+  }
+
+  async function runCsvIngestMapped() {
+    const msg = document.getElementById("csvUploadMsg");
+    const sub = document.getElementById("csvUploadSub");
+    const runBtn = document.getElementById("csvUploadRun");
+    if (msg) msg.textContent = "";
+    if (!csvMappingSaved) {
+      if (sub) sub.textContent = "Save mapping before importing.";
+      if (msg) msg.textContent = "Import is disabled until mapping is saved.";
+      if (runBtn) runBtn.disabled = true;
+      return;
+    }
+    if (!CSV_MODAL_STATE.file) {
+      if (sub) sub.textContent = "Pick a file first.";
+      return;
+    }
+    const accountId = Number(CSV_MODAL_STATE.selectedAccountId || 0);
+    if (!accountId) {
+      if (sub) sub.textContent = "Choose an account first.";
+      return;
+    }
+    startCsvImportProgress();
+    if (runBtn) runBtn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
+      appendCsvMappingFields(fd, accountId);
+      const out = await apiPostForm("/csv/ingest-mapped", fd);
+      if (!out?.ok) throw new Error("Import failed");
+      completeCsvImportProgress();
+      const errCount = Array.isArray(out.errors) ? out.errors.length : 0;
+      if (sub) sub.textContent = `Imported ${out.inserted || 0}, updated ${out.updated || 0}, skipped ${out.skipped || 0}${errCount ? `, ${errCount} row errors` : ""}.`;
+      if (msg) msg.textContent = errCount ? JSON.stringify(out.errors, null, 2) : "Import complete.";
+      await refreshStatus();
+    } catch (e) {
+      console.error(e);
+      stopCsvImportProgress();
+      if (sub) sub.textContent = "Import failed";
+      if (msg) msg.textContent = String(e?.message || e);
+    } finally {
+      stopCsvImportProgress();
+      if (runBtn) runBtn.disabled = false;
+    }
+  }
+
+  function resetCsvPanel() {
+    CSV_MODAL_STATE.file = null;
+    CSV_MODAL_STATE.columns = [];
+    CSV_MODAL_STATE.previewRows = [];
+    const input = document.getElementById("csvFileInput");
+    const preview = document.getElementById("csvPreviewWrap");
+    const sub = document.getElementById("csvUploadSub");
+    const msg = document.getElementById("csvUploadMsg");
+    const mapArea = document.getElementById("csvMapArea");
+    const finalizeActions = document.getElementById("csvFinalizeActions");
+    const indicatorHint = document.getElementById("csvIndicatorTypesHint");
+    const runBtn = document.getElementById("csvUploadRun");
+    if (input) input.value = "";
+    if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
+    if (msg) msg.textContent = "";
+    if (sub) sub.textContent = "Drop a CSV or Excel file, preview it, map columns, then import.";
+    if (mapArea) mapArea.style.display = "none";
+    if (finalizeActions) finalizeActions.style.display = "none";
+    if (indicatorHint) {
+      indicatorHint.style.display = "none";
+      indicatorHint.textContent = "";
+    }
+    csvMappingSaved = false;
+    if (runBtn) runBtn.disabled = true;
+    populateCsvMappingSelects([]);
+    updateCsvPickedName();
+  }
+
+  function markCsvMappingDirty() {
+    csvMappingSaved = false;
+    const runBtn = document.getElementById("csvUploadRun");
+    if (runBtn) runBtn.disabled = true;
+  }
+
+  function bindCsvInlineImporter() {
+    const pickBtn = document.getElementById("csvPickFileBtn");
+    const input = document.getElementById("csvFileInput");
+    const previewBtn = document.getElementById("csvPreviewBtn");
+    const dryRunBtn = document.getElementById("csvDryRunBtn");
+    const savePresetBtn = document.getElementById("csvSavePresetBtn");
+    const runBtn = document.getElementById("csvUploadRun");
+    const drop = document.getElementById("csvDropZone");
+    const mappingInputIds = [
+      "csvDelimiter",
+      "csvHeaderRow",
+      "csvDataStartRow",
+      "csvMapPurchase",
+      "csvMapPosted",
+      "csvMapAmount",
+      "csvMapMerchant",
+      "csvMapIndicator",
+      "csvCreditIndicatorValue",
+      "csvInvertAmount",
+    ];
+
+    if (pickBtn && input) pickBtn.addEventListener("click", () => input.click());
+    if (input) {
+      input.addEventListener("change", () => {
+        const f = input.files?.[0];
+        if (f) setCsvFileForPanel(f);
+        markCsvMappingDirty();
+      });
+    }
+    if (previewBtn) previewBtn.addEventListener("click", refreshCsvPreview);
+    if (dryRunBtn) dryRunBtn.addEventListener("click", runCsvDryRun);
+    if (savePresetBtn) savePresetBtn.addEventListener("click", saveCsvPreset);
+    if (runBtn) runBtn.addEventListener("click", runCsvIngestMapped);
+
+    if (drop) {
+      drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.style.background = "rgba(0,0,0,.03)"; });
+      drop.addEventListener("dragleave", () => { drop.style.background = ""; });
+      drop.addEventListener("drop", (e) => {
+        e.preventDefault();
+        drop.style.background = "";
+        const f = e.dataTransfer?.files?.[0];
+        if (!f) return;
+        if (input) {
+          const dt = new DataTransfer();
+          dt.items.add(f);
+          input.files = dt.files;
+        }
+        setCsvFileForPanel(f);
+        markCsvMappingDirty();
+      });
+    }
+
+    mappingInputIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const ev = (id === "csvCreditIndicatorValue" || id === "csvHeaderRow" || id === "csvDataStartRow") ? "input" : "change";
+      el.addEventListener(ev, markCsvMappingDirty);
+      if (id === "csvMapIndicator") {
+        el.addEventListener("change", updateCsvIndicatorTypesHint);
+      }
+    });
+
+    resetCsvPanel();
+    syncCsvSelectedAccount();
+    loadCsvPreset().catch(console.error);
   }
 
   function collectBenefits() {
@@ -163,7 +852,11 @@
         </div>
       `;
       latestAccounts = Array.isArray(s.accounts) ? s.accounts : [];
+      canSetStartingBalance = !!s.can_set_starting_balance;
+      applyStartingBalanceVisibility();
       renderAccountsList();
+      syncCsvSelectedAccount();
+      loadCsvPreset().catch(console.error);
     } catch (e) {
       statusEl.textContent = `Status failed: ${e.message}`;
     }
@@ -217,6 +910,7 @@
       addResultEl.textContent = editingAccountId
         ? `Updated account id ${out.account_id}.`
         : `Added account id ${out.account_id}.`;
+      csvPreferredAccountId = Number(out.account_id || 0);
       setEditMode(false, null);
       resetAccountForm();
       await refreshStatus();
@@ -299,6 +993,7 @@
   if (sendPushoverTestBtn) sendPushoverTestBtn.addEventListener("click", sendPushoverTest);
   const fetchEmailsNowBtn = document.getElementById("fetchEmailsNowBtn");
   if (fetchEmailsNowBtn) fetchEmailsNowBtn.addEventListener("click", fetchEmailsNow);
+  bindCsvInlineImporter();
 
   resetAccountForm();
   setEditMode(false, null);

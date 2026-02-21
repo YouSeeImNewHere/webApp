@@ -45,6 +45,51 @@
     </section>
 
     <section class="settings-section">
+      <h2 class="settings-section-title">Notifications</h2>
+      <div class="settings-card">
+        <div class="settings-muted" style="margin-top:0; margin-bottom:10px;">
+          Choose which alerts you want to receive.
+        </div>
+        <div class="notification-settings-list">
+          <div class="notification-setting-row">
+            <div class="notification-setting-copy">
+              <div class="notification-setting-title">Credit usage per card</div>
+              <div class="settings-muted notification-setting-muted">Alerts when a card crosses configured usage thresholds.</div>
+            </div>
+            <label class="switch" aria-label="Credit usage per card notifications">
+              <input id="notifCreditUsageToggle" type="checkbox">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="notification-setting-row">
+            <div class="notification-setting-copy">
+              <div class="notification-setting-title">Total credit usage</div>
+              <div class="settings-muted notification-setting-muted">Alerts when total credit usage crosses thresholds.</div>
+            </div>
+            <label class="switch" aria-label="Total credit usage notifications">
+              <input id="notifCreditUsageTotalToggle" type="checkbox">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="notification-setting-row">
+            <div class="notification-setting-copy">
+              <div class="notification-setting-title">Budget overage</div>
+              <div class="settings-muted notification-setting-muted">Alerts when a budget group goes over for the month.</div>
+            </div>
+            <label class="switch" aria-label="Budget overage notifications">
+              <input id="notifBudgetOverToggle" type="checkbox">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-muted" id="notifSettingsStatus" role="status" aria-live="polite"></div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="notification-setting-title" style="margin-bottom:6px;">Pushover user key</div>
+        <div id="settingsPushoverUserKey" class="settings-code">Not set</div>
+      </div>
+    </section>
+
+    <section class="settings-section">
       <h2 class="settings-section-title">LES</h2>
       <details class="settings-accordion">
         <summary>LES Profile</summary>
@@ -70,8 +115,18 @@
     </section>
 
     <section class="settings-section">
-      <h2 class="settings-section-title">Workspace</h2>
+      <h2 class="settings-section-title">Initial Setup</h2>
       <div class="settings-card">
+        <div class="setup-progress-wrap" aria-live="polite">
+          <div class="setup-progress-head">
+            <strong id="initialSetupProgressText">Loading setup progress...</strong>
+          </div>
+          <div class="setup-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="initialSetupProgressFill" class="setup-progress-fill" style="width:0%;"></div>
+          </div>
+          <div id="initialSetupProgressSub" class="settings-muted setup-progress-sub"></div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
         <div class="settings-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Setup wizard</div>
@@ -79,6 +134,30 @@
           </div>
           <a class="settings-btn primary" href="/setup">View Setup Wizard</a>
         </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="settings-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">Parser wizard</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Create and maintain live parser rules.</div>
+          </div>
+          <a class="settings-btn primary" href="/email-parser-wizard">Open Wizard</a>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div style="font-weight:900;margin-bottom:6px;">Manual backfill parse</div>
+        <div class="settings-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
+            Lookback days
+            <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7" style="max-width:120px;">
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; font-weight:800; font-size:12px; opacity:.9; margin-bottom:10px;">
+            <input id="emailParserIncludeProcessed" type="checkbox" checked>
+            Include already processed emails
+          </label>
+          <button class="settings-btn primary" id="runEmailParserBackfillBtn" type="button">Fetch + Parse + Insert</button>
+        </div>
+        <div id="emailParserBackfillStatus" class="settings-muted" role="status" aria-live="polite"></div>
+        <pre id="emailParserBackfillLog" class="settings-code" style="max-height:260px; overflow:auto; margin-top:8px; display:none;"></pre>
+        <div id="emailParserBackfillRows" style="display:none; margin-top:8px;"></div>
       </div>
     </section>
 
@@ -175,35 +254,6 @@
       </div>
     </section>
 
-    <section class="settings-section">
-      <h2 class="settings-section-title">Email Parser</h2>
-      <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between;">
-          <div>
-            <div style="font-weight:950;">Parser wizard</div>
-            <div class="settings-muted" style="margin:4px 0 0 0;">Create and maintain live parser rules.</div>
-          </div>
-          <a class="settings-btn primary" href="/email-parser-wizard">Open Wizard</a>
-        </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
-        <div style="font-weight:900;margin-bottom:6px;">Manual backfill parse</div>
-        <div class="settings-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap;">
-          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
-            Lookback days
-            <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7" style="max-width:120px;">
-          </label>
-          <label style="display:flex; align-items:center; gap:8px; font-weight:800; font-size:12px; opacity:.9; margin-bottom:10px;">
-            <input id="emailParserIncludeProcessed" type="checkbox" checked>
-            Include already processed emails
-          </label>
-          <button class="settings-btn primary" id="runEmailParserBackfillBtn" type="button">Fetch + Parse + Insert</button>
-        </div>
-        <div id="emailParserBackfillStatus" class="settings-muted" role="status" aria-live="polite"></div>
-        <pre id="emailParserBackfillLog" class="settings-code" style="max-height:260px; overflow:auto; margin-top:8px; display:none;"></pre>
-        <div id="emailParserBackfillRows" style="display:none; margin-top:8px;"></div>
-      </div>
-    </section>
-
     <section class="settings-section daily-weights-section">
       <h2 class="settings-section-title">Daily Spending Weights</h2>
       <div class="settings-card daily-weights-card">
@@ -243,7 +293,7 @@
       </div>
     </section>
 
-    <section class="settings-section">
+    <section class="settings-section" id="settingsAdminSection" style="display:none;">
       <h2 class="settings-section-title">Admin</h2>
       <div class="settings-card">
         <div class="settings-row" style="justify-content:space-between;">
