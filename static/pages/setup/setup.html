@@ -100,7 +100,6 @@
         <div id="csvAccountSummary" class="setup-muted" style="margin-bottom:8px;">Using account: none</div>
         <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
           <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
-          <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <label style="font-size:12px; font-weight:700;">Delimiter
@@ -112,6 +111,10 @@
               <option value="|">Pipe</option>
             </select>
           </label>
+          <label style="font-size:12px; display:flex; align-items:center; gap:8px; margin-top:18px;">
+            <input id="csvHasHeader" type="checkbox" checked />
+            File has header row
+          </label>
         </div>
 
         <div id="csvMapArea" style="margin-top:12px; display:none;">
@@ -121,6 +124,8 @@
             <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
             <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
             <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Debit amount<select id="csvMapDebit" style="width:100%; margin-top:4px;"></select></label>
+            <label style="font-size:12px;">Credit amount<select id="csvMapCredit" style="width:100%; margin-top:4px;"></select></label>
             <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
@@ -140,10 +145,12 @@
               Invert all amounts
             </label>
           </div>
+          <div id="csvAmountModeHint" class="setup-muted" style="margin-top:6px; display:none;"></div>
           <div id="csvIndicatorTypesHint" class="setup-muted" style="margin-top:6px; display:none;"></div>
         </div>
 
         <div id="csvFinalizeActions" class="setup-csv-actions" style="display:none; gap:10px; margin-top:12px; justify-content:flex-start; flex-wrap:wrap;">
+          <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
           <button id="csvSavePresetBtn" class="settings-btn" type="button">Save mapping</button>
           <button id="csvUploadRun" class="settings-btn primary" type="button" disabled>Import</button>
         </div>
@@ -166,15 +173,15 @@
       <div class="setup-row">
         <button id="savePushoverKeyBtn" type="button">Save Pushover Key</button>
         <button id="sendPushoverTestBtn" type="button" class="secondary">Send Test Notification</button>
-        <button id="fetchEmailsNowBtn" type="button" class="secondary">Fetch Emails Now</button>
       </div>
       <div id="pushoverResult" class="setup-muted" style="margin-top:8px;"></div>
     </div>
 
     <div class="setup-card">
-      <h2>Step 4: Finish</h2>
-      <button id="completeBtn" type="button">Mark Wizard Complete</button>
-      <p class="setup-muted" style="margin-top:8px;">You can reopen this page anytime at <span class="setup-mono">/setup</span>.</p>
+      <h2>Step 4: Parser Wizard</h2>
+      <p class="setup-muted">Finish parser setup for accounts that receive email alerts.</p>
+      <button id="openParserWizardBtn" type="button">Open Parser Wizard</button>
+      <p class="setup-muted" style="margin-top:8px;">You can reopen setup anytime at <span class="setup-mono">/setup</span>.</p>
     </div>
   </div>
   <div id="sharedChrome"></div>

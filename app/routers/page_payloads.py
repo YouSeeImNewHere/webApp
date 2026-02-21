@@ -67,6 +67,10 @@ def _widget_redis_payload_key(tid: Optional[int]) -> str:
     return f"{_WIDGET_REDIS_KEY_PREFIX}:payload:{_widget_tenant_key(tid)}"
 
 
+def _widget_redis_day_key(tid: Optional[int]) -> str:
+    return f"{_WIDGET_REDIS_KEY_PREFIX}:day:{_widget_tenant_key(tid)}"
+
+
 def _widget_redis_get_version(tid: Optional[int]) -> int:
     r = get_redis()
     if r is None:
@@ -116,6 +120,32 @@ def _widget_redis_incr_version(tid: Optional[int]) -> int:
         return int(r.incr(_widget_redis_version_key(tid)))
     except Exception:
         return 0
+
+
+def _widget_refresh_on_day_rollover(tid: Optional[int]) -> None:
+    """
+    Ensure widget payload/version rolls forward once per local day.
+    This keeps day-sensitive fields (days_left, remaining_today, etc.)
+    in sync even when no transaction writes occur.
+    """
+    r = get_redis()
+    if r is None:
+        return
+    day_key = _widget_redis_day_key(tid)
+    today_iso = today_local().isoformat()
+    try:
+        raw = r.get(day_key)
+        seen = raw.decode("utf-8", "ignore") if isinstance(raw, (bytes, bytearray)) else str(raw or "")
+    except Exception:
+        return
+    if seen == today_iso:
+        return
+    try:
+        written_version = refresh_widget_cache_for_tenant(tid, bump_version=True)
+        if int(written_version) > 0:
+            r.set(day_key, today_iso)
+    except Exception:
+        return
 
 
 def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version: int) -> Dict[str, Any]:
@@ -731,6 +761,7 @@ def widget_summary(
     widget_script_version: Optional[int] = Query(default=None),
 ):
     tid = _require_tenant_id()
+    _widget_refresh_on_day_rollover(tid)
     current_version = _widget_redis_get_version(tid)
     script_v = int(widget_script_version) if widget_script_version is not None else 0
     if script_v < int(MIN_WIDGET_SCRIPT_VERSION):

@@ -53,6 +53,8 @@
     csvMapPurchase: "Transaction date",
     csvMapPosted: "Posted date",
     csvMapAmount: "Amount",
+    csvMapDebit: "Debit amount",
+    csvMapCredit: "Credit amount",
     csvMapMerchant: "Merchant",
     csvMapIndicator: "Credit/Debit indicator",
   };
@@ -143,6 +145,11 @@
     document.getElementById("interestPostDay").value = (a.interest_post_day ?? "") === null ? "" : String(a.interest_post_day ?? "");
     document.getElementById("receivesEmails").checked = !!a.receives_emails;
     document.getElementById("isPaycheckAccount").checked = !!a.is_paycheck_account;
+    // Keep Step 2 import target in sync with the account selected in Step 1.
+    csvPreferredAccountId = Number(a.id || 0);
+    CSV_MODAL_STATE.selectedAccountId = Number(a.id || 0);
+    syncCsvSelectedAccount();
+    loadCsvPreset(Number(a.id || 0)).catch(console.error);
     setEditMode(true, a);
     updateAccountFieldHints();
     addResultEl.textContent = `Editing account #${a.id}.`;
@@ -160,7 +167,20 @@
         ${latestAccounts.map((a) => `
           <div class="setup-list-row">
             <div>
-              <div><strong>${String(a.institution || "")} - ${String(a.name || "")}</strong> <span class="setup-list-meta">(${String(a.accounttype || "").toLowerCase()})</span></div>
+              <div>
+                <strong>${String(a.institution || "")} - ${String(a.name || "")}</strong>
+                <span class="setup-list-meta">(${String(a.accounttype || "").toLowerCase()})</span>
+              </div>
+              <div class="setup-list-meta" style="margin-top:4px;">
+                ${(() => {
+                  const setup = a && typeof a.setup === "object" ? a.setup : null;
+                  const complete = !!(setup && setup.complete);
+                  const missing = Array.isArray(setup?.missing) ? setup.missing : [];
+                  if (complete) return `<span class="setup-pill ok">Complete</span>`;
+                  const missingTxt = missing.length ? `Missing: ${missing.join(", ")}` : "Missing setup";
+                  return `<span class="setup-pill todo">Pending</span>${csvEscapeHtml(missingTxt)}`;
+                })()}
+              </div>
               <div class="setup-list-meta">
                 Receives emails: ${a.receives_emails ? "Yes" : "No"} | Paycheck account: ${a.is_paycheck_account ? "Yes" : "No"}
               </div>
@@ -244,8 +264,92 @@
     return null;
   }
 
+  function csvLooksLikeDate(v) {
+    const s = String(v || "").trim();
+    if (!s) return false;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return true;
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)) return true;
+    if (/^\d{1,2}-\d{1,2}-\d{2,4}$/.test(s)) return true;
+    return false;
+  }
+
+  function csvParseNumberLike(v) {
+    const s0 = String(v || "").trim();
+    if (!s0) return null;
+    const negParen = s0.startsWith("(") && s0.endsWith(")");
+    let s = negParen ? s0.slice(1, -1) : s0;
+    s = s.replaceAll("$", "").replaceAll(",", "").trim();
+    if (s.endsWith("-")) s = `-${s.slice(0, -1).trim()}`;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function guessCsvColumnsByValues(columns, previewRows) {
+    const cols = Array.isArray(columns) ? columns : [];
+    const rows = Array.isArray(previewRows) ? previewRows : [];
+    if (!cols.length || !rows.length) return {};
+
+    const scores = cols.map(() => ({ date: 0, amount: 0, text: 0 }));
+    for (const r of rows) {
+      const cells = Array.isArray(r?.cells) ? r.cells : [];
+      for (let i = 0; i < cols.length; i += 1) {
+        const raw = String(cells[i] ?? "").trim();
+        if (!raw) continue;
+        if (csvLooksLikeDate(raw)) scores[i].date += 1;
+        const num = csvParseNumberLike(raw);
+        if (num !== null) scores[i].amount += 1;
+        if (num === null && !csvLooksLikeDate(raw)) scores[i].text += 1;
+      }
+    }
+
+    function pickBest(kind, blocked = new Set()) {
+      let bestIdx = null;
+      let bestScore = -1;
+      for (let i = 0; i < scores.length; i += 1) {
+        if (blocked.has(i)) continue;
+        const s = Number(scores[i][kind] || 0);
+        if (s > bestScore) {
+          bestScore = s;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx === null || bestScore <= 0) return null;
+      return bestIdx;
+    }
+
+    const used = new Set();
+    const purchase = pickBest("date", used);
+    if (purchase !== null) used.add(purchase);
+    const amount = pickBest("amount", used);
+    if (amount !== null) used.add(amount);
+    const merchant = pickBest("text", used);
+
+    return { csvMapPurchase: purchase, csvMapAmount: amount, csvMapMerchant: merchant };
+  }
+
+  function csvHasHeaderEnabled() {
+    return !!document.getElementById("csvHasHeader")?.checked;
+  }
+
+  function updateCsvHeaderModeUi() {
+    const hasHeader = csvHasHeaderEnabled();
+    const headerEl = document.getElementById("csvHeaderRow");
+    const dataEl = document.getElementById("csvDataStartRow");
+    if (headerEl) {
+      if (!hasHeader) headerEl.value = "1";
+      headerEl.disabled = !hasHeader;
+    }
+    if (dataEl) {
+      if (!hasHeader) {
+        dataEl.value = "1";
+      } else if (Number(dataEl.value || 0) < 2) {
+        dataEl.value = "2";
+      }
+    }
+  }
+
   function populateCsvMappingSelects(columns) {
-    const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapMerchant", "csvMapIndicator"];
+    const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapDebit", "csvMapCredit", "csvMapMerchant", "csvMapIndicator"];
     const opts = ['<option value="-1">Not mapped</option>']
       .concat((columns || []).map((c) => `<option value="${c.index}">${csvEscapeHtml(c.label)} (col ${c.index + 1})</option>`))
       .join("");
@@ -257,6 +361,8 @@
       csvMapPurchase: ["transaction date", "trans date", "date"],
       csvMapPosted: ["posted date", "post date", "posting date"],
       csvMapAmount: ["amount", "transaction amount"],
+      csvMapDebit: ["debit", "withdrawal", "charge"],
+      csvMapCredit: ["credit", "payment", "deposit", "refund"],
       csvMapMerchant: ["description", "merchant", "payee", "transaction description"],
       csvMapIndicator: ["credit/debit", "credit debit", "indicator", "type"],
     };
@@ -265,6 +371,20 @@
       const el = document.getElementById(id);
       if (el && guess !== null) el.value = String(guess);
     });
+    if (!csvHasHeaderEnabled()) {
+      const byValues = guessCsvColumnsByValues(columns || [], CSV_MODAL_STATE.previewRows || []);
+      Object.entries(byValues).forEach(([id, idx]) => {
+        const el = document.getElementById(id);
+        if (el && idx !== null && idx !== undefined) el.value = String(idx);
+      });
+    }
+    const debitGuess = csvGetSelectInt("csvMapDebit");
+    const creditGuess = csvGetSelectInt("csvMapCredit");
+    const amountEl = document.getElementById("csvMapAmount");
+    if (amountEl && debitGuess !== null && creditGuess !== null) {
+      amountEl.value = "-1";
+    }
+    updateCsvAmountModeUi();
   }
 
   function renderCsvPreview(previewRows, columns) {
@@ -285,6 +405,12 @@
   function updateCsvIndicatorTypesHint() {
     const hintEl = document.getElementById("csvIndicatorTypesHint");
     if (!hintEl) return;
+    const indicatorInput = document.getElementById("csvMapIndicator");
+    if (indicatorInput && indicatorInput.disabled) {
+      hintEl.style.display = "none";
+      hintEl.textContent = "";
+      return;
+    }
     const indicatorCol = csvGetSelectInt("csvMapIndicator");
     if (indicatorCol === null) {
       hintEl.style.display = "none";
@@ -347,11 +473,14 @@
   function buildCsvPresetPayload() {
     return {
       delimiter: document.getElementById("csvDelimiter")?.value || "auto",
+      has_header: csvHasHeaderEnabled(),
       header_row: Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1)),
       data_start_row: Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2)),
       purchase_col: csvGetSelectInt("csvMapPurchase"),
       posted_col: csvGetSelectInt("csvMapPosted"),
       amount_col: csvGetSelectInt("csvMapAmount"),
+      debit_col: csvGetSelectInt("csvMapDebit"),
+      credit_col: csvGetSelectInt("csvMapCredit"),
       merchant_col: csvGetSelectInt("csvMapMerchant"),
       indicator_col: csvGetSelectInt("csvMapIndicator"),
       credit_indicator_value: String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"),
@@ -369,16 +498,23 @@
       el.value = String(val);
     };
     setIf("csvDelimiter", preset.delimiter);
+    const hasHeaderEl = document.getElementById("csvHasHeader");
+    if (hasHeaderEl && typeof preset.has_header === "boolean") hasHeaderEl.checked = !!preset.has_header;
+    updateCsvHeaderModeUi();
     setIf("csvHeaderRow", preset.header_row);
     setIf("csvDataStartRow", preset.data_start_row);
     setIf("csvMapPurchase", preset.purchase_col);
     setIf("csvMapPosted", preset.posted_col);
     setIf("csvMapAmount", preset.amount_col);
+    setIf("csvMapDebit", preset.debit_col);
+    setIf("csvMapCredit", preset.credit_col);
     setIf("csvMapMerchant", preset.merchant_col);
     setIf("csvMapIndicator", preset.indicator_col);
     setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
     const invert = document.getElementById("csvInvertAmount");
     if (invert && typeof preset.invert_amount === "boolean") invert.checked = preset.invert_amount;
+    updateCsvAmountModeUi();
+    updateCsvIndicatorTypesHint();
   }
 
   async function loadCsvPreset(preferredAccountId = null) {
@@ -411,6 +547,11 @@
     const { accountId } = selectedCsvAccountMeta();
     if (!accountId) {
       if (sub) sub.textContent = "Choose account before saving mapping.";
+      return;
+    }
+    const mappingCheck = validateCsvAmountMapping();
+    if (!mappingCheck.ok) {
+      if (sub) sub.textContent = mappingCheck.error;
       return;
     }
     try {
@@ -457,6 +598,7 @@
     if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
     if (msg) msg.textContent = "";
     if (sub) sub.textContent = "File selected. Click Preview File when ready.";
+    updateCsvAmountModeUi();
   }
 
   async function refreshCsvPreview() {
@@ -481,7 +623,7 @@
       const fd = new FormData();
       fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
       fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
-      fd.append("has_header", "true");
+      fd.append("has_header", csvHasHeaderEnabled() ? "true" : "false");
       fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
       fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
       fd.append("max_rows", "12");
@@ -492,6 +634,7 @@
       populateCsvMappingSelects(CSV_MODAL_STATE.columns);
       await loadCsvPreset();
       renderCsvPreview(out.preview_rows || [], CSV_MODAL_STATE.columns);
+      updateCsvAmountModeUi();
       updateCsvIndicatorTypesHint();
       if (sub) sub.textContent = `Preview loaded (${out.row_count || 0} rows).`;
     } catch (e) {
@@ -503,21 +646,67 @@
     }
   }
 
+  function validateCsvAmountMapping() {
+    const amountCol = csvGetSelectInt("csvMapAmount");
+    const debitCol = csvGetSelectInt("csvMapDebit");
+    const creditCol = csvGetSelectInt("csvMapCredit");
+    const hasAnyPair = (debitCol !== null || creditCol !== null);
+    if (!hasAnyPair && amountCol === null) {
+      return { ok: false, error: "Map Amount, or map both Debit and Credit columns." };
+    }
+    if (hasAnyPair && (debitCol === null || creditCol === null)) {
+      return { ok: false, error: "Map both Debit and Credit columns when using split amounts." };
+    }
+    if (amountCol !== null && hasAnyPair) {
+      return { ok: false, error: "Use either Amount, or Debit/Credit pair. Not both." };
+    }
+    return { ok: true, mode: hasAnyPair ? "pair" : "single", amountCol, debitCol, creditCol };
+  }
+
+  function updateCsvAmountModeUi() {
+    const hintEl = document.getElementById("csvAmountModeHint");
+    const indicatorEl = document.getElementById("csvMapIndicator");
+    const creditValueEl = document.getElementById("csvCreditIndicatorValue");
+    if (!hintEl) return;
+    const check = validateCsvAmountMapping();
+    const usingPair = check.ok && check.mode === "pair";
+    if (indicatorEl) indicatorEl.disabled = !!usingPair;
+    if (creditValueEl) creditValueEl.disabled = !!usingPair;
+    if (usingPair) {
+      hintEl.style.display = "";
+      hintEl.textContent = "Using split amount mode (Debit positive, Credit negative). Indicator mapping is ignored.";
+      return;
+    }
+    if (!check.ok) {
+      hintEl.style.display = "";
+      hintEl.textContent = check.error;
+      return;
+    }
+    hintEl.style.display = "none";
+    hintEl.textContent = "";
+  }
+
   function appendCsvMappingFields(fd, accountId, requireAccount = true) {
     const purchaseCol = csvGetSelectInt("csvMapPurchase");
-    const amountCol = csvGetSelectInt("csvMapAmount");
     const merchantCol = csvGetSelectInt("csvMapMerchant");
-    if ((requireAccount && !accountId) || purchaseCol === null || amountCol === null || merchantCol === null) {
+    const amountCheck = validateCsvAmountMapping();
+    if ((requireAccount && !accountId) || purchaseCol === null || merchantCol === null || !amountCheck.ok) {
       throw new Error(requireAccount
-        ? "Map required fields: transaction date, amount, merchant, and account."
-        : "Map required fields: transaction date, amount, and merchant.");
+        ? `Map required fields: transaction date, merchant, and account. ${amountCheck.error || ""}`.trim()
+        : `Map required fields: transaction date and merchant. ${amountCheck.error || ""}`.trim());
     }
     if (requireAccount) fd.append("account_id", String(accountId));
     fd.append("purchase_col", String(purchaseCol));
-    fd.append("amount_col", String(amountCol));
+    if (amountCheck.mode === "single" && amountCheck.amountCol !== null) {
+      fd.append("amount_col", String(amountCheck.amountCol));
+    }
+    if (amountCheck.mode === "pair") {
+      fd.append("debit_col", String(amountCheck.debitCol));
+      fd.append("credit_col", String(amountCheck.creditCol));
+    }
     fd.append("merchant_col", String(merchantCol));
     fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
-    fd.append("has_header", "true");
+    fd.append("has_header", csvHasHeaderEnabled() ? "true" : "false");
     fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
     fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
     fd.append("credit_indicator_value", String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"));
@@ -525,7 +714,7 @@
     const posted = csvGetSelectInt("csvMapPosted");
     const indicator = csvGetSelectInt("csvMapIndicator");
     if (posted !== null) fd.append("posted_col", String(posted));
-    if (indicator !== null) fd.append("indicator_col", String(indicator));
+    if (amountCheck.mode === "single" && indicator !== null) fd.append("indicator_col", String(indicator));
   }
 
   function ensureCsvDryRunCompareModal() {
@@ -732,20 +921,29 @@
     const mapArea = document.getElementById("csvMapArea");
     const finalizeActions = document.getElementById("csvFinalizeActions");
     const indicatorHint = document.getElementById("csvIndicatorTypesHint");
+    const amountModeHint = document.getElementById("csvAmountModeHint");
     const runBtn = document.getElementById("csvUploadRun");
     if (input) input.value = "";
     if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
     if (msg) msg.textContent = "";
     if (sub) sub.textContent = "Drop a CSV or Excel file, preview it, map columns, then import.";
+    const hasHeaderEl = document.getElementById("csvHasHeader");
+    if (hasHeaderEl) hasHeaderEl.checked = true;
     if (mapArea) mapArea.style.display = "none";
     if (finalizeActions) finalizeActions.style.display = "none";
     if (indicatorHint) {
       indicatorHint.style.display = "none";
       indicatorHint.textContent = "";
     }
+    if (amountModeHint) {
+      amountModeHint.style.display = "none";
+      amountModeHint.textContent = "";
+    }
     csvMappingSaved = false;
     if (runBtn) runBtn.disabled = true;
     populateCsvMappingSelects([]);
+    updateCsvHeaderModeUi();
+    updateCsvAmountModeUi();
     updateCsvPickedName();
   }
 
@@ -765,11 +963,14 @@
     const drop = document.getElementById("csvDropZone");
     const mappingInputIds = [
       "csvDelimiter",
+      "csvHasHeader",
       "csvHeaderRow",
       "csvDataStartRow",
       "csvMapPurchase",
       "csvMapPosted",
       "csvMapAmount",
+      "csvMapDebit",
+      "csvMapCredit",
       "csvMapMerchant",
       "csvMapIndicator",
       "csvCreditIndicatorValue",
@@ -811,8 +1012,15 @@
       const el = document.getElementById(id);
       if (!el) return;
       const ev = (id === "csvCreditIndicatorValue" || id === "csvHeaderRow" || id === "csvDataStartRow") ? "input" : "change";
-      el.addEventListener(ev, markCsvMappingDirty);
+      el.addEventListener(ev, () => {
+        markCsvMappingDirty();
+        if (id === "csvHasHeader") updateCsvHeaderModeUi();
+        updateCsvAmountModeUi();
+      });
       if (id === "csvMapIndicator") {
+        el.addEventListener("change", updateCsvIndicatorTypesHint);
+      }
+      if (id === "csvMapDebit" || id === "csvMapCredit" || id === "csvMapAmount") {
         el.addEventListener("change", updateCsvIndicatorTypesHint);
       }
     });
@@ -962,17 +1170,8 @@
     }
   }
 
-  async function fetchEmailsNow() {
-    if (!pushoverResultEl) return;
-    pushoverResultEl.textContent = "Starting email fetch...";
-    try {
-      const out = await api("/gmail/fetch-now", { method: "POST", body: "{}" });
-      pushoverResultEl.textContent = out.status === "already_running"
-        ? "Email fetch is already running."
-        : "Email fetch started. Check logs for results.";
-    } catch (e) {
-      pushoverResultEl.textContent = `Fetch failed: ${e.message}`;
-    }
+  function openParserWizard() {
+    window.location.href = "/email-parser-wizard";
   }
 
   document.getElementById("refreshBtn").addEventListener("click", refreshStatus);
@@ -985,14 +1184,13 @@
       addResultEl.textContent = "Edit cancelled.";
     });
   }
-  document.getElementById("completeBtn").addEventListener("click", markComplete);
+  const openParserWizardBtn = document.getElementById("openParserWizardBtn");
+  if (openParserWizardBtn) openParserWizardBtn.addEventListener("click", openParserWizard);
   document.getElementById("accounttype").addEventListener("change", updateAccountFieldHints);
   const savePushoverKeyBtn = document.getElementById("savePushoverKeyBtn");
   if (savePushoverKeyBtn) savePushoverKeyBtn.addEventListener("click", savePushoverUserKey);
   const sendPushoverTestBtn = document.getElementById("sendPushoverTestBtn");
   if (sendPushoverTestBtn) sendPushoverTestBtn.addEventListener("click", sendPushoverTest);
-  const fetchEmailsNowBtn = document.getElementById("fetchEmailsNowBtn");
-  if (fetchEmailsNowBtn) fetchEmailsNowBtn.addEventListener("click", fetchEmailsNow);
   bindCsvInlineImporter();
 
   resetAccountForm();

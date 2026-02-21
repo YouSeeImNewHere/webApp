@@ -463,7 +463,6 @@ function bindEmailParserBackfill() {
 function renderInitialSetupProgress(out) {
   const pct = Math.max(0, Math.min(100, Number(out?.percent || 0)));
   const counts = out?.counts || {};
-  const missing = out?.missing || {};
   const fillEl = document.getElementById("initialSetupProgressFill");
   const textEl = document.getElementById("initialSetupProgressText");
   const subEl = document.getElementById("initialSetupProgressSub");
@@ -474,14 +473,10 @@ function renderInitialSetupProgress(out) {
     textEl.textContent = `${pct}% complete (${Number(counts.requirements_done || 0)}/${Number(counts.requirements_total || 0)} setup checks)`;
   }
   if (!subEl) return;
-  const missingCsv = Array.isArray(missing.csv_mapping) ? missing.csv_mapping : [];
-  const missingParser = Array.isArray(missing.email_parser) ? missing.email_parser : [];
   const bits = [
     `CSV mapping: ${Number(counts.accounts_with_csv_mapping || 0)}/${Number(counts.accounts_total || 0)}`,
     `Email parser: ${Number(counts.accounts_with_parser || 0)}/${Number(counts.accounts_expect_email || 0)}`,
   ];
-  if (missingCsv.length) bits.push(`Missing CSV mapping: ${missingCsv.slice(0, 4).join(", ")}${missingCsv.length > 4 ? "..." : ""}`);
-  if (missingParser.length) bits.push(`Missing parser: ${missingParser.slice(0, 4).join(", ")}${missingParser.length > 4 ? "..." : ""}`);
   subEl.textContent = bits.join(" | ");
 }
 
@@ -490,14 +485,23 @@ async function loadInitialSetupProgress() {
   const subEl = document.getElementById("initialSetupProgressSub");
   if (textEl) textEl.textContent = "Loading setup progress...";
   if (subEl) subEl.textContent = "";
+  let timer = null;
   try {
-    const res = await fetch("/settings/initial-setup-status", { cache: "no-store" });
+    const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    timer = ctrl ? window.setTimeout(() => ctrl.abort(), 10000) : null;
+    const res = await fetch("/settings/initial-setup-status", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: ctrl ? ctrl.signal : undefined,
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const out = await res.json();
     renderInitialSetupProgress(out || {});
   } catch (_) {
     if (textEl) textEl.textContent = "Setup progress unavailable";
     if (subEl) subEl.textContent = "Could not load setup completion status.";
+  } finally {
+    if (timer) window.clearTimeout(timer);
   }
 }
 
@@ -529,9 +533,10 @@ function applyNotifPrefsToUi(prefs) {
   const creditUsageEl = document.getElementById("notifCreditUsageToggle");
   const creditUsageTotalEl = document.getElementById("notifCreditUsageTotalToggle");
   const budgetOverEl = document.getElementById("notifBudgetOverToggle");
-  if (creditUsageEl) creditUsageEl.checked = !!p.credit_usage;
-  if (creditUsageTotalEl) creditUsageTotalEl.checked = !!p.credit_usage_total;
-  if (budgetOverEl) budgetOverEl.checked = !!p.budget_over;
+  // Missing keys should default to enabled; only explicit false disables.
+  if (creditUsageEl) creditUsageEl.checked = p.credit_usage !== false;
+  if (creditUsageTotalEl) creditUsageTotalEl.checked = p.credit_usage_total !== false;
+  if (budgetOverEl) budgetOverEl.checked = p.budget_over !== false;
 }
 
 function applyPushoverKeyToUi(userKey) {
@@ -545,7 +550,7 @@ async function loadNotificationSettings() {
   setNotifStatus("Loading...");
   setNotifInputsDisabled(true);
   try {
-    const res = await fetch("/settings/notifications", { cache: "no-store" });
+    const res = await fetch("/settings/notifications", { cache: "no-store", credentials: "same-origin" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const out = await res.json();
     applyNotifPrefsToUi(out.prefs || {});
@@ -566,6 +571,7 @@ async function saveNotificationSettings() {
     const res = await fetch("/settings/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -581,11 +587,11 @@ async function saveNotificationSettings() {
 }
 
 function queueNotificationSettingsSave() {
-  if (_notifSaveTimer) window.clearTimeout(_notifSaveTimer);
-  _notifSaveTimer = window.setTimeout(() => {
+  if (_notifSaveTimer) {
+    window.clearTimeout(_notifSaveTimer);
     _notifSaveTimer = null;
-    saveNotificationSettings().catch(() => {});
-  }, 120);
+  }
+  saveNotificationSettings().catch(() => {});
 }
 
 function bindNotificationSettings() {

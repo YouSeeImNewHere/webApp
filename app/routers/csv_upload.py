@@ -991,7 +991,9 @@ def _analyze_mapped_rows(
     *,
     start_idx: int,
     purchase_col: int,
-    amount_col: int,
+    amount_col: int | None,
+    debit_col: int | None,
+    credit_col: int | None,
     merchant_col: int,
     posted_col: int | None,
     category_col: int | None,
@@ -1005,9 +1007,11 @@ def _analyze_mapped_rows(
     invalid_count = 0
 
     for row_no, row in enumerate(rows[start_idx:], start=start_idx + 1):
+        # Skip fully blank lines (common trailing CSV newline artifact).
+        if not any(str(c or "").strip() for c in (row or [])):
+            continue
         p_raw = _col_value(row, purchase_col)
         m_raw = _col_value(row, merchant_col)
-        a_raw = _col_value(row, amount_col)
 
         p_date = _parse_date(p_raw)
         if not p_date:
@@ -1019,17 +1023,56 @@ def _analyze_mapped_rows(
         posted_raw = _col_value(row, posted_col) if posted_col is not None else ""
         posted_date = _parse_date(posted_raw) or p_date
 
-        amount = _parse_amount(a_raw)
-        if amount is None:
-            invalid_count += 1
-            if len(sample_errors) < 25:
-                sample_errors.append({"row_number": row_no, "error": "invalid_amount", "raw": _mapped_row_preview(row)})
-            continue
+        use_pair_mode = (debit_col is not None) or (credit_col is not None)
+        amount: float | None = None
 
-        if indicator_col is not None:
-            ind = _col_value(row, indicator_col).lower()
-            if ind and ind == (credit_indicator_value or "").strip().lower():
-                amount = -amount
+        if use_pair_mode:
+            d_raw = _col_value(row, debit_col) if debit_col is not None else ""
+            c_raw = _col_value(row, credit_col) if credit_col is not None else ""
+
+            d_amt = _parse_amount(d_raw) if d_raw else None
+            c_amt = _parse_amount(c_raw) if c_raw else None
+
+            if d_raw and d_amt is None:
+                invalid_count += 1
+                if len(sample_errors) < 25:
+                    sample_errors.append({"row_number": row_no, "error": "invalid_debit_amount", "raw": _mapped_row_preview(row)})
+                continue
+            if c_raw and c_amt is None:
+                invalid_count += 1
+                if len(sample_errors) < 25:
+                    sample_errors.append({"row_number": row_no, "error": "invalid_credit_amount", "raw": _mapped_row_preview(row)})
+                continue
+
+            d_has = bool(d_amt is not None and abs(float(d_amt)) > 0)
+            c_has = bool(c_amt is not None and abs(float(c_amt)) > 0)
+            if d_has and c_has:
+                invalid_count += 1
+                if len(sample_errors) < 25:
+                    sample_errors.append({"row_number": row_no, "error": "both_debit_and_credit_present", "raw": _mapped_row_preview(row)})
+                continue
+            if d_has:
+                amount = abs(float(d_amt or 0))
+            elif c_has:
+                amount = -abs(float(c_amt or 0))
+            else:
+                invalid_count += 1
+                if len(sample_errors) < 25:
+                    sample_errors.append({"row_number": row_no, "error": "missing_debit_credit_amount", "raw": _mapped_row_preview(row)})
+                continue
+        else:
+            a_raw = _col_value(row, amount_col)
+            amount = _parse_amount(a_raw)
+            if amount is None:
+                invalid_count += 1
+                if len(sample_errors) < 25:
+                    sample_errors.append({"row_number": row_no, "error": "invalid_amount", "raw": _mapped_row_preview(row)})
+                continue
+
+            if indicator_col is not None:
+                ind = _col_value(row, indicator_col).lower()
+                if ind and ind == (credit_indicator_value or "").strip().lower():
+                    amount = -amount
         if invert_amount:
             amount = -amount
 
@@ -1196,7 +1239,9 @@ async def ingest_csv_mapped_dry_run(
     file: UploadFile = File(...),
     account_id: str | None = Form(None),
     purchase_col: int = Form(...),
-    amount_col: int = Form(...),
+    amount_col: str | None = Form(None),
+    debit_col: str | None = Form(None),
+    credit_col: str | None = Form(None),
     merchant_col: int = Form(...),
     posted_col: str | None = Form(None),
     category_col: str | None = Form(None),
@@ -1220,17 +1265,26 @@ async def ingest_csv_mapped_dry_run(
         start_idx = max(start_idx, header_idx + 1)
 
     try:
+        amount_idx = _parse_col_opt(amount_col)
+        debit_idx = _parse_col_opt(debit_col)
+        credit_idx = _parse_col_opt(credit_col)
         posted_idx = _parse_col_opt(posted_col)
         category_idx = _parse_col_opt(category_col)
         indicator_idx = _parse_col_opt(indicator_col)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid optional column mapping")
+    if amount_idx is None and (debit_idx is None or credit_idx is None):
+        raise HTTPException(status_code=400, detail="Map either Amount column or both Debit and Credit columns")
+    if amount_idx is not None and (debit_idx is not None or credit_idx is not None):
+        raise HTTPException(status_code=400, detail="Use either Amount column or Debit/Credit pair, not both")
 
     mapped = _analyze_mapped_rows(
         rows,
         start_idx=start_idx,
         purchase_col=int(purchase_col),
-        amount_col=int(amount_col),
+        amount_col=amount_idx,
+        debit_col=debit_idx,
+        credit_col=credit_idx,
         merchant_col=int(merchant_col),
         posted_col=posted_idx,
         category_col=category_idx,
@@ -1426,7 +1480,9 @@ async def ingest_csv_mapped(
     file: UploadFile = File(...),
     account_id: int = Form(...),
     purchase_col: int = Form(...),
-    amount_col: int = Form(...),
+    amount_col: str | None = Form(None),
+    debit_col: str | None = Form(None),
+    credit_col: str | None = Form(None),
     merchant_col: int = Form(...),
     posted_col: str | None = Form(None),
     category_col: str | None = Form(None),
@@ -1449,22 +1505,31 @@ async def ingest_csv_mapped(
     if has_header_b:
         start_idx = max(start_idx, header_idx + 1)
 
-    required_cols = [int(purchase_col), int(amount_col), int(merchant_col)]
+    required_cols = [int(purchase_col), int(merchant_col)]
     if min(required_cols) < 0:
         raise HTTPException(status_code=400, detail="Column indexes must be >= 0")
 
     try:
+        amount_idx = _parse_col_opt(amount_col)
+        debit_idx = _parse_col_opt(debit_col)
+        credit_idx = _parse_col_opt(credit_col)
         posted_idx = _parse_col_opt(posted_col)
         category_idx = _parse_col_opt(category_col)
         indicator_idx = _parse_col_opt(indicator_col)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid optional column mapping")
+    if amount_idx is None and (debit_idx is None or credit_idx is None):
+        raise HTTPException(status_code=400, detail="Map either Amount column or both Debit and Credit columns")
+    if amount_idx is not None and (debit_idx is not None or credit_idx is not None):
+        raise HTTPException(status_code=400, detail="Use either Amount column or Debit/Credit pair, not both")
 
     mapped = _analyze_mapped_rows(
         rows,
         start_idx=start_idx,
         purchase_col=int(purchase_col),
-        amount_col=int(amount_col),
+        amount_col=amount_idx,
+        debit_col=debit_idx,
+        credit_col=credit_idx,
         merchant_col=int(merchant_col),
         posted_col=posted_idx,
         category_col=category_idx,

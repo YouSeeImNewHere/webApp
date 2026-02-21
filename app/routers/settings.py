@@ -65,6 +65,14 @@ DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "budget_over": True,
 }
 
+
+def _session_email(request: Request) -> str:
+    for key in ("google_email", "email", "user_email"):
+        val = (request.session.get(key) or "").strip().lower()
+        if val:
+            return val
+    return ""
+
 # -----------------------------
 # Table ensure helpers (Postgres)
 # -----------------------------
@@ -333,7 +341,7 @@ def get_notification_settings(request: Request):
         except Exception:
             raw = {}
     prefs = _normalize_notification_prefs(raw)
-    session_email = (request.session.get("google_email") or "").strip().lower()
+    session_email = _session_email(request)
     user_key = get_user_pushover_key_by_email(session_email) if session_email else None
     return {
         "prefs": prefs,
@@ -524,7 +532,7 @@ def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
 
 @router.get("/settings/view-flags")
 def get_settings_view_flags(request: Request):
-    session_email = (request.session.get("google_email") or "").strip().lower()
+    session_email = _session_email(request)
     if not session_email:
         return {"ok": True, "is_owner": False}
     user = get_user_by_email(session_email) or {}

@@ -62,6 +62,53 @@ def _ensure_accounts_config_columns(cur) -> None:
     cur.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_paycheck_account BOOLEAN NOT NULL DEFAULT FALSE")
 
 
+def _ensure_csv_mapping_presets_table_pg() -> None:
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS csv_mapping_presets (
+              id BIGSERIAL PRIMARY KEY,
+              tenant_id BIGINT,
+              account_id BIGINT NOT NULL,
+              institution_key TEXT NOT NULL,
+              preset_json TEXT NOT NULL DEFAULT '{}',
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_csv_mapping_presets_scope
+            ON csv_mapping_presets (
+              COALESCE(tenant_id, 0),
+              account_id,
+              lower(institution_key)
+            )
+            """
+        )
+        conn.commit()
+
+
+def _ensure_email_parser_trial_drafts_table_pg() -> None:
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_parser_trial_drafts (
+                id BIGSERIAL PRIMARY KEY,
+                tenant_id BIGINT NOT NULL DEFAULT 0,
+                user_email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                account_id BIGINT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'trial_inactive',
+                draft_json TEXT NOT NULL DEFAULT '{}',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        conn.commit()
+
+
 @router.get("/setup")
 def setup_page():
     return FileResponse("static/pages/setup/setup.html")
@@ -70,6 +117,8 @@ def setup_page():
 @router.get("/onboarding/status")
 def onboarding_status(request: Request):
     tid = _require_tenant_id()
+    _ensure_csv_mapping_presets_table_pg()
+    _ensure_email_parser_trial_drafts_table_pg()
     with with_db_cursor() as (conn, cur):
         _ensure_accounts_config_columns(cur)
         conn.commit()
@@ -100,6 +149,56 @@ def onboarding_status(request: Request):
         """,
         (tid,),
     )
+    account_ids = [int((a or {}).get("id") or 0) for a in (accounts or []) if int((a or {}).get("id") or 0) > 0]
+
+    csv_ready_ids: set[int] = set()
+    parser_ready_ids: set[int] = set()
+    if account_ids:
+        rows_csv = query_db(
+            """
+            SELECT DISTINCT account_id
+            FROM csv_mapping_presets
+            WHERE COALESCE(tenant_id, 0) = %s
+              AND lower(institution_key) = lower(%s)
+              AND account_id = ANY(%s)
+            """,
+            (int(tid), "__account__", account_ids),
+        ) or []
+        csv_ready_ids = {int((r or {}).get("account_id") or 0) for r in rows_csv}
+
+        rows_parser = query_db(
+            """
+            SELECT DISTINCT account_id
+            FROM email_parser_trial_drafts
+            WHERE tenant_id = %s
+              AND account_id = ANY(%s)
+            """,
+            (int(tid), account_ids),
+        ) or []
+        parser_ready_ids = {int((r or {}).get("account_id") or 0) for r in rows_parser}
+
+    out_accounts = []
+    for row in (accounts or []):
+        a = dict(row)
+        aid = int(a.get("id") or 0)
+        receives_emails = bool(a.get("receives_emails", True))
+        csv_ready = bool(aid and aid in csv_ready_ids)
+        parser_ready = bool(aid and aid in parser_ready_ids)
+        parser_required = receives_emails
+        complete = bool(csv_ready and (parser_ready if parser_required else True))
+        missing = []
+        if not csv_ready:
+            missing.append("CSV importer")
+        if parser_required and not parser_ready:
+            missing.append("Email parser")
+        a["setup"] = {
+            "complete": complete,
+            "csv_mapping_ready": csv_ready,
+            "parser_required": parser_required,
+            "parser_ready": parser_ready,
+            "missing": missing,
+        }
+        out_accounts.append(a)
 
     return {
         "ok": True,
@@ -117,7 +216,7 @@ def onboarding_status(request: Request):
             "starting_balances": sb_count,
             "transactions": tx_count,
         },
-        "accounts": [dict(r) for r in accounts],
+        "accounts": out_accounts,
         "next_actions": [
             "Add at least one account",
             "Run CSV import from Settings",
