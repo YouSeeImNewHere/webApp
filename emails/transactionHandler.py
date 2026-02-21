@@ -212,6 +212,28 @@ def assign_category(cur, merchant: str) -> str:
     return ""
 
 
+def _normalize_purchase_date_mmddyy(value) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return datetime.now().strftime("%m/%d/%y")
+    for fmt in (
+        "%m/%d/%y",
+        "%m/%d/%Y",
+        "%m-%d-%y",
+        "%m-%d-%Y",
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%a, %b %d, %Y",
+        "%a %b %d, %Y",
+        "%Y-%m-%d",
+    ):
+        try:
+            return datetime.strptime(s, fmt).strftime("%m/%d/%y")
+        except Exception:
+            continue
+    return datetime.now().strftime("%m/%d/%y")
+
+
 def insert_transaction(
     key: str,
     bank: str,
@@ -227,6 +249,7 @@ def insert_transaction(
 ):
     # Normalize amount before DB insert (prevents "$3.00" issues)
     cost_str = str(cost).replace("$", "").replace(",", "").strip()
+    purchaseDate = _normalize_purchase_date_mmddyy(purchaseDate)
 
     pending = "Pending" if source == "email" else "Posted"
     table = "transactions_test" if use_test_table else "transactions"
@@ -237,7 +260,7 @@ def insert_transaction(
         cur.execute(
             f"""
             INSERT INTO {table} (
-              id, status, purchasedate, posteddate, amount, merchant, time, source, account_id, category
+              id, status, purchasedate, posteddate, amount, merchant, time, source, account_id, category, tenant_id
             )
             VALUES (
               %s, %s, %s, %s, %s, %s, %s, %s,
@@ -250,7 +273,16 @@ def insert_transaction(
                 ),
                 0
               ),
-              %s
+              %s,
+              COALESCE(
+                (
+                  SELECT tenant_id
+                  FROM accounts
+                  WHERE institution = %s AND name = %s AND LOWER(accounttype) = LOWER(%s)
+                  LIMIT 1
+                ),
+                0
+              )
             )
             ON CONFLICT (id) DO UPDATE SET
               status       = EXCLUDED.status,
@@ -265,6 +297,7 @@ def insert_transaction(
                              END,
               source       = EXCLUDED.source,
               account_id   = EXCLUDED.account_id,
+              tenant_id    = COALESCE({table}.tenant_id, EXCLUDED.tenant_id),
               category     = CASE
                                WHEN {table}.category IS NULL OR btrim({table}.category) = ''
                                THEN EXCLUDED.category
@@ -288,6 +321,9 @@ def insert_transaction(
                 card,
                 accountType,
                 auto_cat,
+                bank,
+                card,
+                accountType,
             ),
         )
 
