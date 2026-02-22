@@ -15,7 +15,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.core.auth import _refresh_google_access_token_if_needed
+from app.core.auth import _refresh_google_access_token_if_needed, get_connected_google_email
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
 from db import with_db_cursor
@@ -862,6 +862,12 @@ def trial_accounts(request: Request):
 def trial_samples(body: TrialSamplesBody, request: Request):
     tid = _require_tenant_id()
     session_email = _require_session_email(request)
+    oauth_email = get_connected_google_email()
+    if oauth_email and oauth_email != session_email:
+        raise HTTPException(
+            status_code=409,
+            detail=f"gmail_oauth_account_mismatch:connected={oauth_email}:session={session_email}",
+        )
 
     sender_query = (body.sender_query or "").strip()
     subject_query = (body.subject_query or "").strip()

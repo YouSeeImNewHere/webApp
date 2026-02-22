@@ -13,6 +13,7 @@ from app.core.roundups import get_roundup_settings, set_roundup_settings
 from app.core.home_snapshot_cache import bump_home_snapshot_version
 from app.core.tenancy import current_tenant_id, get_user_by_email, get_user_pushover_key_by_email
 from app.core.widget_tokens import issue_widget_token
+from app.core.auth import get_connected_google_email
 
 router = APIRouter()
 
@@ -549,6 +550,12 @@ def force_widget_refresh(request: Request):
 @router.post("/settings/email-parser/run")
 def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
     _, session_email = _require_approved_session_user(request)
+    oauth_email = get_connected_google_email()
+    if oauth_email and oauth_email != session_email:
+        raise HTTPException(
+            status_code=409,
+            detail=f"gmail_oauth_account_mismatch:connected={oauth_email}:session={session_email}",
+        )
     days = max(1, min(int(body.days or 1), 60))
     include_processed = bool(body.include_processed)
     max_emails = max(1, min(int(body.max_emails or 2000), 10000))

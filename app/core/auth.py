@@ -191,6 +191,11 @@ def _get_google_tokens():
     return _run_db_with_retry(_query)
 
 
+def get_connected_google_email() -> str:
+    row = _get_google_tokens() or {}
+    return str(row.get("google_email") or "").strip().lower()
+
+
 def _save_google_tokens(
     *,
     access_token: str,

@@ -603,6 +603,40 @@ function bindNotificationSettings() {
   }
 }
 
+async function loadGoogleOAuthStatus() {
+  const txt = document.getElementById("googleOauthStatusText");
+  const btn = document.getElementById("connectGoogleBtn");
+  if (!txt || !btn) return;
+  txt.textContent = "Checking connection...";
+  btn.disabled = true;
+  try {
+    const res = await fetch("/gmail/oauth/status", { cache: "no-store", credentials: "same-origin" });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (out?.connected) {
+      const email = String(out?.email || "").trim();
+      txt.textContent = email ? `Connected as ${email}` : "Connected";
+      btn.textContent = "Reconnect Google";
+    } else {
+      txt.textContent = "Not connected";
+      btn.textContent = "Connect Google";
+    }
+  } catch (_) {
+    txt.textContent = "Connection status unavailable";
+    btn.textContent = "Connect Google";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function bindGoogleOAuthActions() {
+  const btn = document.getElementById("connectGoogleBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    window.location.href = "/gmail/oauth/start?next=/settings";
+  });
+}
+
 async function loadAdminVisibility() {
   const adminSection = document.getElementById("settingsAdminSection");
   if (!adminSection) return;
@@ -646,9 +680,11 @@ document.addEventListener("DOMContentLoaded", () => {
   loadDailyWeightsSettings().catch((err) => console.error(err));
   loadInitialSetupProgress().catch((err) => console.error(err));
   loadNotificationSettings().catch((err) => console.error(err));
+  loadGoogleOAuthStatus().catch((err) => console.error(err));
   loadAdminVisibility().catch((err) => console.error(err));
   loadWidgetPreview().catch((err) => console.error(err));
   bindWidgetActions();
   bindEmailParserBackfill();
   bindNotificationSettings();
+  bindGoogleOAuthActions();
 });

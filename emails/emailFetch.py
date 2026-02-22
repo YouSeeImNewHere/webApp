@@ -1,4 +1,4 @@
-import email
+﻿import email
 import base64
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
@@ -169,16 +169,21 @@ class Timer:
 def pushover_enabled() -> bool:
     return bool(PUSHOVER_USER.strip()) and bool(PUSHOVER_TOKEN.strip())
 
-def send_pushover(title: str, message: str):
+def send_pushover(title: str, message: str, *, user_key: str | None = None):
     """
     Sends a Pushover notification. Never raises (logs failures instead).
     """
     global PUSHOVER_USER
-    if not PUSHOVER_USER:
-        PUSHOVER_USER = _lookup_pushover_user_key_from_db(os.getenv("GMAIL_ADDRESS") or "")
+    target_user = (user_key or '').strip()
+    if not target_user and PUSHOVER_USER:
+        target_user = PUSHOVER_USER.strip()
+    if not target_user:
+        target_user = _lookup_pushover_user_key_from_db(os.getenv('GMAIL_ADDRESS') or '')
+        if target_user:
+            PUSHOVER_USER = target_user
 
-    if not pushover_enabled():
-        log("⚠️ Pushover not configured (missing users.pushover_user_key or PUSHOVER_API_TOKEN)")
+    if not (bool(target_user) and bool(PUSHOVER_TOKEN.strip())):
+        log('Pushover not configured (missing users.pushover_user_key or PUSHOVER_API_TOKEN)')
         return
 
     try:
@@ -186,7 +191,7 @@ def send_pushover(title: str, message: str):
             "https://api.pushover.net/1/messages.json",
             data={
                 "token": PUSHOVER_TOKEN,
-                "user": PUSHOVER_USER,
+                "user": target_user,
                 "title": title[:250],
                 "message": message[:1024],
             },
@@ -684,7 +689,12 @@ def mark_notified(k: str):
         )
         conn.commit()
 
-def flush_pending_notifications(pending_table: str, ttl_minutes: int = 30):
+def flush_pending_notifications(
+    pending_table: str,
+    ttl_minutes: int = 30,
+    *,
+    pushover_user_key: str | None = None,
+):
     """
     Resolve any pending "unknown merchant" withdrawals.
     - If a real merchant transaction exists now: notify once and mark_notified
@@ -750,7 +760,7 @@ def flush_pending_notifications(pending_table: str, ttl_minutes: int = 30):
                 title = "Transaction alert"
                 message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
 
-                send_pushover(title, message)
+                send_pushover(title, message, user_key=pushover_user_key)
                 mark_notified(k)
 
                 cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
@@ -775,7 +785,7 @@ def flush_pending_notifications(pending_table: str, ttl_minutes: int = 30):
                 title = "Transaction alert"
                 message = f"{bank} {card} was used at Unknown merchant for {amt_str} on {date_str} at {time_str}"
 
-                send_pushover(title, message)
+                send_pushover(title, message, user_key=pushover_user_key)
                 mark_notified(k)
 
                 cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
@@ -1471,6 +1481,7 @@ def process_wizard_email(
     return_detail: bool = False,
     access_token: str | None = None,
     processed_label_id: str | None = None,
+    pushover_user_key: str | None = None,
 ):
     """
     Returns True if any wizard rule matched and was processed.
@@ -1605,7 +1616,7 @@ def process_wizard_email(
                 amt_str = f"${float(amount_val):.2f}"
                 title = "Transaction alert"
                 message = f"{meta['bank']} {meta['card']} was used at {merchant} for {amt_str} on {date_mmddyy} at {time_local}"
-                send_pushover(title, message)
+                send_pushover(title, message, user_key=pushover_user_key)
                 mark_notified(notified_key)
                 did_notify = True
                 notify_reason = reason or "notify now"
@@ -1675,8 +1686,7 @@ def run_manual_wizard_parse(
     load_dotenv(dotenv_path=env_path, override=False)
     init_account_ids()
 
-    global PUSHOVER_USER, PUSHOVER_TOKEN
-    PUSHOVER_USER = _lookup_pushover_user_key_from_db(os.getenv("GMAIL_ADDRESS") or "")
+    global PUSHOVER_TOKEN
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
     EMAIL = os.getenv("GMAIL_ADDRESS")
@@ -1684,6 +1694,7 @@ def run_manual_wizard_parse(
         raise RuntimeError("Missing Gmail address")
 
     rules_owner = str(rules_user_email or EMAIL or "").strip().lower()
+    pushover_user_key = _lookup_pushover_user_key_from_db(rules_owner)
     wizard_rules = load_wizard_rules(rules_owner)
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
@@ -1739,6 +1750,7 @@ def run_manual_wizard_parse(
             return_detail=True,
             access_token=access_token,
             processed_label_id=processed_label_id,
+            pushover_user_key=pushover_user_key,
         ) or {}
         row = {
             "imap_id": str(mid),
@@ -1780,13 +1792,13 @@ def run(include_processed: bool = False):
     init_account_ids()
 
     # Refresh pushover creds after dotenv load
-    global PUSHOVER_USER, PUSHOVER_TOKEN
-    PUSHOVER_USER = _lookup_pushover_user_key_from_db(os.getenv("GMAIL_ADDRESS") or "")
+    global PUSHOVER_TOKEN
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
     EMAIL = os.getenv("GMAIL_ADDRESS")
     if not EMAIL:
         raise RuntimeError("Missing Gmail address")
+    pushover_user_key = _lookup_pushover_user_key_from_db(EMAIL)
 
     wizard_rules = load_wizard_rules(EMAIL)
     log(f"Wizard pipeline enabled; loaded {len(wizard_rules)} parser rule(s)")
@@ -1851,6 +1863,7 @@ def run(include_processed: bool = False):
                 pending_table=pending_table,
                 access_token=access_token,
                 processed_label_id=processed_label_id,
+                pushover_user_key=pushover_user_key,
             )
             if matched:
                 did_work = True
@@ -1860,7 +1873,11 @@ def run(include_processed: bool = False):
     if did_work:
         dbg("Flushing pending notifications…")
         try:
-            flush_pending_notifications(pending_table, ttl_minutes=PENDING_TTL_MINUTES)
+            flush_pending_notifications(
+                pending_table,
+                ttl_minutes=PENDING_TTL_MINUTES,
+                pushover_user_key=pushover_user_key,
+            )
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
             log(f"⚠️ flush_pending_notifications failed: {msg}")
