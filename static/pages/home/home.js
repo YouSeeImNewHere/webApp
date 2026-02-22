@@ -1,4 +1,4 @@
-import { apiFetch, apiGetJson, apiPostJson, apiPostForm } from "/static/shared/api.module.js";
+﻿import { apiFetch, apiGetJson, apiPostJson, apiPostForm } from "/static/shared/api.module.js";
 import { escapeHtml, escapeHtmlAttr, cssEscapeAttr } from "/static/shared/dom.module.js";
 import { isoLocal, isoLocalDate, parseISODateLocal, formatMMMdd, formatMonthYearLong, shortDate, fmtISOToShort } from "/static/shared/dates.module.js";
 import { money } from "/static/shared/format.module.js";
@@ -996,7 +996,7 @@ function setChartHeaderUI() {
   const next = CHARTS[(chartIndex + 1) % CHARTS.length];
 
   if (t) t.textContent = current.title;
-  if (btn) btn.textContent = `Next: ${next.title} ▾`;
+  if (btn) btn.textContent = `Next: ${next.title} â–¾`;
 
     renderChartDots();
     updatePotentialToggleVisibility();
@@ -1796,7 +1796,7 @@ const btn = document.getElementById("goBudgetBtn");
 mountChartCard("#homeChartMount", {
   ids: HOME_IDS,
   title: "Net Worth",
-  toggleText: "Next: Savings ▾",
+  toggleText: "Next: Savings â–¾",
   breakdownLabel: "Net",
   breakdownValue: "$0",
 
@@ -1838,7 +1838,7 @@ const closeBtn = document.getElementById("ruleModalClose");
             document.getElementById("ruleTxAmount").textContent = "";
             document.getElementById("ruleTxDate").textContent = "";
             const m = document.getElementById("ruleTxMatches");
-            if (m) m.textContent = "—";
+            if (m) m.textContent = "â€”";
             document.getElementById("ruleCounter").textContent = "0 / 0";
             return;
           }
@@ -2025,10 +2025,16 @@ function renderTxList(data){
     const sub = `${row.bank || ""}${row.card ? "  " + row.card : ""}`;
     const amtNum = Number(row.amount || 0);
     const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
+    const categoryText = (row.category || "").trim();
+    const subLines = [sub + (transferText ? "  " + transferText : ""), categoryText]
+      .map((s) => String(s || "").trim())
+      .filter(Boolean);
+    const subHtml = subLines.map((line) => `<div class="tx-sub">${line}</div>`).join("");
     const roundupCents = Number(row.roundup_cents || 0);
     const roundupBadge = roundupCents > 0
-      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">&cent; ${roundupCents}</div>`
       : "";
+    if (roundupCents > 0) wrap.classList.add("has-roundup");
 
     const effectiveDate =
       (row.postedDate && row.postedDate !== "unknown") ? row.postedDate :
@@ -2042,8 +2048,7 @@ function renderTxList(data){
       <div class="tx-date">${shortDate(effectiveDate)}</div>
       <div class="tx-main">
         <div class="tx-merchant">${merchant}</div>
-        <div class="tx-sub">${sub}${transferText ? "  " + transferText : ""}</div>
-        <div class="tx-sub">${(row.category || "").trim()}</div>
+        ${subHtml}
       </div>
       <div class="tx-amt">${money(row.amount)}</div>
       ${roundupBadge}
@@ -2508,7 +2513,7 @@ function ensureIncomeInspectModal() {
           <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
           <div id="incomeInspectSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">✕</button>
+        <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">âœ•</button>
       </div>
 
       <div id="incomeInspectBody" class="tx-inspect__body"></div>
@@ -2729,7 +2734,7 @@ function ensureExtraSavedModal() {
           <div id="extraSavedTitle" class="tx-inspect__title">Extra saved</div>
           <div id="extraSavedSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-extra-close aria-label="Close">✕</button>
+        <button class="tx-inspect__close" type="button" data-extra-close aria-label="Close">âœ•</button>
       </div>
 
       <div id="extraSavedBody" class="tx-inspect__body"></div>
@@ -2768,6 +2773,8 @@ const CSV_MAPPING_FIELD_LABELS = {
   csvMapPurchase: "Transaction date",
   csvMapPosted: "Posted date",
   csvMapAmount: "Amount",
+  csvMapDebit: "Debit amount",
+  csvMapCredit: "Credit amount",
   csvMapMerchant: "Merchant",
   csvMapIndicator: "Credit/Debit indicator",
 };
@@ -2807,7 +2814,7 @@ function ensureCsvUploadModal() {
           <div class="tx-inspect__title">Import CSV/Excel</div>
           <div id="csvUploadSub" class="tx-inspect__sub">Drop a CSV or Excel file, preview it, map columns, then import.</div>
         </div>
-        <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">✕</button>
+        <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">âœ•</button>
       </div>
       <div class="tx-inspect__body">
         <div id="csvDropZone" style="border:1px dashed rgba(0,0,0,.25); border-radius:12px; padding:12px; margin-bottom:10px;">
@@ -2820,59 +2827,72 @@ function ensureCsvUploadModal() {
           <input id="csvFileInput" type="file" accept=".csv,text/csv,.xlsx,.xls,.xlsm,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" style="display:none;" />
         </div>
 
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-          <label style="font-size:12px; font-weight:700;">Account
-            <select id="csvAccountId" style="width:100%; margin-top:4px;"></select>
-          </label>
-          <label style="font-size:12px; font-weight:700;">Delimiter
-            <select id="csvDelimiter" style="width:100%; margin-top:4px;">
-              <option value="auto">Auto-detect</option>
-              <option value=",">Comma</option>
-              <option value=";">Semicolon</option>
-              <option value="	">Tab</option>
-              <option value="|">Pipe</option>
-            </select>
-          </label>
-          <label style="font-size:12px; font-weight:700;">Header row
-            <input id="csvHeaderRow" type="number" min="1" value="1" style="width:100%; margin-top:4px;" />
-          </label>
-          <label style="font-size:12px; font-weight:700;">First data row
-            <input id="csvDataStartRow" type="number" min="1" value="2" style="width:100%; margin-top:4px;" />
-          </label>
-        </div>
-
-        <div style="display:flex; gap:10px; margin-top:12px; justify-content:flex-end;">
-          <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
-          <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
-          <button id="csvSavePresetBtn" class="settings-btn" type="button">Save mapping</button>
-          <button id="csvUploadCancel" class="settings-btn" type="button">Cancel</button>
-          <button id="csvUploadDone" class="settings-btn" type="button">Done</button>
-          <button id="csvUploadRun" class="settings-btn primary" type="button">Import</button>
-        </div>
-
-        <div style="margin-top:12px;">
-          <div style="font-weight:800; margin-bottom:6px;">Map columns</div>
+        <div id="csvConfigArea" style="display:none;">
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-            <label style="font-size:12px;">Transaction date*<select id="csvMapPurchase" style="width:100%; margin-top:4px;"></select></label>
-            <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
-            <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
-            <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
-            <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
-            <label style="font-size:12px;">Indicator value treated as credit
-              <input id="csvCreditIndicatorValue" type="text" value="credit" style="width:100%; margin-top:4px;" />
+            <label style="font-size:12px; font-weight:700;">Account
+              <select id="csvAccountId" style="width:100%; margin-top:4px;"></select>
             </label>
-            <label style="font-size:12px; display:flex; align-items:center; gap:8px; margin-top:18px;">
-              <input id="csvInvertAmount" type="checkbox" />
-              Invert all amounts
+            <label style="font-size:12px; font-weight:700;">Delimiter
+              <select id="csvDelimiter" style="width:100%; margin-top:4px;">
+                <option value="auto">Auto-detect</option>
+                <option value=",">Comma</option>
+                <option value=";">Semicolon</option>
+                <option value="	">Tab</option>
+                <option value="|">Pipe</option>
+              </select>
             </label>
           </div>
-        </div>
+          <label style="font-size:12px; display:inline-flex; align-items:center; gap:8px; margin-top:8px;">
+            <input id="csvHasHeader" type="checkbox" checked />
+            File has header row
+          </label>
 
-        <div style="margin-top:12px;">
-          <div style="font-weight:800; margin-bottom:6px;">Preview</div>
-          <div id="csvPreviewWrap" style="max-height:220px; overflow:auto; border:1px solid rgba(0,0,0,.12); border-radius:10px; padding:6px;"></div>
+          <div style="display:flex; gap:10px; margin-top:12px; justify-content:flex-end;">
+            <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
+            <button id="csvUploadCancel" class="settings-btn" type="button">Cancel</button>
+          </div>
+
+          <div id="csvMapArea" style="margin-top:12px; display:none;">
+            <div style="font-weight:800; margin-bottom:6px;">Map columns</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <label style="font-size:12px;">Transaction date*<select id="csvMapPurchase" style="width:100%; margin-top:4px;"></select></label>
+              <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
+              <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
+              <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
+              <label style="font-size:12px;">Debit amount<select id="csvMapDebit" style="width:100%; margin-top:4px;"></select></label>
+              <label style="font-size:12px;">Credit amount<select id="csvMapCredit" style="width:100%; margin-top:4px;"></select></label>
+              <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
+              <label style="font-size:12px;">Header row
+                <input id="csvHeaderRow" type="number" min="1" value="1" style="width:100%; margin-top:4px;" />
+              </label>
+              <label style="font-size:12px;">First data row
+                <input id="csvDataStartRow" type="number" min="1" value="2" style="width:100%; margin-top:4px;" />
+              </label>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
+              <label style="font-size:12px;">Indicator value treated as credit
+                <input id="csvCreditIndicatorValue" type="text" value="credit" style="width:100%; margin-top:4px;" />
+              </label>
+              <label style="font-size:12px; display:flex; align-items:center; gap:8px; margin-top:18px;">
+                <input id="csvInvertAmount" type="checkbox" />
+                Invert all amounts
+              </label>
+            </div>
+          </div>
+
+          <div id="csvFinalizeActions" style="display:none; gap:10px; margin-top:12px; justify-content:flex-end; flex-wrap:wrap;">
+            <button id="csvDryRunBtn" class="settings-btn" type="button">Dry run</button>
+            <button id="csvSavePresetBtn" class="settings-btn" type="button">Save mapping</button>
+            <button id="csvUploadDone" class="settings-btn" type="button">Done</button>
+            <button id="csvUploadRun" class="settings-btn primary" type="button">Import</button>
+          </div>
+
+          <div style="margin-top:12px;">
+            <div style="font-weight:800; margin-bottom:6px;">Preview</div>
+            <div id="csvPreviewWrap" style="max-height:220px; overflow:auto; border:1px solid rgba(0,0,0,.12); border-radius:10px; padding:6px;"></div>
+          </div>
         </div>
 
         <div id="csvUploadMsg" style="margin-top:12px; font-size:12px; white-space:pre-wrap; opacity:.85;"></div>
@@ -2950,12 +2970,23 @@ function openCsvUploadModal() {
   const msg = document.getElementById("csvUploadMsg");
   const sub = document.getElementById("csvUploadSub");
   const preview = document.getElementById("csvPreviewWrap");
+  const configArea = document.getElementById("csvConfigArea");
+  const mapArea = document.getElementById("csvMapArea");
+  const finalizeActions = document.getElementById("csvFinalizeActions");
+  const input = document.getElementById("csvFileInput");
+  const hasHeaderEl = document.getElementById("csvHasHeader");
+  CSV_MODAL_STATE.file = null;
   CSV_MODAL_STATE.columns = [];
   CSV_MODAL_STATE.activePreset = null;
   CSV_MODAL_STATE.activePresetAccountId = 0;
+  if (input) input.value = "";
+  if (hasHeaderEl) hasHeaderEl.checked = true;
   if (msg) msg.textContent = "";
   if (sub) sub.textContent = "Drop a CSV or Excel file, preview it, map columns, then import.";
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
+  if (configArea) configArea.style.display = "none";
+  if (mapArea) mapArea.style.display = "none";
+  if (finalizeActions) finalizeActions.style.display = "none";
   populateCsvMappingSelects([]);
   loadCsvAccounts().catch(console.error);
   updateCsvPickedName();
@@ -2965,11 +2996,14 @@ function openCsvUploadModal() {
 function buildCsvPresetPayload() {
   return {
     delimiter: document.getElementById("csvDelimiter")?.value || "auto",
+    has_header: !!document.getElementById("csvHasHeader")?.checked,
     header_row: Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1)),
     data_start_row: Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2)),
     purchase_col: csvGetSelectInt("csvMapPurchase"),
     posted_col: csvGetSelectInt("csvMapPosted"),
     amount_col: csvGetSelectInt("csvMapAmount"),
+    debit_col: csvGetSelectInt("csvMapDebit"),
+    credit_col: csvGetSelectInt("csvMapCredit"),
     merchant_col: csvGetSelectInt("csvMapMerchant"),
     indicator_col: csvGetSelectInt("csvMapIndicator"),
     credit_indicator_value: String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"),
@@ -2987,11 +3021,15 @@ function applyCsvPreset(preset) {
     el.value = String(val);
   };
   setIf("csvDelimiter", preset.delimiter);
+  const hasHeader = document.getElementById("csvHasHeader");
+  if (hasHeader && typeof preset.has_header === "boolean") hasHeader.checked = preset.has_header;
   setIf("csvHeaderRow", preset.header_row);
   setIf("csvDataStartRow", preset.data_start_row);
   setIf("csvMapPurchase", preset.purchase_col);
   setIf("csvMapPosted", preset.posted_col);
   setIf("csvMapAmount", preset.amount_col);
+  setIf("csvMapDebit", preset.debit_col);
+  setIf("csvMapCredit", preset.credit_col);
   setIf("csvMapMerchant", preset.merchant_col);
   setIf("csvMapIndicator", preset.indicator_col);
   setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
@@ -3066,8 +3104,14 @@ function setCsvFileForModal(f) {
   const preview = document.getElementById("csvPreviewWrap");
   const sub = document.getElementById("csvUploadSub");
   const msg = document.getElementById("csvUploadMsg");
+  const configArea = document.getElementById("csvConfigArea");
+  const mapArea = document.getElementById("csvMapArea");
+  const finalizeActions = document.getElementById("csvFinalizeActions");
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
   if (msg) msg.textContent = "";
+  if (configArea) configArea.style.display = "";
+  if (mapArea) mapArea.style.display = "none";
+  if (finalizeActions) finalizeActions.style.display = "none";
   if (sub) sub.textContent = "File selected. Click Preview File when ready.";
 }
 
@@ -3087,6 +3131,10 @@ function csvGetSelectInt(id) {
   return Number.isInteger(n) ? n : null;
 }
 
+function csvHasHeaderEnabled() {
+  return !!document.getElementById("csvHasHeader")?.checked;
+}
+
 function guessCsvColumn(columns, candidates) {
   const terms = candidates.map(s => s.toLowerCase());
   for (const c of columns) {
@@ -3097,7 +3145,7 @@ function guessCsvColumn(columns, candidates) {
 }
 
 function populateCsvMappingSelects(columns) {
-  const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapMerchant", "csvMapIndicator"];
+  const ids = ["csvMapPurchase", "csvMapPosted", "csvMapAmount", "csvMapDebit", "csvMapCredit", "csvMapMerchant", "csvMapIndicator"];
   const opts = ['<option value="-1">Not mapped</option>']
     .concat((columns || []).map(c => `<option value="${c.index}">${escapeHtml(c.label)} (col ${c.index + 1})</option>`))
     .join("");
@@ -3109,6 +3157,8 @@ function populateCsvMappingSelects(columns) {
     csvMapPurchase: ["transaction date", "trans date", "date"],
     csvMapPosted: ["posted date", "post date", "posting date"],
     csvMapAmount: ["amount", "transaction amount"],
+    csvMapDebit: ["debit amount", "withdrawal", "debit", "outflow"],
+    csvMapCredit: ["credit amount", "deposit", "credit", "inflow"],
     csvMapMerchant: ["description", "merchant", "payee", "transaction description"],
     csvMapIndicator: ["credit/debit", "credit debit", "indicator", "type"],
   };
@@ -3155,11 +3205,15 @@ async function refreshCsvPreview() {
   const msg = document.getElementById("csvUploadMsg");
   const sub = document.getElementById("csvUploadSub");
   const btn = document.getElementById("csvPreviewBtn");
+  const mapArea = document.getElementById("csvMapArea");
+  const finalizeActions = document.getElementById("csvFinalizeActions");
   if (msg) msg.textContent = "";
   if (!CSV_MODAL_STATE.file) {
     if (sub) sub.textContent = "Pick a file first.";
     return;
   }
+  if (mapArea) mapArea.style.display = "";
+  if (finalizeActions) finalizeActions.style.display = "flex";
   if (sub) sub.textContent = "Building preview...";
   if (btn) btn.disabled = true;
 
@@ -3167,7 +3221,7 @@ async function refreshCsvPreview() {
     const fd = new FormData();
     fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
     fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
-    fd.append("has_header", "true");
+    fd.append("has_header", csvHasHeaderEnabled() ? "true" : "false");
     fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
     fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
     fd.append("max_rows", "12");
@@ -3190,19 +3244,36 @@ async function refreshCsvPreview() {
 
 function appendCsvMappingFields(fd, accountId, requireAccount = true) {
   const purchaseCol = csvGetSelectInt("csvMapPurchase");
-  const amountCol = csvGetSelectInt("csvMapAmount");
   const merchantCol = csvGetSelectInt("csvMapMerchant");
-  if ((requireAccount && !accountId) || purchaseCol === null || amountCol === null || merchantCol === null) {
+  const amountCol = csvGetSelectInt("csvMapAmount");
+  const debitCol = csvGetSelectInt("csvMapDebit");
+  const creditCol = csvGetSelectInt("csvMapCredit");
+  const hasSplit = (debitCol !== null || creditCol !== null);
+  if (hasSplit && (debitCol === null || creditCol === null)) {
+    throw new Error("Map both Debit amount and Credit amount when using split amounts.");
+  }
+  if (hasSplit && amountCol !== null) {
+    throw new Error("Use either Amount, or Debit/Credit pair. Not both.");
+  }
+  if (!hasSplit && amountCol === null) {
+    throw new Error("Map Amount, or map both Debit amount and Credit amount.");
+  }
+  if ((requireAccount && !accountId) || purchaseCol === null || merchantCol === null) {
     throw new Error(requireAccount
-      ? "Map required fields: transaction date, amount, merchant, and account."
-      : "Map required fields: transaction date, amount, and merchant.");
+      ? "Map required fields: transaction date, merchant, and account."
+      : "Map required fields: transaction date and merchant.");
   }
   if (requireAccount) fd.append("account_id", String(accountId));
   fd.append("purchase_col", String(purchaseCol));
-  fd.append("amount_col", String(amountCol));
+  if (hasSplit) {
+    fd.append("debit_col", String(debitCol));
+    fd.append("credit_col", String(creditCol));
+  } else {
+    fd.append("amount_col", String(amountCol));
+  }
   fd.append("merchant_col", String(merchantCol));
   fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
-  fd.append("has_header", "true");
+  fd.append("has_header", csvHasHeaderEnabled() ? "true" : "false");
   fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
   fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
   fd.append("credit_indicator_value", String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"));
@@ -3210,7 +3281,7 @@ function appendCsvMappingFields(fd, accountId, requireAccount = true) {
   const posted = csvGetSelectInt("csvMapPosted");
   const indicator = csvGetSelectInt("csvMapIndicator");
   if (posted !== null) fd.append("posted_col", String(posted));
-  if (indicator !== null) fd.append("indicator_col", String(indicator));
+  if (!hasSplit && indicator !== null) fd.append("indicator_col", String(indicator));
 }
 
 async function runCsvDryRun(fromPreview = false) {
@@ -3359,7 +3430,7 @@ function ensureCsvDryRunCompareModal() {
           <div class="tx-inspect__title">CSV Dry Run Comparison</div>
           <div id="csvDryRunCompareSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">✕</button>
+        <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">âœ•</button>
       </div>
       <div id="csvDryRunCompareBody" class="tx-inspect__body csv-dryrun__body"></div>
     </div>
@@ -3542,7 +3613,7 @@ function ensureSpentInspectModal() {
           <div id="spentInspectTitle" class="tx-inspect__title">Spent so far</div>
           <div id="spentInspectSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-spent-close aria-label="Close">✕</button>
+        <button class="tx-inspect__close" type="button" data-spent-close aria-label="Close">âœ•</button>
       </div>
 
       <div id="spentInspectBody" class="tx-inspect__body"></div>
@@ -3783,7 +3854,7 @@ function ensureTxInspectModal() {
           <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
           <div id="txInspectSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">✕</button>
+        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">âœ•</button>
       </div>
 
       <div id="txInspectBody" class="tx-inspect__body"></div>
@@ -3867,6 +3938,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.attachTxInspect) window.attachTxInspect(txList);
 });
+
 
 
 

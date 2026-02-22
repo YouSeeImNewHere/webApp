@@ -550,7 +550,7 @@ def force_widget_refresh(request: Request):
 @router.post("/settings/email-parser/run")
 def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
     _, session_email = _require_approved_session_user(request)
-    oauth_email = get_connected_google_email()
+    oauth_email = get_connected_google_email(session_email)
     if oauth_email and oauth_email != session_email:
         raise HTTPException(
             status_code=409,

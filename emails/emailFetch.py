@@ -22,7 +22,6 @@ WEBAPP_URL = os.getenv("WEBAPP_URL") or ""
 NOTIF_SECRET = os.getenv("NOTIF_SECRET") or ""
 DEBUG = (os.getenv("EMAILFETCH_DEBUG") or "").lower() in ("1", "true", "yes")
 BATCH_SIZE = 200
-PUSHOVER_USER = ""
 PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 MAILBOXES = ["INBOX"]
 # Wizard pipeline is now the only supported email parser pipeline.
@@ -166,21 +165,23 @@ class Timer:
 # Triggers only when a NEW email matches a rule AND handler succeeds.
 # ============================================================
 
-def pushover_enabled() -> bool:
-    return bool(PUSHOVER_USER.strip()) and bool(PUSHOVER_TOKEN.strip())
+def _resolve_pushover_db_key(recipient_email: str | None = None) -> str:
+    target_email = str(recipient_email or "").strip().lower()
+    if not target_email:
+        target_email = str(os.getenv("GMAIL_ADDRESS") or "").strip().lower()
+    if not target_email:
+        return ""
+    return _lookup_pushover_user_key_from_db(target_email)
 
-def send_pushover(title: str, message: str, *, user_key: str | None = None):
+
+def pushover_enabled(*, recipient_email: str | None = None) -> bool:
+    return bool(_resolve_pushover_db_key(recipient_email)) and bool(PUSHOVER_TOKEN.strip())
+
+def send_pushover(title: str, message: str, *, recipient_email: str | None = None):
     """
     Sends a Pushover notification. Never raises (logs failures instead).
     """
-    global PUSHOVER_USER
-    target_user = (user_key or '').strip()
-    if not target_user and PUSHOVER_USER:
-        target_user = PUSHOVER_USER.strip()
-    if not target_user:
-        target_user = _lookup_pushover_user_key_from_db(os.getenv('GMAIL_ADDRESS') or '')
-        if target_user:
-            PUSHOVER_USER = target_user
+    target_user = _resolve_pushover_db_key(recipient_email)
 
     if not (bool(target_user) and bool(PUSHOVER_TOKEN.strip())):
         log('Pushover not configured (missing users.pushover_user_key or PUSHOVER_API_TOKEN)')
@@ -411,14 +412,24 @@ def pending_exists(pending_table: str, k: str) -> bool:
     rows = query_db(f"SELECT 1 FROM {pending_table} WHERE k=%s LIMIT 1", (k,))
     return bool(rows)
 
-def try_resolve_pending_and_notify(pending_table: str, fp: str, account_id: int, merchant: str, amt, date_str: str, time_str: str):
+def try_resolve_pending_and_notify(
+    pending_table: str,
+    fp: str,
+    account_id: int,
+    merchant: str,
+    amt,
+    date_str: str,
+    time_str: str,
+    *,
+    recipient_email: str | None = None,
+):
     """
     If a pending 'unknown merchant' exists for this fp, and we now have a real merchant,
     send pushover + mark_notified + delete pending.
     """
     if not fp:
         return False
-    if not pushover_enabled():
+    if not pushover_enabled(recipient_email=recipient_email):
         return False
     if already_notified(fp):
         return False
@@ -436,7 +447,7 @@ def try_resolve_pending_and_notify(pending_table: str, fp: str, account_id: int,
     message = f"{bank} {card} was used at {m} for {amt_str} on {date_str} at {time_str}"
 
     dbg_notification_decision("Resolved pending → sending pushover now")
-    send_pushover(title, message)
+    send_pushover(title, message, recipient_email=recipient_email)
 
     mark_notified(fp)
     delete_pending(pending_table, fp)
@@ -693,7 +704,7 @@ def flush_pending_notifications(
     pending_table: str,
     ttl_minutes: int = 30,
     *,
-    pushover_user_key: str | None = None,
+    recipient_email: str | None = None,
 ):
     """
     Resolve any pending "unknown merchant" withdrawals.
@@ -702,7 +713,7 @@ def flush_pending_notifications(
     - If too old: send fallback Unknown merchant notification once
     """
     # Nothing to do if pushover isn't configured
-    if not pushover_enabled():
+    if not pushover_enabled(recipient_email=recipient_email):
         return
 
     tz = ZoneInfo("America/Los_Angeles")
@@ -760,7 +771,7 @@ def flush_pending_notifications(
                 title = "Transaction alert"
                 message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
 
-                send_pushover(title, message, user_key=pushover_user_key)
+                send_pushover(title, message, recipient_email=recipient_email)
                 mark_notified(k)
 
                 cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
@@ -785,7 +796,7 @@ def flush_pending_notifications(
                 title = "Transaction alert"
                 message = f"{bank} {card} was used at Unknown merchant for {amt_str} on {date_str} at {time_str}"
 
-                send_pushover(title, message, user_key=pushover_user_key)
+                send_pushover(title, message, recipient_email=recipient_email)
                 mark_notified(k)
 
                 cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
@@ -1481,7 +1492,7 @@ def process_wizard_email(
     return_detail: bool = False,
     access_token: str | None = None,
     processed_label_id: str | None = None,
-    pushover_user_key: str | None = None,
+    recipient_email: str | None = None,
 ):
     """
     Returns True if any wizard rule matched and was processed.
@@ -1598,14 +1609,15 @@ def process_wizard_email(
             else:
                 if slot == "primary":
                     try_resolve_pending_and_notify(
-                        pending_table=pending_table,
-                        fp=fp,
-                        account_id=account_id,
-                        merchant=merchant,
-                        amt=amount_val,
-                        date_str=date_mmddyy,
-                        time_str=time_local,
-                    )
+                    pending_table=pending_table,
+                    fp=fp,
+                    account_id=account_id,
+                    merchant=merchant,
+                    amt=amount_val,
+                    date_str=date_mmddyy,
+                    time_str=time_local,
+                    recipient_email=recipient_email,
+                )
                     if allow_primary_override:
                         reason = "primary override -> notify"
                 notify_now = True
@@ -1616,7 +1628,7 @@ def process_wizard_email(
                 amt_str = f"${float(amount_val):.2f}"
                 title = "Transaction alert"
                 message = f"{meta['bank']} {meta['card']} was used at {merchant} for {amt_str} on {date_mmddyy} at {time_local}"
-                send_pushover(title, message, user_key=pushover_user_key)
+                send_pushover(title, message, recipient_email=recipient_email)
                 mark_notified(notified_key)
                 did_notify = True
                 notify_reason = reason or "notify now"
@@ -1694,7 +1706,6 @@ def run_manual_wizard_parse(
         raise RuntimeError("Missing Gmail address")
 
     rules_owner = str(rules_user_email or EMAIL or "").strip().lower()
-    pushover_user_key = _lookup_pushover_user_key_from_db(rules_owner)
     wizard_rules = load_wizard_rules(rules_owner)
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
@@ -1714,7 +1725,7 @@ def run_manual_wizard_parse(
 
     from app.core.auth import _refresh_google_access_token_if_needed
 
-    access_token, err = _refresh_google_access_token_if_needed()
+    access_token, err = _refresh_google_access_token_if_needed(rules_owner)
     if not access_token:
         raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
 
@@ -1750,7 +1761,7 @@ def run_manual_wizard_parse(
             return_detail=True,
             access_token=access_token,
             processed_label_id=processed_label_id,
-            pushover_user_key=pushover_user_key,
+            recipient_email=rules_owner,
         ) or {}
         row = {
             "imap_id": str(mid),
@@ -1798,7 +1809,6 @@ def run(include_processed: bool = False):
     EMAIL = os.getenv("GMAIL_ADDRESS")
     if not EMAIL:
         raise RuntimeError("Missing Gmail address")
-    pushover_user_key = _lookup_pushover_user_key_from_db(EMAIL)
 
     wizard_rules = load_wizard_rules(EMAIL)
     log(f"Wizard pipeline enabled; loaded {len(wizard_rules)} parser rule(s)")
@@ -1817,7 +1827,7 @@ def run(include_processed: bool = False):
 
     from app.core.auth import _refresh_google_access_token_if_needed
 
-    access_token, err = _refresh_google_access_token_if_needed()
+    access_token, err = _refresh_google_access_token_if_needed(EMAIL)
     if not access_token:
         raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
     processed_label_id = None
@@ -1863,7 +1873,7 @@ def run(include_processed: bool = False):
                 pending_table=pending_table,
                 access_token=access_token,
                 processed_label_id=processed_label_id,
-                pushover_user_key=pushover_user_key,
+                recipient_email=EMAIL,
             )
             if matched:
                 did_work = True
@@ -1876,7 +1886,7 @@ def run(include_processed: bool = False):
             flush_pending_notifications(
                 pending_table,
                 ttl_minutes=PENDING_TTL_MINUTES,
-                pushover_user_key=pushover_user_key,
+                recipient_email=EMAIL,
             )
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"

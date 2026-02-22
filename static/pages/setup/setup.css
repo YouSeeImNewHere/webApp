@@ -38,7 +38,6 @@ p, li { line-height: 1.4; }
 .setup-csv-actions .settings-btn { width: auto !important; min-width: 120px; }
 .setup-wrap .setup-csv-actions button { width: auto !important; display: inline-flex; flex: 0 0 auto; }
 
-#setupStep2Card { max-width: 980px; margin-left: auto; margin-right: auto; }
 .setup-csv-top-actions { display: flex; gap: 8px; margin: 6px 0 8px; flex-wrap: wrap; }
 .setup-csv-top-grid { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 10px; align-items: end; }
 .setup-csv-map-title { font-weight: 900; font-size: 14px; margin-bottom: 6px; }
@@ -56,7 +55,6 @@ p, li { line-height: 1.4; }
   .setup-wrap { padding: 16px 8px 0; }
   .setup-row,
   .setup-row3 { grid-template-columns: 1fr; }
-  #setupStep2Card { max-width: none; }
   .setup-csv-top-grid,
   .setup-csv-map-grid,
   .setup-csv-meta-grid { grid-template-columns: 1fr; }

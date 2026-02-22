@@ -5759,3 +5759,52 @@ body{
 .mobile-tabs{
   bottom: var(--safe-bottom) !important;
 }
+
+/* Mobile top bar: center title between settings and notifications */
+@media (max-width: 900px){
+  :root{
+    --topbar-refresh-shift: 24px; /* (refresh button + gap) / 2 => centers title between settings + notifications */
+  }
+
+  .top-bar-inner{
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px !important;
+    position: relative !important;
+  }
+
+  .top-title{
+    position: absolute !important;
+    left: calc(50% - var(--topbar-refresh-shift)) !important;
+    transform: translateX(-50%) !important;
+    max-width: calc(100% - 180px) !important;
+    min-width: 0 !important;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: clamp(13px, 4vw, 16px);
+    line-height: 1.1;
+    padding: 0 2px;
+  }
+
+  .top-bar-right{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .top-bar-right #topBarNotif{
+    order: 1;
+  }
+
+  .top-bar-right #hardRefreshBtn{
+    order: 2; /* keep refresh to the right of notifications */
+  }
+
+  .top-bar-right #topBarBack{
+    display: none !important;
+  }
+}

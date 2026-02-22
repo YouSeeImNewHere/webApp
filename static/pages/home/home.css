@@ -5,6 +5,55 @@
   align-items: stretch;
 }
 
+/* Home mobile transactions: tighten vertical spacing and reduce card height */
+@media (max-width: 900px){
+  body.page-home #txList.tx-list{
+    gap: 6px !important;
+  }
+
+  body.page-home .tx-row{
+    min-height: 60px !important;
+    gap: 8px !important;
+    padding: 8px 10px !important;
+    padding-left: 62px !important;
+    align-items: center !important;
+  }
+
+  body.page-home .tx-row.has-roundup{
+    min-height: 68px !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  body.page-home .tx-icon-wrap{
+    left: 10px !important;
+    width: 34px !important;
+    height: 34px !important;
+  }
+
+  body.page-home .tx-main{
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1px !important;
+    min-width: 0 !important;
+  }
+
+  body.page-home .tx-merchant{
+    line-height: 1.1 !important;
+    margin: 0 !important;
+  }
+
+  body.page-home .tx-sub{
+    margin-top: 0 !important;
+    line-height: 1.1 !important;
+    font-size: 10px !important;
+  }
+
+  body.page-home .tx-row.has-roundup .tx-amt{
+    padding-top: 10px !important;
+  }
+}
+
 .bank-main{
   flex: 1;
   min-width: 0;

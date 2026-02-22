@@ -177,11 +177,7 @@ async function loadAccountHeader(accountId){
   const res = await fetch(`/account/${accountId}`);
   const a = await res.json();
 
-  // ✅ Put title inside the chart card header (like home)
-  const titleEl = document.getElementById(ACCOUNT_CHART_IDS.title);
-  if (titleEl) titleEl.textContent = `${a.institution} — ${a.name}`;
-
-  // ✅ Use the inline breakdown label for account type (optional, looks nice)
+  // Keep breakdown label contextual while chart title is removed on account page.
   const breakLabel = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
   if (breakLabel) breakLabel.textContent = a.accountType || "Balance";
 }

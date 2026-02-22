@@ -2,6 +2,8 @@
 body.page-account .top-title.account-title-switcher{
   pointer-events: auto !important;
   max-width: min(560px, calc(100% - 180px));
+  overflow: visible !important;
+  text-overflow: clip !important;
 }
 
 body.page-account #topBarBack{
@@ -12,39 +14,40 @@ body.page-account .account-title-switcher__select{
   width: 100%;
   min-width: 180px;
   max-width: 560px;
-  height: 36px;
+  height: 38px;
   padding: 6px 10px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
+  line-height: 1.2;
+  box-sizing: border-box;
 }
 
 @media (max-width: 900px){
-  body.page-account #hardRefreshBtn{
-    display: none !important;
-  }
-
   body.page-account .top-bar-right{
-    gap: 0 !important;
+    gap: 8px !important;
   }
 
   body.page-account .top-title.account-title-switcher{
     position: absolute;
-    left: 50%;
+    left: calc(50% - var(--topbar-refresh-shift, 24px));
     transform: translateX(-50%);
-    width: min(58vw, 260px);
-    max-width: calc(100% - 104px);
+    width: calc(100% - 170px);
+    max-width: calc(100% - 170px);
     margin: 0;
   }
 
   body.page-account .account-title-switcher__select{
     min-width: 0;
     max-width: 100%;
-    font-size: 12px;
-    height: 34px;
+    font-size: 13px;
+    height: 36px;
+    line-height: 1.2;
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
 }
 
@@ -78,6 +81,30 @@ body.page-account .account-tx-export-btn:focus-visible{
   outline-offset: 2px;
 }
 
+/* Account page: top-bar switcher makes chart title redundant. */
+body.page-account .chart-header--metrics2 .chart-header-center{
+  display: none !important;
+}
+
+/* Reflow account chart header without center title column (desktop only). */
+@media (min-width: 901px){
+  body.page-account .chart-header.chart-header--metrics2{
+    grid-template-columns: auto auto auto !important;
+  }
+
+  body.page-account .chart-header--metrics2 .chart-header-metrics{
+    grid-column: 1 !important;
+  }
+
+  body.page-account .chart-header--metrics2 .chart-header-dates{
+    grid-column: 2 !important;
+  }
+
+  body.page-account .chart-header--metrics2 .chart-header-actions{
+    grid-column: 3 !important;
+  }
+}
+
 /* Account rows have extra right-side info (amount + balance + roundup).
    Keep enough room for amount + balance + roundup stack. */
 body.page-account .tx-row{
@@ -106,5 +133,22 @@ body.page-account .tx-right .tx-roundup-badge{
   body.page-account .tx-row{
     min-height: 62px;
     padding-right: 10px;
+  }
+
+  body.page-account .chart-header.chart-header--metrics2{
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-areas:
+      "total growth"
+      "gtoggle gtoggle"
+      "dates dates" !important;
+  }
+
+  body.page-account .chart-header-dates{
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  body.page-account .chart-update--header{
+    grid-column: 1 / -1 !important;
+    width: 100%;
   }
 }

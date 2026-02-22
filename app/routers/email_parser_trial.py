@@ -862,7 +862,7 @@ def trial_accounts(request: Request):
 def trial_samples(body: TrialSamplesBody, request: Request):
     tid = _require_tenant_id()
     session_email = _require_session_email(request)
-    oauth_email = get_connected_google_email()
+    oauth_email = get_connected_google_email(session_email)
     if oauth_email and oauth_email != session_email:
         raise HTTPException(
             status_code=409,
@@ -874,7 +874,7 @@ def trial_samples(body: TrialSamplesBody, request: Request):
     if not sender_query:
         raise HTTPException(status_code=422, detail="sender_query_required")
 
-    access_token, err = _refresh_google_access_token_if_needed()
+    access_token, err = _refresh_google_access_token_if_needed(session_email)
     if not access_token:
         raise HTTPException(status_code=401, detail=f"gmail_not_connected:{err or 'unknown'}")
 
@@ -1417,7 +1417,7 @@ def trial_test_run(body: TrialTestRunBody, request: Request):
     sender_query = (body.sender_query or "").strip()
     subject_query = (body.subject_query or "").strip()
 
-    access_token, err = _refresh_google_access_token_if_needed()
+    access_token, err = _refresh_google_access_token_if_needed(session_email)
     if not access_token:
         raise HTTPException(status_code=401, detail=f"gmail_not_connected:{err or 'unknown'}")
 
