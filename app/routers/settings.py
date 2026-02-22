@@ -59,11 +59,29 @@ class NotificationPrefsIn(BaseModel):
     credit_usage: Optional[bool] = None
     credit_usage_total: Optional[bool] = None
     budget_over: Optional[bool] = None
+    safe_to_spend_daily: Optional[bool] = None
+    category_drift: Optional[bool] = None
+    runway_warning: Optional[bool] = None
+    savings_streak: Optional[bool] = None
+    subscription_creep: Optional[bool] = None
+    high_spend_cooldown: Optional[bool] = None
+    small_win_reinforcement: Optional[bool] = None
+    user_signup_pending: Optional[bool] = None
+    cron_error: Optional[bool] = None
 
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
+    "safe_to_spend_daily": True,
+    "category_drift": True,
+    "runway_warning": True,
+    "savings_streak": True,
+    "subscription_creep": True,
+    "high_spend_cooldown": True,
+    "small_win_reinforcement": True,
+    "user_signup_pending": True,
+    "cron_error": True,
 }
 
 

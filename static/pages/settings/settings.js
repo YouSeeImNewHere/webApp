@@ -722,12 +722,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadDailyWeightsSettings().catch((err) => console.error(err));
   loadInitialSetupProgress().catch((err) => console.error(err));
-  loadNotificationSettings().catch((err) => console.error(err));
   loadGoogleOAuthStatus().catch((err) => console.error(err));
   loadAdminVisibility().catch((err) => console.error(err));
   loadWidgetPreview().catch((err) => console.error(err));
   bindWidgetActions();
   bindEmailParserBackfill();
-  bindNotificationSettings();
   bindGoogleOAuthActions();
 });

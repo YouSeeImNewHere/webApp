@@ -188,25 +188,17 @@ def _notify_owner_pending_signup(email: str, user_id: int):
     owner_tenant_id = get_owner_tenant_id()
     if not owner_tenant_id:
         return
-    dedupe_key = f"t{int(owner_tenant_id)}:pending-user:{email}"
+    dedupe_key = f"pending-user:{email}"
     try:
-        with with_db_cursor() as (conn, cur):
-            cur.execute(
-                """
-                INSERT INTO notifications (tenant_id, kind, dedupe_key, subject, sender, body, is_read, dismissed)
-                VALUES (%s, %s, %s, %s, %s, %s, FALSE, FALSE)
-                ON CONFLICT (dedupe_key) DO NOTHING
-                """,
-                (
-                    int(owner_tenant_id),
-                    "user_signup_pending",
-                    dedupe_key,
-                    "New user pending approval",
-                    "Auth",
-                    f"Email: {email}\nUser ID: {int(user_id)}",
-                ),
-            )
-            conn.commit()
+        from app.routers.notifications import create_notification
+        create_notification(
+            kind="user_signup_pending",
+            dedupe_key=dedupe_key,
+            subject="New user pending approval",
+            sender="Auth",
+            body=f"Email: {email}\nUser ID: {int(user_id)}",
+            tenant_id=int(owner_tenant_id),
+        )
     except Exception:
         # Do not block user registration if notifications table/path is unavailable.
         return

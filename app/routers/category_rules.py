@@ -350,6 +350,278 @@ def _emit_over_budget_alerts(
             continue
 
 
+def _usd(value: float) -> str:
+    return f"${float(value or 0.0):,.2f}"
+
+
+def _push_smart_budget_notification(
+    *,
+    tid: int | None,
+    kind: str,
+    dedupe_key: str,
+    subject: str,
+    body: str,
+    sender: str = "Budget Coach",
+    pushover_user_key: str | None = None,
+) -> None:
+    if not tid:
+        return
+    try:
+        created = create_notification(
+            kind=kind,
+            dedupe_key=dedupe_key,
+            subject=subject,
+            sender=sender,
+            body=body,
+            tenant_id=int(tid),
+        )
+        if created:
+            send_pushover(subject, body, user_key=pushover_user_key)
+    except Exception:
+        return
+
+
+def _prev_month(year: int, month: int) -> tuple[int, int]:
+    if month <= 1:
+        return int(year) - 1, 12
+    return int(year), int(month) - 1
+
+
+def _non_income_recurring_total(events: list[dict[str, Any]]) -> float:
+    total = 0.0
+    for e in (events or []):
+        amt = float(e.get("amount") or 0.0)
+        etype = str(e.get("type") or "").lower().strip()
+        cadence = str(e.get("cadence") or "").lower().strip()
+        category = str(e.get("category") or "").strip()
+        merchant = str(e.get("merchant") or "")
+        if _event_is_income(e, amount=amt, etype=etype, cadence=cadence, category=category, merchant=merchant):
+            continue
+        total += abs(amt)
+    return float(total)
+
+
+def _free_spend_streak_days(tid: int, today: date, max_days: int = 21) -> int:
+    streak = 0
+    for delta in range(0, max(1, int(max_days))):
+        day = today - timedelta(days=delta)
+        _, _, spent_free = _compute_spent_free_for_day(day, tid=tid)
+        if float(spent_free) <= 0.0:
+            streak += 1
+            continue
+        break
+    return int(streak)
+
+
+def _weekly_free_spend_vs_plan(
+    *,
+    tid: int,
+    today: date,
+    fallback_baseline: float,
+) -> tuple[float, float, int]:
+    week_start = today - timedelta(days=today.weekday())
+    rows = query_db(
+        """
+        SELECT day, baseline
+        FROM daily_limit_snapshot
+        WHERE tenant_id = %s AND day >= %s AND day <= %s
+        """,
+        (int(tid), week_start, today),
+    )
+    by_day = {r["day"]: float(r.get("baseline") or 0.0) for r in (rows or [])}
+
+    week_spent = 0.0
+    week_budget = 0.0
+    days = 0
+    cur = week_start
+    while cur <= today:
+        _, _, spent_free = _compute_spent_free_for_day(cur, tid=tid)
+        week_spent += float(spent_free)
+        week_budget += float(by_day.get(cur, fallback_baseline))
+        days += 1
+        cur += timedelta(days=1)
+    return float(week_spent), float(week_budget), int(days)
+
+
+def _emit_smart_budget_notifications(
+    *,
+    tid: int | None,
+    year: int,
+    month: int,
+    today: date,
+    groups: list[dict[str, Any]],
+    cat_spent: dict[str, float],
+    safe_to_spend: float,
+    days_left: int,
+    today_limit: float,
+    spent_free: float,
+    events: list[dict[str, Any]],
+    min_occ: int,
+    include_stale: bool,
+    pushover_user_key: str | None = None,
+) -> None:
+    if not tid:
+        return
+    if int(year) != int(today.year) or int(month) != int(today.month):
+        return
+
+    today_key = today.isoformat()
+
+    _push_smart_budget_notification(
+        tid=tid,
+        kind="safe_to_spend_daily",
+        dedupe_key=f"safe-to-spend:{today_key}",
+        subject=f"Today's safe-to-spend is {_usd(safe_to_spend)}",
+        body=(
+            f"Free spending available after goals and allocations: {_usd(safe_to_spend)}.\n"
+            f"Days left this month: {int(days_left)}\n"
+            f"Today's free-spend limit: {_usd(today_limit)}"
+        ),
+        sender="Spending Power",
+        pushover_user_key=pushover_user_key,
+    )
+
+    for g in (groups or []):
+        name = str(g.get("name") or "").strip()
+        if not name or _norm_name(name) == "bills":
+            continue
+        allocated = float(g.get("allocated") or 0.0)
+        if allocated <= 0:
+            continue
+        g_spent = 0.0
+        for c in (g.get("categories") or []):
+            g_spent += float(cat_spent.get(_norm_cat(c), 0.0))
+        pct = (g_spent / allocated) * 100.0
+        if pct < 75.0:
+            continue
+        bucket = int(pct // 10) * 10
+        _push_smart_budget_notification(
+            tid=tid,
+            kind="category_drift",
+            dedupe_key=f"category-drift:{year:04d}-{month:02d}:{_norm_name(name)}:{bucket}",
+            subject=f"Category drift: {name} at {pct:.0f}%",
+            body=(
+                f"{name} has used {_usd(g_spent)} of {_usd(allocated)} ({pct:.1f}%).\n"
+                f"Days left this month: {int(days_left)}."
+            ),
+            sender="Budget Guardrails",
+            pushover_user_key=pushover_user_key,
+        )
+
+    elapsed_days = max(1, (today - date(year, month, 1)).days + 1)
+    avg_daily_free_spend = max(0.0, float(spent_free)) / float(elapsed_days)
+    if safe_to_spend <= 0:
+        _push_smart_budget_notification(
+            tid=tid,
+            kind="runway_warning",
+            dedupe_key=f"runway-warning:{today_key}:empty",
+            subject="Runway warning: free budget is depleted",
+            body="Your free spending runway is at or below zero. Consider pausing discretionary spending.",
+            sender="Spending Power",
+            pushover_user_key=pushover_user_key,
+        )
+    elif avg_daily_free_spend > 0 and days_left > 0:
+        days_to_zero = safe_to_spend / avg_daily_free_spend
+        if days_to_zero < float(days_left):
+            runout_date = today + timedelta(days=max(0, int(days_to_zero)))
+            _push_smart_budget_notification(
+                tid=tid,
+                kind="runway_warning",
+                dedupe_key=f"runway-warning:{today_key}:{runout_date.isoformat()}",
+                subject=f"Runway warning: pace points to {runout_date.strftime('%A')}",
+                body=(
+                    f"At your current free-spend pace ({_usd(avg_daily_free_spend)}/day), "
+                    f"your free budget may run out by {runout_date.isoformat()}."
+                ),
+                sender="Spending Power",
+                pushover_user_key=pushover_user_key,
+            )
+
+    streak = _free_spend_streak_days(int(tid), today, max_days=21)
+    if streak >= 3:
+        monthly_projection = max(0.0, avg_daily_free_spend * 30.0)
+        _push_smart_budget_notification(
+            tid=tid,
+            kind="savings_streak",
+            dedupe_key=f"savings-streak:{today_key}:{streak}",
+            subject=f"Savings streak: {streak} low-spend days",
+            body=(
+                f"You're on a {streak}-day free-spend streak.\n"
+                f"If this pace holds, you preserve about {_usd(monthly_projection)} per month."
+            ),
+            sender="Savings Momentum",
+            pushover_user_key=pushover_user_key,
+        )
+
+    py, pm = _prev_month(year, month)
+    try:
+        prev_cal = recurring_calendar(
+            year=int(py),
+            month=int(pm),
+            min_occ=int(min_occ),
+            include_stale=bool(include_stale),
+        )
+        prev_events = list((prev_cal or {}).get("events") or [])
+    except Exception:
+        prev_events = []
+    current_recurring = _non_income_recurring_total(list(events or []))
+    prev_recurring = _non_income_recurring_total(prev_events)
+    recurring_delta = float(current_recurring - prev_recurring)
+    if recurring_delta >= 20.0:
+        _push_smart_budget_notification(
+            tid=tid,
+            kind="subscription_creep",
+            dedupe_key=f"subscription-creep:{year:04d}-{month:02d}:{int(recurring_delta)}",
+            subject=f"Subscription creep: +{_usd(recurring_delta)}/month",
+            body=(
+                f"Projected recurring spend this month: {_usd(current_recurring)}.\n"
+                f"Last month: {_usd(prev_recurring)}."
+            ),
+            sender="Subscription Watch",
+            pushover_user_key=pushover_user_key,
+        )
+
+    _, _, spent_today_free = _compute_spent_free_for_day(today, tid=int(tid))
+    if today_limit > 0 and spent_today_free >= max(20.0, float(today_limit) * 2.0):
+        ratio = float(spent_today_free) / float(today_limit)
+        _push_smart_budget_notification(
+            tid=tid,
+            kind="high_spend_cooldown",
+            dedupe_key=f"high-spend-cooldown:{today_key}",
+            subject="High-spend day: cooldown recommended",
+            body=(
+                f"Today's free spending is {_usd(spent_today_free)} "
+                f"({ratio:.1f}x your {_usd(today_limit)} daily limit). "
+                "Consider a 24-hour pause on non-essentials."
+            ),
+            sender="Budget Guardrails",
+            pushover_user_key=pushover_user_key,
+        )
+
+    _ensure_daily_limit_snapshot_pg(int(tid))
+    week_spent, week_budget, week_days = _weekly_free_spend_vs_plan(
+        tid=int(tid),
+        today=today,
+        fallback_baseline=max(0.0, float(today_limit)),
+    )
+    if week_days >= 3 and week_budget > 0 and week_spent <= week_budget * 0.9:
+        week_win = max(0.0, week_budget - week_spent)
+        suggestion = min(max(5.0, week_win * 0.3), max(5.0, safe_to_spend), 50.0)
+        iso = today.isocalendar()
+        _push_smart_budget_notification(
+            tid=tid,
+            kind="small_win_reinforcement",
+            dedupe_key=f"small-win:{int(iso.year)}-W{int(iso.week)}",
+            subject="Small win: you're under plan this week",
+            body=(
+                f"Week-to-date free spend {_usd(week_spent)} vs planned {_usd(week_budget)}.\n"
+                f"Consider moving {_usd(suggestion)} to savings."
+            ),
+            sender="Savings Momentum",
+            pushover_user_key=pushover_user_key,
+        )
+
+
 def _month_budget_home(
     year: int,
     month: int,
@@ -614,6 +886,23 @@ def _month_budget_home(
     # Keep backward compat: daily_limit becomes "today's limit"
     is_weekend_today = (today.weekday() >= 5)
     today_limit = weekend_limit if is_weekend_today else weekday_limit
+
+    _emit_smart_budget_notifications(
+        tid=tid,
+        year=year,
+        month=month,
+        today=today,
+        groups=list(groups or []),
+        cat_spent=dict(cat_spent or {}),
+        safe_to_spend=float(safe_to_spend),
+        days_left=int(days_left),
+        today_limit=float(today_limit),
+        spent_free=float(spent_free),
+        events=list(events or []),
+        min_occ=int(min_occ),
+        include_stale=bool(include_stale),
+        pushover_user_key=pushover_user_key,
+    )
 
     return {
         "ok": True,

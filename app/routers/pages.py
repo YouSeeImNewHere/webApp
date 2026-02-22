@@ -95,6 +95,10 @@ def home(request: Request):
 def settings_page():
     return FileResponse("static/pages/settings/settings.html")
 
+@router.get("/notification-settings")
+def notification_settings_page():
+    return FileResponse("static/pages/notification-settings/notification-settings.html")
+
 
 @router.get("/admin")
 def admin_page(request: Request):

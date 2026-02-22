@@ -212,10 +212,7 @@ def push_error(kind: str, subject: str, body: str):
     inserted = push_db_notification(kind=kind, subject=subject, body=body, dedupe_key=dedupe_key)
 
     if inserted:
-        send_pushover(
-            title="⚠️ emailFetch error",
-            message=f"{subject}\n\n{(body or '')[:700]}",
-        )
+        dbg("✅ Error notification inserted")
     else:
         dbg("🔕 Error deduped → skipping pushover")
 
@@ -244,20 +241,19 @@ def ensure_notifications_table_pg():
 
 def push_db_notification(kind: str, subject: str, body: str, dedupe_key: str, sender: str = "emailFetch"):
     try:
-        ensure_notifications_table_pg()
-        with with_db_cursor() as (conn, cur):
-            cur.execute(
-                """
-                INSERT INTO notifications (kind, dedupe_key, subject, sender, body, is_read, dismissed)
-                VALUES (%s, %s, %s, %s, %s, FALSE, FALSE)
-                ON CONFLICT (dedupe_key) DO NOTHING
-                RETURNING id
-                """,
-                (kind, dedupe_key, subject[:250], sender[:250], (body or "")[:8000]),
+        from app.core.tenancy import get_owner_tenant_id
+        from app.routers.notifications import create_notification
+        tid = get_owner_tenant_id()
+        return bool(
+            create_notification(
+                kind=str(kind or "").strip() or "system",
+                dedupe_key=str(dedupe_key or "").strip(),
+                subject=(subject or "")[:250],
+                sender=(sender or "emailFetch")[:250],
+                body=(body or "")[:8000],
+                tenant_id=(int(tid) if tid else None),
             )
-            row = cur.fetchone()
-            conn.commit()
-            return bool(row)  # True only if inserted
+        )
     except Exception:
         return False
 

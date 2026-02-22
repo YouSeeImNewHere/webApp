@@ -59,45 +59,13 @@
     <section class="settings-section">
       <h2 class="settings-section-title">Notifications</h2>
       <div class="settings-card">
-        <div class="settings-muted" style="margin-top:0; margin-bottom:10px;">
-          Choose which alerts you want to receive.
+        <div class="settings-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">Smart notifications</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Spending power, overspending protection, and savings nudges.</div>
+          </div>
+          <a class="settings-btn primary" href="/notification-settings">Open Notification Settings</a>
         </div>
-        <div class="notification-settings-list">
-          <div class="notification-setting-row">
-            <div class="notification-setting-copy">
-              <div class="notification-setting-title">Credit usage per card</div>
-              <div class="settings-muted notification-setting-muted">Alerts when a card crosses configured usage thresholds.</div>
-            </div>
-            <label class="switch" aria-label="Credit usage per card notifications">
-              <input id="notifCreditUsageToggle" type="checkbox" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div class="notification-setting-row">
-            <div class="notification-setting-copy">
-              <div class="notification-setting-title">Total credit usage</div>
-              <div class="settings-muted notification-setting-muted">Alerts when total credit usage crosses thresholds.</div>
-            </div>
-            <label class="switch" aria-label="Total credit usage notifications">
-              <input id="notifCreditUsageTotalToggle" type="checkbox" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div class="notification-setting-row">
-            <div class="notification-setting-copy">
-              <div class="notification-setting-title">Budget overage</div>
-              <div class="settings-muted notification-setting-muted">Alerts when a budget group goes over for the month.</div>
-            </div>
-            <label class="switch" aria-label="Budget overage notifications">
-              <input id="notifBudgetOverToggle" type="checkbox" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-        </div>
-        <div class="settings-muted" id="notifSettingsStatus" role="status" aria-live="polite"></div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
-        <div class="notification-setting-title" style="margin-bottom:6px;">Pushover user key</div>
-        <div id="settingsPushoverUserKey" class="settings-code">Not set</div>
       </div>
     </section>
 

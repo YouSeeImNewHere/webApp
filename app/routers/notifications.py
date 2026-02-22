@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.core.config import NOTIF_SECRET, MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id, get_owner_tenant_id
+from app.core.pushover import send_pushover
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -17,6 +18,15 @@ DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
+    "safe_to_spend_daily": True,
+    "category_drift": True,
+    "runway_warning": True,
+    "savings_streak": True,
+    "subscription_creep": True,
+    "high_spend_cooldown": True,
+    "small_win_reinforcement": True,
+    "user_signup_pending": True,
+    "cron_error": True,
 }
 
 # =============================================================================
@@ -82,8 +92,28 @@ def _notification_prefs_for_tenant(tenant_id: int | None) -> Dict[str, bool]:
 def _notification_kind_enabled(kind: str, tenant_id: int | None) -> bool:
     prefs = _notification_prefs_for_tenant(tenant_id)
     if kind not in prefs:
-        return True
+        return False
     return bool(prefs.get(kind))
+
+
+def _resolve_pushover_key_for_tenant(tenant_id: int | None) -> str | None:
+    if not tenant_id:
+        return None
+    rows = query_db(
+        """
+        SELECT pushover_user_key
+        FROM users
+        WHERE tenant_id = %s
+          AND NULLIF(TRIM(COALESCE(pushover_user_key, '')), '') IS NOT NULL
+        ORDER BY is_owner DESC, id ASC
+        LIMIT 1
+        """,
+        (int(tenant_id),),
+    )
+    if not rows:
+        return None
+    key = (rows[0].get("pushover_user_key") or "").strip()
+    return key or None
 
 
 def ensure_notifications_table_pg():
@@ -155,7 +185,15 @@ def create_notification(
         )
         created = (cur.rowcount or 0) > 0
         conn.commit()
-        return bool(created)
+        created_bool = bool(created)
+    if created_bool:
+        try:
+            user_key = _resolve_pushover_key_for_tenant(tenant_id)
+            if user_key:
+                send_pushover(subject or "Notification", body or "", user_key=user_key)
+        except Exception:
+            pass
+    return created_bool
 
 def _to_local_display_pg(ts: Optional[object]) -> str:
     """
