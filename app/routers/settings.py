@@ -568,6 +568,15 @@ def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
             rules_user_email=session_email,
         )
         return result
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        msg = str(e or "").strip()
+        if msg.startswith("gmail_oauth_not_connected:"):
+            raise HTTPException(status_code=401, detail=msg)
+        if msg.startswith("gmail_oauth_account_mismatch:"):
+            raise HTTPException(status_code=409, detail=msg)
+        raise HTTPException(status_code=500, detail=f"email_parser_backfill_failed:RuntimeError:{msg}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"email_parser_backfill_failed:{type(e).__name__}:{e}")
 

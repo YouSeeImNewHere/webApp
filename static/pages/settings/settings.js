@@ -423,6 +423,32 @@ function bindEmailParserBackfill() {
   const rowsEl = document.getElementById("emailParserBackfillRows");
   if (!btn || !daysEl || !includeEl || !statusEl || !logEl) return;
 
+  function normalizeBackfillError(rawDetail, statusCode) {
+    const detail = String(rawDetail || "").trim();
+    if (statusCode === 401 || detail.includes("gmail_oauth_not_connected")) {
+      return {
+        userMessage: "Gmail OAuth is not connected for this account. Reconnect Google, then run backfill again.",
+        oauthRequired: true,
+      };
+    }
+    if (detail.startsWith("gmail_oauth_account_mismatch:")) {
+      const connected = (detail.match(/connected=([^:]+)/) || [])[1] || "";
+      const session = (detail.match(/session=([^:]+)/) || [])[1] || "";
+      const suffix = connected && session ? ` Connected=${connected}, Session=${session}.` : "";
+      return {
+        userMessage: `Connected Gmail account does not match your session account.${suffix}`,
+        oauthRequired: false,
+      };
+    }
+    if (detail.startsWith("email_parser_backfill_failed:")) {
+      return {
+        userMessage: detail.replace(/^email_parser_backfill_failed:/, ""),
+        oauthRequired: false,
+      };
+    }
+    return { userMessage: detail || `HTTP ${statusCode || "error"}`, oauthRequired: false };
+  }
+
   btn.addEventListener("click", async () => {
     const daysRaw = Number(daysEl.value || 7);
     const days = Math.max(1, Math.min(60, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 7));
@@ -440,12 +466,16 @@ function bindEmailParserBackfill() {
       const res = await fetch("/settings/email-parser/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ days, include_processed: includeProcessed, max_emails: 5000 }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok || !out?.ok) {
         const detail = out?.detail || `HTTP ${res.status}`;
-        throw new Error(String(detail));
+        const normalized = normalizeBackfillError(detail, res.status);
+        const err = new Error(String(normalized.userMessage));
+        err.oauthRequired = !!normalized.oauthRequired;
+        throw err;
       }
       statusEl.textContent = "Backfill complete.";
       logEl.textContent = formatBackfillLog(out);
@@ -453,6 +483,10 @@ function bindEmailParserBackfill() {
       renderBackfillRows(out);
     } catch (err) {
       statusEl.textContent = `Backfill failed: ${err?.message || err}`;
+      if (err?.oauthRequired) {
+        const go = window.confirm("Google needs to be reconnected. Open Google OAuth now?");
+        if (go) window.location.href = "/gmail/oauth/start?next=/settings";
+      }
     } finally {
       btn.disabled = false;
       loadInitialSetupProgress().catch(() => {});
@@ -609,8 +643,16 @@ async function loadGoogleOAuthStatus() {
   if (!txt || !btn) return;
   txt.textContent = "Checking connection...";
   btn.disabled = true;
+  let timer = null;
   try {
-    const res = await fetch("/gmail/oauth/status", { cache: "no-store", credentials: "same-origin" });
+    const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    timer = ctrl ? window.setTimeout(() => ctrl.abort(), 10000) : null;
+    const res = await fetch("/gmail/oauth/status", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: ctrl ? ctrl.signal : undefined,
+      headers: { "Cache-Control": "no-cache" },
+    });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (out?.connected) {
@@ -622,9 +664,10 @@ async function loadGoogleOAuthStatus() {
       btn.textContent = "Connect Google";
     }
   } catch (_) {
-    txt.textContent = "Connection status unavailable";
+    txt.textContent = "Connection status unavailable in app mode. Tap Connect Google to refresh auth.";
     btn.textContent = "Connect Google";
   } finally {
+    if (timer) window.clearTimeout(timer);
     btn.disabled = false;
   }
 }
