@@ -14,7 +14,7 @@ from db import open_pool, close_pool, ensure_performance_indexes
 from app.core.templates import templates  # ensure templates init
 from app.core.auth import add_auth_middlewares
 from app.core.config import BUILD_ID
-from app.core.tenancy import initialize_tenancy
+from app.core.tenancy import initialize_tenancy, current_tenant_id
 from app.core.account_totals_cache import ensure_account_totals_cache_pg
 from app.core.home_snapshot_cache import ensure_home_snapshot_cache_pg
 from app.core.widget_tokens import prime_widget_tokens_cache_from_db
@@ -50,6 +50,10 @@ def create_app() -> FastAPI:
     app = FastAPI()
     app.add_middleware(GZipMiddleware, minimum_size=700)
     logger = logging.getLogger("app.perf")
+    # Emit tenant-aware request lines through Uvicorn's error logger
+    # (access logger has a strict 5-arg formatter contract).
+    request_logger = logging.getLogger("uvicorn.error")
+    request_logger.setLevel(logging.INFO)
     slow_request_ms = int(os.getenv("SLOW_REQUEST_MS", "450"))
     log_all_timings = os.getenv("LOG_ALL_REQUEST_TIMINGS", "0").strip() == "1"
 
@@ -62,6 +66,29 @@ def create_app() -> FastAPI:
         response.headers["X-Response-Time-Ms"] = str(elapsed_ms)
 
         if not path.startswith("/static/"):
+            tid = getattr(request.state, "tenant_id", None)
+            if tid is None:
+                try:
+                    tid = current_tenant_id()
+                except Exception:
+                    tid = None
+            session_email = ""
+            try:
+                session_email = str(request.session.get("google_email") or "").strip().lower()
+            except Exception:
+                session_email = ""
+            if not session_email:
+                session_email = str(getattr(request.state, "google_email", "") or "").strip().lower()
+            client_ip = ""
+            try:
+                client_ip = str((request.client.host if request.client else "") or "")
+            except Exception:
+                client_ip = ""
+            request_logger.info(
+                f"request method={request.method} path={path} status={response.status_code} "
+                f"tenant_id={(tid if tid is not None else '-')} "
+                f"email={(session_email or '-')} ip={(client_ip or '-')} ms={elapsed_ms}"
+            )
             if log_all_timings or elapsed_ms >= float(slow_request_ms):
                 logger.info(
                     "request_timing method=%s path=%s status=%s ms=%s",

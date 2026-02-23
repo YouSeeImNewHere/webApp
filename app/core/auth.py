@@ -89,6 +89,18 @@ def _is_owner_request(request: Request) -> bool:
     return bool(owner_email) and session_email == owner_email
 
 
+def _tenant_id_for_email(email: str | None) -> int | None:
+    e = _normalize_email(email)
+    if not e:
+        return None
+    try:
+        user = get_user_by_email(e) if MULTI_TENANT_ENABLED else None
+        tid = (user or {}).get("tenant_id")
+        return int(tid) if tid else None
+    except Exception:
+        return None
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -217,15 +229,9 @@ def _normalize_email(v: str | None) -> str:
     return str(v or "").strip().lower()
 
 
-def _fallback_oauth_email() -> str:
-    # Backward-compatible fallback for non-session flows (cron/watch renew).
-    import os
-    return _normalize_email(os.getenv("GMAIL_ADDRESS"))
-
-
 def _get_google_tokens(google_email: str | None = None):
     _ensure_oauth_tables()
-    email = _normalize_email(google_email) or _fallback_oauth_email()
+    email = _normalize_email(google_email)
 
     def _query():
         with with_db_cursor() as (_, cur):
@@ -331,7 +337,7 @@ def _save_google_tokens(
 
 def _get_last_history_id(google_email: str | None = None) -> str | None:
     _ensure_oauth_tables()
-    email = _normalize_email(google_email) or _fallback_oauth_email()
+    email = _normalize_email(google_email)
     if not email:
         return None
 
@@ -363,7 +369,7 @@ def _save_push_state(
     last_error: str | None = None,
 ):
     _ensure_oauth_tables()
-    email = _normalize_email(google_email) or _fallback_oauth_email()
+    email = _normalize_email(google_email)
     if not email:
         return
 
@@ -397,7 +403,9 @@ def _save_push_state(
 
 
 def _refresh_google_access_token_if_needed(google_email: str | None = None):
-    email = _normalize_email(google_email) or _fallback_oauth_email()
+    email = _normalize_email(google_email)
+    if not email:
+        return None, "google_email_required"
     row = _get_google_tokens(google_email=email)
     if not row:
         return None, "not_connected"
@@ -493,7 +501,7 @@ def _gmail_history_message_ids(access_token: str, start_history_id: str):
     return sorted(message_ids), latest_history_id, None
 
 
-def _trigger_event_processing(include_processed: bool = False):
+def _trigger_event_processing(include_processed: bool = False, google_email: str | None = None):
     if not _PUSH_PROCESS_LOCK.acquire(blocking=False):
         print("gmail push: processing already in progress; skipping duplicate trigger")
         return False
@@ -502,7 +510,13 @@ def _trigger_event_processing(include_processed: bool = False):
         try:
             from emails import emailFetch
 
-            emailFetch.run(include_processed=include_processed)
+            run_email = _normalize_email(google_email) or None
+            tid = _tenant_id_for_email(run_email) if run_email else None
+            print(f"gmail push: starting emailFetch.run email={run_email or '-'} tenant_id={tid if tid is not None else '-'}")
+            emailFetch.run(
+                include_processed=include_processed,
+                rules_user_email=run_email,
+            )
         except Exception as e:
             print("gmail push: emailFetch.run failed:", repr(e))
         finally:
@@ -550,7 +564,9 @@ def _start_gmail_watch(google_email: str | None = None):
             status_code=500,
         )
 
-    email = _normalize_email(google_email) or _fallback_oauth_email()
+    email = _normalize_email(google_email)
+    if not email:
+        return JSONResponse({"ok": False, "error": "google_email_required"}, status_code=400)
     access_token, err = _refresh_google_access_token_if_needed(email)
     if not access_token:
         return JSONResponse({"ok": False, "error": err}, status_code=401)
@@ -634,6 +650,8 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         "scope": " ".join(scopes),
         "access_type": "offline",
         "include_granted_scopes": "true",
+        # Ensure Google returns a refresh token on reconnects.
+        "prompt": "consent",
         "state": state,
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
@@ -712,7 +730,7 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
     if should_auto_watch:
         try:
             _start_gmail_watch(google_email=google_email)
-            _trigger_event_processing()
+            _trigger_event_processing(google_email=google_email)
         except Exception as e:
             print("gmail oauth callback: auto watch start failed:", repr(e))
 
@@ -768,10 +786,6 @@ def gmail_watch_renew(request: Request):
     if not _is_notif_secret_authorized(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
     emails = _list_connected_google_emails()
-    if not emails:
-        fallback_email = _fallback_oauth_email()
-        if fallback_email:
-            emails = [fallback_email]
     if not emails:
         return {"ok": False, "error": "no_connected_gmail_accounts", "results": []}
 
@@ -829,7 +843,7 @@ def gmail_watch_renew(request: Request):
 @router.get("/gmail/push/state")
 def gmail_push_state(request: Request):
     _ensure_oauth_tables()
-    session_email = _normalize_email(request.session.get("google_email")) or _fallback_oauth_email()
+    session_email = _normalize_email(request.session.get("google_email"))
     if not session_email:
         return {"ok": True, "state": {}}
 
@@ -883,10 +897,12 @@ async def gmail_push(request: Request):
 
     history_id = str(payload.get("historyId") or "")
     email = payload.get("emailAddress")
+    tenant_id = _tenant_id_for_email(email)
 
     print("Gmail push received")
     print("History ID:", history_id)
     print("Email:", email)
+    print("Tenant ID:", tenant_id if tenant_id is not None else "-")
 
     if not history_id:
         return {"status": "missing_history_id"}
@@ -947,7 +963,7 @@ async def gmail_push(request: Request):
 
     if message_ids:
         print(f"gmail push: {len(message_ids)} new message(s) since history {start_history_id}")
-        _trigger_event_processing()
+        _trigger_event_processing(google_email=email)
 
     return {
         "status": "ok",
@@ -960,6 +976,11 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         tenant_token = set_current_tenant_id(None)
+        request.state.tenant_id = None
+        try:
+            request.state.google_email = _normalize_email(request.session.get("google_email"))
+        except Exception:
+            request.state.google_email = ""
 
         try:
             # Widget endpoints: OAuth-bound widget token auth.
@@ -969,7 +990,9 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
                     subject = resolve_widget_token(widget_token)
                     if not subject:
                         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-                    set_current_tenant_id(int(subject["tenant_id"]))
+                    resolved_tid = int(subject["tenant_id"])
+                    set_current_tenant_id(resolved_tid)
+                    request.state.tenant_id = resolved_tid
                     return await call_next(request)
 
                 # Legacy fallback for single-tenant mode only.
@@ -1022,7 +1045,9 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
                 tenant_id = user.get("tenant_id")
                 if not tenant_id:
                     return JSONResponse({"ok": False, "error": "tenant_not_assigned"}, status_code=403)
-                set_current_tenant_id(int(tenant_id))
+                resolved_tid = int(tenant_id)
+                set_current_tenant_id(resolved_tid)
+                request.state.tenant_id = resolved_tid
 
             return await call_next(request)
         finally:

@@ -168,8 +168,6 @@ class Timer:
 def _resolve_pushover_db_key(recipient_email: str | None = None) -> str:
     target_email = str(recipient_email or "").strip().lower()
     if not target_email:
-        target_email = str(os.getenv("GMAIL_ADDRESS") or "").strip().lower()
-    if not target_email:
         return ""
     return _lookup_pushover_user_key_from_db(target_email)
 
@@ -1697,11 +1695,10 @@ def run_manual_wizard_parse(
     global PUSHOVER_TOKEN
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
-    EMAIL = os.getenv("GMAIL_ADDRESS")
-    if not EMAIL:
+    if not str(rules_user_email or "").strip():
         raise RuntimeError("Missing Gmail address")
 
-    rules_owner = str(rules_user_email or EMAIL or "").strip().lower()
+    rules_owner = str(rules_user_email or "").strip().lower()
     wizard_rules = load_wizard_rules(rules_owner)
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
@@ -1791,7 +1788,7 @@ def run_manual_wizard_parse(
 # ============================================================
 TEST_MODE = False
 
-def run(include_processed: bool = False):
+def run(include_processed: bool = False, rules_user_email: str | None = None):
     # Load .env from project root reliably (webApp/.env)
     project_root = Path(__file__).resolve().parents[1]  # .../webApp
     env_path = project_root / ".env"
@@ -1802,96 +1799,111 @@ def run(include_processed: bool = False):
     global PUSHOVER_TOKEN
     PUSHOVER_TOKEN = os.getenv("PUSHOVER_API_TOKEN") or ""
 
-    EMAIL = os.getenv("GMAIL_ADDRESS")
-    if not EMAIL:
-        raise RuntimeError("Missing Gmail address")
+    from app.core.auth import _refresh_google_access_token_if_needed, _list_connected_google_emails
 
-    wizard_rules = load_wizard_rules(EMAIL)
-    log(f"Wizard pipeline enabled; loaded {len(wizard_rules)} parser rule(s)")
-    if not wizard_rules:
-        log("No parser rules found; emails will be fetched but none will parse until rules are created.")
+    targets: list[str]
+    requested = str(rules_user_email or "").strip().lower()
+    if requested:
+        targets = [requested]
+    else:
+        targets = _list_connected_google_emails()
+    if not targets:
+        raise RuntimeError("No connected Gmail accounts")
 
-    pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
-    ensure_pending_table(pending_table)
-    ensure_notified_table("notified_transactions")
-    # Hardcoded lookback for manual recovery/debugging.
-    window_minutes = 24 * 60
-    cutoff_utc = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
-
-    # 20–30 minutes is what you wanted; default 30, configurable
-    PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
-
-    from app.core.auth import _refresh_google_access_token_if_needed
-
-    access_token, err = _refresh_google_access_token_if_needed(EMAIL)
-    if not access_token:
-        raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
-    processed_label_id = None
-    if not include_processed:
-        processed_label_id = _gmail_get_or_create_label_id(access_token, "ProcessedNew")
-
-    all_ids = get_recent_gmail_ids(
-        access_token,
-        include_processed=include_processed,
-        lookback_days=1,
-        limit=5000,
-    )
-    log(f"Found {len(all_ids)} emails in 1-day prefilter; applying {window_minutes}m window")
-    did_work = False
-
-    if DEBUG:
-        dbg(f"GMAIL IDS: {all_ids}")
-
-    for i in range(0, len(all_ids), BATCH_SIZE):
-        batch = all_ids[i:i + BATCH_SIZE]
-        dbg(f"Batch {i // BATCH_SIZE + 1} ({len(batch)})")
-
-        for mid in batch:
-            msg = _gmail_api_get_message(access_token, str(mid))
-            hdrs = _gmail_headers_map(msg)
-            subject = hdrs.get("subject", "")
-            sender = hdrs.get("from", "")
-            date = hdrs.get("date", "")
-            if not is_within_minutes_window(date, cutoff_utc):
-                continue
-            k = dedupe_key({"Message-ID": hdrs.get("message-id", "")}, sender, subject, date, str(mid))
-            dbg_header(str(mid), subject, sender, date, k)
-            body = _extract_gmail_body_from_payload(msg.get("payload") or {})
-
-            matched = process_wizard_email(
-                mail=None,
-                imap_id=str(mid),
-                sender=sender,
-                subject=subject,
-                header_date=date,
-                body=body,
-                rules=wizard_rules,
-                pending_table=pending_table,
-                access_token=access_token,
-                processed_label_id=processed_label_id,
-                recipient_email=EMAIL,
-            )
-            if matched:
-                did_work = True
-            elif DEBUG:
-                dbg_dump_body_on_no_rule(subject, sender, str(mid), body)
-
-    if did_work:
-        dbg("Flushing pending notifications…")
+    for rules_owner in targets:
+        tenant_id = None
         try:
-            flush_pending_notifications(
-                pending_table,
-                ttl_minutes=PENDING_TTL_MINUTES,
-                recipient_email=EMAIL,
-            )
-        except Exception as e:
-            msg = f"{type(e).__name__}: {e}"
-            log(f"⚠️ flush_pending_notifications failed: {msg}")
-            push_error(
-                kind="cron_error",
-                subject="emailFetch: flush_pending_notifications FAILED",
-                body=msg,
-            )
+            from app.core.tenancy import get_user_by_email
+
+            user_row = get_user_by_email(rules_owner)
+            tenant_id = int((user_row or {}).get("tenant_id") or 0) or None
+        except Exception:
+            tenant_id = None
+        scope_tag = f"email={rules_owner} tenant_id={tenant_id if tenant_id is not None else '-'}"
+        wizard_rules = load_wizard_rules(rules_owner)
+        log(f"[{scope_tag}] Wizard pipeline enabled; loaded {len(wizard_rules)} parser rule(s)")
+        if not wizard_rules:
+            log(f"[{scope_tag}] No parser rules found; emails will be fetched but none will parse until rules are created.")
+
+        pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
+        ensure_pending_table(pending_table)
+        ensure_notified_table("notified_transactions")
+        # Hardcoded lookback for manual recovery/debugging.
+        window_minutes = 24 * 60
+        cutoff_utc = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+
+        # 20–30 minutes is what you wanted; default 30, configurable
+        PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
+
+        access_token, err = _refresh_google_access_token_if_needed(rules_owner)
+        if not access_token:
+            raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
+        processed_label_id = None
+        if not include_processed:
+            processed_label_id = _gmail_get_or_create_label_id(access_token, "ProcessedNew")
+
+        all_ids = get_recent_gmail_ids(
+            access_token,
+            include_processed=include_processed,
+            lookback_days=1,
+            limit=5000,
+        )
+        log(f"[{scope_tag}] Found {len(all_ids)} emails in 1-day prefilter; applying {window_minutes}m window")
+        did_work = False
+
+        if DEBUG:
+            dbg(f"GMAIL IDS: {all_ids}")
+
+        for i in range(0, len(all_ids), BATCH_SIZE):
+            batch = all_ids[i:i + BATCH_SIZE]
+            dbg(f"Batch {i // BATCH_SIZE + 1} ({len(batch)})")
+
+            for mid in batch:
+                msg = _gmail_api_get_message(access_token, str(mid))
+                hdrs = _gmail_headers_map(msg)
+                subject = hdrs.get("subject", "")
+                sender = hdrs.get("from", "")
+                date = hdrs.get("date", "")
+                if not is_within_minutes_window(date, cutoff_utc):
+                    continue
+                k = dedupe_key({"Message-ID": hdrs.get("message-id", "")}, sender, subject, date, str(mid))
+                dbg_header(str(mid), subject, sender, date, k)
+                body = _extract_gmail_body_from_payload(msg.get("payload") or {})
+
+                matched = process_wizard_email(
+                    mail=None,
+                    imap_id=str(mid),
+                    sender=sender,
+                    subject=subject,
+                    header_date=date,
+                    body=body,
+                    rules=wizard_rules,
+                    pending_table=pending_table,
+                    access_token=access_token,
+                    processed_label_id=processed_label_id,
+                    recipient_email=rules_owner,
+                )
+                if matched:
+                    did_work = True
+                elif DEBUG:
+                    dbg_dump_body_on_no_rule(subject, sender, str(mid), body)
+
+        if did_work:
+            dbg("Flushing pending notifications…")
+            try:
+                flush_pending_notifications(
+                    pending_table,
+                    ttl_minutes=PENDING_TTL_MINUTES,
+                    recipient_email=rules_owner,
+                )
+            except Exception as e:
+                msg = f"{type(e).__name__}: {e}"
+                log(f"⚠️ flush_pending_notifications failed: {msg}")
+                push_error(
+                    kind="cron_error",
+                    subject="emailFetch: flush_pending_notifications FAILED",
+                    body=msg,
+                )
 
     log("DONE")
 
