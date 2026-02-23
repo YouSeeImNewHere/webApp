@@ -1357,13 +1357,11 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
    ============================================================================= */
 
 #nwPotentialWrap{
-  min-height: 22px;
+  min-height: 0;
 }
 
 .is-hidden-reserve{
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: none !important;
 }
 
 /* =============================================================================
@@ -4224,6 +4222,11 @@ body.page-recurring .merge-btn{
 
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+}
+
+/* Safety: never show empty projected-growth shell. */
+.chart-growth-overlay:empty{
+  display: none !important;
 }
 :root[data-theme="oled"]{
   --bg: #000000;

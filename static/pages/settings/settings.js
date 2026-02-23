@@ -724,8 +724,6 @@ document.addEventListener("DOMContentLoaded", () => {
   loadInitialSetupProgress().catch((err) => console.error(err));
   loadGoogleOAuthStatus().catch((err) => console.error(err));
   loadAdminVisibility().catch((err) => console.error(err));
-  loadWidgetPreview().catch((err) => console.error(err));
-  bindWidgetActions();
   bindEmailParserBackfill();
   bindGoogleOAuthActions();
 });

@@ -95,6 +95,10 @@ def home(request: Request):
 def settings_page():
     return FileResponse("static/pages/settings/settings.html")
 
+@router.get("/widgets")
+def widgets_page():
+    return FileResponse("static/pages/widgets/widgets.html")
+
 @router.get("/notification-settings")
 def notification_settings_page():
     path = "static/pages/notification-settings/notification-settings.html"

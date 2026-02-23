@@ -222,16 +222,16 @@ def les_paychecks(req: LESPaychecksRequest):
         month_start, month_end = _month_bounds(year, month)
         target_dep = deposit_for_target(date(year, month, 15))
 
-        # pull candidate DFAS income tx in this month
+        # pull candidate DFAS paycheck tx in this month.
+        # Do not hard-require category/account here: some imports temporarily
+        # misclassify income rows or route deposits to a different account.
+        # We still prefer account 3 + Income rows when ranking candidates.
         cur.execute(
             """
-            SELECT postedDate, purchaseDate, amount, merchant
+            SELECT postedDate, purchaseDate, amount, merchant, account_id, category
             FROM transactions
-            WHERE account_id = %s
-              AND category = 'Income'
-              AND UPPER(merchant) LIKE '%%DFAS%%'
+            WHERE UPPER(merchant) LIKE '%%DFAS%%'
             """,
-            (3,),
         )
         rows = cur.fetchall() or []
 
@@ -250,15 +250,21 @@ def les_paychecks(req: LESPaychecksRequest):
             except Exception:
                 continue
 
+            if abs(amt) < 100:
+                continue
+
             dep_amt = abs(amt)
             delta_days = abs((tx_date - target_dep).days)
-            candidates.append((delta_days, tx_date, dep_amt))
+            acct_rank = 0 if int(r.get("account_id") or 0) == 3 else 1
+            category = str(r.get("category") or "").strip().lower()
+            cat_rank = 0 if category == "income" else 1
+            candidates.append((delta_days, acct_rank, cat_rank, tx_date, dep_amt))
 
         if not candidates:
             return None
 
-        candidates.sort(key=lambda x: (x[0], x[1]))
-        best_delta, _, best_amt = candidates[0]
+        candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
+        best_delta, _, _, _, best_amt = candidates[0]
         if best_delta > 5:
             return None
         return float(best_amt)
@@ -419,4 +425,3 @@ def les_paychecks(req: LESPaychecksRequest):
     }
 
     return {"events": events, "breakdown": breakdown}
-

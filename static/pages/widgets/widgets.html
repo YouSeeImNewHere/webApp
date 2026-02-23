@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Widgets</title>
+
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/widgets/widgets.css?v={{ BUILD_ID }}&rev=20260223a">
+  <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
+</head>
+
+<body class="widgets-page" data-page-title="Widgets">
+  <div class="settings-wrap widgets-wrap">
+    <section class="settings-section">
+      <h2 class="settings-section-title">Widget Platforms</h2>
+      <div class="settings-card">
+        <div class="widgets-platform-tabs" role="tablist" aria-label="Widget platform tabs">
+          <button type="button" class="settings-btn widget-platform-tab active" role="tab" aria-selected="true" data-platform="ios">iOS</button>
+          <button type="button" class="settings-btn widget-platform-tab" role="tab" aria-selected="false" data-platform="android">Android</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section widget-platform-pane" id="widgetPaneIos" data-platform-pane="ios">
+      <h2 class="settings-section-title">iOS Widget</h2>
+      <div class="settings-card">
+        <div class="settings-muted" style="margin-bottom:10px;">
+          Showcase Home and Lock Screen styles, then copy ready-to-paste Scriptable code.
+        </div>
+
+        <div class="widget-showcase-grid" aria-live="polite">
+          <div class="widget-preview-card widget-preview-home">
+            <div class="widget-preview-head">
+              <span>Home Screen (Medium)</span>
+              <span id="widgetPreviewUpdated">Loading...</span>
+            </div>
+            <div class="widget-home-main">
+              <div class="widget-home-left">
+                <div class="widget-metric-head"><span>CREDIT USAGE</span><span id="widgetPreviewCreditPct">0%</span></div>
+                <div class="widget-bar">
+                  <div class="widget-bar-fill" id="widgetPreviewCreditFill"></div>
+                  <div class="widget-bar-text" id="widgetPreviewCreditAvail">$0</div>
+                </div>
+
+                <div class="widget-metric-head"><span>SAFE TO SPEND</span><span id="widgetPreviewMonthGoal">$0</span></div>
+                <div class="widget-bar">
+                  <div class="widget-bar-fill widget-bar-safe" id="widgetPreviewSafeFill"></div>
+                  <div class="widget-bar-text" id="widgetPreviewSafeValue">$0.00</div>
+                </div>
+
+                <div class="widget-metric-head"><span>DAILY LIMIT</span><span id="widgetPreviewBaseline">$0</span></div>
+                <div class="widget-bar">
+                  <div class="widget-bar-fill widget-bar-day" id="widgetPreviewDayFill"></div>
+                  <div class="widget-bar-text" id="widgetPreviewToday">$0.00</div>
+                </div>
+              </div>
+
+              <div class="widget-home-right">
+                <div class="widget-kv"><span>Checking</span><strong id="widgetPreviewChecking">$0.00</strong></div>
+                <div class="widget-kv"><span>Savings</span><strong id="widgetPreviewSavings">$0.00</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="widget-preview-card widget-preview-lock">
+            <div class="widget-preview-head">
+              <span>Lock Screen</span>
+              <span>Inline / Circular / Rectangular</span>
+            </div>
+
+            <div class="lock-inline" id="widgetPreviewInline">Left $0</div>
+            <div class="lock-row">
+              <div class="lock-circular" id="widgetPreviewCircular">$0</div>
+              <div class="lock-rect">
+                <div class="lock-rect-top"><strong id="widgetPreviewRectToday">$0.00</strong><span id="widgetPreviewRectPct">0%</span></div>
+                <div class="lock-rect-sub" id="widgetPreviewRectBase">Base $0/day</div>
+                <div class="lock-rect-sub" id="widgetPreviewRectSafe">Safe $0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-row" style="margin-top:12px;">
+          <button class="settings-btn primary" id="copyWidgetCodeBtn" type="button">Copy Scriptable Code</button>
+          <button class="settings-btn" id="refreshWidgetPreviewBtn" type="button">Refresh Preview</button>
+        </div>
+        <div class="settings-muted" id="widgetCodeStatus" role="status" aria-live="polite"></div>
+        <div class="settings-muted">Copy rotates your widget token, so re-copy if you set up a new device.</div>
+      </div>
+    </section>
+
+    <section class="settings-section widget-platform-pane hidden" id="widgetPaneAndroid" data-platform-pane="android">
+      <h2 class="settings-section-title">Android Widget</h2>
+      <div class="settings-card">
+        <div class="android-widget-placeholder">
+          <div class="android-widget-title">Groundwork Ready</div>
+          <div class="settings-muted">This tab is reserved for Android widget templates and setup flow.</div>
+          <div class="settings-muted">Next step: add Android-specific preview cards and code generation endpoint.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/pages/widgets/widgets.js?v={{ BUILD_ID }}&rev=20260223a" defer></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+</body>
+</html>

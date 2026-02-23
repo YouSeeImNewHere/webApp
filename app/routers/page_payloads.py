@@ -1158,11 +1158,43 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
       - budgeted = categories inside budget groups for this month
       - free = total - budgeted
     """
+    def _budgeted_covered_spend_total(groups: list[dict[str, Any]], cat_totals: dict[str, float]) -> float:
+        remaining = {str(k): max(0.0, float(v or 0.0)) for k, v in (cat_totals or {}).items()}
+        covered = 0.0
+        for g in (groups or []):
+            alloc = max(0.0, float(g.get("allocated") or 0.0))
+            if alloc <= 0:
+                continue
+            cats: list[str] = []
+            for c in (g.get("categories") or []):
+                cn = _norm_cat(c)
+                if cn and cn not in cats:
+                    cats.append(cn)
+            if not cats:
+                continue
+            eligible = sum(float(remaining.get(cn, 0.0)) for cn in cats)
+            take_total = min(alloc, max(0.0, eligible))
+            if take_total <= 0:
+                continue
+            covered += take_total
+            to_take = take_total
+            for cn in cats:
+                if to_take <= 0:
+                    break
+                avail = float(remaining.get(cn, 0.0))
+                if avail <= 0:
+                    continue
+                used = min(avail, to_take)
+                remaining[cn] = avail - used
+                to_take -= used
+        return max(0.0, float(covered))
+
     year = day.year
     month = day.month
     tid = _require_tenant_id()
+    month_start = date(year, month, 1)
 
-    # Pull tx rows for *that day*
+    # Pull tx rows month-to-date so budget caps apply once allocations are exhausted.
     tx_rows = query_db(
         f"""
         WITH base AS (
@@ -1188,13 +1220,13 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
         )
         SELECT d, amount, category, accountType
         FROM norm
-        WHERE d = %s
+        WHERE d BETWEEN %s AND %s
         """,
-        ((int(tid), int(tid), day) if tid else (day,)),
+        ((int(tid), int(tid), month_start, day) if tid else (month_start, day)),
     )
 
-    spent_today = 0.0
-    cat_spent: dict[str, float] = {}
+    spent_by_day: dict[date, float] = {}
+    cat_spent_by_day: dict[date, dict[str, float]] = {}
     roundup_cfg = get_roundup_settings()
     roundup_enabled = bool(roundup_cfg.get("enabled", False))
     roundup_norm = _norm_cat(str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT))
@@ -1208,27 +1240,39 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
         amt = float(r["amount"] or 0.0)
         account_type = (r["accounttype"] or "").lower()
         if account_type in ("checking", "credit") and amt > 0:
-            spent_today += amt
+            dtx = r["d"]
+            spent_by_day[dtx] = spent_by_day.get(dtx, 0.0) + amt
+            day_cat = cat_spent_by_day.setdefault(dtx, {})
             if category:
-                cat_spent[category] = cat_spent.get(category, 0.0) + amt
+                day_cat[category] = day_cat.get(category, 0.0) + amt
             if roundup_enabled and is_roundup_eligible_tx(amt, account_type, category):
                 ru = roundup_amount_from_spend(amt)
                 if ru > 0:
-                    spent_today += ru
-                    cat_spent[roundup_norm] = cat_spent.get(roundup_norm, 0.0) + ru
+                    spent_by_day[dtx] = spent_by_day.get(dtx, 0.0) + ru
+                    day_cat[roundup_norm] = day_cat.get(roundup_norm, 0.0) + ru
 
     # Budgeted categories for this month
     groups = _get_budget_groups_for_month(year, month)
-    budgeted_cats = set()
-    for g in (groups or []):
-        for c in (g.get("categories") or []):
-            budgeted_cats.add(_norm_cat(c))
-
+    cumulative_cat_spent: dict[str, float] = {}
+    covered_prev = 0.0
     spent_budgeted = 0.0
-    for cn, amt in cat_spent.items():
-        if _norm_cat(cn) in budgeted_cats:
-            spent_budgeted += float(amt)
 
+    dcur = month_start
+    while dcur <= day:
+        day_cat = cat_spent_by_day.get(dcur) or {}
+        for cn, amt in day_cat.items():
+            k = _norm_cat(cn)
+            if not k:
+                continue
+            cumulative_cat_spent[k] = cumulative_cat_spent.get(k, 0.0) + float(amt)
+        covered_now = _budgeted_covered_spend_total(groups, cumulative_cat_spent)
+        if dcur == day:
+            spent_budgeted = max(0.0, covered_now - covered_prev)
+        covered_prev = covered_now
+        dcur += timedelta(days=1)
+
+    spent_today = float(spent_by_day.get(day, 0.0))
+    spent_budgeted = min(spent_today, spent_budgeted)
     spent_free = spent_today - spent_budgeted
     return spent_today, spent_budgeted, spent_free
 

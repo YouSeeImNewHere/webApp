@@ -31,7 +31,7 @@ const HOME_IDS = {
 
 let netWorthChartInstance = null;
 const DEBUG_SPENDING = false;
-let showPotentialGrowth = (localStorage.getItem("showPotentialGrowth") === "true");
+let showPotentialGrowth = false;
 let endBeforePotential = null;
 const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
 let HOME_BOOT_COMPLETE = false;
@@ -1621,16 +1621,16 @@ function renderUnassignedRow(ul, unassignedAllTime) {
 
 function updatePotentialToggleVisibility() {
   const wrap = document.getElementById("nwPotentialWrap");
+  const overlay = document.querySelector(".chart-growth-overlay");
   if (!wrap) return;
 
   const isNet = currentChart().key === "net";
-  if (isNet) wrap.classList.remove("is-hidden-reserve");
-    else wrap.classList.add("is-hidden-reserve");
+  wrap.style.display = isNet ? "" : "none";
+  if (overlay) overlay.style.display = isNet ? "" : "none";
 
-  // optional: turn it off when leaving Net Worth
+  // Always force it off when leaving Net Worth.
   if (!isNet && showPotentialGrowth) {
     showPotentialGrowth = false;
-    localStorage.setItem("showPotentialGrowth", "false");
     const cb = document.getElementById("nwPotentialToggle");
     if (cb) cb.checked = false;
   }
@@ -1884,11 +1884,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const potentialToggle = document.getElementById("nwPotentialToggle");
   if (potentialToggle) {
-    potentialToggle.checked = showPotentialGrowth;
+    // Always default unchecked on page load.
+    showPotentialGrowth = false;
+    potentialToggle.checked = false;
 
     potentialToggle.addEventListener("change", async () => {
       showPotentialGrowth = potentialToggle.checked;
-      localStorage.setItem("showPotentialGrowth", String(showPotentialGrowth));
 
       const todayIso = isoLocal(new Date());
 
@@ -1896,7 +1897,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!sameMonthISO(todayIso, endInput.value) || currentChart().key !== "net") {
           showPotentialGrowth = false;
           potentialToggle.checked = false;
-          localStorage.setItem("showPotentialGrowth", "false");
           return;
         }
 
@@ -3655,27 +3655,74 @@ async function openSpentBreakdown() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const startISO = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}-${String(start.getDate()).padStart(2,"0")}`;
   const endISO   = isoLocalDate();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  const normCat = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
 
   try {
-    const d = await apiGetJson(
-      `/spent-so-far-breakdown?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
-      { cache: "no-store" }
-    );
+    const [d, budgetPage] = await Promise.all([
+      apiGetJson(
+        `/spent-so-far-breakdown?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
+        { cache: "no-store" }
+      ),
+      apiGetJson(
+        `/page/budget?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}`,
+        { cache: "no-store" }
+      ),
+    ]);
 
     if (subEl) subEl.textContent = `${d.start}  ${d.end}  Total: ${money(Number(d.total || 0))}`;
 
     const excluded = Array.isArray(d.excluded) ? d.excluded : [];
     const included = Array.isArray(d.included) ? d.included : [];
+    const groups = Array.isArray(budgetPage?.groups) ? budgetPage.groups : [];
+
+    const overspentByCategory = new Map();
+    for (const g of groups) {
+      const alloc = Number(g?.allocated || 0);
+      const spent = Number(g?.spent || 0);
+      if (!(alloc > 0) || !(spent > alloc)) continue;
+      const cats = Array.isArray(g?.categories) ? g.categories : [];
+      for (const c of cats) {
+        const cn = normCat(c);
+        if (!cn) continue;
+        const list = overspentByCategory.get(cn) || [];
+        list.push({
+          group: String(g?.name || "Budget group"),
+          allocated: alloc,
+          spent,
+        });
+        overspentByCategory.set(cn, list);
+      }
+    }
 
     const excludedHtml = `
       <div style="font-weight:800; margin-bottom:6px;">Excluded categories</div>
       <div style="border-top:1px solid rgba(0,0,0,.08); margin:8px 0;"></div>
-      ${excluded.map(x => `
-        <div style="display:flex; justify-content:space-between; padding:6px 0;">
-          <div style="opacity:.85;">${escapeHtml(x.category)}</div>
-          <div style="font-weight:800;">${money(Number(x.total || 0))}</div>
-        </div>
-      `).join("") || `<div style="opacity:.7;">None</div>`}
+      ${excluded.map(x => {
+        const rows = overspentByCategory.get(normCat(x.category)) || [];
+        const isOverspent = rows.length > 0;
+        const limitHtml = isOverspent
+          ? `<div style="margin-top:4px;">
+              ${rows.map(r => `
+                <div style="font-size:12px; color:#b3261e; opacity:.95;">
+                  Limit (${escapeHtml(r.group)}): ${money(r.allocated)}  Spent: ${money(r.spent)}
+                </div>
+              `).join("")}
+            </div>`
+          : "";
+        return `
+          <div style="padding:6px 0; border-bottom:1px solid rgba(0,0,0,.06);">
+            <div style="display:flex; justify-content:space-between;">
+              <div style="opacity:${isOverspent ? "1" : ".85"}; color:${isOverspent ? "#b3261e" : "inherit"}; font-weight:${isOverspent ? "800" : "600"};">
+                ${escapeHtml(x.category)}
+              </div>
+              <div style="font-weight:800; color:${isOverspent ? "#b3261e" : "inherit"};">${money(Number(x.total || 0))}</div>
+            </div>
+            ${limitHtml}
+          </div>
+        `;
+      }).join("") || `<div style="opacity:.7;">None</div>`}
       <div style="border-top:1px solid rgba(0,0,0,.08); margin:10px 0;"></div>
     `;
 
