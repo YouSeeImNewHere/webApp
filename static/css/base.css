@@ -5805,6 +5805,16 @@ body{
   }
 
   .top-bar-right #topBarBack{
-    display: none !important;
+    order: 3;
+  }
+
+  .top-bar .top-btn{
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    width: 42px;
+    height: 42px;
+    font-size: 20px;
   }
 }

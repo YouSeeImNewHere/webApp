@@ -996,7 +996,7 @@ function setChartHeaderUI() {
   const next = CHARTS[(chartIndex + 1) % CHARTS.length];
 
   if (t) t.textContent = current.title;
-  if (btn) btn.textContent = `Next: ${next.title} â–¾`;
+  if (btn) btn.textContent = `Next: ${next.title} v`;
 
     renderChartDots();
     updatePotentialToggleVisibility();
@@ -1796,7 +1796,7 @@ const btn = document.getElementById("goBudgetBtn");
 mountChartCard("#homeChartMount", {
   ids: HOME_IDS,
   title: "Net Worth",
-  toggleText: "Next: Savings â–¾",
+  toggleText: "Next: Savings v",
   breakdownLabel: "Net",
   breakdownValue: "$0",
 
@@ -1838,7 +1838,7 @@ const closeBtn = document.getElementById("ruleModalClose");
             document.getElementById("ruleTxAmount").textContent = "";
             document.getElementById("ruleTxDate").textContent = "";
             const m = document.getElementById("ruleTxMatches");
-            if (m) m.textContent = "â€”";
+            if (m) m.textContent = "-";
             document.getElementById("ruleCounter").textContent = "0 / 0";
             return;
           }
@@ -2513,7 +2513,7 @@ function ensureIncomeInspectModal() {
           <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
           <div id="incomeInspectSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">âœ•</button>
+        <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">x</button>
       </div>
 
       <div id="incomeInspectBody" class="tx-inspect__body"></div>
@@ -2734,7 +2734,7 @@ function ensureExtraSavedModal() {
           <div id="extraSavedTitle" class="tx-inspect__title">Extra saved</div>
           <div id="extraSavedSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-extra-close aria-label="Close">âœ•</button>
+        <button class="tx-inspect__close" type="button" data-extra-close aria-label="Close">x</button>
       </div>
 
       <div id="extraSavedBody" class="tx-inspect__body"></div>
@@ -2814,7 +2814,7 @@ function ensureCsvUploadModal() {
           <div class="tx-inspect__title">Import CSV/Excel</div>
           <div id="csvUploadSub" class="tx-inspect__sub">Drop a CSV or Excel file, preview it, map columns, then import.</div>
         </div>
-        <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">âœ•</button>
+        <button class="tx-inspect__close" type="button" data-csv-close aria-label="Close">x</button>
       </div>
       <div class="tx-inspect__body">
         <div id="csvDropZone" style="border:1px dashed rgba(0,0,0,.25); border-radius:12px; padding:12px; margin-bottom:10px;">
@@ -3430,7 +3430,7 @@ function ensureCsvDryRunCompareModal() {
           <div class="tx-inspect__title">CSV Dry Run Comparison</div>
           <div id="csvDryRunCompareSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">âœ•</button>
+        <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">x</button>
       </div>
       <div id="csvDryRunCompareBody" class="tx-inspect__body csv-dryrun__body"></div>
     </div>
@@ -3613,7 +3613,7 @@ function ensureSpentInspectModal() {
           <div id="spentInspectTitle" class="tx-inspect__title">Spent so far</div>
           <div id="spentInspectSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-spent-close aria-label="Close">âœ•</button>
+        <button class="tx-inspect__close" type="button" data-spent-close aria-label="Close">x</button>
       </div>
 
       <div id="spentInspectBody" class="tx-inspect__body"></div>
@@ -3854,7 +3854,7 @@ function ensureTxInspectModal() {
           <div id="txInspectTitle" class="tx-inspect__title">Transaction</div>
           <div id="txInspectSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">âœ•</button>
+        <button class="tx-inspect__close" type="button" data-tx-close aria-label="Close">x</button>
       </div>
 
       <div id="txInspectBody" class="tx-inspect__body"></div>

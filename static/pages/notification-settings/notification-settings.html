@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Notification Settings</title>
+
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/settings/settings.css?v={{ BUILD_ID }}&rev=20260219b">
+  <link rel="stylesheet" href="/static/pages/notification-settings/notification-settings.css?v={{ BUILD_ID }}&rev=20260222a">
+  <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
+</head>
+
+<body class="settings-page" data-page-title="Notification Settings">
+  <div class="settings-wrap">
+    <section class="settings-section">
+      <h2 class="settings-section-title">Notification Settings</h2>
+      <div class="settings-card">
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-muted" style="margin:0;">Choose which alerts you want to receive.</div>
+          <a class="settings-btn" href="/settings">Back to Settings</a>
+        </div>
+        <div class="settings-muted notif-settings-status" id="notifSettingsStatus" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Spending Power</h2>
+      <div class="settings-card notification-settings-list">
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Safe-to-spend update</div>
+            <div class="settings-muted notification-setting-muted">Daily snapshot of available free spending after goals and allocations.</div>
+          </div>
+          <label class="switch" aria-label="Safe to spend daily updates">
+            <input id="notifSafeToSpendDailyToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Runway warning</div>
+            <div class="settings-muted notification-setting-muted">Warn when current pace may run out of free spending before month-end.</div>
+          </div>
+          <label class="switch" aria-label="Runway warning notifications">
+            <input id="notifRunwayWarningToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">High-spend day cooldown</div>
+            <div class="settings-muted notification-setting-muted">Alert when free spending is unusually high versus today's limit.</div>
+          </div>
+          <label class="switch" aria-label="High spend day cooldown notifications">
+            <input id="notifHighSpendCooldownToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Budget Guardrails</h2>
+      <div class="settings-card notification-settings-list">
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Category drift alert</div>
+            <div class="settings-muted notification-setting-muted">Warn when a budget group is being used too quickly for the month.</div>
+          </div>
+          <label class="switch" aria-label="Category drift notifications">
+            <input id="notifCategoryDriftToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Budget overage</div>
+            <div class="settings-muted notification-setting-muted">Alerts when a budget group goes over for the month.</div>
+          </div>
+          <label class="switch" aria-label="Budget overage notifications">
+            <input id="notifBudgetOverToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Savings Momentum</h2>
+      <div class="settings-card notification-settings-list">
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Savings streak nudges</div>
+            <div class="settings-muted notification-setting-muted">Encouragement when you sustain low free-spend days.</div>
+          </div>
+          <label class="switch" aria-label="Savings streak notifications">
+            <input id="notifSavingsStreakToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Small win reinforcement</div>
+            <div class="settings-muted notification-setting-muted">Celebrate under-plan weeks with a suggested transfer-to-savings amount.</div>
+          </div>
+          <label class="switch" aria-label="Small win reinforcement notifications">
+            <input id="notifSmallWinReinforcementToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Subscription Watch</h2>
+      <div class="settings-card notification-settings-list">
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Subscription creep alert</div>
+            <div class="settings-muted notification-setting-muted">Warn when projected recurring monthly bills increase versus last month.</div>
+          </div>
+          <label class="switch" aria-label="Subscription creep notifications">
+            <input id="notifSubscriptionCreepToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Credit Usage</h2>
+      <div class="settings-card notification-settings-list">
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Credit usage per card</div>
+            <div class="settings-muted notification-setting-muted">Alerts when a card crosses configured usage thresholds.</div>
+          </div>
+          <label class="switch" aria-label="Credit usage per card notifications">
+            <input id="notifCreditUsageToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="notification-setting-row">
+          <div class="notification-setting-copy">
+            <div class="notification-setting-title">Total credit usage</div>
+            <div class="settings-muted notification-setting-muted">Alerts when total credit usage crosses thresholds.</div>
+          </div>
+          <label class="switch" aria-label="Total credit usage notifications">
+            <input id="notifCreditUsageTotalToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Delivery</h2>
+      <div class="settings-card">
+        <div class="notification-settings-list" style="margin-bottom:12px;">
+          <div class="notification-setting-row">
+            <div class="notification-setting-copy">
+              <div class="notification-setting-title">Pending user approval</div>
+              <div class="settings-muted notification-setting-muted">Owner alert when a new user is waiting for approval.</div>
+            </div>
+            <label class="switch" aria-label="Pending user approval notifications">
+              <input id="notifUserSignupPendingToggle" type="checkbox" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="notification-setting-row">
+            <div class="notification-setting-copy">
+              <div class="notification-setting-title">System cron errors</div>
+              <div class="settings-muted notification-setting-muted">Alerts when the email fetcher or scheduled jobs fail.</div>
+            </div>
+            <label class="switch" aria-label="Cron error notifications">
+              <input id="notifCronErrorToggle" type="checkbox" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="notification-setting-title" style="margin-bottom:6px;">Pushover user key</div>
+        <div id="settingsPushoverUserKey" class="settings-code">Not set</div>
+      </div>
+    </section>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/shared/layout.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/pages/notification-settings/notification-settings.js?v={{ BUILD_ID }}&rev=20260222a" defer></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+</body>
+</html>

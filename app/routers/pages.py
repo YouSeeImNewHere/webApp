@@ -97,7 +97,11 @@ def settings_page():
 
 @router.get("/notification-settings")
 def notification_settings_page():
-    return FileResponse("static/pages/notification-settings/notification-settings.html")
+    path = "static/pages/notification-settings/notification-settings.html"
+    if os.path.exists(path):
+        return FileResponse(path)
+    # Fail safe in case the notification-settings page was not included in deploy.
+    return FileResponse("static/pages/settings/settings.html")
 
 
 @router.get("/admin")

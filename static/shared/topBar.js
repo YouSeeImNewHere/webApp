@@ -31,8 +31,12 @@
   ]);
 
   const backBtn = host.querySelector("#topBarBack");
-
-  const shouldShowBack = !tabPaths.has(path);
+  const noBackPaths = new Set([
+    ...tabPaths,
+    "/settings",
+    "/static/pages/settings/settings.html",
+  ]);
+  const shouldShowBack = !noBackPaths.has(path);
   if (backBtn) {
     backBtn.style.visibility = shouldShowBack ? "visible" : "hidden";
 
@@ -42,6 +46,30 @@
       else window.location.href = "/";
     });
   }
+
+  // Keep title centered between Settings and Notifications on mobile.
+  const centerTitleBetweenIcons = () => {
+    if (!titleEl) return;
+    if (!window.matchMedia("(max-width: 900px)").matches) {
+      titleEl.style.removeProperty("left");
+      return;
+    }
+    const inner = host.querySelector(".top-bar-inner");
+    const settingsBtn = inner?.querySelector('a.top-btn[href="/settings"]');
+    const notifBtn = inner?.querySelector("#topBarNotif");
+    if (!inner || !settingsBtn || !notifBtn) return;
+
+    const innerRect = inner.getBoundingClientRect();
+    const settingsRect = settingsBtn.getBoundingClientRect();
+    const notifRect = notifBtn.getBoundingClientRect();
+    const settingsCx = settingsRect.left + (settingsRect.width / 2);
+    const notifCx = notifRect.left + (notifRect.width / 2);
+    const mid = ((settingsCx + notifCx) / 2) - innerRect.left;
+    titleEl.style.setProperty("left", `${mid}px`, "important");
+  };
+  centerTitleBetweenIcons();
+  window.addEventListener("resize", centerTitleBetweenIcons);
+
     // ======================================================
   // HARD REFRESH BUTTON (bypass iOS PWA cache)
   // ======================================================

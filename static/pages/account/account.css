@@ -10,6 +10,12 @@ body.page-account #topBarBack{
   display: none !important;
 }
 
+@media (max-width: 900px){
+  body.page-account #topBarBack{
+    display: inline-flex !important;
+  }
+}
+
 body.page-account .account-title-switcher__select{
   width: 100%;
   min-width: 180px;
