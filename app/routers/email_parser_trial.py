@@ -134,6 +134,52 @@ def _require_session_email(request: Request) -> str:
     return e
 
 
+def _normalize_parser_slot(value: Any, default: str = "parser_1") -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return default
+    compact = re.sub(r"[\s\-]+", "_", raw)
+    aliases = {
+        "primary": "parser_1",
+        "backup": "parser_2",
+        "secondary": "parser_2",
+        "parser1": "parser_1",
+        "parser_1": "parser_1",
+        "parser2": "parser_2",
+        "parser_2": "parser_2",
+        "parser3": "parser_3",
+        "parser_3": "parser_3",
+    }
+    if compact in aliases:
+        return aliases[compact]
+    m = re.fullmatch(r"parser_?(\d+)", compact)
+    if m:
+        n = max(1, int(m.group(1)))
+        return f"parser_{n}"
+    m = re.fullmatch(r"(\d+)", compact)
+    if m:
+        n = max(1, int(m.group(1)))
+        return f"parser_{n}"
+    return default
+
+
+def _parser_slot_query_candidates(slot: Any) -> list[str]:
+    s = _normalize_parser_slot(slot, default="parser_1")
+    if s == "parser_1":
+        return ["parser_1", "primary"]
+    if s == "parser_2":
+        return ["parser_2", "backup", "secondary"]
+    return [s]
+
+
+def _parser_slot_rank(slot: Any) -> int:
+    s = _normalize_parser_slot(slot, default="parser_1")
+    m = re.fullmatch(r"parser_(\d+)", s)
+    if not m:
+        return 999
+    return int(m.group(1))
+
+
 def _ensure_trial_tables(cur) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY:
@@ -389,7 +435,7 @@ class TrialPreviewBody(BaseModel):
     field_map: dict[str, Any] = {}
     guided: dict[str, Any] | None = None
     sample_ids: list[str] = []
-    parser_slot: str | None = "primary"
+    parser_slot: str | None = "parser_1"
     override_on_primary: bool = False
     backup_assume_unknown: bool = False
     pending_ttl_minutes: int | None = 30
@@ -408,7 +454,7 @@ class TrialSaveBody(BaseModel):
     guided: dict[str, Any] | None = None
     status: str | None = "trial_inactive"
     sample_ids: list[str] = []
-    parser_slot: str | None = "primary"
+    parser_slot: str | None = "parser_1"
     override_on_primary: bool = False
     backup_assume_unknown: bool = False
     pending_ttl_minutes: int | None = 30
@@ -427,7 +473,7 @@ class TrialDraftResetBody(BaseModel):
 
 class TrialDeleteOneBody(BaseModel):
     account_id: int
-    parser_slot: str = "primary"
+    parser_slot: str = "parser_1"
 
 
 class TrialTestRunBody(BaseModel):
@@ -769,9 +815,7 @@ def _load_saved_parsers(cur, tenant_id: int, user_email: str, account_id: int | 
             rx = re.compile(body_regex, _to_regex_flags(flags))
         except re.error:
             continue
-        slot = str(cfg.get("parser_slot") or "primary").strip().lower()
-        if slot not in ("primary", "backup"):
-            slot = "primary"
+        slot = _normalize_parser_slot(cfg.get("parser_slot"), default="parser_1")
         sender_pattern = str(cfg.get("sender_pattern") or "").strip()
         subject_contains = str(cfg.get("subject_contains") or "").strip()
         parser_account_id = int(cfg.get("account_id") or r.get("account_id") or 0)
@@ -796,8 +840,7 @@ def _load_saved_parsers(cur, tenant_id: int, user_email: str, account_id: int | 
                 "rx": rx,
             }
         )
-    slot_rank = {"primary": 0, "backup": 1}
-    parsers.sort(key=lambda p: (slot_rank.get(str(p.get("parser_slot") or ""), 9), int(p.get("draft_id") or 0)))
+    parsers.sort(key=lambda p: (_parser_slot_rank(p.get("parser_slot")), int(p.get("draft_id") or 0)))
     return parsers
 
 
@@ -982,9 +1025,7 @@ def trial_account_settings(account_id: int, request: Request):
 
         subject = str(cfg.get("subject_contains") or "").strip()
         sender = str(cfg.get("sender_pattern") or "").strip()
-        slot = str(cfg.get("parser_slot") or "primary").strip().lower()
-        if slot not in ("primary", "backup"):
-            slot = "primary"
+        slot = _normalize_parser_slot(cfg.get("parser_slot"), default="parser_1")
         key = slot
         if key in seen_keys:
             continue
@@ -1076,9 +1117,8 @@ def trial_save(body: TrialSaveBody, request: Request):
     if not name:
         raise HTTPException(status_code=422, detail="name_required")
 
-    parser_slot = (body.parser_slot or "primary").strip().lower()
-    if parser_slot not in ("primary", "backup"):
-        parser_slot = "primary"
+    parser_slot = _normalize_parser_slot(body.parser_slot, default="parser_1")
+    parser_slot_candidates = _parser_slot_query_candidates(parser_slot)
     draft_json = {
         "name": name,
         "parser_mode": (body.parser_mode or "").strip().lower(),
@@ -1103,7 +1143,7 @@ def trial_save(body: TrialSaveBody, request: Request):
         _ensure_trial_tables(cur)
         tid0 = int(tid or 0)
         # Upsert behavior for parser slots at account-level:
-        # one primary + one backup max per account.
+        # one parser per slot per account.
         cur.execute(
             """
             SELECT id
@@ -1111,7 +1151,7 @@ def trial_save(body: TrialSaveBody, request: Request):
             WHERE tenant_id = %s
               AND user_email = %s
               AND account_id = %s
-              AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
+              AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = ANY(%s)
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
@@ -1119,7 +1159,7 @@ def trial_save(body: TrialSaveBody, request: Request):
                 tid0,
                 session_email,
                 int(body.account_id),
-                parser_slot,
+                parser_slot_candidates,
             ),
         )
         existing = cur.fetchone() or {}
@@ -1169,10 +1209,10 @@ def trial_save(body: TrialSaveBody, request: Request):
                 WHERE tenant_id = %s
                   AND user_email = %s
                   AND account_id = %s
-                  AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
+                  AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = ANY(%s)
                   AND id <> %s
                 """,
-                (tid0, session_email, int(body.account_id), parser_slot, saved_id),
+                (tid0, session_email, int(body.account_id), parser_slot_candidates, saved_id),
             )
         conn.commit()
     return {"ok": True, "draft_id": int(row.get("id") or 0)}
@@ -1389,9 +1429,8 @@ def trial_reset_drafts(body: TrialDraftResetBody, request: Request):
 def trial_delete_one_draft(body: TrialDeleteOneBody, request: Request):
     tid = _require_tenant_id()
     session_email = _require_session_email(request)
-    slot = str(body.parser_slot or "primary").strip().lower()
-    if slot not in ("primary", "backup"):
-        slot = "primary"
+    slot = _normalize_parser_slot(body.parser_slot, default="parser_1")
+    slot_candidates = _parser_slot_query_candidates(slot)
     with with_db_cursor() as (conn, cur):
         _ensure_trial_tables(cur)
         tid0 = int(tid or 0)
@@ -1401,9 +1440,9 @@ def trial_delete_one_draft(body: TrialDeleteOneBody, request: Request):
             WHERE tenant_id = %s
               AND user_email = %s
               AND account_id = %s
-              AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = %s
+              AND lower(COALESCE((draft_json::jsonb->>'parser_slot'), 'primary')) = ANY(%s)
             """,
-            (tid0, session_email, int(body.account_id), slot),
+            (tid0, session_email, int(body.account_id), slot_candidates),
         )
         deleted = int(cur.rowcount or 0)
         conn.commit()
@@ -1488,7 +1527,7 @@ def trial_test_run(body: TrialTestRunBody, request: Request):
             amt_raw = str(ext.get("amount") or "").strip()
             amt_norm = _normalize_amount_str(amt_raw)
             merchant = str(ext.get("merchant") or "").strip() or "Unknown"
-            if p.get("backup_assume_unknown") and str(p.get("parser_slot") or "") == "backup":
+            if p.get("backup_assume_unknown") and _normalize_parser_slot(p.get("parser_slot"), default="parser_1") == "parser_2":
                 merchant = "Unknown"
             date_norm = _normalize_date_str(str(ext.get("date") or "").strip())
             time_norm = _normalize_time_str(str(ext.get("time") or "").strip(), received_at)

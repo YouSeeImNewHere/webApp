@@ -70,6 +70,33 @@
   centerTitleBetweenIcons();
   window.addEventListener("resize", centerTitleBetweenIcons);
 
+  // Enforce consistent mobile icon styling even when a stale CSS bundle is cached.
+  const applyMobileTopBtnStyles = () => {
+    const mobile = window.matchMedia("(max-width: 900px)").matches;
+    const btns = host.querySelectorAll(".top-bar .top-btn");
+    btns.forEach((b) => {
+      if (mobile) {
+        b.style.setProperty("border", "0", "important");
+        b.style.setProperty("background", "transparent", "important");
+        b.style.setProperty("box-shadow", "none", "important");
+        b.style.setProperty("border-radius", "0", "important");
+        b.style.setProperty("width", "42px", "important");
+        b.style.setProperty("height", "42px", "important");
+        b.style.setProperty("font-size", "20px", "important");
+      } else {
+        b.style.removeProperty("border");
+        b.style.removeProperty("background");
+        b.style.removeProperty("box-shadow");
+        b.style.removeProperty("border-radius");
+        b.style.removeProperty("width");
+        b.style.removeProperty("height");
+        b.style.removeProperty("font-size");
+      }
+    });
+  };
+  applyMobileTopBtnStyles();
+  window.addEventListener("resize", applyMobileTopBtnStyles);
+
     // ======================================================
   // HARD REFRESH BUTTON (bypass iOS PWA cache)
   // ======================================================

@@ -19,14 +19,16 @@
     <section class="epw-card">
       <div class="epw-header">
         <h1>Email Parser Wizard</h1>
-        <a class="epw-btn secondary" href="/settings">Back to Settings</a>
       </div>
-      <p class="epw-muted">Build parser configs per account/email scope using primary and backup parsers.</p>
+      <p class="epw-muted">Build parser configs per account/email scope using parser slots (Parser 1, Parser 2, Parser 3...).</p>
       <div id="epwStatus" class="epw-status" role="status" aria-live="polite"></div>
     </section>
 
-    <section class="epw-card">
-      <h2>Step 1: Scope</h2>
+    <section class="epw-card epw-step">
+      <details class="epw-mobile-fold" open>
+      <summary>Step 1: Scope</summary>
+      <div class="epw-mobile-body">
+      <h2 class="epw-mobile-title">Step 1: Scope</h2>
       <div class="epw-grid epw-grid-2">
         <label class="epw-field">
           Account
@@ -68,17 +70,27 @@
       <div class="epw-actions">
         <button id="epwLoadSamplesBtn" class="epw-btn primary" type="button">Load Samples</button>
       </div>
+      </div>
+      </details>
     </section>
 
-    <section class="epw-card">
-      <h2>Step 2: Candidate Samples</h2>
+    <section class="epw-card epw-step">
+      <details class="epw-mobile-fold" open>
+      <summary>Step 2: Candidate Samples</summary>
+      <div class="epw-mobile-body">
+      <h2 class="epw-mobile-title">Step 2: Candidate Samples</h2>
       <div id="epwSamplesMeta" class="epw-muted">No samples loaded yet.</div>
       <div id="epwSamplesList" class="epw-list"></div>
+      </div>
+      </details>
     </section>
 
-    <section class="epw-card">
+    <section class="epw-card epw-step">
+      <details class="epw-mobile-fold" open>
+      <summary>Step 3: Parser Rule</summary>
+      <div class="epw-mobile-body">
       <div class="epw-title-row">
-        <h2>Step 3: Parser Rule</h2>
+        <h2 class="epw-mobile-title">Step 3: Parser Rule</h2>
       </div>
       <div class="epw-grid epw-grid-2">
         <label class="epw-field">
@@ -91,8 +103,11 @@
         <label class="epw-field">
           Parser slot
           <select id="epwParserSlot">
-            <option value="primary">Primary parser</option>
-            <option value="backup">Backup parser</option>
+            <option value="parser_1">Parser 1</option>
+            <option value="parser_2">Parser 2</option>
+            <option value="parser_3">Parser 3</option>
+            <option value="parser_4">Parser 4</option>
+            <option value="parser_5">Parser 5</option>
           </select>
         </label>
       </div>
@@ -229,10 +244,15 @@
         <div id="epwLiveCaptureFields" class="epw-row-sub"></div>
         <div id="epwLiveCaptureBody" class="epw-body"></div>
       </div>
+      </div>
+      </details>
     </section>
 
     <section class="epw-card">
-      <h2>Step 4: Preview Results</h2>
+      <details class="epw-mobile-fold" open>
+      <summary>Step 4: Preview Results</summary>
+      <div class="epw-mobile-body">
+      <h2 class="epw-mobile-title">Step 4: Preview Results</h2>
       <div id="epwPreviewSummary" class="epw-muted">No preview run yet.</div>
       <div id="epwPreviewRows" class="epw-list"></div>
       <div class="epw-field" style="margin-top:14px;">
@@ -244,6 +264,8 @@
         <button id="epwSaveDraftBtn" class="epw-btn" type="button">Save Parser</button>
         <button id="epwResetDraftsBtn" class="epw-btn secondary" type="button">Delete This Parser</button>
       </div>
+      </div>
+      </details>
     </section>
   </div>
 

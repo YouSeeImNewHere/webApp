@@ -17,6 +17,7 @@ from app.core.config import CREDIT_UTILIZATION_CAP, MULTI_TENANT_ENABLED
 from app.core.home_snapshot_cache import (
     ensure_home_snapshot_cache_pg,
     home_snapshot_version_for_tenant,
+    bump_home_snapshot_version,
     load_page_home_snapshot,
     upsert_page_home_snapshot,
 )
@@ -475,6 +476,17 @@ def _payload_cache_set(key: str, payload: Dict[str, Any]):
     with _PAGE_PAYLOAD_CACHE_LOCK:
         _PAGE_PAYLOAD_CACHE[key] = {"ts": time.time(), "data": deepcopy(payload)}
 
+
+def _page_home_payload_fresh_for_today(payload: Dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    today_iso = today_local().isoformat()
+    mb = payload.get("month_budget") if isinstance(payload.get("month_budget"), dict) else {}
+    dl = payload.get("day_limit") if isinstance(payload.get("day_limit"), dict) else {}
+    as_of = str((mb or {}).get("as_of") or "")
+    day = str((dl or {}).get("day") or "")
+    return as_of == today_iso and day == today_iso
+
 @router.get("/page/home")
 def page_home(
     tx_limit: int = Query(15, ge=1, le=200),
@@ -488,7 +500,7 @@ def page_home(
     v_before = home_snapshot_version_for_tenant(tid)
     cache_key = f"page:home:tenant={tkey}:tx_limit={int(tx_limit)}:v={int(v_before)}"
     cached = _payload_cache_get(cache_key)
-    if cached is not None:
+    if cached is not None and _page_home_payload_fresh_for_today(cached):
         return cached
 
     snap = load_page_home_snapshot(tkey, int(tx_limit))
@@ -496,7 +508,7 @@ def page_home(
     snap_version = int(snap_version_raw) if snap_version_raw is not None else -1
     if snap and snap_version == int(v_before):
         out = snap.get("payload")
-        if isinstance(out, dict):
+        if isinstance(out, dict) and _page_home_payload_fresh_for_today(out):
             if "unknown_merchant_total_month" not in out:
                 try:
                     out["unknown_merchant_total_month"] = unknown_merchant_total_month()
@@ -1389,7 +1401,7 @@ def day_limit(recalc: int = 0):
         (today, int(tid)),
     )
     if force_refresh or not row:
-        mb = month_budget_home_cached(today.year, today.month)
+        mb = month_budget_home_cached(today.year, today.month, force_refresh=force_refresh)
         baseline = float(mb.get("daily_limit") or 0.0)
 
         with with_db_cursor() as (conn, cur):
@@ -1428,6 +1440,18 @@ def day_limit(recalc: int = 0):
         "remaining_today": round(remaining, 2),
     }
     _payload_cache_set(cache_key, out)
+
+    # Manual recalc should invalidate Home snapshots and refresh widget payload immediately.
+    if force_refresh:
+        try:
+            bump_home_snapshot_version(tid)
+        except Exception:
+            pass
+        try:
+            refresh_widget_cache_for_tenant(tid, bump_version=True)
+        except Exception:
+            pass
+
     return out
 
 @router.get("/extra-saved")

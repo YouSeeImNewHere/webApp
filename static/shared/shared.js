@@ -1,9 +1,12 @@
 // /static/shared/shared.js
 (async function () {
-  const v = (window.BUILD_ID ? `?v=${encodeURIComponent(window.BUILD_ID)}` : "");
+  const rawBuild = String(window.BUILD_ID || "").trim();
+  const unresolvedTemplate = rawBuild.includes("{") || rawBuild.includes("}");
+  const cacheBuster = (rawBuild && !unresolvedTemplate) ? rawBuild : String(Date.now());
+  const v = `?v=${encodeURIComponent(cacheBuster)}`;
 
   // 1) Load shared chrome HTML
-  const res = await fetch(`/static/shared/shared.html${v}`, { cache: "force-cache" });
+  const res = await fetch(`/static/shared/shared.html${v}`, { cache: "no-store" });
   if (!res.ok) {
     console.error("Failed to load shared.html", res.status);
     return;

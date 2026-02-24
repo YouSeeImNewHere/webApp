@@ -64,6 +64,64 @@
   margin: 0;
 }
 
+.settings-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.backfill-panel {
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--card-bg) 84%, transparent);
+}
+
+.backfill-panel-title {
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.backfill-panel-sub {
+  margin: 4px 0 10px;
+}
+
+.backfill-controls {
+  display: grid;
+  grid-template-columns: minmax(130px, 170px) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.backfill-field {
+  display: grid;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 12px;
+  opacity: 0.92;
+}
+
+.backfill-field .settings-input {
+  width: 100%;
+}
+
+.backfill-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  opacity: 0.92;
+  min-height: 40px;
+}
+
+.backfill-run-btn {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 /* Daily weights section layout */
 .daily-weights-card {
   display: grid;
@@ -419,6 +477,45 @@
 }
 
 @media (max-width: 900px) {
+  .settings-page .settings-split-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .settings-page .settings-split-row > .settings-btn {
+    width: 136px;
+    min-width: 136px;
+    justify-content: center;
+    text-align: center;
+    margin-left: 0;
+  }
+
+  .settings-inline-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .settings-inline-actions > .settings-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .backfill-controls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .backfill-check {
+    min-height: 0;
+  }
+
+  .backfill-run-btn {
+    width: 100%;
+  }
+
   .daily-weights-main {
     grid-template-columns: 1fr;
   }

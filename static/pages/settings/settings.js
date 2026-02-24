@@ -1,6 +1,40 @@
 let _monthBudgetSnapshot = null;
 let _lastWidgetScript = "";
 let _notifSaveTimer = null;
+const NON_ADMIN_PREVIEW_KEY = "settings_view_non_admin_preview";
+
+function isNonAdminPreviewEnabled() {
+  return localStorage.getItem(NON_ADMIN_PREVIEW_KEY) === "1";
+}
+
+function setNonAdminPreviewEnabled(enabled) {
+  if (enabled) localStorage.setItem(NON_ADMIN_PREVIEW_KEY, "1");
+  else localStorage.removeItem(NON_ADMIN_PREVIEW_KEY);
+}
+
+function updateViewModeUi(isOwner) {
+  const adminConsoleRow = document.getElementById("settingsAdminConsoleRow");
+  const status = document.getElementById("viewModeStatusText");
+  const btn = document.getElementById("toggleNonAdminViewBtn");
+  if (!status || !btn) return;
+  if (!isOwner) return;
+
+  const preview = isNonAdminPreviewEnabled();
+  status.textContent = preview ? "Previewing as non-admin." : "Admin view.";
+  btn.textContent = preview ? "Return to Admin View" : "Preview as Non-Admin";
+  if (adminConsoleRow) adminConsoleRow.style.display = preview ? "none" : "";
+}
+
+function bindViewModeToggle(isOwner) {
+  if (!isOwner) return;
+  const btn = document.getElementById("toggleNonAdminViewBtn");
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = "1";
+  btn.addEventListener("click", () => {
+    setNonAdminPreviewEnabled(!isNonAdminPreviewEnabled());
+    updateViewModeUi(true);
+  });
+}
 
 function money(n) {
   const v = Number(n || 0);
@@ -680,27 +714,57 @@ function bindGoogleOAuthActions() {
   });
 }
 
+function bindForceRefreshHomeWidget() {
+  const btn = document.getElementById("forceRefreshHomeWidgetBtn");
+  const statusEl = document.getElementById("homeWidgetRefreshStatus");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Refreshing cache...";
+    try {
+      const res = await fetch("/settings/refresh-home-widget-cache", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out?.ok) {
+        throw new Error(String(out?.detail || out?.error || `HTTP ${res.status}`));
+      }
+      if (statusEl) {
+        const hv = Number(out.home_snapshot_version || 0);
+        const wv = Number(out.widget_version || 0);
+        statusEl.textContent = `Cache refreshed. Home v${hv}, Widget v${wv}.`;
+      }
+    } catch (err) {
+      if (statusEl) statusEl.textContent = `Refresh failed: ${err?.message || err}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 async function loadAdminVisibility() {
   const adminSection = document.getElementById("settingsAdminSection");
-  if (!adminSection) return;
-  adminSection.style.display = "none";
+  if (adminSection) adminSection.style.display = "none";
   try {
     const res = await fetch("/settings/view-flags", { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const out = await res.json().catch(() => ({}));
-    adminSection.style.display = out?.is_owner ? "" : "none";
+    const isOwner = !!out?.is_owner;
+    if (adminSection) adminSection.style.display = isOwner ? "" : "none";
+    if (isOwner) {
+      updateViewModeUi(true);
+      bindViewModeToggle(true);
+    }
+    return isOwner;
   } catch (_) {
-    adminSection.style.display = "none";
+    if (adminSection) adminSection.style.display = "none";
+    return false;
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  if (window.Profile) {
-    window.Profile.mountEditor("#lesProfileMount");
-  } else {
-    console.error("Profile failed to load");
-  }
-
   const btn = document.getElementById("resetHomeLayoutBtn");
   if (btn && window.LayoutStore) {
     btn.addEventListener("click", async () => {
@@ -720,10 +784,10 @@ document.addEventListener("DOMContentLoaded", () => {
     sel.addEventListener("change", () => window.Theme.set(sel.value));
   }
 
-  loadDailyWeightsSettings().catch((err) => console.error(err));
   loadInitialSetupProgress().catch((err) => console.error(err));
   loadGoogleOAuthStatus().catch((err) => console.error(err));
   loadAdminVisibility().catch((err) => console.error(err));
   bindEmailParserBackfill();
   bindGoogleOAuthActions();
+  bindForceRefreshHomeWidget();
 });

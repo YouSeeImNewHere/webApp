@@ -46,7 +46,7 @@
     <section class="settings-section">
       <h2 class="settings-section-title">Google Gmail</h2>
       <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between; align-items:center;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between; align-items:center;">
           <div>
             <div style="font-weight:950;">OAuth connection</div>
             <div id="googleOauthStatusText" class="settings-muted" style="margin:4px 0 0 0;">Checking connection...</div>
@@ -59,31 +59,20 @@
     <section class="settings-section">
       <h2 class="settings-section-title">Notifications</h2>
       <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Smart notifications</div>
             <div class="settings-muted" style="margin:4px 0 0 0;">Spending power, overspending protection, and savings nudges.</div>
           </div>
-          <a class="settings-btn primary" href="/notification-settings">Open Notification Settings</a>
+          <a class="settings-btn primary" href="/notification-settings">Open Page</a>
         </div>
       </div>
     </section>
 
     <section class="settings-section">
-      <h2 class="settings-section-title">LES</h2>
-      <details class="settings-accordion">
-        <summary>LES Profile</summary>
-        <div class="settings-accordion-body">
-          <div id="lesProfileMount"></div>
-        </div>
-      </details>
-    </section>
-
-    <section class="settings-section">
       <h2 class="settings-section-title">Home Page Layout</h2>
       <div class="settings-card">
-        <div class="settings-row">
-          <a class="settings-btn" href="/">Go to Home</a>
+        <div class="settings-row settings-inline-actions">
           <a class="settings-btn primary" href="/?customize=1">Customize Home Layout</a>
           <button class="settings-btn" id="resetHomeLayoutBtn" type="button">Reset layout to default</button>
         </div>
@@ -91,6 +80,28 @@
           Tip: tap Customize Home Layout, drag cards/sections around, then press Done.
         </div>
         <div class="settings-muted" id="layoutMsg"></div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="settings-section-title">Widgets</h2>
+      <div class="settings-card">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">Widget setup</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Configure iOS and Android widget workflows on a dedicated page.</div>
+          </div>
+          <a class="settings-btn primary" href="/widgets">Open Page</a>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">Home + widget cache refresh</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Force rebuild and push latest values into cache now.</div>
+          </div>
+          <button class="settings-btn" id="forceRefreshHomeWidgetBtn" type="button">Force Refresh</button>
+        </div>
+        <div id="homeWidgetRefreshStatus" class="settings-muted" role="status" aria-live="polite"></div>
       </div>
     </section>
 
@@ -107,15 +118,15 @@
           <div id="initialSetupProgressSub" class="settings-muted setup-progress-sub"></div>
         </div>
         <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Setup wizard</div>
             <div class="settings-muted" style="margin:4px 0 0 0;">Open the onboarding wizard anytime.</div>
           </div>
-          <a class="settings-btn primary" href="/setup">View Setup Wizard</a>
+          <a class="settings-btn primary" href="/setup">Open Wizard</a>
         </div>
         <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Parser wizard</div>
             <div class="settings-muted" style="margin:4px 0 0 0;">Create and maintain live parser rules.</div>
@@ -123,17 +134,20 @@
           <a class="settings-btn primary" href="/email-parser-wizard">Open Wizard</a>
         </div>
         <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
-        <div style="font-weight:900;margin-bottom:6px;">Manual backfill parse</div>
-        <div class="settings-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap;">
-          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
+        <div class="backfill-panel">
+          <div class="backfill-panel-title">Manual backfill parse</div>
+          <div class="settings-muted backfill-panel-sub">Re-scan previous emails and insert missing transactions.</div>
+          <div class="backfill-controls">
+            <label class="backfill-field">
             Lookback days
-            <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7" style="max-width:120px;">
-          </label>
-          <label style="display:flex; align-items:center; gap:8px; font-weight:800; font-size:12px; opacity:.9; margin-bottom:10px;">
-            <input id="emailParserIncludeProcessed" type="checkbox" checked>
-            Include already processed emails
-          </label>
-          <button class="settings-btn primary" id="runEmailParserBackfillBtn" type="button">Fetch + Parse + Insert</button>
+              <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7">
+            </label>
+            <label class="backfill-check">
+              <input id="emailParserIncludeProcessed" type="checkbox" checked>
+              Include already processed emails
+            </label>
+            <button class="settings-btn primary backfill-run-btn" id="runEmailParserBackfillBtn" type="button">Fetch + Parse + Insert</button>
+          </div>
         </div>
         <div id="emailParserBackfillStatus" class="settings-muted" role="status" aria-live="polite"></div>
         <pre id="emailParserBackfillLog" class="settings-code" style="max-height:260px; overflow:auto; margin-top:8px; display:none;"></pre>
@@ -142,14 +156,14 @@
     </section>
 
     <section class="settings-section">
-      <h2 class="settings-section-title">Widgets</h2>
+      <h2 class="settings-section-title">Income</h2>
       <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
-            <div style="font-weight:950;">Widget setup</div>
-            <div class="settings-muted" style="margin:4px 0 0 0;">Configure iOS and Android widget workflows on a dedicated page.</div>
+            <div style="font-weight:950;">Income wizard</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Set up LES, salary, or hourly income settings on a dedicated page.</div>
           </div>
-          <a class="settings-btn primary" href="/widgets">Open Widgets Page</a>
+          <a class="settings-btn primary" href="/income-wizard">Open Page</a>
         </div>
       </div>
     </section>
@@ -157,38 +171,12 @@
     <section class="settings-section">
       <h2 class="settings-section-title">Data Import</h2>
       <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Import transactions</div>
             <div class="settings-muted" style="margin:4px 0 0 0;">Open the CSV/Excel import form.</div>
           </div>
-          <a class="settings-btn primary" href="/?openCsvImport=1">Open Import Form</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="settings-section daily-weights-section">
-      <h2 class="settings-section-title">Daily Spending Weights</h2>
-      <div class="settings-card daily-weights-card">
-        <div class="daily-weights-intro">Set how many points each day type uses when splitting your remaining budget.</div>
-        <div class="daily-weights-main">
-          <div class="daily-weights-controls">
-            <div class="daily-weights-grid">
-              <label class="daily-weight-field">
-                Weekday points
-                <input id="weekdayPoints" class="settings-input" type="number" min="1" step="1" value="1" />
-              </label>
-              <label class="daily-weight-field">
-                Weekend points
-                <input id="weekendPoints" class="settings-input" type="number" min="1" step="1" value="2" />
-              </label>
-            </div>
-            <div class="daily-weights-actions">
-              <button id="saveDailyWeightsBtn" class="settings-btn primary" type="button">Save</button>
-            </div>
-            <div id="dailyWeightsStatus" class="settings-muted daily-weights-status" role="status" aria-live="polite"></div>
-          </div>
-          <div id="dailyWeightsPreview" class="settings-muted daily-weights-preview"></div>
+          <a class="settings-btn primary" href="/?openCsvImport=1">Open Form</a>
         </div>
       </div>
     </section>
@@ -196,12 +184,12 @@
     <section class="settings-section">
       <h2 class="settings-section-title">Rules</h2>
       <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Category regex rules</div>
             <div class="settings-muted" style="margin:4px 0 0 0;">View matches, test regex, re-apply, disable, or delete rules.</div>
           </div>
-          <button class="settings-btn" onclick="location.href='/static/pages/category-rules/category-rules.html'">Open</button>
+          <button class="settings-btn" onclick="location.href='/static/pages/category-rules/category-rules.html'">Open Page</button>
         </div>
       </div>
     </section>
@@ -209,7 +197,15 @@
     <section class="settings-section" id="settingsAdminSection" style="display:none;">
       <h2 class="settings-section-title">Admin</h2>
       <div class="settings-card">
-        <div class="settings-row" style="justify-content:space-between;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">View mode</div>
+            <div class="settings-muted" id="viewModeStatusText" style="margin:4px 0 0 0;">Admin view.</div>
+          </div>
+          <button class="settings-btn" id="toggleNonAdminViewBtn" type="button">Preview as Non-Admin</button>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="settings-row settings-split-row" id="settingsAdminConsoleRow" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Owner admin console</div>
             <div class="settings-muted" style="margin:4px 0 0 0;">Tenant management, pending user approvals, and tenant data purge.</div>
@@ -223,9 +219,9 @@
   <div id="sharedChrome"></div>
 
   <script src="/static/shared/layout.js?v={{ BUILD_ID }}"></script>
-  <script src="/static/shared/profile.js?v={{ BUILD_ID }}"></script>
   <script src="/static/pages/settings/settings.js?v={{ BUILD_ID }}&rev=20260221a" defer></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 </body>
 </html>
+
 

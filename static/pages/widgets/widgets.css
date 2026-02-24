@@ -2,10 +2,57 @@
   max-width: 1100px;
 }
 
+.widgets-page .settings-section {
+  border-top: 1px solid var(--border);
+  margin-bottom: 10px;
+  padding-top: 8px;
+}
+
 .widgets-platform-tabs {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.widget-mobile-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.widget-mobile-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 2px 10px;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.widget-mobile-fold > summary::after {
+  content: "Fold";
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+
+.widget-mobile-fold:not([open]) > summary::after {
+  content: "Expand";
+}
+
+.widget-mobile-title {
+  display: none;
+}
+
+.widget-mobile-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .widget-platform-tab {

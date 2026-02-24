@@ -99,6 +99,10 @@ def settings_page():
 def widgets_page():
     return FileResponse("static/pages/widgets/widgets.html")
 
+@router.get("/income-wizard")
+def income_wizard_page():
+    return FileResponse("static/pages/income-wizard/income-wizard.html")
+
 @router.get("/notification-settings")
 def notification_settings_page():
     path = "static/pages/notification-settings/notification-settings.html"

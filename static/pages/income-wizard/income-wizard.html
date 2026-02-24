@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "{{ BUILD_ID }}"; </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Income Wizard</title>
+
+  <link rel="stylesheet" href="/static/styles/tokens.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/theme.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
+  <link rel="stylesheet" href="/static/pages/income-wizard/income-wizard.css?v={{ BUILD_ID }}">
+  <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
+</head>
+<body class="income-wizard-page" data-page-title="Income Wizard">
+  <div class="income-wrap">
+    <section class="income-section">
+      <details class="income-mobile-fold" open>
+      <summary>Income Type</summary>
+      <div class="income-mobile-body">
+      <h2 class="income-section-title income-mobile-title">Income Type</h2>
+      <div class="income-card income-mobile-card">
+        <div class="income-type-picker" role="tablist" aria-label="Income type">
+          <button class="settings-btn income-type-btn active" type="button" data-income-type="les" aria-selected="true">LES</button>
+          <button class="settings-btn income-type-btn" type="button" data-income-type="salary" aria-selected="false">Salary</button>
+          <button class="settings-btn income-type-btn" type="button" data-income-type="hourly" aria-selected="false">Hourly</button>
+        </div>
+      </div>
+      </div>
+      </details>
+    </section>
+
+    <section class="income-section">
+      <details class="income-mobile-fold" open>
+      <summary>Income Profile</summary>
+      <div class="income-mobile-body">
+      <h2 class="income-section-title income-mobile-title">Income Profile</h2>
+      <div class="income-card income-mobile-card">
+        <div id="incomePanelLes" class="income-panel">
+          <div id="lesProfileMount"></div>
+        </div>
+
+        <div id="incomePanelSalary" class="income-panel hidden" aria-hidden="true">
+          <div class="income-inprogress-head">
+            <strong>Salary Form</strong>
+            <span class="income-pill">In progress</span>
+          </div>
+          <div class="income-inprogress-grid">
+            <label class="income-field">Pay frequency
+              <select class="settings-input" disabled>
+                <option>Bi-weekly</option>
+                <option>Semi-monthly</option>
+                <option>Monthly</option>
+              </select>
+            </label>
+            <label class="income-field">Gross pay per paycheck
+              <input class="settings-input" type="number" placeholder="0.00" disabled>
+            </label>
+            <label class="income-field">Default tax withholding
+              <input class="settings-input" type="number" placeholder="0.00" disabled>
+            </label>
+            <label class="income-field">Default deductions
+              <input class="settings-input" type="number" placeholder="0.00" disabled>
+            </label>
+          </div>
+          <p class="income-muted">Salary wizard fields are scaffolded and will be enabled in a follow-up update.</p>
+        </div>
+
+        <div id="incomePanelHourly" class="income-panel hidden" aria-hidden="true">
+          <div class="income-inprogress-head">
+            <strong>Hourly Form</strong>
+            <span class="income-pill">In progress</span>
+          </div>
+          <div class="income-inprogress-grid">
+            <label class="income-field">Hourly rate
+              <input class="settings-input" type="number" placeholder="0.00" disabled>
+            </label>
+            <label class="income-field">Typical hours per pay period
+              <input class="settings-input" type="number" placeholder="0" disabled>
+            </label>
+            <label class="income-field">Overtime multiplier
+              <input class="settings-input" type="number" placeholder="1.5" disabled>
+            </label>
+            <label class="income-field">Tax withholding rate (%)
+              <input class="settings-input" type="number" placeholder="0" disabled>
+            </label>
+          </div>
+          <p class="income-muted">Hourly wizard fields are scaffolded and will be enabled in a follow-up update.</p>
+        </div>
+      </div>
+      </div>
+      </details>
+    </section>
+
+    <section class="income-section">
+      <details class="income-mobile-fold" open>
+      <summary>Daily Spending Weights</summary>
+      <div class="income-mobile-body">
+      <h2 class="income-section-title income-mobile-title">Daily Spending Weights</h2>
+      <div class="income-card income-mobile-card daily-weights-card">
+        <div class="daily-weights-intro">Set how many points each day type uses when splitting your remaining budget.</div>
+        <div class="daily-weights-main">
+          <div class="daily-weights-controls">
+            <div class="daily-weights-grid">
+              <label class="daily-weight-field">
+                Weekday points
+                <input id="weekdayPoints" class="settings-input" type="number" min="1" step="1" value="1" />
+              </label>
+              <label class="daily-weight-field">
+                Weekend points
+                <input id="weekendPoints" class="settings-input" type="number" min="1" step="1" value="2" />
+              </label>
+            </div>
+            <div class="daily-weights-actions">
+              <button id="saveDailyWeightsBtn" class="settings-btn primary" type="button">Save</button>
+            </div>
+            <div id="dailyWeightsStatus" class="income-muted daily-weights-status" role="status" aria-live="polite"></div>
+          </div>
+          <div id="dailyWeightsPreview" class="income-muted daily-weights-preview"></div>
+        </div>
+      </div>
+      </div>
+      </details>
+    </section>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/shared/profile.js?v={{ BUILD_ID }}"></script>
+  <script src="/static/pages/income-wizard/income-wizard.js?v={{ BUILD_ID }}" defer></script>
+  <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
+</body>
+</html>

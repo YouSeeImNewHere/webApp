@@ -883,6 +883,96 @@ def _reconcile_existing_pending_duplicates(
     return removed
 
 
+def _delete_stale_pending_without_csv_match(
+    cur,
+    *,
+    account_id: int,
+    tenant_id: int | None,
+    id_col: str | None,
+    account_col: str | None,
+    amount_col: str | None,
+    purchase_col: str | None,
+    merchant_col: str | None,
+    status_col: str | None,
+    source_col: str | None,
+    tenant_col: str | None,
+    stale_days: int = 4,
+    limit: int = 3000,
+    window_days: int = 4,
+) -> int:
+    pending_rows = _list_pending_email_rows(
+        cur,
+        account_id=account_id,
+        tenant_id=tenant_id,
+        id_col=id_col,
+        account_col=account_col,
+        amount_col=amount_col,
+        purchase_col=purchase_col,
+        merchant_col=merchant_col,
+        status_col=status_col,
+        source_col=source_col,
+        tenant_col=tenant_col,
+        limit=limit,
+    )
+    if not pending_rows:
+        return 0
+
+    cutoff = datetime.now().date() - timedelta(days=max(1, int(stale_days)))
+    removed = 0
+    for p in pending_rows:
+        pending_id = str(p.get("id") or "")
+        pending_merchant = str(p.get("merchant") or "")
+        pending_amount = p.get("amount")
+        pending_date = _parse_date(str(p.get("purchaseDate") or p.get("purchasedate") or ""))
+        if not pending_id or pending_amount is None or not pending_date:
+            continue
+        if pending_date > cutoff:
+            continue
+
+        candidates = _find_posted_csv_candidates_for_pending(
+            cur,
+            account_id=account_id,
+            amount=float(pending_amount),
+            purchase_date=pending_date,
+            tenant_id=tenant_id,
+            id_col=id_col,
+            account_col=account_col,
+            amount_col=amount_col,
+            purchase_col=purchase_col,
+            merchant_col=merchant_col,
+            status_col=status_col,
+            source_col=source_col,
+            tenant_col=tenant_col,
+            window_days=window_days,
+        )
+        has_csv_match = False
+        p_clean = _clean_spaces(pending_merchant).lower()
+        p_is_unknown = p_clean in ("", "unknown") or _is_generic_payment_merchant(p_clean)
+        for c in candidates:
+            c_clean = _clean_spaces(str(c.get("merchant") or "")).lower()
+            if p_is_unknown:
+                has_csv_match = True
+                break
+            if (
+                _merchant_token_subset_match(p_clean, c_clean)
+                or _merchants_similar(p_clean, c_clean)
+                or _merchant_core_overlap_match(p_clean, c_clean)
+            ):
+                has_csv_match = True
+                break
+        if has_csv_match:
+            continue
+
+        where = [f"{id_col} = %s"]
+        vals: list[Any] = [pending_id]
+        if tenant_id and tenant_col:
+            where.append(f"{tenant_col} = %s")
+            vals.append(int(tenant_id))
+        cur.execute(f"DELETE FROM transactions WHERE {' AND '.join(where)}", tuple(vals))
+        removed += 1
+    return removed
+
+
 def _require_tenant_id_or_none() -> int | None:
     if not MULTI_TENANT_ENABLED:
         return None
@@ -1542,6 +1632,7 @@ async def ingest_csv_mapped(
     inserted = 0
     updated = 0
     reconciled = 0
+    stale_deleted = 0
     errors: list[dict[str, Any]] = list(mapped["summary"]["sample_errors"])
 
     with with_db_cursor() as (conn, cur):
@@ -1693,8 +1784,24 @@ async def ingest_csv_mapped(
             limit=600,
             window_days=2,
         )
+        stale_deleted = _delete_stale_pending_without_csv_match(
+            cur,
+            account_id=int(account_id),
+            tenant_id=tid,
+            id_col=tx_id_col,
+            account_col=account_col_name,
+            amount_col=amount_col_name,
+            purchase_col=purchase_col_name,
+            merchant_col=merchant_col_name,
+            status_col=status_col_name,
+            source_col=source_col_name,
+            tenant_col=tenant_col_name,
+            stale_days=4,
+            limit=3000,
+            window_days=4,
+        )
         conn.commit()
-    if (inserted + updated + int(reconciled or 0)) > 0:
+    if (inserted + updated + int(reconciled or 0) + int(stale_deleted or 0)) > 0:
         _refresh_widget_cache_for_tenant(tid)
 
     skipped = int(mapped["summary"]["invalid_rows"]) + max(0, int(mapped["summary"]["valid_rows"]) - inserted - updated)
@@ -1703,6 +1810,7 @@ async def ingest_csv_mapped(
         "inserted": inserted,
         "updated": updated,
         "reconciled_pending_duplicates": int(reconciled),
+        "stale_pending_deleted": int(stale_deleted),
         "skipped": skipped,
         "errors": errors,
         "delimiter": used_delim,

@@ -1,0 +1,229 @@
+.income-wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 14px 14px 96px;
+}
+
+.income-section {
+  border-top: 1px solid var(--border);
+  margin-bottom: 10px;
+  padding-top: 8px;
+}
+
+.income-mobile-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 2px 10px;
+  font-size: 16px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.income-mobile-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.income-mobile-fold > summary::after {
+  content: "Fold";
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+
+.income-mobile-fold:not([open]) > summary::after {
+  content: "Expand";
+}
+
+.income-mobile-title {
+  display: none;
+}
+
+.income-mobile-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.income-section-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.income-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-bg, var(--card));
+  padding: 12px;
+}
+
+.income-type-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.income-type-btn {
+  min-width: 108px;
+}
+
+.income-type-btn.active {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--btn-border));
+  color: var(--accent-contrast, var(--btn-text, #fff));
+  background: var(--accent, var(--btn-primary-bg, #111));
+}
+
+.income-panel.hidden {
+  display: none;
+}
+
+/* LES profile mounts a shared settings-card; flatten it inside income wizard
+   so we do not render a second nested box. */
+#lesProfileMount > .settings-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.income-inprogress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.income-pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  opacity: 0.85;
+}
+
+.income-inprogress-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.income-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.income-muted {
+  margin: 8px 0 0;
+  color: var(--text-muted, #666);
+  font-size: 12px;
+}
+
+.daily-weights-card {
+  display: grid;
+  gap: 12px;
+}
+
+.daily-weights-intro {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.daily-weights-main {
+  display: grid;
+  grid-template-columns: minmax(300px, 1.1fr) minmax(280px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.daily-weights-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.daily-weights-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+}
+
+.daily-weight-field {
+  display: grid;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 12px;
+  opacity: 0.92;
+}
+
+.daily-weight-field .settings-input {
+  width: 100%;
+  max-width: 180px;
+}
+
+.daily-weights-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.daily-weights-status {
+  margin: 0;
+  min-height: 18px;
+}
+
+.daily-weights-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .income-wrap {
+    padding: 10px 10px 92px;
+  }
+  .income-type-picker {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .income-type-btn {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .income-inprogress-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-weights-main {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-weights-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-weight-field .settings-input {
+    max-width: none;
+  }
+
+  .daily-weights-actions .settings-btn {
+    width: 100%;
+  }
+}

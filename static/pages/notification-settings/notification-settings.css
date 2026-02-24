@@ -2,3 +2,48 @@
   margin-top: 10px;
   min-height: 18px;
 }
+
+/* Keep notification toggle rows stable on this page (desktop + mobile). */
+.notification-settings-list {
+  display: grid;
+  gap: 0;
+}
+
+.notification-setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.notification-setting-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.notification-setting-copy {
+  min-width: 0;
+}
+
+.notification-setting-row .switch {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+@media (max-width: 700px) {
+  .notification-setting-row {
+    gap: 12px;
+    padding: 14px 0;
+  }
+
+  .notification-setting-title {
+    line-height: 1.2;
+  }
+
+  .notification-setting-muted {
+    margin-top: 4px;
+    line-height: 1.25;
+  }
+}

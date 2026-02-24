@@ -1,14 +1,20 @@
 body.setup-page { margin: 0; background: var(--bg, #f5f7fb); color: var(--text, #121826); }
 .setup-wrap { max-width: 1200px; margin: 0 auto; padding: 18px 16px 0; }
 .setup-card { background: var(--card, #fff); border: 1px solid var(--border, #dbe2f0); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+.setup-step { border-top: 1px solid var(--border, #dbe2f0); padding-top: 8px; margin-bottom: 10px; }
+.setup-step-fold > summary { list-style: none; cursor: pointer; padding: 10px 4px; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 10px; }
+.setup-step-fold > summary::-webkit-details-marker { display: none; }
+.setup-step-fold > summary::after { content: "Fold"; display: inline-block; margin-left: auto; font-size: 12px; font-weight: 700; opacity: 0.75; border: 1px solid var(--border, #c6cfdf); border-radius: 999px; padding: 4px 9px; }
+.setup-step-fold:not([open]) > summary::after { content: "Expand"; }
+.setup-step-body { padding: 0 0 8px; }
 h1 { margin: 0 0 8px; font-size: 24px; }
 h2 { margin: 0 0 8px; font-size: 18px; }
 p, li { line-height: 1.4; }
 .setup-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
 .setup-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
 .setup-wrap input, .setup-wrap select, .setup-wrap button { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--border, #c6cfdf); border-radius: 8px; background: var(--surface, #fff); color: inherit; }
-.setup-wrap button { cursor: pointer; background: var(--accent, #0b57d0); color: #fff; border: none; }
-.setup-wrap button.secondary { background: var(--muted-bg, #44516a); }
+.setup-wrap button { cursor: pointer; background: var(--accent, #0b57d0); color: var(--accent-contrast, #fff); border: none; }
+.setup-wrap button.secondary { background: var(--btn-bg, var(--muted-bg, #44516a)); color: var(--btn-text, inherit); border: 1px solid var(--btn-border, var(--border, #c6cfdf)); }
 .setup-pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin-right: 8px; }
 .ok { background: rgba(34, 160, 107, 0.22); color: #0b5f3b; }
 .todo { background: rgba(198, 144, 38, 0.24); color: #7a4b00; }

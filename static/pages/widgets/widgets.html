@@ -19,18 +19,26 @@
 <body class="widgets-page" data-page-title="Widgets">
   <div class="settings-wrap widgets-wrap">
     <section class="settings-section">
-      <h2 class="settings-section-title">Widget Platforms</h2>
-      <div class="settings-card">
+      <details class="widget-mobile-fold" open>
+      <summary>Widget Platforms</summary>
+      <div class="widget-mobile-body">
+      <h2 class="settings-section-title widget-mobile-title">Widget Platforms</h2>
+      <div class="settings-card widget-mobile-card">
         <div class="widgets-platform-tabs" role="tablist" aria-label="Widget platform tabs">
           <button type="button" class="settings-btn widget-platform-tab active" role="tab" aria-selected="true" data-platform="ios">iOS</button>
           <button type="button" class="settings-btn widget-platform-tab" role="tab" aria-selected="false" data-platform="android">Android</button>
         </div>
       </div>
+      </div>
+      </details>
     </section>
 
     <section class="settings-section widget-platform-pane" id="widgetPaneIos" data-platform-pane="ios">
-      <h2 class="settings-section-title">iOS Widget</h2>
-      <div class="settings-card">
+      <details class="widget-mobile-fold" open>
+      <summary>iOS Widget</summary>
+      <div class="widget-mobile-body">
+      <h2 class="settings-section-title widget-mobile-title">iOS Widget</h2>
+      <div class="settings-card widget-mobile-card">
         <div class="settings-muted" style="margin-bottom:10px;">
           Showcase Home and Lock Screen styles, then copy ready-to-paste Scriptable code.
         </div>
@@ -94,17 +102,24 @@
         <div class="settings-muted" id="widgetCodeStatus" role="status" aria-live="polite"></div>
         <div class="settings-muted">Copy rotates your widget token, so re-copy if you set up a new device.</div>
       </div>
+      </div>
+      </details>
     </section>
 
     <section class="settings-section widget-platform-pane hidden" id="widgetPaneAndroid" data-platform-pane="android">
-      <h2 class="settings-section-title">Android Widget</h2>
-      <div class="settings-card">
+      <details class="widget-mobile-fold" open>
+      <summary>Android Widget</summary>
+      <div class="widget-mobile-body">
+      <h2 class="settings-section-title widget-mobile-title">Android Widget</h2>
+      <div class="settings-card widget-mobile-card">
         <div class="android-widget-placeholder">
           <div class="android-widget-title">Groundwork Ready</div>
           <div class="settings-muted">This tab is reserved for Android widget templates and setup flow.</div>
           <div class="settings-muted">Next step: add Android-specific preview cards and code generation endpoint.</div>
         </div>
       </div>
+      </div>
+      </details>
     </section>
   </div>
 

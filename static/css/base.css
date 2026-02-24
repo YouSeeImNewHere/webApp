@@ -2504,12 +2504,16 @@ body.settings-page{
 }
 
 .settings-btn.primary{
-  background: #111;
-  color: #fff;
-  border-color: #111;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--btn-border));
 }
 
-.settings-btn.primary:hover{ opacity: .9; background:#111; }
+.settings-btn.primary:hover{
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 86%, var(--btn-hover));
+  border-color: color-mix(in srgb, var(--accent) 76%, var(--btn-border));
+}
 
 .settings-muted{
   margin-top: 8px;

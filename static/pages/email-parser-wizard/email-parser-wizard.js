@@ -19,6 +19,47 @@
     return document.getElementById(id);
   }
 
+  function normalizeParserSlot(raw) {
+    const val = String(raw || "").trim().toLowerCase();
+    if (!val) return "parser_1";
+    const compact = val.replace(/[\s-]+/g, "_");
+    if (compact === "primary" || compact === "parser1" || compact === "parser_1") return "parser_1";
+    if (compact === "backup" || compact === "secondary" || compact === "parser2" || compact === "parser_2") return "parser_2";
+    const m = compact.match(/^parser_?(\d+)$/);
+    if (m) return `parser_${Math.max(1, Number(m[1]) || 1)}`;
+    if (/^\d+$/.test(compact)) return `parser_${Math.max(1, Number(compact) || 1)}`;
+    return "parser_1";
+  }
+
+  function parserSlotRank(raw) {
+    const s = normalizeParserSlot(raw);
+    const m = s.match(/^parser_(\d+)$/);
+    return m ? Number(m[1]) : 999;
+  }
+
+  function parserSlotLabel(raw) {
+    const s = normalizeParserSlot(raw);
+    const m = s.match(/^parser_(\d+)$/);
+    const n = m ? Number(m[1]) : 1;
+    return `Parser ${n}`;
+  }
+
+  function ensureParserSlotOption(slotRaw) {
+    const sel = byId("epwParserSlot");
+    if (!sel) return "parser_1";
+    const slot = normalizeParserSlot(slotRaw);
+    const exists = Array.from(sel.options || []).some((o) => String(o.value || "") === slot);
+    if (!exists) {
+      const m = slot.match(/^parser_(\d+)$/);
+      const n = m ? Number(m[1]) : 1;
+      const opt = document.createElement("option");
+      opt.value = slot;
+      opt.textContent = `Parser ${n}`;
+      sel.appendChild(opt);
+    }
+    return slot;
+  }
+
   function setStatus(msg, isError) {
     const el = byId("epwStatus");
     if (!el) return;
@@ -125,7 +166,7 @@
       byId("epwSenderQuery").value = sender;
     }
     if (setting.parser_mode && byId("epwParserMode")) byId("epwParserMode").value = String(setting.parser_mode);
-    if (setting.parser_slot && byId("epwParserSlot")) byId("epwParserSlot").value = String(setting.parser_slot);
+    if (byId("epwParserSlot")) byId("epwParserSlot").value = ensureParserSlotOption(setting.parser_slot);
     if (byId("epwPrimaryOverride")) byId("epwPrimaryOverride").checked = !!setting.override_on_primary;
     if (byId("epwBackupAssumeUnknown")) byId("epwBackupAssumeUnknown").checked = !!setting.backup_assume_unknown;
     if (setting.body_regex && byId("epwBodyRegex")) byId("epwBodyRegex").value = String(setting.body_regex);
@@ -164,7 +205,7 @@
     if (byId("epwSubjectSetting")) byId("epwSubjectSetting").value = "";
     if (byId("epwSubjectFallback")) byId("epwSubjectFallback").value = "";
     if (byId("epwParserMode")) byId("epwParserMode").value = "guided";
-    if (byId("epwParserSlot")) byId("epwParserSlot").value = "primary";
+    if (byId("epwParserSlot")) byId("epwParserSlot").value = "parser_1";
     if (byId("epwBodyRegex")) byId("epwBodyRegex").value = "";
     if (byId("epwRegexFlags")) byId("epwRegexFlags").value = "i";
     if (byId("epwMapAmount")) byId("epwMapAmount").value = "1";
@@ -216,9 +257,9 @@
     const options = ['<option value="">Select subject setting</option>'].concat(settings.map((s) => {
       const subject = String(s.subject_contains || "").trim() || "(blank subject)";
       const name = String(s.name || "").trim();
-      const slot = String(s.parser_slot || "primary").toLowerCase();
+      const slot = normalizeParserSlot(s.parser_slot);
       const labelBase = name ? `${subject} - ${name}` : subject;
-      const label = `${labelBase} [${slot}]`;
+      const label = `${labelBase} [${parserSlotLabel(slot)}]`;
       return `<option value="${escapeHtml(String(s.draft_id || ""))}">${escapeHtml(label)}</option>`;
     }));
     sel.innerHTML = options.join("");
@@ -230,19 +271,20 @@
     if (!primarySel || !secondarySel) return;
     const settings = Array.isArray(state.accountSettings) ? state.accountSettings : [];
     const options = ['<option value="">Select parser</option>'].concat(settings.map((s) => {
-      const slot = String(s.parser_slot || "primary");
+      const slot = normalizeParserSlot(s.parser_slot);
       const subject = String(s.subject_contains || "").trim() || "(blank subject)";
       const name = String(s.name || "").trim();
-      const label = `${subject}${name ? ` - ${name}` : ""} [${slot}]`;
+      const label = `${subject}${name ? ` - ${name}` : ""} [${parserSlotLabel(slot)}]`;
       return `<option value="${escapeHtml(String(s.draft_id || ""))}">${escapeHtml(label)}</option>`;
     }));
     primarySel.innerHTML = options.join("");
     secondarySel.innerHTML = options.join("");
 
-    const primary = settings.find((s) => String(s.parser_slot || "").toLowerCase() === "primary");
-    const secondary = settings.find((s) => String(s.parser_slot || "").toLowerCase() === "backup");
-    if (primary) primarySel.value = String(primary.draft_id);
-    if (secondary) secondarySel.value = String(secondary.draft_id);
+    const sorted = settings.slice().sort((a, b) => parserSlotRank(a.parser_slot) - parserSlotRank(b.parser_slot));
+    const parser1 = sorted.find((s) => normalizeParserSlot(s.parser_slot) === "parser_1");
+    const parser2 = sorted.find((s) => normalizeParserSlot(s.parser_slot) === "parser_2");
+    if (parser1) primarySel.value = String(parser1.draft_id);
+    if (parser2) secondarySel.value = String(parser2.draft_id);
   }
 
   function renderCorrelationPreview() {
@@ -891,7 +933,7 @@
     const selectedAccount = (state.accounts || []).find((a) => Number(a.id) === Number(accountId));
     const accountLabel = selectedAccount ? `${selectedAccount.institution || "Account"} ${selectedAccount.name || ""}`.trim() : `Account ${accountId}`;
     const name = `${accountLabel} ${subjectContains || "Email Rule"}`.trim();
-    const parserSlot = (byId("epwParserSlot")?.value || "primary").trim().toLowerCase();
+    const parserSlot = normalizeParserSlot((byId("epwParserSlot")?.value || "parser_1").trim().toLowerCase());
     const overrideOnPrimary = !!byId("epwPrimaryOverride")?.checked;
     const backupAssumeUnknown = !!byId("epwBackupAssumeUnknown")?.checked;
     const parsingMethod = "guided_blocks";
@@ -1375,12 +1417,12 @@
 
   async function resetAllDrafts() {
     const accountId = Number(byId("epwAccount")?.value || 0);
-    const parserSlot = String(byId("epwParserSlot")?.value || "primary").trim().toLowerCase();
+    const parserSlot = normalizeParserSlot(String(byId("epwParserSlot")?.value || "parser_1").trim().toLowerCase());
     if (!accountId) {
       setStatus("Select an account first.", true);
       return;
     }
-    const ok = window.confirm(`Delete this ${parserSlot} parser for the selected account?`);
+    const ok = window.confirm(`Delete ${parserSlotLabel(parserSlot)} for the selected account?`);
     if (!ok) return;
     setStatus("Deleting parser...", false);
     try {
@@ -1393,7 +1435,7 @@
       state.corrRows = [];
       state.corrSummary = null;
       renderCorrelationPreview();
-      setStatus(`Deleted ${Number(data.deleted || 0)} parser(s) from ${parserSlot} slot.`, false);
+      setStatus(`Deleted ${Number(data.deleted || 0)} parser(s) from ${parserSlotLabel(parserSlot)}.`, false);
     } catch (e) {
       setStatus(`Delete parser failed: ${e.message}`, true);
     }
@@ -1409,7 +1451,7 @@
       return;
     }
     if (!primaryDraftId || !secondaryDraftId) {
-      setStatus("Select both primary and backup parsers.", true);
+      setStatus("Select both Parser 1 and Parser 2.", true);
       return;
     }
     if (!sampleIds.length) {

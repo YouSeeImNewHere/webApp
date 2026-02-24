@@ -1017,6 +1017,16 @@ def month_budget_home_cached(
     force_refresh: bool = False,
 ):
     tid = _require_tenant_id()
+    today = today_local()
+    is_current_month = (int(year) == int(today.year) and int(month) == int(today.month))
+
+    def _is_fresh_for_today(payload: dict[str, Any] | None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        if not is_current_month:
+            return True
+        return str(payload.get("as_of") or "") == today.isoformat()
+
     month_cache_key = (
         int(tid),
         int(year),
@@ -1033,7 +1043,7 @@ def month_budget_home_cached(
         snap_version = int(snap_version_raw) if snap_version_raw is not None else -1
         if snap and snap_version == version_before:
             out = snap.get("payload")
-            if isinstance(out, dict):
+            if _is_fresh_for_today(out):
                 return out
 
     key = (
@@ -1042,7 +1052,7 @@ def month_budget_home_cached(
     )
     if not force_refresh:
         cached = _cache_get(_MONTH_BUDGET_CACHE, key, MONTH_BUDGET_CACHE_TTL_SEC)
-        if cached is not None:
+        if _is_fresh_for_today(cached):
             return cached
 
     out = _month_budget_home(

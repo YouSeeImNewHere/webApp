@@ -33,6 +33,7 @@
   const accountsCountChipEl = document.getElementById("accountsCountChip");
   const addAccountBtnEl = document.getElementById("addAccountBtn");
   const cancelEditBtnEl = document.getElementById("cancelEditBtn");
+  const NON_ADMIN_PREVIEW_KEY = "settings_view_non_admin_preview";
 
   let editingAccountId = null;
   let latestAccounts = [];
@@ -60,6 +61,18 @@
   };
   let CSV_IMPORT_PROGRESS_TIMER = null;
   let CSV_IMPORT_PROGRESS_PCT = 0;
+
+  function isNonAdminPreviewEnabled() {
+    try {
+      return localStorage.getItem(NON_ADMIN_PREVIEW_KEY) === "1";
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function canUseStartingBalanceInputs() {
+    return canSetStartingBalance && !isNonAdminPreviewEnabled();
+  }
 
   function pill(ok, label) {
     const cls = ok ? "ok" : "todo";
@@ -116,8 +129,10 @@
     document.getElementById("institution").value = "";
     document.getElementById("name").value = "";
     document.getElementById("accounttype").value = "checking";
-    document.getElementById("startingBalance").value = "";
-    document.getElementById("startingDate").value = "";
+    const startingBalanceEl = document.getElementById("startingBalance");
+    if (startingBalanceEl) startingBalanceEl.value = "";
+    const startingDateEl = document.getElementById("startingDate");
+    if (startingDateEl) startingDateEl.value = "";
     document.getElementById("creditLimit").value = "";
     document.getElementById("apyPercent").value = "";
     document.getElementById("interestPostDay").value = "";
@@ -198,12 +213,20 @@
   }
 
   function applyStartingBalanceVisibility() {
+    const rowWrap = document.getElementById("startingBalanceRow");
     const row = document.getElementById("startingBalanceWrap");
+    const dateInput = document.getElementById("startingDate");
     const input = document.getElementById("startingBalance");
     if (!row || !input) return;
-    row.style.display = canSetStartingBalance ? "" : "none";
-    input.disabled = !canSetStartingBalance;
-    if (!canSetStartingBalance) input.value = "";
+    const canShow = canUseStartingBalanceInputs();
+    if (rowWrap) rowWrap.style.display = canShow ? "" : "none";
+    row.style.display = canShow ? "" : "none";
+    input.disabled = !canShow;
+    if (dateInput) dateInput.disabled = !canShow;
+    if (!canShow) {
+      input.value = "";
+      if (dateInput) dateInput.value = "";
+    }
   }
 
   function addBenefitRow(initialCategory, initialPercent) {
@@ -1089,10 +1112,17 @@
       name: document.getElementById("name").value.trim(),
       accounttype: accounttype,
       starting_balance: (() => {
-        const v = document.getElementById("startingBalance").value.trim();
+        if (!canUseStartingBalanceInputs()) return null;
+        const el = document.getElementById("startingBalance");
+        const v = (el && el.value ? el.value : "").trim();
         return v ? Number(v) : null;
       })(),
-      starting_date: document.getElementById("startingDate").value.trim() || null,
+      starting_date: (() => {
+        if (!canUseStartingBalanceInputs()) return null;
+        const el = document.getElementById("startingDate");
+        const v = (el && el.value ? el.value : "").trim();
+        return v || null;
+      })(),
       credit_limit: (() => {
         const v = document.getElementById("creditLimit").value.trim();
         return v ? Number(v) : null;

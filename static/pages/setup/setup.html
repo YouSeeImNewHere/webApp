@@ -34,8 +34,10 @@
       </details>
     </div>
 
-    <div class="setup-card">
-      <h2>Step 1: Add Account</h2>
+    <section class="setup-step">
+      <details class="setup-step-fold" open>
+      <summary>Step 1: Add Account</summary>
+      <div class="setup-step-body">
       <div class="setup-row3">
         <input id="institution" placeholder="Institution (e.g. Navy Federal)" />
         <input id="name" placeholder="Account Name (e.g. Active Duty Checking)" />
@@ -46,10 +48,10 @@
           <option value="investment">investment</option>
         </select>
       </div>
-      <div class="setup-row">
+      <div class="setup-row" id="startingBalanceRow">
         <input id="startingDate" type="date" />
         <div id="startingBalanceWrap">
-          <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional)" />
+          <input id="startingBalance" type="number" step="0.01" placeholder="Starting Balance (optional, owner only)" />
         </div>
       </div>
       <div class="setup-row" id="creditLimitRow">
@@ -75,10 +77,14 @@
       <button id="addAccountBtn" type="button">Add Account</button>
       <button id="cancelEditBtn" type="button" class="secondary" style="display:none; margin-top:8px;">Cancel Edit</button>
       <div id="addResult" class="setup-muted" style="margin-top:8px;"></div>
-    </div>
+      </div>
+      </details>
+    </section>
 
-    <div class="setup-card" id="setupStep2Card">
-      <h2>Step 2: Import CSV Data</h2>
+    <section class="setup-step" id="setupStep2Card">
+      <details class="setup-step-fold" open>
+      <summary>Step 2: Import CSV Data</summary>
+      <div class="setup-step-body">
       <div class="setup-csv-card setup-csv-inline">
         <div class="setup-csv-head">
           <div>
@@ -162,10 +168,14 @@
         <div id="csvUploadMsg" style="margin-top:8px; font-size:12px; white-space:pre-wrap; opacity:.85;"></div>
       </div>
       </div>
-    </div>
+      </div>
+      </details>
+    </section>
 
-    <div class="setup-card">
-      <h2>Step 3: Notifications (Optional)</h2>
+    <section class="setup-step">
+      <details class="setup-step-fold" open>
+      <summary>Step 3: Notifications (Optional)</summary>
+      <div class="setup-step-body">
       <p class="setup-muted">Enter your personal Pushover user key. This key is saved to your user only.</p>
       <div class="setup-row">
         <input id="pushoverUserKey" placeholder="Pushover User Key" />
@@ -175,18 +185,23 @@
         <button id="sendPushoverTestBtn" type="button" class="secondary">Send Test Notification</button>
       </div>
       <div id="pushoverResult" class="setup-muted" style="margin-top:8px;"></div>
-    </div>
+      </div>
+      </details>
+    </section>
 
-    <div class="setup-card">
-      <h2>Step 4: Parser Wizard</h2>
+    <section class="setup-step">
+      <details class="setup-step-fold" open>
+      <summary>Step 4: Parser Wizard</summary>
+      <div class="setup-step-body">
       <p class="setup-muted">Finish parser setup for accounts that receive email alerts.</p>
       <button id="openParserWizardBtn" type="button">Open Parser Wizard</button>
       <p class="setup-muted" style="margin-top:8px;">You can reopen setup anytime at <span class="setup-mono">/setup</span>.</p>
-    </div>
+      </div>
+      </details>
+    </section>
   </div>
   <div id="sharedChrome"></div>
   <script src="/static/pages/setup/setup.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 </body>
 </html>
-
