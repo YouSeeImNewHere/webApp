@@ -17,7 +17,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.core.config import MULTI_TENANT_ENABLED
+from app.core.config import CATEGORY_RULES_TABLE, MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
 from app.routers.accounts import mark_account_csv_upload
 from db import with_db_cursor
@@ -59,6 +59,79 @@ def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
         touch_widget_cache_for_tenant(tid)
     except Exception:
         pass
+
+
+def _pg_regex_operator(flags: str | None) -> str:
+    f = (flags or "").lower()
+    return "~*" if "i" in f else "~"
+
+
+def _apply_category_rules_after_csv_import(
+    cur,
+    *,
+    account_id: int,
+    tenant_id: int | None,
+    tx_id_col: str | None,
+    account_col: str | None,
+    merchant_col: str | None,
+    category_col: str | None,
+    source_col: str | None,
+    tenant_col: str | None,
+) -> int:
+    if not (tx_id_col and account_col and merchant_col and category_col):
+        return 0
+
+    try:
+        cur.execute(
+            f"""
+            SELECT id, category, pattern, COALESCE(flags, 'i') AS flags
+            FROM {CATEGORY_RULES_TABLE}
+            WHERE COALESCE(is_active, TRUE) = TRUE
+            ORDER BY id DESC
+            """
+        )
+        rules = [dict(r) for r in (cur.fetchall() or [])]
+    except Exception:
+        return 0
+
+    updated_total = 0
+    for rule in rules:
+        category = str(rule.get("category") or "").strip()
+        pattern = str(rule.get("pattern") or "").strip()
+        flags = str(rule.get("flags") or "i")
+        if not category or not pattern:
+            continue
+
+        op = _pg_regex_operator(flags)
+        where_parts = [
+            f"{account_col} = %s",
+            f"({category_col} IS NULL OR TRIM({category_col}) = '')",
+            f"{merchant_col} IS NOT NULL",
+            f"TRIM({merchant_col}) <> ''",
+            f"{merchant_col} {op} %s",
+        ]
+        where_vals: list[Any] = [int(account_id), pattern]
+        if source_col:
+            where_parts.append(f"LOWER(TRIM(COALESCE({source_col}, ''))) = 'csv'")
+        if tenant_id and tenant_col:
+            where_parts.append(f"{tenant_col} = %s")
+            where_vals.append(int(tenant_id))
+
+        try:
+            cur.execute(
+                f"""
+                UPDATE transactions
+                SET {category_col} = %s
+                WHERE {' AND '.join(where_parts)}
+                """,
+                tuple([category] + where_vals),
+            )
+            updated_total += int(cur.rowcount or 0)
+        except Exception:
+            # Ignore malformed regex patterns so import still succeeds.
+            continue
+
+    return int(updated_total)
 
 
 def _safe_target_filename(name: str) -> str:
@@ -1651,6 +1724,7 @@ async def ingest_csv_mapped(
     tid = _require_tenant_id_or_none()
     inserted = 0
     updated = 0
+    auto_categorized = 0
     reconciled = 0
     stale_deleted = 0
     errors: list[dict[str, Any]] = list(mapped["summary"]["sample_errors"])
@@ -1820,8 +1894,19 @@ async def ingest_csv_mapped(
             limit=3000,
             window_days=4,
         )
+        auto_categorized = _apply_category_rules_after_csv_import(
+            cur,
+            account_id=int(account_id),
+            tenant_id=tid,
+            tx_id_col=tx_id_col,
+            account_col=account_col_name,
+            merchant_col=merchant_col_name,
+            category_col=category_col_name,
+            source_col=source_col_name,
+            tenant_col=tenant_col_name,
+        )
         conn.commit()
-    if (inserted + updated + int(reconciled or 0) + int(stale_deleted or 0)) > 0:
+    if (inserted + updated + int(reconciled or 0) + int(stale_deleted or 0) + int(auto_categorized or 0)) > 0:
         _refresh_widget_cache_for_tenant(tid)
     try:
         mark_account_csv_upload(int(account_id), tid)
@@ -1833,6 +1918,7 @@ async def ingest_csv_mapped(
         "ok": True,
         "inserted": inserted,
         "updated": updated,
+        "auto_categorized": int(auto_categorized),
         "reconciled_pending_duplicates": int(reconciled),
         "stale_pending_deleted": int(stale_deleted),
         "skipped": skipped,

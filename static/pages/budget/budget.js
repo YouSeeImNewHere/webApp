@@ -269,18 +269,24 @@ function renderSpentPie(items, spentMap) {
   const kSpent = $("kSpent");
   if (kSpent) kSpent.textContent = money(mb.spent_so_far || 0);
 
-  // savings goal (unchanged)
+  // savings goal controls are optional in DOM; guard when hidden/removed
+  const sgPercent = $("sgPercent");
+  const sgAmount = $("sgAmount");
+  const sgValue = $("sgValue");
+  const kSavings = $("kSavings");
   const cfg = d.savings_goal_cfg || null;
   if (cfg) {
-    $("sgPercent").checked = cfg.mode === "percent";
-    $("sgAmount").checked = cfg.mode === "amount";
-    $("sgValue").value = String(cfg.value ?? "");
-    $("kSavings").textContent =
-      (cfg.mode === "percent") ? `${Number(cfg.value || 0).toFixed(2)}%` : money(mb.savings_goal || 0);
+    if (sgPercent) sgPercent.checked = cfg.mode === "percent";
+    if (sgAmount) sgAmount.checked = cfg.mode === "amount";
+    if (sgValue) sgValue.value = String(cfg.value ?? "");
+    if (kSavings) {
+      kSavings.textContent =
+        (cfg.mode === "percent") ? `${Number(cfg.value || 0).toFixed(2)}%` : money(mb.savings_goal || 0);
+    }
   } else {
-    $("sgAmount").checked = true;
-    $("sgValue").value = "";
-    $("kSavings").textContent = money(mb.savings_goal || 0);
+    if (sgAmount) sgAmount.checked = true;
+    if (sgValue) sgValue.value = "";
+    if (kSavings) kSavings.textContent = money(mb.savings_goal || 0);
   }
 
   // ✅ NEW: make rows clickable
@@ -294,6 +300,7 @@ function renderSpentPie(items, spentMap) {
   function groupRowEl(row) {
   const wrap = document.createElement("div");
   wrap.className = "budget-table-row budget-table-row--group";
+  const isSavingsGoalRow = String(row?.synthetic_kind || "") === "savings_goal";
 
   function cell(label, el, extraClass = "") {
     const c = document.createElement("div");
@@ -307,6 +314,9 @@ function renderSpentPie(items, spentMap) {
   name.className = "budget-input";
   name.placeholder = "Work travel";
   name.value = row.name || "";
+  if (isSavingsGoalRow) {
+    name.disabled = true;
+  }
 
   const allocated = document.createElement("input");
   allocated.className = "budget-input";
@@ -318,11 +328,21 @@ function renderSpentPie(items, spentMap) {
   cap.inputMode = "decimal";
   cap.placeholder = "optional";
   cap.value = (row.cap == null ? "" : String(row.cap));
+  if (isSavingsGoalRow) {
+    cap.value = "";
+    cap.placeholder = "n/a";
+    cap.disabled = true;
+  }
 
   const cats = document.createElement("input");
   cats.className = "budget-input";
   cats.placeholder = "parking, travel";
   cats.value = (row.categories || []).join(", ");
+  if (isSavingsGoalRow) {
+    cats.value = "";
+    cats.placeholder = "No categories";
+    cats.disabled = true;
+  }
 
   const spent = document.createElement("div");
   spent.className = "budget-money";
@@ -335,16 +355,42 @@ function renderSpentPie(items, spentMap) {
 
   const actions = document.createElement("div");
   actions.className = "budget-actions";
+  if (isSavingsGoalRow) {
+    actions.classList.add("is-savings-goal-actions");
+  }
 
   const saveBtn = document.createElement("button");
   saveBtn.className = "settings-btn primary";
-  saveBtn.textContent = "Save";
+  saveBtn.textContent = isSavingsGoalRow ? "Save goal" : "Save";
+  if (isSavingsGoalRow) {
+    saveBtn.style.width = "100%";
+  }
 
   const delBtn = document.createElement("button");
   delBtn.className = "settings-btn";
   delBtn.textContent = "Delete";
+  if (isSavingsGoalRow) {
+    delBtn.style.display = "none";
+  }
 
   saveBtn.addEventListener("click", async () => {
+    if (isSavingsGoalRow) {
+      const val = Number(allocated.value || 0);
+      if (!Number.isFinite(val) || val < 0) return alert("Enter a valid savings goal amount");
+      try {
+        await fetchJSON("/settings/savings-goal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "amount", value: val }),
+        });
+        await load();
+      } catch (e) {
+        console.error(e);
+        alert("Save goal failed: " + e.message);
+      }
+      return;
+    }
+
     const nm = (name.value || "").trim();
     if (!nm) return alert("Group name is required");
 
@@ -371,6 +417,7 @@ function renderSpentPie(items, spentMap) {
   });
 
   delBtn.addEventListener("click", async () => {
+    if (isSavingsGoalRow) return;
     const nm = (name.value || "").trim();
     if (!nm) { wrap.remove(); return; }
     if (!confirm(`Delete group "${nm}"?`)) return;
@@ -386,7 +433,7 @@ function renderSpentPie(items, spentMap) {
   });
 
   actions.appendChild(saveBtn);
-  actions.appendChild(delBtn);
+  if (!isSavingsGoalRow) actions.appendChild(delBtn);
 
   wrap.appendChild(cell("Group", name));
   wrap.appendChild(cell("Allocated", allocated));
@@ -410,7 +457,15 @@ function renderSpentPie(items, spentMap) {
   }
   $("groupsEmpty").textContent = "";
 
-  for (const g of groups) host.appendChild(groupRowEl(g));
+  const sortedGroups = [...groups].sort((a, b) => {
+    const aSavings = String(a?.synthetic_kind || "") === "savings_goal";
+    const bSavings = String(b?.synthetic_kind || "") === "savings_goal";
+    if (aSavings && !bSavings) return -1;
+    if (!aSavings && bSavings) return 1;
+    return 0;
+  });
+
+  for (const g of sortedGroups) host.appendChild(groupRowEl(g));
 }
 
 
@@ -717,6 +772,7 @@ bindSafeRowClick();
   }
 
   async function onSaveSavingsGoal() {
+    if (!$("sgValue")) return;
     const mode = $("sgPercent").checked ? "percent" : "amount";
     const val = Number(($("sgValue").value || "").trim());
     if (!Number.isFinite(val) || val < 0) return alert("Enter a valid number");
@@ -1583,7 +1639,8 @@ async function openSpentBreakdown() {
       });
     }
 
-    $("sgSave").addEventListener("click", onSaveSavingsGoal);
+    const sgSaveBtn = $("sgSave");
+    if (sgSaveBtn) sgSaveBtn.addEventListener("click", onSaveSavingsGoal);
     const ru = $("roundupEnabled");
     if (ru) ru.addEventListener("change", saveRoundupSettings);
 

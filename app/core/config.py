@@ -21,6 +21,10 @@ GOOGLE_OAUTH_REDIRECT_URI = (os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "") or "").s
 GOOGLE_PUBSUB_TOPIC = (os.getenv("GOOGLE_PUBSUB_TOPIC", "") or "").strip()
 MULTI_TENANT_ENABLED = (os.getenv("MULTI_TENANT_ENABLED", "false") or "").lower() in ("1", "true", "yes")
 OWNER_GOOGLE_EMAIL = (os.getenv("OWNER_GOOGLE_EMAIL", "") or "").strip().lower()
+try:
+    SESSION_MAX_AGE_DAYS = max(1, int(os.getenv("SESSION_MAX_AGE_DAYS", "30")))
+except Exception:
+    SESSION_MAX_AGE_DAYS = 30
 
 # Environment flags
 IS_RENDER = bool(os.getenv("RENDER")) or bool(os.getenv("RENDER_SERVICE_ID"))

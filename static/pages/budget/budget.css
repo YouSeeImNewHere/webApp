@@ -124,3 +124,100 @@
     max-height: none;
   }
 }
+
+/* Savings goal now lives in Budgets table as a synthetic row. Hide legacy card. */
+#savingsGoalCard{
+  display: none !important;
+}
+
+/* Keep round-up settings as a low-priority utility block near the bottom. */
+body.page-budget .budget-wrap{
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Keep the Budgets group area flat; only rows should look like cards. */
+body.page-budget .budget-table--groups,
+body.page-budget #groupRows{
+  background: transparent !important;
+}
+
+body.page-budget #groupRows{
+  display: grid;
+  gap: 6px;
+}
+
+body.page-budget .budget-table--groups .budget-table-head{
+  background: transparent !important;
+}
+
+body.page-budget .budget-table--groups .budget-table-row--group{
+  background: var(--card) !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+body.page-budget .budget-actions.is-savings-goal-actions{
+  width: 100%;
+}
+
+body.page-budget .budget-actions.is-savings-goal-actions .settings-btn{
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+}
+
+@media (min-width: 901px){
+  body.page-budget .budget-actions.is-savings-goal-actions{
+    justify-content: flex-end;
+  }
+
+  body.page-budget .budget-actions.is-savings-goal-actions .settings-btn{
+    width: 156px;
+    max-width: 156px;
+  }
+}
+
+#roundupsCard{
+  order: 99;
+  border-style: dashed;
+  opacity: 0.95;
+}
+
+#roundupsCard .settings-btn{
+  min-width: 100px;
+}
+
+@media (min-width: 901px){
+  body.page-budget .budget-wrap{
+    gap: 14px;
+  }
+
+  #roundupsCard{
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto;
+    column-gap: 16px;
+    row-gap: 8px;
+    align-items: center;
+    margin-top: 0;
+  }
+
+  #roundupsCard > div:nth-child(1),
+  #roundupsCard > div:nth-child(2){
+    grid-column: 1;
+    margin-bottom: 0 !important;
+  }
+
+  #roundupsCard > label{
+    grid-column: 2;
+    justify-self: end;
+    white-space: nowrap;
+  }
+
+  #roundupsCard > #roundupStatus{
+    grid-column: 2;
+    text-align: right;
+    margin-top: 0 !important;
+  }
+}

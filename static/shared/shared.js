@@ -144,6 +144,134 @@
     });
   })();
 
+  // 4.75) Show a single "what changed" popup after deploys/new commits.
+  (async function installAppUpdateSummary() {
+    if (window.__appUpdateSummaryInstalled) return;
+    window.__appUpdateSummaryInstalled = true;
+
+    const STORAGE_KEY = "app_updates_last_seen_id";
+
+    function escHtml(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function formatWhen(tsSeconds) {
+      const n = Number(tsSeconds || 0);
+      if (!Number.isFinite(n) || n <= 0) return "";
+      try {
+        return new Date(n * 1000).toLocaleString();
+      } catch {
+        return "";
+      }
+    }
+
+    function ensureModal() {
+      let root = document.getElementById("appUpdatesModal");
+      if (root) return root;
+
+      root = document.createElement("div");
+      root.id = "appUpdatesModal";
+      root.className = "notif-modal hidden";
+      root.setAttribute("aria-hidden", "true");
+      root.innerHTML = `
+        <div class="notif-modal-card" role="dialog" aria-modal="true" aria-label="App updates">
+          <div class="notif-modal-header">
+            <div id="appUpdatesModalTitle" class="notif-modal-title">What Changed</div>
+            <button id="appUpdatesModalClose" class="icon-btn" type="button" aria-label="Close">&#10005;</button>
+          </div>
+          <div id="appUpdatesModalMeta" class="notif-modal-meta"></div>
+          <div id="appUpdatesModalBody" class="notif-modal-body"></div>
+          <div class="notif-modal-actions">
+            <button id="appUpdatesModalOk" class="settings-btn primary" type="button">Got it</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function openModalWithRows(rows) {
+      const root = ensureModal();
+      const meta = document.getElementById("appUpdatesModalMeta");
+      const body = document.getElementById("appUpdatesModalBody");
+      const closeBtn = document.getElementById("appUpdatesModalClose");
+      const okBtn = document.getElementById("appUpdatesModalOk");
+      if (!root || !body || !okBtn) return Promise.resolve();
+
+      const safeRows = Array.isArray(rows) ? rows : [];
+      if (meta) meta.textContent = `${safeRows.length} update${safeRows.length === 1 ? "" : "s"} since your last visit`;
+      body.innerHTML = safeRows.map((r) => {
+        const subj = escHtml(r?.subject || "Update");
+        const sid = escHtml(r?.short_id || "");
+        const when = escHtml(formatWhen(r?.ts));
+        return `
+          <div style="padding:8px 0; border-bottom:1px solid var(--border);">
+            <div style="font-weight:800; line-height:1.35;">${subj}</div>
+            <div style="opacity:.72; font-size:12px; margin-top:4px;">${sid}${when ? ` • ${when}` : ""}</div>
+          </div>
+        `;
+      }).join("");
+
+      root.classList.remove("hidden");
+      root.setAttribute("aria-hidden", "false");
+
+      return new Promise((resolve) => {
+        const finish = () => {
+          root.classList.add("hidden");
+          root.setAttribute("aria-hidden", "true");
+          closeBtn?.removeEventListener("click", finish);
+          okBtn.removeEventListener("click", finish);
+          resolve();
+        };
+        closeBtn?.addEventListener("click", finish);
+        okBtn.addEventListener("click", finish);
+      });
+    }
+
+    try {
+      const res = await fetch(`/app/updates${v}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const updates = Array.isArray(data?.updates) ? data.updates : [];
+      const latestId = String(data?.latest_id || updates?.[0]?.id || data?.build_id || "").trim();
+      if (!latestId) return;
+
+      let lastSeen = "";
+      try { lastSeen = String(localStorage.getItem(STORAGE_KEY) || "").trim(); } catch {}
+
+      if (!lastSeen) {
+        try { localStorage.setItem(STORAGE_KEY, latestId); } catch {}
+        return;
+      }
+      if (lastSeen === latestId) return;
+
+      let unseen = [];
+      const idx = updates.findIndex((u) => String(u?.id || "") === lastSeen);
+      if (idx >= 0) {
+        unseen = updates.slice(0, idx);
+      } else {
+        unseen = updates.slice(0, Math.min(25, updates.length));
+      }
+
+      if (!unseen.length) {
+        try { localStorage.setItem(STORAGE_KEY, latestId); } catch {}
+        return;
+      }
+
+      // Show oldest->newest so stacked updates read like a changelog.
+      unseen = unseen.slice().reverse();
+      await openModalWithRows(unseen);
+      try { localStorage.setItem(STORAGE_KEY, latestId); } catch {}
+    } catch (_err) {
+      // Non-fatal: app should continue even if updates feed is unavailable.
+    }
+  })();
+
   // 5) Mobile pull-to-refresh (global across shared-chrome pages).
   (function installPullToRefresh() {
     if (window.__mobilePullToRefreshInstalled) return;

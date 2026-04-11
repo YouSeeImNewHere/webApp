@@ -269,6 +269,8 @@ def upsert_budget_group(b: BudgetGroupUpsert):
         raise HTTPException(status_code=422, detail="name is required")
 
     name_norm = _norm_name(nm)
+    if name_norm == "savings goal":
+        raise HTTPException(status_code=422, detail="name 'Savings goal' is reserved")
     allocated = float(b.allocated or 0.0)
     cap = None if b.cap is None else float(b.cap)
 

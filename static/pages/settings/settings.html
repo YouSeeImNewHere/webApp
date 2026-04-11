@@ -135,29 +135,23 @@
         </div>
         <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
         <div class="backfill-panel">
-          <div class="backfill-panel-title">Manual backfill parse</div>
-          <div class="settings-muted backfill-panel-sub">Re-scan previous emails and insert missing transactions.</div>
+          <div class="backfill-meta">
+            <div class="backfill-panel-title">Manual backfill parse</div>
+            <div class="settings-muted backfill-panel-sub">Re-scan previous emails and insert missing transactions.</div>
+          </div>
           <div class="backfill-controls">
             <label class="backfill-field">
-            Lookback days
+              <span>Lookback days</span>
               <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7">
             </label>
             <label class="backfill-check">
               <input id="emailParserIncludeProcessed" type="checkbox" checked>
-              Include already processed emails
+              Include already processed
             </label>
             <button class="settings-btn backfill-run-btn" id="runEmailParserBackfillBtn" type="button">Run</button>
           </div>
         </div>
-        <div id="emailParserBackfillStatus" class="settings-muted" role="status" aria-live="polite"></div>
-        <pre id="emailParserBackfillLog" class="settings-code" style="max-height:260px; overflow:auto; margin-top:8px; display:none;"></pre>
-        <div id="emailParserBackfillRows" style="display:none; margin-top:8px;"></div>
-      </div>
-    </section>
-
-    <section class="settings-section">
-      <h2 class="settings-section-title">Income</h2>
-      <div class="settings-card">
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
         <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Income wizard</div>
@@ -165,19 +159,9 @@
           </div>
           <a class="settings-btn primary" href="/income-wizard">Open Page</a>
         </div>
-      </div>
-    </section>
-
-    <section class="settings-section">
-      <h2 class="settings-section-title">Data Import</h2>
-      <div class="settings-card">
-        <div class="settings-row settings-split-row" style="justify-content:space-between;">
-          <div>
-            <div style="font-weight:950;">Import transactions</div>
-            <div class="settings-muted" style="margin:4px 0 0 0;">Open the CSV/Excel import form.</div>
-          </div>
-          <a class="settings-btn primary" href="/?openCsvImport=1">Open Form</a>
-        </div>
+        <div id="emailParserBackfillStatus" class="settings-muted" role="status" aria-live="polite"></div>
+        <pre id="emailParserBackfillLog" class="settings-code" style="max-height:260px; overflow:auto; margin-top:8px; display:none;"></pre>
+        <div id="emailParserBackfillRows" style="display:none; margin-top:8px;"></div>
       </div>
     </section>
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import re
-from fastapi import APIRouter, Request, HTTPException, Form
+import subprocess
+from pathlib import Path
+from fastapi import APIRouter, Request, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from starlette.responses import HTMLResponse, RedirectResponse
 
@@ -59,9 +61,67 @@ def _match_category_rule_for_transaction(
     return None
 
 
+def _git_recent_updates(limit: int = 40) -> list[dict[str, object]]:
+    repo_root = Path(__file__).resolve().parents[2]
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "log",
+                f"-n{int(max(1, min(limit, 200)))}",
+                "--pretty=format:%H%x1f%h%x1f%ct%x1f%s",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except Exception:
+        return []
+
+    if proc.returncode != 0:
+        return []
+
+    out: list[dict[str, object]] = []
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split("\x1f", 3)
+        if len(parts) != 4:
+            continue
+        full_hash, short_hash, ts_raw, subject = parts
+        try:
+            ts_int = int(ts_raw)
+        except Exception:
+            ts_int = 0
+        out.append(
+            {
+                "id": full_hash.strip(),
+                "short_id": short_hash.strip(),
+                "ts": ts_int,
+                "subject": (subject or "").strip(),
+            }
+        )
+    return out
+
+
 @router.get("/__ping")
 def ping():
     return {"ok": True, "file": __file__}
+
+
+@router.get("/app/updates")
+def app_updates(request: Request, limit: int = Query(40, ge=1, le=200)):
+    if not bool(request.session.get("authed")):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    updates = _git_recent_updates(limit=int(limit))
+    latest_id = (updates[0].get("id") if updates else None) or str(BUILD_ID)
+    return {
+        "ok": True,
+        "build_id": str(BUILD_ID),
+        "latest_id": str(latest_id),
+        "updates": updates,
+    }
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):

@@ -30,11 +30,17 @@
       <div class="settings-card">
         <div class="rules-toolbar">
           <button id="refreshRulesBtn" class="settings-btn small">Refresh</button>
+          <button id="runRulesCheckBtn" class="settings-btn small">Run full check</button>
+          <label class="toggle" style="white-space:nowrap;">
+            <input id="checkUncategorizedOnly" type="checkbox" />
+            <span>Only uncategorized</span>
+          </label>
           <input id="ruleSearchId" class="settings-input mono" style="max-width:120px;" placeholder="Rule ID" />
           <input id="ruleSearchKeyword" class="settings-input" style="max-width:240px;" placeholder="Keywords / regex" />
           <input id="ruleSearchCategory" class="settings-input" style="max-width:180px;" placeholder="Category" />
           <span id="rulesStatus" class="settings-muted" style="margin:0;"></span>
         </div>
+        <div id="rulesCheckResults" class="settings-muted" style="display:grid; gap:6px; margin:10px 2px 2px 2px;" hidden></div>
         <div id="rulesCards" class="rules-cards" hidden></div>
 
         <table class="settings-table rules-table" id="rulesTable">

@@ -32,6 +32,74 @@ function setStatus(msg, isError = false) {
   el.style.color = isError ? "var(--danger)" : "var(--text-muted)";
 }
 
+function renderCheckResults(data) {
+  const host = document.getElementById("rulesCheckResults");
+  if (!host) return;
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const checkedAt = data?.checked_at ? new Date(data.checked_at).toLocaleString() : "";
+  const limitRows = rows.slice(0, 80);
+
+  host.hidden = false;
+  host.innerHTML = `
+    <div>
+      <b>Full check complete</b>
+      <span class="settings-muted" style="margin-left:8px;">${esc(checkedAt)}</span>
+      <span class="settings-muted" style="margin-left:8px;">Rules: ${esc(data?.rule_count ?? 0)}</span>
+      <span class="settings-muted" style="margin-left:8px;">All matches: ${esc(data?.total_matches_all_rules ?? 0)}</span>
+      <span class="settings-muted" style="margin-left:8px;">Uncategorized matches: ${esc(data?.total_uncategorized_matches_all_rules ?? 0)}</span>
+      <span class="settings-muted" style="margin-left:8px;">Applied: ${esc(data?.total_applied ?? 0)}</span>
+    </div>
+    ${
+      !limitRows.length
+        ? `<div class="settings-muted">No rules found.</div>`
+        : limitRows
+            .map((r) => {
+              const sampleTxt = (Array.isArray(r.samples) ? r.samples : [])
+                .map((s) => `#${s.id} ${s.merchant}`)
+                .join(" | ");
+              const err = r.regex_error ? ` | error: ${esc(r.regex_error)}` : "";
+              return `
+                <div class="mono" style="font-size:12px; line-height:1.45;">
+                  #${esc(r.id)} ${esc(r.category)} | matches=${esc(r.matches)} | total=${esc(r.total_matches)} | uncategorized=${esc(r.uncategorized_matches)} | applied=${esc(r.applied ?? 0)}${err}
+                  ${sampleTxt ? `<div class="settings-muted" style="font-size:11px;">samples: ${esc(sampleTxt)}</div>` : ""}
+                </div>
+              `;
+            })
+            .join("")
+    }
+    ${rows.length > limitRows.length ? `<div class="settings-muted">Showing first ${limitRows.length} rules.</div>` : ""}
+  `;
+}
+
+async function runFullCheck() {
+  const btn = document.getElementById("runRulesCheckBtn");
+  const onlyUncat = !!document.getElementById("checkUncategorizedOnly")?.checked;
+  if (!btn) return;
+
+  btn.disabled = true;
+  setStatus("Running full rule check...");
+  try {
+    const p = new URLSearchParams();
+    p.set("include_inactive", "1");
+    p.set("uncategorized_only", onlyUncat ? "1" : "0");
+    p.set("sample_limit", "2");
+    p.set("apply_now", "1");
+    const res = await fetch(`/category-rules/check-all?${p.toString()}`, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok || data?.ok === false) {
+      setStatus(data?.error || "Rule check failed", true);
+      return;
+    }
+    renderCheckResults(data);
+    setStatus(`Check complete: ${data?.rule_count || 0} rules, applied ${data?.total_applied || 0}`);
+    await loadRules(true);
+  } catch {
+    setStatus("Rule check failed", true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function isMobileRules() {
   return window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
 }
@@ -444,6 +512,10 @@ function initToolbar() {
   const loadMoreBtn = document.getElementById("rulesLoadMoreBtn");
   if (loadMoreBtn) {
     loadMoreBtn.onclick = () => loadRules(false);
+  }
+  const runCheckBtn = document.getElementById("runRulesCheckBtn");
+  if (runCheckBtn) {
+    runCheckBtn.onclick = runFullCheck;
   }
 
   const onSearch = debounce(() => loadRules(true), 250);

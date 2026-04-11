@@ -29,6 +29,7 @@ from app.core.widget_tokens import resolve_widget_token
 from app.core.config import (
     WIDGET_SECRET,
     SESSION_SECRET,
+    SESSION_MAX_AGE_DAYS,
     APP_PASSWORD,
     NOTIF_SECRET,
     IS_RENDER,
@@ -1234,6 +1235,6 @@ def add_auth_middlewares(app):
         secret_key=SESSION_SECRET,
         session_cookie="webapp_session",
         same_site="lax",
-        max_age=None,
+        max_age=int(max(1, int(SESSION_MAX_AGE_DAYS)) * 24 * 60 * 60),
         https_only=IS_RENDER,
     )

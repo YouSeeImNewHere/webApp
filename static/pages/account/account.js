@@ -5,8 +5,10 @@ import { mountUpcomingCard } from "/static/components/cards/upcomingCard.js";
 let chart = null;
 let accountId = null;
 const TX_MODE = window.TX_MODE || "prod";
+const AUDIT_MODE = /^(1|true|yes)$/i.test(String(qs("audit") || ""));
 let latestAccountRows = [];
 let pendingBalanceMultiplier = -1;
+let latestAccountHeader = null;
 
 
 const ACCOUNT_CHART_IDS = {
@@ -33,6 +35,70 @@ const ACCOUNT_CHART_IDS = {
 
 function qs(name){
   return new URLSearchParams(window.location.search).get(name);
+}
+
+function auditChecksStorageKey(accountIdValue) {
+  return `account_audit_checks:${Number(accountIdValue) || 0}`;
+}
+
+function loadAuditChecks(accountIdValue) {
+  try {
+    const raw = localStorage.getItem(auditChecksStorageKey(accountIdValue));
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch (_err) {
+    return {};
+  }
+}
+
+function saveAuditChecks(accountIdValue, checks) {
+  try {
+    localStorage.setItem(auditChecksStorageKey(accountIdValue), JSON.stringify(checks || {}));
+  } catch (_err) {
+    // best effort only
+  }
+}
+
+function addDaysIso(isoDate, days) {
+  const d = parseISODateLocal(String(isoDate || ""));
+  d.setDate(d.getDate() + Number(days || 0));
+  return isoLocal(d);
+}
+
+function resolveAuditRange(headerPayload) {
+  const verifiedRaw = String(headerPayload?.last_manual_verified_at || "").trim();
+  if (!verifiedRaw) {
+    return { start: "2000-01-01", end: isoTodayLocal(), hasVerifiedDate: false };
+  }
+  const verifiedIso = isoLocal(new Date(verifiedRaw));
+  return { start: addDaysIso(verifiedIso, 1), end: isoTodayLocal(), hasVerifiedDate: true };
+}
+
+function hideAuditSuppressedSections() {
+  if (!AUDIT_MODE) return;
+  const chartMount = document.getElementById("chartMount");
+  const upcomingMount = document.getElementById("upcomingMount");
+  if (chartMount) chartMount.hidden = true;
+  if (upcomingMount) upcomingMount.hidden = true;
+  document.querySelectorAll(".section-divider").forEach((el) => {
+    el.hidden = true;
+  });
+}
+
+async function markAccountBalanceVerifiedOnDate(accountIdValue, verifiedDateIso) {
+  const res = await fetch(`/account/${encodeURIComponent(String(accountIdValue))}/balance-verified`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verified_date: String(verifiedDateIso || "") }),
+  });
+  let out = {};
+  try { out = await res.json(); } catch (_err) {}
+  if (!res.ok || !out?.ok) {
+    const msg = out?.detail?.error || out?.error || `Failed (${res.status})`;
+    throw new Error(String(msg));
+  }
+  return out;
 }
 
 function parseNum(x) {
@@ -122,7 +188,8 @@ async function initAccountSwitcher(currentAccountId){
     sel.addEventListener("change", () => {
       const next = Number(sel.value || 0);
       if (!next || next === Number(currentAccountId)) return;
-      window.location.href = `/account?account_id=${encodeURIComponent(String(next))}`;
+      const auditPart = AUDIT_MODE ? "&audit=1" : "";
+      window.location.href = `/account?account_id=${encodeURIComponent(String(next))}${auditPart}`;
     });
   } catch (err) {
     console.error("account switcher load failed:", err);
@@ -188,14 +255,16 @@ function sameMonthISO(aIso, bIso) {
 }
 
 async function loadAccountHeader(accountId){
-  if (TX_MODE === "test") return;
+  if (TX_MODE === "test") return null;
 
   const res = await fetch(`/account/${accountId}`);
   const a = await res.json();
+  latestAccountHeader = a;
 
   // Keep breakdown label contextual while chart title is removed on account page.
   const breakLabel = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
   if (breakLabel) breakLabel.textContent = a.accountType || "Balance";
+  return a;
 }
 
 async function loadAccountChart(accountId){
@@ -338,9 +407,9 @@ events = events.filter(e => Number(e.account_id) === Number(accountId));
   });
 }
 
-async function loadAccountTransactions(accountId){
-  const start = document.getElementById("a-start").value;
-  const end   = document.getElementById("a-end").value;
+async function loadAccountTransactions(accountId, opts = {}){
+  const start = opts?.start || document.getElementById("a-start")?.value || "";
+  const end   = opts?.end || document.getElementById("a-end")?.value || "";
   if (!start || !end) return;
 
   const baseUrl =
@@ -376,6 +445,7 @@ async function loadAccountTransactions(accountId){
   }
 
   const rows = latestAccountRows;
+  const auditChecks = AUDIT_MODE ? loadAuditChecks(accountId) : null;
 
   // split pending vs posted
   const pending = [];
@@ -399,11 +469,37 @@ async function loadAccountTransactions(accountId){
     h.className = "tx-day-header";
 
     const isPendingHeader = (String(dateKey) === "Pending");
+    const showAuditVerify = AUDIT_MODE && !isPendingHeader && !!dateKey;
 
     h.innerHTML = `
       <div class="tx-day-header__date">${isPendingHeader ? "Pending" : escHtml(headerDateLabel(dateKey))}</div>
-      <div class="tx-day-header__bal">${(endOfDayBalance == null || isPendingHeader) ? "" : money(endOfDayBalance)}</div>
+      <div class="tx-day-header__right">
+        <div class="tx-day-header__bal">${(endOfDayBalance == null || isPendingHeader) ? "" : money(endOfDayBalance)}</div>
+        ${showAuditVerify ? `<button type="button" class="tx-day-verify-btn" data-verify-date="${escHtml(String(dateKey))}">Verify</button>` : ""}
+      </div>
     `;
+    if (showAuditVerify) {
+      const btn = h.querySelector(".tx-day-verify-btn");
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          const dateIso = String(btn.getAttribute("data-verify-date") || "").trim();
+          if (!dateIso) return;
+          btn.disabled = true;
+          btn.textContent = "Saving...";
+          try {
+            await markAccountBalanceVerifiedOnDate(accountId, dateIso);
+            await loadAccountHeader(accountId);
+            const nextRange = resolveAuditRange(latestAccountHeader || {});
+            await loadAccountTransactions(accountId, nextRange);
+          } catch (err) {
+            console.error(err);
+            alert(err?.message || "Failed to verify balance date.");
+            btn.textContent = "Verify";
+            btn.disabled = false;
+          }
+        });
+      }
+    }
     return h;
   }
 
@@ -411,6 +507,10 @@ async function loadAccountTransactions(accountId){
   function renderRow(row, balanceOverride = null) {
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
+    if (AUDIT_MODE) {
+      wrap.classList.add("is-audit-row");
+      wrap.setAttribute("data-tip", "Click anywhere to mark as correct");
+    }
     wrap.dataset.txId = String(row.id ?? "");
 
     const subBits = [];
@@ -434,7 +534,14 @@ async function loadAccountTransactions(accountId){
       ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
       : "";
 
+    const txId = String(row.id ?? "");
+    const checkKey = txId || `${row.dateISO || row.effectiveDate || "unk"}:${row.merchant || ""}:${row.amount || ""}`;
+    const isChecked = !!auditChecks?.[checkKey];
     wrap.innerHTML = `
+      ${AUDIT_MODE ? `
+      <label class="audit-tx-check">
+        <input type="checkbox" class="audit-tx-check__input" data-check-key="${escHtml(checkKey)}" ${isChecked ? "checked" : ""} />
+      </label>` : ""}
       <div class="tx-icon-wrap tx-icon-hit" role="button" tabindex="0" aria-label="Transaction details">
         ${categoryIconHTML(row.category)}
       </div>
@@ -450,6 +557,30 @@ async function loadAccountTransactions(accountId){
       </div>
     `;
 
+    if (AUDIT_MODE) {
+      const check = wrap.querySelector(".audit-tx-check__input");
+      if (check) {
+        check.addEventListener("change", () => {
+          const key = String(check.getAttribute("data-check-key") || "");
+          if (!key) return;
+          const nextChecks = loadAuditChecks(accountId);
+          if (check.checked) nextChecks[key] = true;
+          else delete nextChecks[key];
+          saveAuditChecks(accountId, nextChecks);
+        });
+
+        wrap.addEventListener("click", (ev) => {
+          const t = ev.target;
+          if (!(t instanceof Element)) return;
+          if (t.closest(".audit-tx-check__input")) return;
+          if (t.closest(".tx-icon-wrap, .tx-icon-hit")) return;
+          if (t.closest("button, a, input, select, textarea, label")) return;
+          check.checked = !check.checked;
+          check.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      }
+    }
+
     return wrap;
   }
 // Base balance = most recent POSTED row balance (posted is newest-first from backend)
@@ -458,7 +589,7 @@ const basePostedBalance =
     ? Number(posted[0].balance_after)
     : null;
 
-if (pending.length) {
+if (!AUDIT_MODE && pending.length) {
   list.appendChild(makeDayHeader("Pending", null));
 
   // 1) compute balances in chronological order (oldest -> newest)
@@ -583,8 +714,9 @@ function buildExportRowsWithVisibleRunning(rows) {
 }
 
 async function downloadAccountCsv() {
-  const start = document.getElementById("a-start")?.value || "";
-  const end = document.getElementById("a-end")?.value || "";
+  const auditRange = AUDIT_MODE ? resolveAuditRange(latestAccountHeader || {}) : null;
+  const start = (AUDIT_MODE ? auditRange?.start : document.getElementById("a-start")?.value) || "";
+  const end = (AUDIT_MODE ? auditRange?.end : document.getElementById("a-end")?.value) || "";
   if (!start || !end || !accountId) return;
 
   let rows = latestAccountRows || [];
@@ -714,8 +846,14 @@ function initAccountAddTransaction(currentAccountId) {
       if (amountEl) amountEl.value = "";
       if (merchantEl) merchantEl.value = "";
       close();
-      await loadAccountChart(Number(currentAccountId));
-      await loadAccountTransactions(Number(currentAccountId));
+      if (!AUDIT_MODE) {
+        await loadAccountChart(Number(currentAccountId));
+        await loadAccountTransactions(Number(currentAccountId));
+      } else {
+        await loadAccountHeader(Number(currentAccountId));
+        const auditRange = resolveAuditRange(latestAccountHeader || {});
+        await loadAccountTransactions(Number(currentAccountId), auditRange);
+      }
     } catch (err) {
       console.error(err);
       setAccountAddTxMessage(err?.message || "Failed to save transaction.", true);
@@ -733,7 +871,9 @@ function setActiveQuickButton(container, btn){
 window.addEventListener("load", async () => {
   accountId = Number(qs("account_id"));
   if (!accountId) return alert("Missing account_id");
+  hideAuditSuppressedSections();
   await initAccountSwitcher(accountId);
+if (!AUDIT_MODE) {
 mountUpcomingCard("#upcomingMount", { daysAhead: 30, accountId });
   // 1) mount the shared card FIRST
 mountChartCard("#chartMount", {
@@ -791,6 +931,7 @@ initChartControls(ACCOUNT_CHART_IDS, async () => {
   await loadAccountChart(accountId);
   await loadAccountTransactions(accountId);
 });
+}
 
   const exportBtn = document.getElementById("accountCsvExportBtn");
   if (exportBtn) {
@@ -798,17 +939,24 @@ initChartControls(ACCOUNT_CHART_IDS, async () => {
   }
   initAccountAddTransaction(accountId);
 
+  if (!AUDIT_MODE) {
+    const updateBtn = document.getElementById(ACCOUNT_CHART_IDS.update);
+    if (updateBtn) {
+      updateBtn.addEventListener("click", async () => {
+        await loadAccountChart(accountId);
+        await loadAccountTransactions(accountId);
+      });
+    }
+  }
 
-  // 6) wire update button
-  document.getElementById(ACCOUNT_CHART_IDS.update).addEventListener("click", async () => {
+  await loadAccountHeader(accountId);
+  if (!AUDIT_MODE) {
     await loadAccountChart(accountId);
     await loadAccountTransactions(accountId);
-  });
-
-  // 7) load content
-  await loadAccountHeader(accountId);
-  await loadAccountChart(accountId);
-  await loadAccountTransactions(accountId);
+    return;
+  }
+  const auditRange = resolveAuditRange(latestAccountHeader || {});
+  await loadAccountTransactions(accountId, auditRange);
 });
 
 

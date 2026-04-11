@@ -21,6 +21,7 @@ from app.core.roundups import (
     is_roundup_eligible_tx,
     roundup_amount_from_spend,
 )
+from app.routers.budget_groups import _get_budget_groups_for_month, _norm_cat
 
 from db import with_db_cursor, query_db
 from app.core.config import ISO_DATE_RE, MULTI_TENANT_ENABLED
@@ -386,9 +387,27 @@ def category_totals_month():
         """,
         ((int(tid), first, next_month) if tid else (first, next_month)),
     )
+    budgeted_norm: set[str] = set()
+    try:
+        groups = _get_budget_groups_for_month(int(first.year), int(first.month))
+        for g in (groups or []):
+            try:
+                alloc = float(g.get("allocated") or 0.0)
+            except Exception:
+                alloc = 0.0
+            if alloc <= 0:
+                continue
+            for c in (g.get("categories") or []):
+                cn = _norm_cat(c)
+                if cn:
+                    budgeted_norm.add(cn)
+    except Exception:
+        budgeted_norm = set()
+
     out_categories = [
         {"category": r["category"], "total": float(r["total"] or 0), "tx_count": int(r["tx_count"] or 0)}
         for r in rows
+        if _norm_cat(r.get("category")) not in budgeted_norm
     ]
 
     roundup_cfg = get_roundup_settings()
@@ -427,7 +446,8 @@ def category_totals_month():
         )
         ru_total, ru_count = _roundup_totals_for_rows([dict(r) for r in spend_rows])
         if ru_total > 0:
-            out_categories.append({"category": ru_cat, "total": ru_total, "tx_count": ru_count})
+            if _norm_cat(ru_cat) not in budgeted_norm:
+                out_categories.append({"category": ru_cat, "total": ru_total, "tx_count": ru_count})
 
     out_categories.sort(key=lambda x: float(x.get("total") or 0.0), reverse=True)
     return {

@@ -660,6 +660,162 @@ async function markAccountBalanceVerified(accountId) {
   return out;
 }
 
+async function markAccountBalanceVerifiedOnDate(accountId, verifiedDateIso) {
+  const out = await apiPostJson(`/account/${encodeURIComponent(accountId)}/balance-verified`, {
+    verified_date: String(verifiedDateIso || "").trim() || null,
+  });
+  if (!out?.ok) throw new Error("Verify failed");
+  return out;
+}
+
+function ensureAccountVerifyModal() {
+  let root = document.getElementById("accountVerifyRoot");
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = "accountVerifyRoot";
+  root.className = "tx-inspect hidden";
+  root.innerHTML = `
+    <div class="tx-inspect__backdrop" data-av-close></div>
+    <div class="tx-inspect__card" role="dialog" aria-modal="true" aria-label="Verify balance date">
+      <div class="tx-inspect__head">
+        <div>
+          <div class="tx-inspect__title">Verify Balance</div>
+          <div id="avSub" class="tx-inspect__sub"></div>
+        </div>
+        <button class="tx-inspect__close" type="button" data-av-close aria-label="Close">x</button>
+      </div>
+      <div class="tx-inspect__body">
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:12px; font-weight:800; margin-bottom:10px;">
+          Verification date
+          <input id="avDate" type="date" class="settings-input" />
+        </label>
+        <div id="avMessage" style="font-size:12px; opacity:.82; line-height:1.35;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+          <button id="avCancel" class="settings-btn" type="button">Cancel</button>
+          <button id="avConfirm" class="settings-btn primary" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener("click", (e) => {
+    if (e.target?.matches?.("[data-av-close]")) root.classList.add("hidden");
+  });
+  document.getElementById("avCancel")?.addEventListener("click", () => root.classList.add("hidden"));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") root.classList.add("hidden");
+  });
+  return root;
+}
+
+function openAccountVerifyModal(accountName) {
+  return new Promise((resolve) => {
+    const root = ensureAccountVerifyModal();
+    const sub = document.getElementById("avSub");
+    const dateInput = document.getElementById("avDate");
+    const msg = document.getElementById("avMessage");
+    const cancelBtn = document.getElementById("avCancel");
+    const confirmBtn = document.getElementById("avConfirm");
+    if (!root || !dateInput || !confirmBtn) {
+      resolve(null);
+      return;
+    }
+    if (sub) sub.textContent = String(accountName || "");
+    dateInput.value = isoLocalDate(new Date());
+    if (msg) {
+      msg.textContent = `On the selected date, the final balances for this account match between the bank data and database data.`;
+    }
+    root.classList.remove("hidden");
+    try {
+      if (typeof dateInput.showPicker === "function") dateInput.showPicker();
+    } catch {}
+
+    const finish = (val) => {
+      cleanup();
+      root.classList.add("hidden");
+      resolve(val || null);
+    };
+    const onEsc = (e) => {
+      if (e.key === "Escape") finish(null);
+    };
+    const onBackdrop = (e) => {
+      if (e.target?.matches?.("[data-av-close]")) finish(null);
+    };
+    const cleanup = () => {
+      document.removeEventListener("keydown", onEsc);
+      root.removeEventListener("click", onBackdrop);
+      if (cancelBtn) cancelBtn.onclick = null;
+      confirmBtn.onclick = null;
+    };
+
+    const onConfirm = () => {
+      const v = String(dateInput.value || "").trim();
+      if (!v) {
+        alert("Choose a verification date.");
+        return;
+      }
+      finish(v);
+    };
+    if (cancelBtn) cancelBtn.onclick = () => finish(null);
+    root.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onEsc);
+    confirmBtn.onclick = onConfirm;
+  });
+}
+
+function createAccountVerifyInlineButton(a, getStatusEl) {
+  const verifyBtn = document.createElement("button");
+  verifyBtn.type = "button";
+  verifyBtn.className = "account-status-btn";
+  verifyBtn.textContent = "Verified";
+  verifyBtn.title = "Confirm balances match on a selected date";
+  verifyBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (document.body.classList.contains("is-customizing")) return;
+    const selectedDate = await openAccountVerifyModal(a?.name || "Account");
+    if (!selectedDate) return;
+    const old = verifyBtn.textContent;
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = "Saving...";
+    try {
+      const out = await markAccountBalanceVerifiedOnDate(a.id, selectedDate);
+      a.last_manual_verified_at = out?.last_manual_verified_at || new Date().toISOString();
+      const next = accountAccuracyView(a);
+      const statusEl = getStatusEl?.();
+      if (statusEl) {
+        statusEl.textContent = next.label;
+        statusEl.classList.remove("is-fresh", "is-aging", "is-stale");
+        statusEl.classList.add(next.cls);
+      }
+      verifyBtn.textContent = "Verified";
+    } catch (err) {
+      console.error(err);
+      alert("Failed to mark verified.");
+      verifyBtn.textContent = old;
+    } finally {
+      verifyBtn.disabled = false;
+    }
+  });
+  return verifyBtn;
+}
+
+function createAccountAuditInlineButton(a) {
+  const auditBtn = document.createElement("button");
+  auditBtn.type = "button";
+  auditBtn.className = "account-status-btn";
+  auditBtn.textContent = "Audit";
+  auditBtn.title = "Open account page for audit details";
+  auditBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (document.body.classList.contains("is-customizing")) return;
+    window.location.href = `/account?account_id=${encodeURIComponent(a.id)}&audit=1`;
+  });
+  return auditBtn;
+}
+
 async function loadHomePayload() {
   const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
   const payload = await apiGetJson("/page/home?tx_limit=15");
@@ -768,7 +924,10 @@ if (isCardBalances && creditSummary) {
 pill.innerHTML = `
   <span class="account-pill__left">
     <span class="account-pill__name">${a.name}</span>
-    <span class="account-pill__status ${accView.cls}">${accView.label}</span>
+    <span class="account-pill__status-row">
+      <span class="account-pill__status ${accView.cls}">${accView.label}</span>
+      <span class="account-pill__status-actions"></span>
+    </span>
   </span>
   <span class="account-pill__right">
     ${isCardBalances ? formatCardBalance(amt) : money(amt)}
@@ -782,38 +941,12 @@ pill.innerHTML = `
         });
 
         const verifyBtn = document.createElement("button");
-        verifyBtn.type = "button";
-        verifyBtn.className = "account-pill-verify";
-        verifyBtn.textContent = "Verified";
-        verifyBtn.title = "Mark balance as verified";
-        verifyBtn.addEventListener("click", async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (document.body.classList.contains("is-customizing")) return;
-          const old = verifyBtn.textContent;
-          verifyBtn.disabled = true;
-          verifyBtn.textContent = "Saving...";
-          try {
-            const out = await markAccountBalanceVerified(a.id);
-            a.last_manual_verified_at = out?.last_manual_verified_at || new Date().toISOString();
-            const next = accountAccuracyView(a);
-            const statusEl = pill.querySelector(".account-pill__status");
-            if (statusEl) {
-              statusEl.textContent = next.label;
-              statusEl.classList.remove("is-fresh", "is-aging", "is-stale");
-              statusEl.classList.add(next.cls);
-            }
-          } catch (err) {
-            console.error(err);
-            alert("Failed to mark verified.");
-          } finally {
-            verifyBtn.disabled = false;
-            verifyBtn.textContent = old;
-          }
-        });
-
         row.appendChild(pill);
-        row.appendChild(verifyBtn);
+        const statusActions = pill.querySelector(".account-pill__status-actions");
+        if (statusActions) {
+          statusActions.appendChild(createAccountVerifyInlineButton(a, () => pill.querySelector(".account-pill__status")));
+          statusActions.appendChild(createAccountAuditInlineButton(a));
+        }
         li.appendChild(row);
         ul.appendChild(li);
       });
@@ -896,7 +1029,10 @@ if (isCardBalances) {
 btn.innerHTML = `
   <span class="account-pill__left">
     <span class="account-pill__name">${a.name}</span>
-    <span class="account-pill__status ${accView.cls}">${accView.label}</span>
+    <span class="account-pill__status-row">
+      <span class="account-pill__status ${accView.cls}">${accView.label}</span>
+      <span class="account-pill__status-actions"></span>
+    </span>
   </span>
   <span class="account-pill__right">
     ${isCardBalances ? formatCardBalance(amt) : money(amt)}
@@ -909,39 +1045,12 @@ btn.innerHTML = `
         window.location.href = `/account?account_id=${a.id}`;
       });
 
-      const verifyBtn = document.createElement("button");
-      verifyBtn.type = "button";
-      verifyBtn.className = "account-pill-verify";
-      verifyBtn.textContent = "Verified";
-      verifyBtn.title = "Mark balance as verified";
-      verifyBtn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (document.body.classList.contains("is-customizing")) return;
-        const old = verifyBtn.textContent;
-        verifyBtn.disabled = true;
-        verifyBtn.textContent = "Saving...";
-        try {
-          const out = await markAccountBalanceVerified(a.id);
-          a.last_manual_verified_at = out?.last_manual_verified_at || new Date().toISOString();
-          const next = accountAccuracyView(a);
-          const statusEl = btn.querySelector(".account-pill__status");
-          if (statusEl) {
-            statusEl.textContent = next.label;
-            statusEl.classList.remove("is-fresh", "is-aging", "is-stale");
-            statusEl.classList.add(next.cls);
-          }
-        } catch (err) {
-          console.error(err);
-          alert("Failed to mark verified.");
-        } finally {
-          verifyBtn.disabled = false;
-          verifyBtn.textContent = old;
-        }
-      });
-
       row.appendChild(btn);
-      row.appendChild(verifyBtn);
+      const statusActions = btn.querySelector(".account-pill__status-actions");
+      if (statusActions) {
+        statusActions.appendChild(createAccountVerifyInlineButton(a, () => btn.querySelector(".account-pill__status")));
+        statusActions.appendChild(createAccountAuditInlineButton(a));
+      }
       li.appendChild(row);
       ul.appendChild(li);
     });
@@ -1099,9 +1208,43 @@ const CHARTS = [
 ];
 
 let chartIndex = 0;
+let chartToggleFixedWidthPx = 0;
 
 function currentChart() {
   return CHARTS[chartIndex];
+}
+
+function chartToggleLabelForIndex(i) {
+  const next = CHARTS[(i + 1) % CHARTS.length];
+  return `Next: ${next.title} \u25B6`;
+}
+
+function ensureChartToggleFixedWidth() {
+  const btn = document.getElementById("chartToggleBtn");
+  if (!btn) return;
+
+  if (!chartToggleFixedWidthPx) {
+    const probe = document.createElement("span");
+    probe.className = btn.className;
+    probe.style.position = "absolute";
+    probe.style.left = "-99999px";
+    probe.style.top = "0";
+    probe.style.visibility = "hidden";
+    probe.style.whiteSpace = "nowrap";
+    probe.style.pointerEvents = "none";
+    document.body.appendChild(probe);
+
+    let maxW = 0;
+    for (let i = 0; i < CHARTS.length; i++) {
+      probe.textContent = chartToggleLabelForIndex(i);
+      maxW = Math.max(maxW, Math.ceil(probe.getBoundingClientRect().width));
+    }
+    probe.remove();
+    chartToggleFixedWidthPx = maxW + 2;
+  }
+
+  btn.style.width = `${chartToggleFixedWidthPx}px`;
+  btn.style.minWidth = `${chartToggleFixedWidthPx}px`;
 }
 
 function renderChartDots() {
@@ -1121,10 +1264,10 @@ function setChartHeaderUI() {
   const btn = document.getElementById("chartToggleBtn");
 
   const current = CHARTS[chartIndex];
-  const next = CHARTS[(chartIndex + 1) % CHARTS.length];
 
   if (t) t.textContent = current.title;
-  if (btn) btn.textContent = `Next: ${next.title} v`;
+  if (btn) btn.textContent = chartToggleLabelForIndex(chartIndex);
+  ensureChartToggleFixedWidth();
 
     renderChartDots();
     updatePotentialToggleVisibility();
@@ -1924,7 +2067,7 @@ const btn = document.getElementById("goBudgetBtn");
 mountChartCard("#homeChartMount", {
   ids: HOME_IDS,
   title: "Net Worth",
-  toggleText: "Next: Savings v",
+  toggleText: "Next: Savings \u25B6",
   breakdownLabel: "Net",
   breakdownValue: "$0",
 
@@ -2951,6 +3094,10 @@ const CSV_MODAL_STATE = {
   accounts: [],
   activePreset: null,
   activePresetAccountId: 0,
+  presetCacheByAccount: {},
+  importDone: false,
+  accountManuallyChosen: false,
+  autoDetectedAccountId: 0,
   dropGuardBound: false,
 };
 
@@ -2984,6 +3131,287 @@ function ensureCsvMappingOption(id, val) {
   opt.value = String(val);
   opt.textContent = `${friendly}: ${colLabel} (saved)`;
   el.appendChild(opt);
+}
+
+function csvNormText(v) {
+  return String(v || "").toLowerCase();
+}
+
+function csvNormFileName(v) {
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function loadCsvFileAccountCache() {
+  try {
+    const raw = localStorage.getItem("csv_file_account_cache");
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj === "object") ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCsvFileAccountCache(map) {
+  try {
+    localStorage.setItem("csv_file_account_cache", JSON.stringify(map || {}));
+  } catch {}
+}
+
+function getCachedAccountForFileName(fileName) {
+  const key = csvNormFileName(fileName);
+  if (!key) return 0;
+  const map = loadCsvFileAccountCache();
+  return Number(map[key] || 0);
+}
+
+function setCachedAccountForFileName(fileName, accountId) {
+  const key = csvNormFileName(fileName);
+  const aid = Number(accountId || 0);
+  if (!key || !aid) return;
+  const map = loadCsvFileAccountCache();
+  map[key] = aid;
+  saveCsvFileAccountCache(map);
+}
+
+function csvNormHeaderCell(v) {
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function loadCsvHeaderSigCache() {
+  try {
+    const raw = localStorage.getItem("csv_header_sig_by_account");
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj === "object") ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCsvHeaderSigCache(map) {
+  try {
+    localStorage.setItem("csv_header_sig_by_account", JSON.stringify(map || {}));
+  } catch {}
+}
+
+function getCachedCsvHeaderSig(accountId) {
+  const aid = String(Number(accountId || 0));
+  if (!aid || aid === "0") return "";
+  const cache = loadCsvHeaderSigCache();
+  return csvNormText(cache[aid] || "").trim();
+}
+
+function setCachedCsvHeaderSig(accountId, sig) {
+  const aid = String(Number(accountId || 0));
+  const val = csvNormText(sig || "").trim();
+  if (!aid || aid === "0" || !val) return;
+  const cache = loadCsvHeaderSigCache();
+  cache[aid] = val;
+  saveCsvHeaderSigCache(cache);
+}
+
+function csvHeaderSignature(columns = []) {
+  const labels = (Array.isArray(columns) ? columns : [])
+    .map((c) => csvNormHeaderCell(c?.label || ""))
+    .filter(Boolean);
+  return labels.join("|");
+}
+
+function csvTokenize(v) {
+  return csvNormText(v)
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 3);
+}
+
+function pickCsvAccountFromFileContext({ fileName = "", columns = [], previewRows = [] } = {}) {
+  const sel = document.getElementById("csvAccountId");
+  const accounts = Array.isArray(CSV_MODAL_STATE.accounts) ? CSV_MODAL_STATE.accounts : [];
+  if (!sel || !accounts.length) return null;
+
+  const headerText = (Array.isArray(columns) ? columns : [])
+    .map((c) => String(c?.label || ""))
+    .join(" ");
+  const sampleText = (Array.isArray(previewRows) ? previewRows : [])
+    .slice(0, 12)
+    .map((r) => (Array.isArray(r?.cells) ? r.cells.join(" ") : ""))
+    .join(" ");
+  const corpus = csvNormText(`${fileName} ${headerText} ${sampleText}`);
+  if (!corpus.trim()) return null;
+
+  const ranked = accounts.map((a) => {
+    const label = String(a?.label || "");
+    const bank = String(a?.institution || "");
+    const tokens = Array.from(new Set([...csvTokenize(label), ...csvTokenize(bank)]));
+    let score = 0;
+
+    const bankPhrase = csvNormText(bank).trim();
+    if (bankPhrase && bankPhrase.length >= 4 && corpus.includes(bankPhrase)) score += 10;
+    const labelPhrase = csvNormText(label).replace(/\(credit\)/g, "").trim();
+    if (labelPhrase && labelPhrase.length >= 6 && corpus.includes(labelPhrase)) score += 8;
+
+    for (const t of tokens) {
+      if (corpus.includes(t)) score += 1;
+    }
+
+    if ((/visa|mastercard|amex|credit/.test(corpus)) && /\(credit\)/i.test(label)) score += 2;
+    return { id: Number(a.id || 0), score };
+  }).sort((x, y) => y.score - x.score);
+
+  if (!ranked.length) return null;
+  const best = ranked[0];
+  const second = ranked[1] || { score: 0 };
+  if (best.score < 3) return null;
+  if ((best.score - second.score) < 2) return null;
+  return best.id || null;
+}
+
+async function fetchCsvPresetForAccount(accountId) {
+  const aid = Number(accountId || 0);
+  if (!aid) return null;
+  if (CSV_MODAL_STATE.presetCacheByAccount && Object.prototype.hasOwnProperty.call(CSV_MODAL_STATE.presetCacheByAccount, String(aid))) {
+    return CSV_MODAL_STATE.presetCacheByAccount[String(aid)] || null;
+  }
+  try {
+    const q = `/csv/mapping-presets?account_id=${encodeURIComponent(aid)}&institution_key=${encodeURIComponent(CSV_ACCOUNT_PRESET_KEY)}`;
+    const out = await apiGetJson(q, { cache: "no-store" });
+    const preset = (out?.ok && out?.found && out?.preset) ? out.preset : null;
+    CSV_MODAL_STATE.presetCacheByAccount[String(aid)] = preset;
+    return preset;
+  } catch {
+    CSV_MODAL_STATE.presetCacheByAccount[String(aid)] = null;
+    return null;
+  }
+}
+
+async function pickCsvAccountBySavedHeaderMatch(columns = []) {
+  const sig = csvHeaderSignature(columns);
+  if (!sig) return null;
+  const accounts = Array.isArray(CSV_MODAL_STATE.accounts) ? CSV_MODAL_STATE.accounts : [];
+  if (!accounts.length) return null;
+
+  const matches = [];
+  const presetAccounts = [];
+  await Promise.all(accounts.map(async (a) => {
+    const aid = Number(a?.id || 0);
+    if (!aid) return;
+    const preset = await fetchCsvPresetForAccount(aid);
+    if (preset) presetAccounts.push(aid);
+    const savedSig = csvNormText(preset?.header_signature || getCachedCsvHeaderSig(aid) || "").trim();
+    if (!savedSig) return;
+    if (savedSig === sig) matches.push(aid);
+  }));
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0 && presetAccounts.length === 1) return presetAccounts[0];
+  return null;
+}
+
+async function tryAutoSelectCsvAccountFromContext({ fileName = "", columns = [], previewRows = [], force = false } = {}) {
+  const sel = document.getElementById("csvAccountId");
+  const sub = document.getElementById("csvUploadSub");
+  if (!sel || !CSV_MODAL_STATE.accounts.length) return false;
+  if (CSV_MODAL_STATE.accountManuallyChosen && !force) return false;
+
+  let guessId = null;
+  const cachedByFile = getCachedAccountForFileName(fileName);
+  if (cachedByFile && CSV_MODAL_STATE.accounts.some((a) => Number(a?.id || 0) === Number(cachedByFile))) {
+    guessId = Number(cachedByFile);
+  }
+  if (Array.isArray(columns) && columns.length) {
+    guessId = guessId || await pickCsvAccountBySavedHeaderMatch(columns);
+  }
+  if (!guessId) {
+    guessId = pickCsvAccountFromFileContext({ fileName, columns, previewRows });
+  }
+  if (!guessId) return false;
+  if (String(sel.value || "") === String(guessId)) {
+    CSV_MODAL_STATE.autoDetectedAccountId = Number(guessId);
+    return true;
+  }
+
+  sel.value = String(guessId);
+  CSV_MODAL_STATE.autoDetectedAccountId = Number(guessId);
+  if (sub) {
+    sub.textContent = cachedByFile
+      ? "Auto-selected account from this file's last successful import. Verify before import."
+      : ((Array.isArray(columns) && columns.length)
+        ? "Auto-selected account from saved header mapping. Verify before import."
+        : "Auto-selected account from file. Verify before import.");
+  }
+  await loadCsvPreset(Number(guessId));
+  updateCsvFinalizeButtons();
+  return true;
+}
+
+function normalizeCsvPreset(preset) {
+  const p = (preset && typeof preset === "object") ? preset : {};
+  const normInt = (v) => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isInteger(n) ? n : null;
+  };
+  return {
+    delimiter: String(p.delimiter || "auto"),
+    has_header: !!p.has_header,
+    header_row: Math.max(1, Number(p.header_row || 1)),
+    data_start_row: Math.max(1, Number(p.data_start_row || 2)),
+    purchase_col: normInt(p.purchase_col),
+    posted_col: normInt(p.posted_col),
+    amount_col: normInt(p.amount_col),
+    debit_col: normInt(p.debit_col),
+    credit_col: normInt(p.credit_col),
+    merchant_col: normInt(p.merchant_col),
+    indicator_col: normInt(p.indicator_col),
+    credit_indicator_value: String(p.credit_indicator_value || "credit"),
+    invert_amount: !!p.invert_amount,
+  };
+}
+
+function csvMappingNeedsSave() {
+  const { accountId } = selectedCsvAccountMeta();
+  if (!accountId) return true;
+  if (!CSV_MODAL_STATE.activePreset) return true;
+  if (Number(CSV_MODAL_STATE.activePresetAccountId || 0) !== Number(accountId)) return true;
+  const active = normalizeCsvPreset(CSV_MODAL_STATE.activePreset);
+  const current = normalizeCsvPreset(buildCsvPresetPayload());
+  return JSON.stringify(active) !== JSON.stringify(current);
+}
+
+function updateCsvFinalizeButtons() {
+  const saveBtn = document.getElementById("csvSavePresetBtn");
+  const runBtn = document.getElementById("csvUploadRun");
+  const doneBtn = document.getElementById("csvUploadDone");
+  if (!saveBtn || !runBtn || !doneBtn) return;
+
+  const needsSave = csvMappingNeedsSave();
+  const importDone = !!CSV_MODAL_STATE.importDone;
+
+  if (importDone) {
+    saveBtn.style.display = "none";
+    runBtn.style.display = "none";
+    doneBtn.style.display = "";
+    runBtn.disabled = true;
+    return;
+  }
+
+  doneBtn.style.display = "none";
+  if (needsSave) {
+    saveBtn.style.display = "";
+    runBtn.style.display = "none";
+    runBtn.disabled = true;
+    return;
+  }
+
+  saveBtn.style.display = "none";
+  runBtn.style.display = "";
+  runBtn.disabled = false;
 }
 
 function ensureCsvUploadModal() {
@@ -3102,7 +3530,37 @@ function ensureCsvUploadModal() {
     if (!f) return;
     setCsvFileForModal(f);
   });
-  root.querySelector("#csvAccountId")?.addEventListener("change", () => { loadCsvPreset().catch(console.error); });
+  root.querySelector("#csvAccountId")?.addEventListener("change", () => {
+    CSV_MODAL_STATE.accountManuallyChosen = true;
+    CSV_MODAL_STATE.importDone = false;
+    loadCsvPreset().catch(console.error);
+    updateCsvFinalizeButtons();
+  });
+
+  const mappingInputIds = [
+    "csvDelimiter",
+    "csvHasHeader",
+    "csvHeaderRow",
+    "csvDataStartRow",
+    "csvMapPurchase",
+    "csvMapPosted",
+    "csvMapAmount",
+    "csvMapDebit",
+    "csvMapCredit",
+    "csvMapMerchant",
+    "csvMapIndicator",
+    "csvCreditIndicatorValue",
+    "csvInvertAmount",
+  ];
+  mappingInputIds.forEach((id) => {
+    const el = root.querySelector(`#${id}`);
+    if (!el) return;
+    const ev = (id === "csvCreditIndicatorValue" || id === "csvHeaderRow" || id === "csvDataStartRow") ? "input" : "change";
+    el.addEventListener(ev, () => {
+      CSV_MODAL_STATE.importDone = false;
+      updateCsvFinalizeButtons();
+    });
+  });
 
   const drop = root.querySelector("#csvDropZone");
   if (drop) {
@@ -3166,6 +3624,10 @@ function openCsvUploadModal() {
   CSV_MODAL_STATE.columns = [];
   CSV_MODAL_STATE.activePreset = null;
   CSV_MODAL_STATE.activePresetAccountId = 0;
+  CSV_MODAL_STATE.presetCacheByAccount = {};
+  CSV_MODAL_STATE.importDone = false;
+  CSV_MODAL_STATE.accountManuallyChosen = false;
+  CSV_MODAL_STATE.autoDetectedAccountId = 0;
   if (input) input.value = "";
   if (hasHeaderEl) hasHeaderEl.checked = true;
   if (msg) msg.textContent = "";
@@ -3177,6 +3639,7 @@ function openCsvUploadModal() {
   populateCsvMappingSelects([]);
   loadCsvAccounts().catch(console.error);
   updateCsvPickedName();
+  updateCsvFinalizeButtons();
   root.classList.remove("hidden");
 }
 
@@ -3195,6 +3658,7 @@ function buildCsvPresetPayload() {
     indicator_col: csvGetSelectInt("csvMapIndicator"),
     credit_indicator_value: String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"),
     invert_amount: !!document.getElementById("csvInvertAmount")?.checked,
+    header_signature: csvHeaderSignature(CSV_MODAL_STATE.columns || []),
   };
 }
 
@@ -3222,6 +3686,7 @@ function applyCsvPreset(preset) {
   setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
   const invert = document.getElementById("csvInvertAmount");
   if (invert && typeof preset.invert_amount === "boolean") invert.checked = preset.invert_amount;
+  updateCsvFinalizeButtons();
 }
 
 function selectedCsvAccountMeta() {
@@ -3245,7 +3710,12 @@ async function loadCsvPreset(preferredAccountId = null) {
     if (out?.ok && out?.found && out?.preset) {
       applyCsvPreset(out.preset);
       CSV_MODAL_STATE.activePresetAccountId = accountId;
+      if (!CSV_MODAL_STATE.presetCacheByAccount) CSV_MODAL_STATE.presetCacheByAccount = {};
+      CSV_MODAL_STATE.presetCacheByAccount[String(accountId)] = out.preset;
+      const savedSig = csvNormText(out?.preset?.header_signature || "").trim();
+      if (savedSig) setCachedCsvHeaderSig(accountId, savedSig);
       if (sub) sub.textContent = "Saved mapping loaded for selected account.";
+      updateCsvFinalizeButtons();
       return true;
     }
   } catch (e) {
@@ -3253,6 +3723,9 @@ async function loadCsvPreset(preferredAccountId = null) {
   }
   CSV_MODAL_STATE.activePreset = null;
   CSV_MODAL_STATE.activePresetAccountId = 0;
+  if (!CSV_MODAL_STATE.presetCacheByAccount) CSV_MODAL_STATE.presetCacheByAccount = {};
+  CSV_MODAL_STATE.presetCacheByAccount[String(accountId)] = null;
+  updateCsvFinalizeButtons();
   return false;
 }
 
@@ -3271,10 +3744,37 @@ async function saveCsvPreset() {
     });
     CSV_MODAL_STATE.activePreset = buildCsvPresetPayload();
     CSV_MODAL_STATE.activePresetAccountId = accountId;
+    if (!CSV_MODAL_STATE.presetCacheByAccount) CSV_MODAL_STATE.presetCacheByAccount = {};
+    CSV_MODAL_STATE.presetCacheByAccount[String(accountId)] = CSV_MODAL_STATE.activePreset;
+    setCachedCsvHeaderSig(accountId, CSV_MODAL_STATE.activePreset?.header_signature || "");
+    CSV_MODAL_STATE.importDone = false;
     if (sub) sub.textContent = "Mapping saved for selected account.";
+    updateCsvFinalizeButtons();
   } catch (e) {
     console.error(e);
     if (sub) sub.textContent = `Mapping save failed: ${e?.message || e}`;
+  }
+}
+
+async function persistCsvPresetSilent(accountId) {
+  const aid = Number(accountId || 0);
+  if (!aid) return false;
+  try {
+    const preset = buildCsvPresetPayload();
+    await apiPostJson("/csv/mapping-presets", {
+      account_id: aid,
+      institution_key: CSV_ACCOUNT_PRESET_KEY,
+      preset,
+    });
+    CSV_MODAL_STATE.activePreset = preset;
+    CSV_MODAL_STATE.activePresetAccountId = aid;
+    if (!CSV_MODAL_STATE.presetCacheByAccount) CSV_MODAL_STATE.presetCacheByAccount = {};
+    CSV_MODAL_STATE.presetCacheByAccount[String(aid)] = preset;
+    setCachedCsvHeaderSig(aid, preset?.header_signature || "");
+    return true;
+  } catch (e) {
+    console.warn("persistCsvPresetSilent failed:", e);
+    return false;
   }
 }
 
@@ -3282,6 +3782,8 @@ function setCsvFileForModal(f) {
   if (!f) return;
   CSV_MODAL_STATE.file = f;
   CSV_MODAL_STATE.columns = [];
+  CSV_MODAL_STATE.importDone = false;
+  CSV_MODAL_STATE.accountManuallyChosen = false;
   const { accountId } = selectedCsvAccountMeta();
   updateCsvPickedName();
   populateCsvMappingSelects([]);
@@ -3300,6 +3802,8 @@ function setCsvFileForModal(f) {
   if (mapArea) mapArea.style.display = "none";
   if (finalizeActions) finalizeActions.style.display = "none";
   if (sub) sub.textContent = "File selected. Click Preview File when ready.";
+  tryAutoSelectCsvAccountFromContext({ fileName: String(f?.name || "") }).catch(() => {});
+  updateCsvFinalizeButtons();
 }
 
 function updateCsvPickedName() {
@@ -3381,6 +3885,9 @@ async function loadCsvAccounts() {
     for (const c of (info.credit_cards || [])) rows.push({ id: c.card_id, label: `${c.bank} - ${c.name} (credit)`, institution: c.bank });
     CSV_MODAL_STATE.accounts = rows;
     sel.innerHTML = rows.map(r => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join("");
+    if (CSV_MODAL_STATE.file && !CSV_MODAL_STATE.accountManuallyChosen) {
+      await tryAutoSelectCsvAccountFromContext({ fileName: String(CSV_MODAL_STATE.file?.name || "") });
+    }
     await loadCsvPreset();
   } catch (e) {
     console.error(e);
@@ -3401,6 +3908,8 @@ async function refreshCsvPreview() {
   }
   if (mapArea) mapArea.style.display = "";
   if (finalizeActions) finalizeActions.style.display = "flex";
+  CSV_MODAL_STATE.importDone = false;
+  updateCsvFinalizeButtons();
   if (sub) sub.textContent = "Building preview...";
   if (btn) btn.disabled = true;
 
@@ -3416,9 +3925,16 @@ async function refreshCsvPreview() {
     const out = await apiPostForm("/csv/preview", fd);
     if (!out?.ok) throw new Error("Preview failed");
     CSV_MODAL_STATE.columns = Array.isArray(out.columns) ? out.columns : [];
+    const previewRows = Array.isArray(out.preview_rows) ? out.preview_rows : [];
+    await tryAutoSelectCsvAccountFromContext({
+      fileName: String(CSV_MODAL_STATE.file?.name || ""),
+      columns: CSV_MODAL_STATE.columns,
+      previewRows,
+    });
     populateCsvMappingSelects(CSV_MODAL_STATE.columns);
     await loadCsvPreset();
-    renderCsvPreview(out.preview_rows || [], CSV_MODAL_STATE.columns);
+    renderCsvPreview(previewRows, CSV_MODAL_STATE.columns);
+    updateCsvFinalizeButtons();
     if (sub) sub.textContent = `Preview loaded (${out.row_count || 0} rows).`;
   } catch (e) {
     console.error(e);
@@ -3585,6 +4101,11 @@ async function runCsvIngestMapped() {
     const errCount = Array.isArray(out.errors) ? out.errors.length : 0;
     if (sub) sub.textContent = `Imported ${out.inserted || 0}, updated ${out.updated || 0}, skipped ${out.skipped || 0}${errCount ? `, ${errCount} row errors` : ""}.`;
     if (msg) msg.textContent = errCount ? JSON.stringify(out.errors, null, 2) : "Import complete.";
+    await persistCsvPresetSilent(accountId);
+    setCachedAccountForFileName(CSV_MODAL_STATE.file?.name || "", accountId);
+    setCachedCsvHeaderSig(accountId, csvHeaderSignature(CSV_MODAL_STATE.columns || []));
+    CSV_MODAL_STATE.importDone = true;
+    updateCsvFinalizeButtons();
 
     try { loadBankTotals(); } catch (_) {}
     try { loadData(); } catch (_) {}
@@ -3599,6 +4120,7 @@ async function runCsvIngestMapped() {
     if (runBtn) runBtn.disabled = false;
     if (doneBtn) doneBtn.disabled = false;
     if (cancelBtn) cancelBtn.disabled = false;
+    updateCsvFinalizeButtons();
   }
 }
 

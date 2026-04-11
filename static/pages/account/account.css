@@ -211,6 +211,98 @@ body.page-account .tx-right .tx-roundup-badge{
   margin-bottom: 2px;
 }
 
+body.page-account .tx-day-header__right{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.page-account .tx-day-verify-btn{
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+body.page-account .tx-day-verify-btn:hover{
+  background: color-mix(in srgb, var(--card) 82%, var(--text) 6%);
+}
+
+body.page-account .audit-tx-check{
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  cursor: pointer;
+}
+
+body.page-account .audit-tx-check__input{
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+body.page-account .tx-row.is-audit-row{
+  padding-left: 96px;
+  cursor: pointer;
+}
+
+body.page-account .tx-row.is-audit-row .tx-icon-wrap{
+  left: 42px;
+}
+
+body.page-account .tx-row.is-audit-row::after{
+  content: attr(data-tip);
+  position: absolute;
+  left: 14px;
+  top: -34px;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+body.page-account .tx-row.is-audit-row::before{
+  content: "";
+  position: absolute;
+  left: 24px;
+  top: -8px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--text);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 140ms ease;
+}
+
+body.page-account .tx-row.is-audit-row:hover::after,
+body.page-account .tx-row.is-audit-row:hover::before,
+body.page-account .tx-row.is-audit-row:focus-within::after,
+body.page-account .tx-row.is-audit-row:focus-within::before{
+  opacity: 1;
+  visibility: visible;
+}
+
 @media (max-width: 900px){
   body.page-account .account-tx-header{
     align-items: flex-start;
@@ -233,6 +325,19 @@ body.page-account .tx-right .tx-roundup-badge{
   body.page-account .tx-row{
     min-height: 62px;
     padding-right: 10px;
+  }
+
+  body.page-account .tx-day-verify-btn{
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  body.page-account .tx-row.is-audit-row{
+    padding-left: 90px;
+  }
+
+  body.page-account .tx-row.is-audit-row .tx-icon-wrap{
+    left: 38px;
   }
 
   body.page-account .chart-header.chart-header--metrics2{

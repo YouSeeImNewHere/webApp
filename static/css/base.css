@@ -1487,6 +1487,11 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   gap:8px;
 }
 
+#notifPanel .panel-actions .settings-btn{
+  min-height: 34px;
+  padding: 9px 12px;
+}
+
 .notif-tabs{
   display:flex;
   gap:8px;

@@ -22,7 +22,7 @@
 
 <body class="page-budget">
   <div class="budget-wrap">
-<div class="budget-card">
+<div class="budget-card" id="savingsGoalCard">
   <div style="font-weight:900; margin-bottom:6px;">Savings goal</div>
 
   <div style="display:flex; gap:16px; margin-bottom:10px;">
@@ -54,7 +54,7 @@
   </div>
 </div>
 
-<div class="budget-card">
+<div class="budget-card" id="roundupsCard">
   <div style="font-weight:900; margin-bottom:6px;">Round-up Transactions</div>
   <div class="budget-muted" style="margin-bottom:10px;">
     Round each purchase up to the next dollar and count the extra cents as spending in category <strong>Round-ups</strong>.
@@ -126,8 +126,6 @@
 </div>
 
 
-    <div style="height:14px;"></div>
-
     <div class="budget-card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
         <div style="font-weight:900;">Budgets</div>
@@ -168,11 +166,6 @@
       <div id="fundsRows" class="funds-grid"></div>
       <div id="fundsEmpty" class="budget-muted" style="margin-top:8px;"></div>
     </div>
-
-    <div style="height:14px;"></div>
-
-
-    <div style="height:14px;"></div>
 
     <div class="budget-card">
       <div style="font-weight:900;">Categories spent this month</div>

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from app.routers.balances import latest_rates_map_pg
 from db import with_db_cursor, query_db, run_db_retry
@@ -104,21 +105,38 @@ def mark_account_csv_upload(account_id: int, tenant_id: int | None) -> None:
         conn.commit()
     bump_home_snapshot_version(tenant_id)
 
-def _mark_account_manual_verified(account_id: int, tenant_id: int | None) -> dict[str, Any]:
+def _parse_verified_date_to_timestamp(v: Any) -> datetime | None:
+    s = str(v or "").strip()
+    if not s:
+        return None
+    try:
+        d = datetime.strptime(s, "%Y-%m-%d").date()
+    except Exception:
+        raise HTTPException(status_code=422, detail="invalid_verified_date")
+    # Record as end-of-day for the selected date.
+    return datetime.combine(d, time(23, 59, 59))
+
+
+def _mark_account_manual_verified(
+    account_id: int,
+    tenant_id: int | None,
+    *,
+    verified_at: datetime | None = None,
+) -> dict[str, Any]:
     _ensure_account_balance_audit_pg()
     scope_tid = _tenant_scope_key(tenant_id)
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
             INSERT INTO account_balance_audit(tenant_id, account_id, last_manual_verified_at, updated_at)
-            VALUES (%s, %s, now(), now())
+            VALUES (%s, %s, %s, now())
             ON CONFLICT (tenant_id, account_id)
             DO UPDATE SET
-              last_manual_verified_at = now(),
+              last_manual_verified_at = %s,
               updated_at = now()
             RETURNING last_csv_upload_at, last_manual_verified_at, updated_at
             """,
-            (int(scope_tid), int(account_id)),
+            (int(scope_tid), int(account_id), verified_at, verified_at),
         )
         row = dict(cur.fetchone() or {})
         conn.commit()
@@ -146,10 +164,44 @@ def account_info(account_id: int):
         sql += " AND tenant_id = %s"
         params = (int(account_id), int(tid))
     rows = query_db(sql, params)
-    return rows[0] if rows else {"error": "Account not found"}
+    if not rows:
+        return {"error": "Account not found"}
+
+    out = dict(rows[0] or {})
+    try:
+        _ensure_account_balance_audit_pg()
+        scope_tid = _tenant_scope_key(tid)
+        audit_rows = query_db(
+            """
+            SELECT last_csv_upload_at, last_manual_verified_at, updated_at
+            FROM account_balance_audit
+            WHERE tenant_id = %s AND account_id = %s
+            LIMIT 1
+            """,
+            (int(scope_tid), int(account_id)),
+        )
+        if audit_rows:
+            ar = dict(audit_rows[0] or {})
+            out["last_csv_upload_at"] = _to_iso_or_none(ar.get("last_csv_upload_at"))
+            out["last_manual_verified_at"] = _to_iso_or_none(ar.get("last_manual_verified_at"))
+            out["audit_updated_at"] = _to_iso_or_none(ar.get("updated_at"))
+        else:
+            out["last_csv_upload_at"] = None
+            out["last_manual_verified_at"] = None
+            out["audit_updated_at"] = None
+    except Exception:
+        out["last_csv_upload_at"] = None
+        out["last_manual_verified_at"] = None
+        out["audit_updated_at"] = None
+
+    return out
+
+class BalanceVerifiedIn(BaseModel):
+    verified_date: str | None = None
+
 
 @router.post("/account/{account_id}/balance-verified")
-def mark_balance_verified(account_id: int):
+def mark_balance_verified(account_id: int, body: BalanceVerifiedIn | None = None):
     tid = _require_tenant_id()
     rows = query_db(
         "SELECT 1 FROM accounts WHERE id = %s " + ("AND tenant_id = %s " if tid else "") + "LIMIT 1",
@@ -158,7 +210,8 @@ def mark_balance_verified(account_id: int):
     if not rows:
         raise HTTPException(status_code=404, detail="account_not_found")
 
-    row = _mark_account_manual_verified(int(account_id), tid)
+    verified_at = _parse_verified_date_to_timestamp((body.verified_date if body else None)) or datetime.now()
+    row = _mark_account_manual_verified(int(account_id), tid, verified_at=verified_at)
     return {
         "ok": True,
         "account_id": int(account_id),

@@ -1686,6 +1686,161 @@ def list_category_rules(
 
     return rules
 
+
+@router.get("/category-rules/check-all")
+def check_all_category_rules(
+    include_inactive: int = 0,
+    uncategorized_only: int = 0,
+    sample_limit: int = 3,
+    apply_now: int = 0,
+):
+    """
+    Run a full regex rule check and return match counts per rule.
+    Useful for auditing rule coverage after imports.
+    """
+    tid = _require_tenant_id()
+    only_uncat = bool(int(uncategorized_only or 0))
+    do_apply = bool(int(apply_now or 0))
+    sample_limit_i = max(0, min(int(sample_limit or 0), 10))
+
+    where_rules = "" if include_inactive else "WHERE COALESCE(is_active, TRUE) = TRUE"
+    rules = query_db(
+        f"""
+        SELECT id, category, pattern, COALESCE(flags, 'i') AS flags, COALESCE(is_active, TRUE) AS is_active
+        FROM {CATEGORY_RULES_TABLE}
+        {where_rules}
+        ORDER BY COALESCE(is_active, TRUE) DESC, id DESC
+        """
+    )
+
+    out_rows: list[dict[str, Any]] = []
+    total_matches = 0
+    total_uncategorized_matches = 0
+    total_applied = 0
+
+    with with_db_cursor() as (_conn, cur):
+        for r in (rules or []):
+            rid = int(r["id"])
+            category = str(r.get("category") or "")
+            pattern = str(r.get("pattern") or "")
+            flags = str(r.get("flags") or "i")
+            op = _pg_regex_operator(flags)
+
+            base_where = [
+                "merchant IS NOT NULL",
+                "TRIM(merchant) <> ''",
+                f"merchant {op} %s",
+            ]
+            params: list[Any] = [pattern]
+            if tid:
+                base_where.append("tenant_id = %s")
+                params.append(int(tid))
+
+            try:
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*)::int AS n
+                    FROM transactions
+                    WHERE {' AND '.join(base_where)}
+                    """,
+                    tuple(params),
+                )
+                total_n = int((cur.fetchone() or {}).get("n") or 0)
+
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*)::int AS n
+                    FROM transactions
+                    WHERE {' AND '.join(base_where)}
+                      AND (category IS NULL OR TRIM(category) = '')
+                    """,
+                    tuple(params),
+                )
+                uncat_n = int((cur.fetchone() or {}).get("n") or 0)
+                matched_n = uncat_n if only_uncat else total_n
+                applied_n = 0
+                if do_apply and uncat_n > 0:
+                    apply_where = list(base_where)
+                    apply_where.append("(category IS NULL OR TRIM(category) = '')")
+                    cur.execute(
+                        f"""
+                        UPDATE transactions
+                        SET category = %s
+                        WHERE {' AND '.join(apply_where)}
+                        """,
+                        tuple([category] + params),
+                    )
+                    applied_n = int(cur.rowcount or 0)
+                    total_applied += applied_n
+
+                samples: list[dict[str, Any]] = []
+                if sample_limit_i > 0 and matched_n > 0:
+                    sample_where = list(base_where)
+                    sample_params = list(params)
+                    if only_uncat:
+                        sample_where.append("(category IS NULL OR TRIM(category) = '')")
+                    cur.execute(
+                        f"""
+                        SELECT id, merchant, COALESCE(NULLIF(TRIM(category), ''), '(blank)') AS category
+                        FROM transactions
+                        WHERE {' AND '.join(sample_where)}
+                        ORDER BY id DESC
+                        LIMIT %s
+                        """,
+                        tuple(sample_params + [sample_limit_i]),
+                    )
+                    samples = [dict(x) for x in (cur.fetchall() or [])]
+
+                out_rows.append(
+                    {
+                        "id": rid,
+                        "category": category,
+                        "pattern": pattern,
+                        "flags": flags,
+                        "is_active": bool(r.get("is_active")),
+                        "matches": int(matched_n),
+                        "total_matches": int(total_n),
+                        "uncategorized_matches": int(uncat_n),
+                        "applied": int(applied_n),
+                        "samples": samples,
+                    }
+                )
+                total_matches += int(total_n)
+                total_uncategorized_matches += int(uncat_n)
+            except Exception as e:
+                out_rows.append(
+                    {
+                        "id": rid,
+                        "category": category,
+                        "pattern": pattern,
+                        "flags": flags,
+                        "is_active": bool(r.get("is_active")),
+                        "matches": 0,
+                        "total_matches": 0,
+                        "uncategorized_matches": 0,
+                        "applied": 0,
+                        "samples": [],
+                        "regex_error": str(e),
+                    }
+                )
+        if do_apply and total_applied > 0:
+            _conn.commit()
+            _refresh_widget_cache_for_tenant(tid)
+
+    return {
+        "ok": True,
+        "checked_at": datetime.now().isoformat(),
+        "include_inactive": bool(int(include_inactive or 0)),
+        "uncategorized_only": only_uncat,
+        "apply_now": do_apply,
+        "rule_count": len(out_rows),
+        "total_matches_all_rules": int(total_matches),
+        "total_uncategorized_matches_all_rules": int(total_uncategorized_matches),
+        "total_applied": int(total_applied),
+        "rows": out_rows,
+    }
+
+
 @router.post("/category-rules/{rule_id}")
 def update_category_rule(rule_id: int, payload: RuleUpdate):
     category = (payload.category or "").strip()
@@ -2026,13 +2181,47 @@ def page_budget(
             }
         )
 
+    # ------------------------------------------------------------
+    # Synthetic budget group: Savings goal
+    # - Allocated equals computed monthly savings goal
+    # - No categories
+    # - "Spent" tracks only free-spend overspend (safe_to_spend < 0)
+    # ------------------------------------------------------------
+    try:
+        savings_goal_alloc = float((mb or {}).get("savings_goal") or 0.0)
+    except Exception:
+        savings_goal_alloc = 0.0
+    try:
+        safe_to_spend_now = float((mb or {}).get("safe_to_spend") or 0.0)
+    except Exception:
+        safe_to_spend_now = 0.0
+    savings_goal_spent = max(0.0, -safe_to_spend_now)
+
+    has_savings_goal_group = any((_norm_name(g.get("name", "")) == "savings goal") for g in (groups or []))
+    if not has_savings_goal_group:
+        groups = list(groups or [])
+        groups.append(
+            {
+                "id": -2,  # synthetic
+                "name": "Savings goal",
+                "allocated": savings_goal_alloc,
+                "cap": None,
+                "categories": [],
+                "synthetic_kind": "savings_goal",
+                "synthetic_spent": savings_goal_spent,
+            }
+        )
+
     # decorate groups with spent/remaining using mb.category_spent
     cat_spent = (mb.get("category_spent") or {}) if isinstance(mb, dict) else {}
     out_groups = []
     for g in groups:
-        g_spent = 0.0
-        for c in (g.get("categories") or []):
-            g_spent += float(cat_spent.get(_norm_cat(c), 0.0))
+        if str(g.get("synthetic_kind") or "") == "savings_goal":
+            g_spent = float(g.get("synthetic_spent") or 0.0)
+        else:
+            g_spent = 0.0
+            for c in (g.get("categories") or []):
+                g_spent += float(cat_spent.get(_norm_cat(c), 0.0))
         allocated = float(g.get("allocated") or 0.0)
         cap = g.get("cap", None)
         remaining = allocated - g_spent
@@ -2042,6 +2231,7 @@ def page_budget(
                 "spent": round(g_spent, 2),
                 "remaining": round(remaining, 2),
                 "over_cap": bool(cap is not None and float(g_spent) > float(cap)),
+                "read_only": bool(str(g.get("synthetic_kind") or "") == "savings_goal"),
             }
         )
 

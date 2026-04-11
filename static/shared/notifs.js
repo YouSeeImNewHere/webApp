@@ -67,6 +67,7 @@
     const subtitle = $("notifSubtitle");
     const tabGeneral = $("notifTabGeneral");
     const tabErrors = $("notifTabErrors");
+    const tabsHost = $("notifTabs");
     const errorsCount = $("notifErrorsCount");
 
     const modal = $("notifModal");
@@ -192,13 +193,16 @@
     }
 
     function updateTabsUI() {
+      const showErrors = state.canViewErrors !== false;
+      if (tabsHost) {
+        tabsHost.classList.toggle("hidden", !showErrors);
+      }
       if (tabGeneral) {
         const active = state.activeTab === "general";
         tabGeneral.classList.toggle("is-active", active);
         tabGeneral.setAttribute("aria-selected", String(active));
       }
       if (tabErrors) {
-        const showErrors = state.canViewErrors !== false;
         tabErrors.classList.toggle("hidden", !showErrors);
         const active = showErrors && state.activeTab === "errors";
         tabErrors.classList.toggle("is-active", active);
