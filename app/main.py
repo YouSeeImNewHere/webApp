@@ -3,8 +3,10 @@ import logging
 import os
 import time
 from app.core import auth
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from starlette.middleware.gzip import GZipMiddleware
 from app.routers.csv_upload import router as csv_upload_router
@@ -18,6 +20,10 @@ from app.core.tenancy import initialize_tenancy, current_tenant_id
 from app.core.account_totals_cache import ensure_account_totals_cache_pg
 from app.core.home_snapshot_cache import ensure_home_snapshot_cache_pg
 from app.core.widget_tokens import prime_widget_tokens_cache_from_db
+from app.core.admin_error_events import (
+    ensure_admin_error_events_table_pg,
+    log_admin_error_event,
+)
 
 # Routers
 from app.routers import (
@@ -57,12 +63,90 @@ def create_app() -> FastAPI:
     slow_request_ms = int(os.getenv("SLOW_REQUEST_MS", "450"))
     log_all_timings = os.getenv("LOG_ALL_REQUEST_TIMINGS", "0").strip() == "1"
 
+    def _capture_admin_error(
+        request: Request,
+        *,
+        status_code: int,
+        error_message: str,
+    ) -> None:
+        path = request.url.path or ""
+        if path.startswith("/static/"):
+            return
+        if path.startswith("/admin/error-notifications"):
+            return
+        low_path = path.strip().lower()
+        if low_path in {
+            "/.well-known/appspecific/com.chrome.devtools.json",
+        }:
+            return
+        if bool(getattr(request.state, "_admin_error_captured", False)):
+            return
+        try:
+            tid = getattr(request.state, "tenant_id", None)
+            if tid is None:
+                tid = current_tenant_id()
+            session_email = ""
+            try:
+                session_email = str(request.session.get("google_email") or "").strip().lower()
+            except Exception:
+                session_email = ""
+            if not session_email:
+                session_email = str(getattr(request.state, "google_email", "") or "").strip().lower()
+            client_ip = str((request.client.host if request.client else "") or "")
+            log_admin_error_event(
+                tenant_id=(int(tid) if tid else None),
+                user_email=(session_email or None),
+                method=str(request.method or ""),
+                path=path,
+                query_string=(request.url.query or ""),
+                page_url=(request.headers.get("x-client-page-url") or ""),
+                referer=(request.headers.get("referer") or ""),
+                request_id=(request.headers.get("x-request-id") or ""),
+                status_code=int(status_code or 500),
+                error_message=str(error_message or f"HTTP {int(status_code or 500)}"),
+                client_ip=client_ip,
+                user_agent=(request.headers.get("user-agent") or ""),
+            )
+            request.state._admin_error_captured = True
+        except Exception:
+            pass
+
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException):
+        status_code = int(getattr(exc, "status_code", 500) or 500)
+        if status_code >= 400:
+            _capture_admin_error(
+                request,
+                status_code=status_code,
+                error_message=str(getattr(exc, "detail", "") or f"HTTP {status_code}"),
+            )
+        return JSONResponse(status_code=status_code, content={"detail": exc.detail})
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
+        status_code = int(getattr(exc, "status_code", 500) or 500)
+        if status_code >= 400:
+            _capture_admin_error(
+                request,
+                status_code=status_code,
+                error_message=str(getattr(exc, "detail", "") or f"HTTP {status_code}"),
+            )
+        return JSONResponse(status_code=status_code, content={"detail": exc.detail})
+
     @app.middleware("http")
     async def static_cache_control(request: Request, call_next):
         t0 = time.perf_counter()
-        response = await call_next(request)
-        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
         path = request.url.path or ""
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            _capture_admin_error(
+                request,
+                status_code=500,
+                error_message=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
         response.headers["X-Response-Time-Ms"] = str(elapsed_ms)
 
         if not path.startswith("/static/"):
@@ -96,6 +180,12 @@ def create_app() -> FastAPI:
                     path,
                     response.status_code,
                     elapsed_ms,
+                )
+            if int(response.status_code or 0) >= 400:
+                _capture_admin_error(
+                    request,
+                    status_code=int(response.status_code or 500),
+                    error_message=f"HTTP {int(response.status_code or 500)}",
                 )
 
         if path.startswith("/static/"):
@@ -137,6 +227,7 @@ def create_app() -> FastAPI:
         ensure_performance_indexes()
         ensure_account_totals_cache_pg()
         ensure_home_snapshot_cache_pg()
+        ensure_admin_error_events_table_pg()
         initialize_tenancy()
         prime_widget_tokens_cache_from_db()
         prime_widget_cache_from_db()

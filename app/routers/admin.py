@@ -7,6 +7,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.config import MULTI_TENANT_ENABLED, OWNER_GOOGLE_EMAIL
+from app.core.admin_error_events import (
+    list_admin_error_events,
+    clear_admin_error_events,
+    log_admin_error_event,
+)
+from app.core.tenancy import current_tenant_id
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -20,7 +26,22 @@ class TenantPurgeBody(BaseModel):
     delete_users: bool = True
 
 
+class ClientErrorBody(BaseModel):
+    source: str | None = None
+    message: str | None = None
+    stack: str | None = None
+    page_url: str | None = None
+    route: str | None = None
+    request_url: str | None = None
+    request_method: str | None = None
+    status_code: int | None = None
+    user_agent: str | None = None
+
+
 def _is_owner_request(request: Request) -> bool:
+    preview_header = str(request.headers.get("x-non-admin-preview") or "").strip().lower()
+    if preview_header in {"1", "true", "yes", "on"}:
+        return False
     if not MULTI_TENANT_ENABLED:
         return True
     session_email = (request.session.get("google_email") or "").strip().lower()
@@ -33,6 +54,11 @@ def _require_owner(request: Request) -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
     if not _is_owner_request(request):
         raise HTTPException(status_code=403, detail="forbidden")
+
+
+def _require_authed(request: Request) -> None:
+    if not bool(request.session.get("authed")):
+        raise HTTPException(status_code=401, detail="unauthorized")
 
 
 def _table_exists(cur, table: str) -> bool:
@@ -194,3 +220,110 @@ def admin_tenant_purge(tenant_id: int, request: Request, body: TenantPurgeBody):
         "tenant": tenant,
         "deleted": deleted,
     }
+
+
+@router.get("/admin/error-notifications")
+def admin_error_notifications(request: Request, limit: int = 200):
+    _require_owner(request)
+    rows = list_admin_error_events(limit=int(limit))
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        items.append(
+            {
+                "id": int(r.get("id") or 0),
+                "created_at": (r["created_at"].isoformat() if r.get("created_at") else None),
+                "tenant_id": (int(r["tenant_id"]) if r.get("tenant_id") is not None else None),
+                "user_email": r.get("user_email"),
+                "method": r.get("method"),
+                "path": r.get("path"),
+                "query_string": r.get("query_string"),
+                "page_url": r.get("page_url"),
+                "referer": r.get("referer"),
+                "request_id": r.get("request_id"),
+                "status_code": int(r.get("status_code") or 0),
+                "error_message": r.get("error_message"),
+                "client_ip": r.get("client_ip"),
+                "user_agent": r.get("user_agent"),
+            }
+        )
+    return {"ok": True, "items": items}
+
+
+@router.post("/admin/error-notifications/clear")
+def admin_error_notifications_clear(request: Request):
+    _require_owner(request)
+    deleted = clear_admin_error_events()
+    return {"ok": True, "deleted": int(deleted)}
+
+
+@router.post("/admin/error-notifications/client")
+def admin_error_notifications_client(request: Request, body: ClientErrorBody):
+    _require_authed(request)
+
+    path = str(body.request_url or "").strip()
+    if path:
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(path)
+            if parsed.path:
+                path = parsed.path
+                query_string = (parsed.query or "").strip() or None
+            else:
+                query_string = None
+        except Exception:
+            query_string = None
+    else:
+        path = "/client-error"
+        query_string = None
+
+    status_code = int(body.status_code or 0)
+    if status_code < 0 or status_code > 999:
+        status_code = 0
+
+    message_parts: list[str] = []
+    source = str(body.source or "").strip()
+    message = str(body.message or "").strip()
+    stack = str(body.stack or "").strip()
+    route = str(body.route or "").strip()
+    if source:
+        message_parts.append(f"source={source}")
+    if route:
+        message_parts.append(f"route={route}")
+    if message:
+        message_parts.append(message)
+    if stack:
+        message_parts.append(stack[:2000])
+    error_message = "\n".join([p for p in message_parts if p]).strip()[:4000]
+
+    tenant_id = None
+    try:
+        tid = current_tenant_id()
+        tenant_id = int(tid) if tid else None
+    except Exception:
+        tenant_id = None
+    if tenant_id is None:
+        try:
+            tid_session = request.session.get("tenant_id")
+            tenant_id = int(tid_session) if tid_session else None
+        except Exception:
+            tenant_id = None
+
+    user_email = str(request.session.get("google_email") or "").strip().lower() or None
+    client_ip = str((request.client.host if request.client else "") or "")
+
+    log_admin_error_event(
+        tenant_id=tenant_id,
+        user_email=user_email,
+        method=(str(body.request_method or "").strip().upper() or "CLIENT"),
+        path=(path or "/client-error"),
+        query_string=query_string,
+        page_url=(str(body.page_url or "").strip() or request.headers.get("x-client-page-url") or None),
+        referer=(request.headers.get("referer") or None),
+        request_id=(request.headers.get("x-request-id") or None),
+        status_code=status_code,
+        error_message=(error_message or "client_error_report"),
+        client_ip=(client_ip or None),
+        user_agent=(str(body.user_agent or "").strip() or request.headers.get("user-agent") or None),
+    )
+    return {"ok": True}

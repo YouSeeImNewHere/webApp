@@ -1,1 +1,68 @@
-/* Page-scoped all-transactions styles will move here incrementally from shared CSS. */
+.addtx-panel {
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.addtx-panel__head {
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.addtx-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.addtx-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.addtx-status-field {
+  max-width: 170px;
+}
+
+.addtx-grid input,
+.addtx-grid select {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+.addtx-help {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.addtx-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.addtx-msg {
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.addtx-msg.is-error {
+  color: #b3261e;
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .addtx-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .addtx-status-field {
+    max-width: none;
+  }
+}

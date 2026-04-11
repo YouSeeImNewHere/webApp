@@ -23,6 +23,7 @@ let OFFSET = 0;
 let LOADING = false;
 let DONE = false;
 let LAST_REQ_KEY = "";
+let ADD_TX_ACCOUNTS_LOADED = false;
 
 function setStatus(msg){
   const el = document.getElementById("txStatus");
@@ -59,13 +60,13 @@ function renderAppend(list){
       wrap.classList.add("is-pending");
     }
 
-    const sub = [row.bank, row.card].filter(Boolean).join(" • ");
+    const sub = [row.bank, row.card].filter(Boolean).join(" â€¢ ");
     const amtNum = Number(row.amount || 0);
     const transferText = row.transfer_peer ? (amtNum > 0 ? `To: ${row.transfer_peer}` : `From: ${row.transfer_peer}`) : "";
     const effectiveDate = getEffectiveDate(row);
     const roundupCents = Number(row.roundup_cents || 0);
     const roundupBadge = roundupCents > 0
-      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">¢ ${roundupCents}</div>`
+      ? `<div class="tx-roundup-badge" title="Round-up cents used on this transaction">Â¢ ${roundupCents}</div>`
       : "";
 
     wrap.innerHTML = `
@@ -76,7 +77,7 @@ function renderAppend(list){
       <div class="tx-main">
         <div class="tx-merchant">${(row.merchant || "").toUpperCase()}</div>
         <div class="tx-sub">${sub}</div>
-        <div class="tx-sub">${(row.category || "").trim()}${transferText ? " • " + transferText : ""}</div>
+        <div class="tx-sub">${(row.category || "").trim()}${transferText ? " â€¢ " + transferText : ""}</div>
       </div>
       <div class="tx-amt">${money(row.amount)}</div>
       ${roundupBadge}
@@ -134,6 +135,14 @@ function buildQueryParams(){
   if (abs) params.set("amt_abs", "1");
 
   return params;
+}
+
+function isoTodayLocal(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function currentRequestKey(){
@@ -209,6 +218,153 @@ function initLoadMoreButton(){
   });
 }
 
+function setAddTxMessage(msg, isError = false){
+  const el = document.getElementById("addTxMsg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.classList.toggle("is-error", !!isError);
+}
+
+async function loadAddTxAccounts(){
+  if (ADD_TX_ACCOUNTS_LOADED) return;
+  const sel = document.getElementById("addTxAccount");
+  if (!sel) return;
+
+  sel.innerHTML = `<option value="">Loading accounts...</option>`;
+  sel.disabled = true;
+  try {
+    const res = await fetch("/bank-info", { cache: "no-store" });
+    if (!res.ok) throw new Error(`bank-info failed (${res.status})`);
+    const payload = await res.json();
+    const entries = [];
+    (payload.accounts || []).forEach(a => {
+      entries.push({
+        id: Number(a.account_id),
+        label: `${a.bank || ""} - ${a.name || ""}`.trim(),
+        group: "Accounts",
+      });
+    });
+    (payload.credit_cards || []).forEach(c => {
+      entries.push({
+        id: Number(c.card_id),
+        label: `${c.bank || ""} - ${c.name || ""}`.trim(),
+        group: "Cards",
+      });
+    });
+    const rows = entries.filter(e => Number.isFinite(e.id) && e.id > 0);
+    if (!rows.length) throw new Error("No accounts found");
+
+    const groups = new Map();
+    rows.forEach(r => {
+      if (!groups.has(r.group)) groups.set(r.group, []);
+      groups.get(r.group).push(r);
+    });
+
+    sel.innerHTML = "";
+    groups.forEach((items, name) => {
+      const og = document.createElement("optgroup");
+      og.label = name;
+      items.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+      items.forEach(item => {
+        const opt = document.createElement("option");
+        opt.value = String(item.id);
+        opt.textContent = item.label || `Account ${item.id}`;
+        og.appendChild(opt);
+      });
+      sel.appendChild(og);
+    });
+    sel.disabled = false;
+    ADD_TX_ACCOUNTS_LOADED = true;
+  } catch (err) {
+    console.error(err);
+    sel.innerHTML = `<option value="">Failed to load accounts</option>`;
+    sel.disabled = true;
+  }
+}
+
+function initAddTransactionUI(){
+  const panel = document.getElementById("addTxPanel");
+  const openBtn = document.getElementById("addTxBtn");
+  const cancelBtn = document.getElementById("addTxCancelBtn");
+  const saveBtn = document.getElementById("addTxSaveBtn");
+  const dateEl = document.getElementById("addTxDate");
+  const statusEl = document.getElementById("addTxStatus");
+  const merchantEl = document.getElementById("addTxMerchant");
+  const amountEl = document.getElementById("addTxAmount");
+  const accountEl = document.getElementById("addTxAccount");
+
+  if (!panel || !openBtn || !cancelBtn || !saveBtn) return;
+
+  const open = async () => {
+    panel.hidden = false;
+    if (dateEl && !dateEl.value) dateEl.value = isoTodayLocal();
+    setAddTxMessage("");
+    await loadAddTxAccounts();
+  };
+
+  const close = () => {
+    panel.hidden = true;
+    setAddTxMessage("");
+  };
+
+  openBtn.addEventListener("click", () => { open().catch(err => console.error(err)); });
+  cancelBtn.addEventListener("click", close);
+
+  saveBtn.addEventListener("click", async () => {
+    const accountId = Number(accountEl?.value || 0);
+    const amount = parseNum(amountEl?.value);
+    const merchant = (merchantEl?.value || "").trim();
+    const status = (statusEl?.value || "posted").trim().toLowerCase();
+    const date = (dateEl?.value || "").trim();
+
+    if (!accountId) {
+      setAddTxMessage("Pick an account.", true);
+      return;
+    }
+    if (amount == null) {
+      setAddTxMessage("Enter a valid amount.", true);
+      return;
+    }
+    if (!date) {
+      setAddTxMessage("Pick a date.", true);
+      return;
+    }
+
+    saveBtn.disabled = true;
+    setAddTxMessage("Saving...");
+    try {
+      const res = await fetch("/transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountId,
+          amount,
+          merchant,
+          status,
+          date,
+          source: "Manual",
+        }),
+      });
+      let out = {};
+      try { out = await res.json(); } catch (_) {}
+      if (!res.ok || !out?.ok) {
+        const errText = out?.detail?.error || out?.error || `Save failed (${res.status})`;
+        throw new Error(String(errText));
+      }
+
+      if (amountEl) amountEl.value = "";
+      if (merchantEl) merchantEl.value = "";
+      close();
+      resetAndReload();
+    } catch (err) {
+      console.error(err);
+      setAddTxMessage(err?.message || "Failed to save transaction.", true);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
 function initFilters(){
   const onChange = debounce(() => resetAndReload(), 250);
 
@@ -263,7 +419,9 @@ function initFilters(){
 document.addEventListener("DOMContentLoaded", () => {
   initLoadMoreButton();
   initFilters();
+  initAddTransactionUI();
   resetAndReload();
 });
+
 
 

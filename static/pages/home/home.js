@@ -612,6 +612,54 @@ function creditUsagePctText(balance, limit) {
   return `${pct}%`;
 }
 
+function parseIsoDateSafe(v) {
+  if (!v) return null;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function ageAgoFromDate(d) {
+  if (!d) return null;
+  const ms = Date.now() - d.getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "just now";
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.floor(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  const yr = Math.floor(day / 365);
+  return `${yr}y ago`;
+}
+
+function accountAccuracyView(a) {
+  const csvD = parseIsoDateSafe(a?.last_csv_upload_at);
+  const verD = parseIsoDateSafe(a?.last_manual_verified_at);
+  const csvAgo = ageAgoFromDate(csvD);
+  const verAgo = ageAgoFromDate(verD);
+
+  if (!csvD && !verD) {
+    return { label: "No CSV or verification yet", cls: "is-stale" };
+  }
+
+  const latest = (csvD && verD) ? (csvD >= verD ? csvD : verD) : (csvD || verD);
+  const ageDays = Math.floor((Date.now() - latest.getTime()) / 86400000);
+  const cls = ageDays >= 30 ? "is-stale" : (ageDays >= 7 ? "is-aging" : "is-fresh");
+
+  if (csvAgo && verAgo) return { label: `CSV ${csvAgo} • Verified ${verAgo}`, cls };
+  if (csvAgo) return { label: `CSV ${csvAgo}`, cls };
+  return { label: `Verified ${verAgo}`, cls };
+}
+
+async function markAccountBalanceVerified(accountId) {
+  const out = await apiPostJson(`/account/${encodeURIComponent(accountId)}/balance-verified`, {});
+  if (!out?.ok) throw new Error("Verify failed");
+  return out;
+}
+
 async function loadHomePayload() {
   const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
   const payload = await apiGetJson("/page/home?tx_limit=15");
@@ -707,15 +755,22 @@ if (isCardBalances && creditSummary) {
         const li = document.createElement("li");
         li.dataset.accountId = String(a.id);
 
+        const row = document.createElement("div");
+        row.className = "account-pill-row";
+
         const pill = document.createElement("button");
         pill.type = "button";
-        pill.className = "account-pill";
+        pill.className = "account-pill account-pill--main";
 
         const amt = a.total;
         const usage = isCardBalances ? creditUsagePctText(amt, a.credit_limit) : "";
+        const accView = accountAccuracyView(a);
 pill.innerHTML = `
-  <span>${a.name}</span>
-  <span>
+  <span class="account-pill__left">
+    <span class="account-pill__name">${a.name}</span>
+    <span class="account-pill__status ${accView.cls}">${accView.label}</span>
+  </span>
+  <span class="account-pill__right">
     ${isCardBalances ? formatCardBalance(amt) : money(amt)}
     ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
   </span>
@@ -726,7 +781,40 @@ pill.innerHTML = `
           window.location.href = `/account?account_id=${a.id}`;
         });
 
-        li.appendChild(pill);
+        const verifyBtn = document.createElement("button");
+        verifyBtn.type = "button";
+        verifyBtn.className = "account-pill-verify";
+        verifyBtn.textContent = "Verified";
+        verifyBtn.title = "Mark balance as verified";
+        verifyBtn.addEventListener("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (document.body.classList.contains("is-customizing")) return;
+          const old = verifyBtn.textContent;
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = "Saving...";
+          try {
+            const out = await markAccountBalanceVerified(a.id);
+            a.last_manual_verified_at = out?.last_manual_verified_at || new Date().toISOString();
+            const next = accountAccuracyView(a);
+            const statusEl = pill.querySelector(".account-pill__status");
+            if (statusEl) {
+              statusEl.textContent = next.label;
+              statusEl.classList.remove("is-fresh", "is-aging", "is-stale");
+              statusEl.classList.add(next.cls);
+            }
+          } catch (err) {
+            console.error(err);
+            alert("Failed to mark verified.");
+          } finally {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = old;
+          }
+        });
+
+        row.appendChild(pill);
+        row.appendChild(verifyBtn);
+        li.appendChild(row);
         ul.appendChild(li);
       });
 
@@ -795,15 +883,22 @@ if (isCardBalances) {
       const li = document.createElement("li");
       li.dataset.accountId = String(a.id);
 
+      const row = document.createElement("div");
+      row.className = "account-pill-row";
+
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "account-pill";
+      btn.className = "account-pill account-pill--main";
 
       const amt = a.total;
       const usage = isCardBalances ? creditUsagePctText(amt, a.credit_limit) : "";
+      const accView = accountAccuracyView(a);
 btn.innerHTML = `
-  <span>${a.name}</span>
-  <span>
+  <span class="account-pill__left">
+    <span class="account-pill__name">${a.name}</span>
+    <span class="account-pill__status ${accView.cls}">${accView.label}</span>
+  </span>
+  <span class="account-pill__right">
     ${isCardBalances ? formatCardBalance(amt) : money(amt)}
     ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
   </span>
@@ -814,7 +909,40 @@ btn.innerHTML = `
         window.location.href = `/account?account_id=${a.id}`;
       });
 
-      li.appendChild(btn);
+      const verifyBtn = document.createElement("button");
+      verifyBtn.type = "button";
+      verifyBtn.className = "account-pill-verify";
+      verifyBtn.textContent = "Verified";
+      verifyBtn.title = "Mark balance as verified";
+      verifyBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (document.body.classList.contains("is-customizing")) return;
+        const old = verifyBtn.textContent;
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = "Saving...";
+        try {
+          const out = await markAccountBalanceVerified(a.id);
+          a.last_manual_verified_at = out?.last_manual_verified_at || new Date().toISOString();
+          const next = accountAccuracyView(a);
+          const statusEl = btn.querySelector(".account-pill__status");
+          if (statusEl) {
+            statusEl.textContent = next.label;
+            statusEl.classList.remove("is-fresh", "is-aging", "is-stale");
+            statusEl.classList.add(next.cls);
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Failed to mark verified.");
+        } finally {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = old;
+        }
+      });
+
+      row.appendChild(btn);
+      row.appendChild(verifyBtn);
+      li.appendChild(row);
       ul.appendChild(li);
     });
 
@@ -2587,7 +2715,7 @@ function kvRow(k, v) {
   return `<div class="tx-kv__k">${escapeHtml(k)}</div><div class="tx-kv__v">${escapeHtml(v)}</div>`;
 }
 
-async function openIncomeBreakdown() {
+async function openIncomeBreakdownLegacy() {
   const today = new Date();
   const year = today.getFullYear();
   const month = today.getMonth() + 1;
@@ -2710,6 +2838,65 @@ async function openIncomeBreakdown() {
       ${breakdownHtml}
     `;
 
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+  }
+}
+
+async function openIncomeBreakdown() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth() + 1;
+  const monthDate = new Date(year, month - 1, 1);
+
+  const modal = ensureIncomeInspectModal();
+  const titleEl = document.getElementById("incomeInspectTitle");
+  const subEl = document.getElementById("incomeInspectSub");
+  const bodyEl = document.getElementById("incomeInspectBody");
+
+  if (titleEl) titleEl.textContent = "Expected income";
+  if (subEl) subEl.textContent = "Loading";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  modal.classList.remove("hidden");
+
+  try {
+    const mb = await apiGetJson("/month-budget", { cache: "no-store" });
+    const basis = mb?.income_basis_month || {};
+    const basisRows = Array.isArray(mb?.income_basis_paychecks) ? mb.income_basis_paychecks : [];
+    const basisTotal = Number(mb?.income_basis_total || 0);
+    const recurringIncome = Number(mb?.base_income || 0);
+    const grandTotal = Number(mb?.expected_income || (basisTotal + recurringIncome));
+    const basisLabel = (basis.year && basis.month)
+      ? `${Number(basis.year)}-${String(Number(basis.month)).padStart(2, "0")}`
+      : "previous month";
+
+    if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(monthDate)}`;
+
+    const payList = basisRows
+      .slice()
+      .sort((a, b) => String(a?.date || "").localeCompare(String(b?.date || "")))
+      .map((e) => `<div class="tx-kv__k">${escapeHtml(e?.date || "")}</div><div class="tx-kv__v">${escapeHtml(e?.merchant || "Paycheck")} • ${money(e?.amount || 0)}</div>`)
+      .join("");
+
+    bodyEl.innerHTML = `
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+        <span class="category-pill" style="padding:8px 10px;">Last month paychecks used: <strong style="margin-left:6px;">${money(basisTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Other recurring income: <strong style="margin-left:6px;">${money(recurringIncome)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Expected income total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
+      </div>
+
+      <div style="margin:0 0 12px; opacity:.7; font-size:12px;">
+        Budget basis for ${escapeHtml(formatMonthYearLong(monthDate))}: actual paycheck deposits from <strong>${escapeHtml(basisLabel)}</strong>.
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Paychecks used from ${escapeHtml(basisLabel)}</div>
+        <div class="tx-kv">${payList || `<div style="opacity:.7;">No paycheck deposits found for that month.</div>`}</div>
+      </div>
+    `;
   } catch (err) {
     console.error(err);
     if (subEl) subEl.textContent = "Failed to load";

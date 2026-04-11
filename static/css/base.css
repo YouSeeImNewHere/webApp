@@ -1480,6 +1480,55 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   gap:12px;
 }
 
+#notifPanel .panel-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+}
+
+.notif-tabs{
+  display:flex;
+  gap:8px;
+  padding:10px 16px;
+  border-bottom:1px solid #eee;
+}
+
+.notif-tab{
+  appearance:none;
+  border:1px solid var(--border, rgba(0,0,0,0.14));
+  background:var(--card, #fff);
+  color:var(--text, #111);
+  border-radius:999px;
+  padding:6px 12px;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  display:inline-flex;
+  gap:6px;
+  align-items:center;
+}
+
+.notif-tab.is-active{
+  background: color-mix(in srgb, var(--accent, #2b6cff) 16%, white);
+  border-color: color-mix(in srgb, var(--accent, #2b6cff) 45%, var(--border, rgba(0,0,0,0.14)));
+}
+
+.notif-tab-count{
+  min-width:16px;
+  height:16px;
+  border-radius:999px;
+  padding:0 4px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:10px;
+  font-weight:900;
+  line-height:1;
+  background: color-mix(in srgb, var(--accent, #2b6cff) 75%, #000 0%);
+  color:#fff;
+}
+
 @media (min-width: 860px){
   .notif-split{ grid-template-columns: 1fr 1.2fr; }
   .notif-detail{ border-left:1px solid var(--border, #eee); padding-left:12px; }
@@ -1505,6 +1554,9 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
 .notif-row--unread{
   outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
   outline-offset: 0px;
+}
+.notif-row--error{
+  border-left:4px solid color-mix(in srgb, #d14 70%, #fff 30%);
 }
 
 .notif-row-top{
@@ -5769,10 +5821,6 @@ body{
 
 /* Mobile top bar: center title between settings and notifications */
 @media (max-width: 900px){
-  :root{
-    --topbar-refresh-shift: 24px; /* (refresh button + gap) / 2 => centers title between settings + notifications */
-  }
-
   .top-bar-inner{
     display: flex !important;
     align-items: center;
@@ -5784,7 +5832,7 @@ body{
 
   .top-title{
     position: absolute !important;
-    left: calc(50% - var(--topbar-refresh-shift)) !important;
+    left: 50% !important;
     transform: translateX(-50%) !important;
     max-width: calc(100% - 180px) !important;
     min-width: 0 !important;
@@ -5805,14 +5853,6 @@ body{
 
   .top-bar-right #topBarNotif{
     order: 1;
-  }
-
-  .top-bar-right #hardRefreshBtn{
-    order: 2; /* keep refresh to the right of notifications */
-  }
-
-  .top-bar-right #topBarBack{
-    order: 3;
   }
 
   .top-bar .top-btn{

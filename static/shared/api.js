@@ -237,8 +237,24 @@
     const startMs = nowMs();
     while (true) {
       const timeoutSetup = withTimeoutOptions(init, (method === "GET" || method === "HEAD") ? GLOBAL_FETCH_TIMEOUT_MS : 0);
+      const reqOpts = timeoutSetup.opts || {};
       try {
-        const res = await nativeFetch(input, timeoutSetup.opts);
+        if (typeof window !== "undefined" && String(url || "").startsWith("/")) {
+          const headers = new Headers(reqOpts.headers || {});
+          const href = String(window.location.href || "");
+          if (href) headers.set("X-Client-Page-Url", href.slice(0, 1000));
+          const route = `${window.location.pathname || "/"}${window.location.search || ""}`;
+          if (route) headers.set("X-Client-Page-Route", route.slice(0, 500));
+          let preview = "";
+          try {
+            preview = String(localStorage.getItem("settings_view_non_admin_preview") || "").trim();
+          } catch (_) {}
+          if (preview === "1") headers.set("X-Non-Admin-Preview", "1");
+          reqOpts.headers = headers;
+        }
+      } catch (_) {}
+      try {
+        const res = await nativeFetch(input, reqOpts);
         if (attempt < GLOBAL_FETCH_MAX_RETRIES && (method === "GET" || method === "HEAD") && shouldRetryStatus(res.status)) {
           attempt += 1;
           await sleep(200 * attempt);

@@ -68,6 +68,14 @@
 
     <div class="budget-card">
 
+  <div class="budget-month-nav">
+    <button id="prevMonthBtn" class="settings-btn" type="button">Previous</button>
+    <div id="monthLabel" class="budget-month-label">-</div>
+    <button id="nextMonthBtn" class="settings-btn" type="button">Next</button>
+  </div>
+
+  <div style="height:10px;"></div>
+
   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
     <div style="font-weight:900;">This month</div>
     <div id="asOf" class="budget-muted"></div>
@@ -196,6 +204,15 @@
 
 
       <div id="spentEmpty" class="budget-muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="budget-card">
+      <div style="font-weight:900;">Budget trend (last 6 months)</div>
+      <div class="budget-muted" style="margin-top:6px;">
+        Positive means you stayed under allocated budgets. Negative means you overspent allocations.
+      </div>
+      <div id="budgetTrendRows" class="budget-trend-rows" style="margin-top:10px;"></div>
+      <div id="budgetTrendEmpty" class="budget-muted" style="margin-top:8px;"></div>
     </div>
   </div>
 

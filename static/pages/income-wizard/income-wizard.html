@@ -99,6 +99,28 @@
 
     <section class="income-section">
       <details class="income-mobile-fold" open>
+      <summary>Paycheck Matching</summary>
+      <div class="income-mobile-body">
+      <h2 class="income-section-title income-mobile-title">Paycheck Matching</h2>
+      <div class="income-card income-mobile-card paycheck-matcher-card">
+        <div class="paycheck-matcher-intro">
+          Set merchant keywords used to identify paycheck deposits from last month.
+        </div>
+        <label class="paycheck-matcher-field">
+          Keywords (one per line)
+          <textarea id="paycheckKeywords" class="settings-input paycheck-matcher-input" rows="6" placeholder="dfas&#10;payroll&#10;salary&#10;direct deposit&#10;mil pay"></textarea>
+        </label>
+        <div class="daily-weights-actions">
+          <button id="savePaycheckMatchersBtn" class="settings-btn primary" type="button">Save</button>
+        </div>
+        <div id="paycheckMatchersStatus" class="income-muted daily-weights-status" role="status" aria-live="polite"></div>
+      </div>
+      </div>
+      </details>
+    </section>
+
+    <section class="income-section">
+      <details class="income-mobile-fold" open>
       <summary>Daily Spending Weights</summary>
       <div class="income-mobile-body">
       <h2 class="income-section-title income-mobile-title">Daily Spending Weights</h2>

@@ -9,8 +9,6 @@
           &#128276;
           <span class="notif-badge hidden" id="topBarNotifBadge">0</span>
         </button>
-        <button class="top-btn" id="hardRefreshBtn" type="button" aria-label="Hard refresh">&#128260;</button>
-        <button class="top-btn" id="topBarBack" type="button" aria-label="Back">&#8592;</button>
       </div>
     </div>
     <div class="overlay hidden" id="notifOverlay" aria-hidden="true"></div>
@@ -22,10 +20,18 @@
         </div>
         <button class="top-btn" id="notifCloseBtn" type="button" aria-label="Close">&#10005;</button>
       </div>
+      <div class="notif-tabs" id="notifTabs" role="tablist" aria-label="Notification tabs">
+        <button class="notif-tab is-active" id="notifTabGeneral" type="button" role="tab" aria-selected="true">General</button>
+        <button class="notif-tab hidden" id="notifTabErrors" type="button" role="tab" aria-selected="false">
+          Errors
+          <span class="notif-tab-count hidden" id="notifErrorsCount">0</span>
+        </button>
+      </div>
       <div class="panel-actions">
         <button class="btn" id="notifRefreshBtn" type="button">Refresh</button>
         <button class="btn btn-ghost" id="notifMarkAllReadBtn" type="button">Mark all read</button>
         <button class="btn btn-ghost" id="notifClearReadBtn" type="button">Clear read</button>
+        <button class="btn btn-ghost hidden" id="notifClearErrorsBtn" type="button">Clear errors</button>
       </div>
       <div class="panel-body">
         <div class="notif-split">

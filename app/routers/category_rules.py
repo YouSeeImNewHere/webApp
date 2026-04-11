@@ -22,7 +22,6 @@ from app.core.roundups import (
 from app.routers.analytics import _last_day_of_month, parse_iso
 from app.routers.budget_groups import _norm_cat, _get_budget_groups_for_month, _norm_name
 from app.routers.funds import _list_sinking_funds
-from app.routers.les import LESPaychecksRequest, les_paychecks
 from app.routers.recurring import recurring_calendar
 from app.routers.savings_goal import get_savings_goal
 from app.routers.settings import _ensure_app_settings_pg
@@ -825,8 +824,13 @@ def _month_budget_home(
                     spent_so_far += ru
                     cat_spent[roundup_norm] = cat_spent.get(roundup_norm, 0.0) + ru
 
-    # 3) LES + savings goal (Home logic)
-    pay_income = _les_pay_income_for_month(year, month) or 0.0
+    # 3) Income basis for this month: previous month's ACTUAL paychecks
+    basis_year, basis_month = _prev_month(year, month)
+    pay_income, pay_income_rows = _actual_paycheck_income_detail_for_month(
+        basis_year,
+        basis_month,
+        spendable_account_id=3,
+    )
     total_income = income_expected + pay_income
     savings_goal = _compute_monthly_savings_goal(total_income)
     # Base spend goal (before budgeting)
@@ -962,6 +966,14 @@ def _month_budget_home(
         "expected_income": round(total_income, 2),
         "base_income": round(income_expected, 2),
         "les_income": round(pay_income, 2),
+        "income_basis_mode": "last_month_actual_paychecks",
+        "income_basis_month": {
+            "year": int(basis_year),
+            "month": int(basis_month),
+            "label": f"{int(basis_year)}-{int(basis_month):02d}",
+        },
+        "income_basis_paychecks": list(pay_income_rows or []),
+        "income_basis_total": round(pay_income, 2),
 
         # "Spent so far" should exclude anything in budget groups (including default Bills)
         "spent_so_far": round(spent_free, 2),
@@ -1170,18 +1182,232 @@ def _get_default_les_profile():
     except Exception:
         return None
 
+
+DEFAULT_PAYCHECK_MATCH_KEYWORDS: list[str] = [
+    "dfas",
+    "payroll",
+    "salary",
+    "direct deposit",
+    "mil pay",
+]
+
+
+def _normalize_paycheck_keywords(raw: object) -> list[str]:
+    if not isinstance(raw, list):
+        return list(DEFAULT_PAYCHECK_MATCH_KEYWORDS)
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        s = str(item or "").strip().lower()
+        if not s:
+            continue
+        if len(s) > 64:
+            s = s[:64]
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= 20:
+            break
+    return out or list(DEFAULT_PAYCHECK_MATCH_KEYWORDS)
+
+
+def _get_paycheck_match_keywords() -> list[str]:
+    _ensure_app_settings_pg()
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
+        (scoped_key("paycheck_matchers"),),
+    )
+    raw: object = {}
+    if rows:
+        try:
+            raw = json.loads(rows[0].get("value_json") or "{}")
+        except Exception:
+            raw = {}
+    return _normalize_paycheck_keywords((raw or {}).get("keywords"))
+
+
+def _prev_month(year: int, month: int) -> tuple[int, int]:
+    y = int(year)
+    m = int(month)
+    if m <= 1:
+        return (y - 1, 12)
+    return (y, m - 1)
+
+
+def _actual_paycheck_income_for_month(year: int, month: int, spendable_account_id: int = 3) -> float:
+    """
+    Sum ACTUAL paycheck deposits posted in the given month.
+    Deposits are stored as negative amounts in this app, so we sum ABS(amount).
+    """
+    tid = _require_tenant_id()
+    month_start = date(int(year), int(month), 1)
+    month_end = date(int(year), int(month), _last_day_of_month(int(year), int(month)))
+
+    markers = tuple(_get_paycheck_match_keywords())
+    marker_sql = " OR ".join(["LOWER(TRIM(COALESCE(t.merchant,''))) LIKE %s"] * len(markers))
+    marker_vals = tuple(f"%{m}%" for m in markers)
+
+    def _sum(require_account_3: bool) -> float:
+        params: list[Any] = []
+        tenant_pred = ""
+        if tid:
+            tenant_pred = "AND t.tenant_id = %s AND a.tenant_id = %s"
+            params.extend([int(tid), int(tid)])
+
+        acct_pred = ""
+        if require_account_3:
+            acct_pred = "AND t.account_id = %s"
+            params.append(int(spendable_account_id))
+
+        params.extend(marker_vals)
+        params.extend([month_start, month_end])
+
+        rows = query_db(
+            f"""
+            WITH base AS (
+              SELECT
+                t.amount::double precision AS amount,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              WHERE 1=1
+                {tenant_pred}
+                {acct_pred}
+                AND t.amount < 0
+                AND ABS(t.amount) >= 100
+                AND ({marker_sql})
+            ),
+            norm AS (
+              SELECT
+                amount,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT COALESCE(SUM(ABS(amount)), 0)::double precision AS total
+            FROM norm
+            WHERE d IS NOT NULL
+              AND d BETWEEN %s AND %s
+            """,
+            tuple(params),
+        )
+        return float((rows[0] or {}).get("total") or 0.0) if rows else 0.0
+
+    primary = _sum(require_account_3=True)
+    if primary > 0:
+        return primary
+    return _sum(require_account_3=False)
+
+
+def _actual_paycheck_income_detail_for_month(
+    year: int,
+    month: int,
+    spendable_account_id: int = 3,
+) -> tuple[float, list[dict[str, Any]]]:
+    """
+    Returns (total, rows) for actual paycheck deposits posted in the given month.
+    """
+    tid = _require_tenant_id()
+    month_start = date(int(year), int(month), 1)
+    month_end = date(int(year), int(month), _last_day_of_month(int(year), int(month)))
+
+    markers = tuple(_get_paycheck_match_keywords())
+    marker_sql = " OR ".join(["LOWER(TRIM(COALESCE(t.merchant,''))) LIKE %s"] * len(markers))
+    marker_vals = tuple(f"%{m}%" for m in markers)
+
+    def _rows(require_account_3: bool) -> list[dict[str, Any]]:
+        params: list[Any] = []
+        tenant_pred = ""
+        if tid:
+            tenant_pred = "AND t.tenant_id = %s AND a.tenant_id = %s"
+            params.extend([int(tid), int(tid)])
+
+        acct_pred = ""
+        if require_account_3:
+            acct_pred = "AND t.account_id = %s"
+            params.append(int(spendable_account_id))
+
+        params.extend(marker_vals)
+        params.extend([month_start, month_end])
+
+        return query_db(
+            f"""
+            WITH base AS (
+              SELECT
+                t.account_id::bigint AS account_id,
+                t.merchant AS merchant,
+                ABS(t.amount::double precision) AS amount_abs,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              WHERE 1=1
+                {tenant_pred}
+                {acct_pred}
+                AND t.amount < 0
+                AND ABS(t.amount) >= 100
+                AND ({marker_sql})
+            ),
+            norm AS (
+              SELECT
+                account_id,
+                merchant,
+                amount_abs,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT
+              d::date AS d,
+              account_id::bigint AS account_id,
+              merchant,
+              amount_abs::double precision AS amount
+            FROM norm
+            WHERE d IS NOT NULL
+              AND d BETWEEN %s AND %s
+            ORDER BY d ASC, amount_abs DESC
+            """,
+            tuple(params),
+        )
+
+    rows = _rows(require_account_3=True)
+    if not rows:
+        rows = _rows(require_account_3=False)
+
+    out_rows: list[dict[str, Any]] = []
+    total = 0.0
+    for r in (rows or []):
+        amt = float(r.get("amount") or 0.0)
+        if amt <= 0:
+            continue
+        dt = r.get("d")
+        date_iso = dt.isoformat() if hasattr(dt, "isoformat") else str(dt or "")
+        out_rows.append(
+            {
+                "date": date_iso,
+                "amount": round(amt, 2),
+                "merchant": str(r.get("merchant") or ""),
+                "account_id": int(r.get("account_id") or 0),
+            }
+        )
+        total += amt
+    return round(total, 2), out_rows
+
 def _les_pay_income_for_month(year: int, month: int) -> float:
-    profile = _get_default_les_profile()
-    if not profile:
-        return 0.0
+    py, pm = _prev_month(int(year), int(month))
+    total, _rows = _actual_paycheck_income_detail_for_month(py, pm, spendable_account_id=3)
+    return float(total)
 
     # Reuse the SAME logic as your /les/paychecks endpoint (including “actual deposit overrides”)
     # If your endpoint code is currently inline, move it into a helper and call it both places.
-    req = LESPaychecksRequest(year=year, month=month, profile=profile)
-    out = les_paychecks(req)  # calls your existing endpoint function directly
-
-    events = (out or {}).get("events") or []
-    return float(sum(max(0.0, float(e.get("amount") or 0)) for e in events))
 
 def build_pattern_from_keywords(keywords: List[str]) -> str:
     kws = [k.strip() for k in (keywords or []) if (k or "").strip()]

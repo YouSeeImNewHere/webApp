@@ -8,7 +8,7 @@ from app.routers.balances import latest_rates_map_pg
 from db import with_db_cursor, query_db, run_db_retry
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
-from app.core.account_totals_cache import ensure_account_totals_cache_pg
+from app.core.home_snapshot_cache import bump_home_snapshot_version
 
 router = APIRouter()
 
@@ -60,6 +60,79 @@ def _require_tenant_id() -> int | None:
         raise HTTPException(status_code=403, detail="tenant_required")
     return int(tid)
 
+def _tenant_scope_key(tid: int | None) -> int:
+    return int(tid or 0)
+
+def _ensure_account_balance_audit_pg():
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_balance_audit (
+              tenant_id BIGINT NOT NULL DEFAULT 0,
+              account_id BIGINT NOT NULL,
+              last_csv_upload_at TIMESTAMPTZ NULL,
+              last_manual_verified_at TIMESTAMPTZ NULL,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              PRIMARY KEY (tenant_id, account_id),
+              FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_account_balance_audit_tenant_updated
+            ON account_balance_audit(tenant_id, updated_at DESC)
+            """
+        )
+        conn.commit()
+
+def mark_account_csv_upload(account_id: int, tenant_id: int | None) -> None:
+    _ensure_account_balance_audit_pg()
+    scope_tid = _tenant_scope_key(tenant_id)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO account_balance_audit(tenant_id, account_id, last_csv_upload_at, updated_at)
+            VALUES (%s, %s, now(), now())
+            ON CONFLICT (tenant_id, account_id)
+            DO UPDATE SET
+              last_csv_upload_at = now(),
+              updated_at = now()
+            """,
+            (int(scope_tid), int(account_id)),
+        )
+        conn.commit()
+    bump_home_snapshot_version(tenant_id)
+
+def _mark_account_manual_verified(account_id: int, tenant_id: int | None) -> dict[str, Any]:
+    _ensure_account_balance_audit_pg()
+    scope_tid = _tenant_scope_key(tenant_id)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO account_balance_audit(tenant_id, account_id, last_manual_verified_at, updated_at)
+            VALUES (%s, %s, now(), now())
+            ON CONFLICT (tenant_id, account_id)
+            DO UPDATE SET
+              last_manual_verified_at = now(),
+              updated_at = now()
+            RETURNING last_csv_upload_at, last_manual_verified_at, updated_at
+            """,
+            (int(scope_tid), int(account_id)),
+        )
+        row = dict(cur.fetchone() or {})
+        conn.commit()
+    bump_home_snapshot_version(tenant_id)
+    return row
+
+def _to_iso_or_none(v: Any) -> str | None:
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
 @router.get("/account/{account_id}")
 def account_info(account_id: int):
     tid = _require_tenant_id()
@@ -74,6 +147,25 @@ def account_info(account_id: int):
         params = (int(account_id), int(tid))
     rows = query_db(sql, params)
     return rows[0] if rows else {"error": "Account not found"}
+
+@router.post("/account/{account_id}/balance-verified")
+def mark_balance_verified(account_id: int):
+    tid = _require_tenant_id()
+    rows = query_db(
+        "SELECT 1 FROM accounts WHERE id = %s " + ("AND tenant_id = %s " if tid else "") + "LIMIT 1",
+        ((int(account_id), int(tid)) if tid else (int(account_id),)),
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="account_not_found")
+
+    row = _mark_account_manual_verified(int(account_id), tid)
+    return {
+        "ok": True,
+        "account_id": int(account_id),
+        "last_csv_upload_at": _to_iso_or_none(row.get("last_csv_upload_at")),
+        "last_manual_verified_at": _to_iso_or_none(row.get("last_manual_verified_at")),
+        "updated_at": _to_iso_or_none(row.get("updated_at")),
+    }
 
 @router.get("/bank-info")
 def bank_info():
@@ -211,14 +303,7 @@ def bank_totals():
     def _run():
         with with_db_cursor() as (conn, cur):
             has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")
-
-            # Ensure incremental totals cache exists; if this fails for any reason,
-            # we still fall back to direct aggregates below.
-            cache_ready = True
-            try:
-                ensure_account_totals_cache_pg()
-            except Exception:
-                cache_ready = False
+            _ensure_account_balance_audit_pg()
 
             accounts_sql = """
               SELECT id, institution, name, LOWER(accountType) AS accounttype
@@ -234,91 +319,132 @@ def bank_totals():
             cur.execute(accounts_sql, (int(tid),) if tid else ())
             accounts = cur.fetchall()
 
-            totals_rows = []
-            if cache_ready:
-                if tid:
-                    cur.execute(
-                        """
-                        SELECT account_id, start_total, trans_total
-                        FROM account_balance_totals
-                        WHERE tenant_id = %s
-                        """,
-                        (int(tid),),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT account_id, start_total, trans_total
-                        FROM account_balance_totals
-                        WHERE tenant_id = 0
-                        """
-                    )
-                totals_rows = cur.fetchall() or []
+            acct_ids = [int(r.get("id") or 0) for r in accounts if int(r.get("id") or 0) > 0]
+            audit_rows: list[dict[str, Any]] = []
+            if acct_ids:
+                cur.execute(
+                    """
+                    SELECT account_id, last_csv_upload_at, last_manual_verified_at
+                    FROM account_balance_audit
+                    WHERE tenant_id = %s
+                      AND account_id = ANY(%s)
+                    """,
+                    (int(_tenant_scope_key(tid)), acct_ids),
+                )
+                audit_rows = cur.fetchall() or []
+            audit_map: Dict[int, Dict[str, Any]] = {
+                int(r.get("account_id") or 0): dict(r) for r in (audit_rows or [])
+            }
 
-            if not totals_rows:
-                if tid:
-                    cur.execute(
-                        """
-                        SELECT account_id, SUM(start) AS start_total
-                        FROM "startingbalance"
-                        WHERE tenant_id = %s
-                        GROUP BY account_id
-                        """,
-                        (int(tid),),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT account_id, SUM(start) AS start_total
-                        FROM "startingbalance"
-                        GROUP BY account_id
-                        """
-                    )
-                starting_rows = cur.fetchall() or []
+            if tid:
+                cur.execute(
+                    """
+                    SELECT account_id, SUM(start) AS start_total
+                    FROM "startingbalance"
+                    WHERE tenant_id = %s
+                    GROUP BY account_id
+                    """,
+                    (int(tid),),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT account_id, SUM(start) AS start_total
+                    FROM "startingbalance"
+                    GROUP BY account_id
+                    """
+                )
+            starting_rows = cur.fetchall() or []
 
-                if tid:
-                    cur.execute(
-                        """
-                        SELECT account_id, SUM(amount) AS trans_total
-                        FROM transactions
-                        WHERE tenant_id = %s
-                        GROUP BY account_id
-                        """,
-                        (int(tid),),
+            if tid:
+                cur.execute(
+                    """
+                    WITH base AS (
+                      SELECT
+                        account_id,
+                        amount::double precision AS amount,
+                        COALESCE(
+                          NULLIF(TRIM(postedDate), 'unknown'),
+                          NULLIF(TRIM(purchaseDate), 'unknown')
+                        ) AS raw_date
+                      FROM transactions
+                      WHERE tenant_id = %s
+                    ),
+                    norm AS (
+                      SELECT
+                        account_id,
+                        amount,
+                        CASE
+                          WHEN raw_date IS NULL THEN NULL
+                          WHEN length(raw_date) = 8  THEN to_date(raw_date, 'MM/DD/YY')
+                          WHEN length(raw_date) = 10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                          ELSE NULL
+                        END AS d
+                      FROM base
                     )
-                else:
-                    cur.execute(
-                        """
-                        SELECT account_id, SUM(amount) AS trans_total
-                        FROM transactions
-                        GROUP BY account_id
-                        """
+                    SELECT account_id, COALESCE(SUM(amount), 0)::double precision AS trans_total
+                    FROM norm
+                    WHERE d IS NOT NULL
+                    GROUP BY account_id
+                    """,
+                    (int(tid),),
+                )
+            else:
+                cur.execute(
+                    """
+                    WITH base AS (
+                      SELECT
+                        account_id,
+                        amount::double precision AS amount,
+                        COALESCE(
+                          NULLIF(TRIM(postedDate), 'unknown'),
+                          NULLIF(TRIM(purchaseDate), 'unknown')
+                        ) AS raw_date
+                      FROM transactions
+                    ),
+                    norm AS (
+                      SELECT
+                        account_id,
+                        amount,
+                        CASE
+                          WHEN raw_date IS NULL THEN NULL
+                          WHEN length(raw_date) = 8  THEN to_date(raw_date, 'MM/DD/YY')
+                          WHEN length(raw_date) = 10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                          ELSE NULL
+                        END AS d
+                      FROM base
                     )
-                tx_rows = cur.fetchall() or []
-                totals_map: Dict[int, Dict[str, float | int]] = {
-                    int(r["account_id"]): {
-                        "account_id": int(r["account_id"]),
-                        "start_total": 0.0,
-                        "trans_total": float(r["trans_total"] or 0.0),
-                    }
-                    for r in tx_rows
+                    SELECT account_id, COALESCE(SUM(amount), 0)::double precision AS trans_total
+                    FROM norm
+                    WHERE d IS NOT NULL
+                    GROUP BY account_id
+                    """
+                )
+            tx_rows = cur.fetchall() or []
+            totals_map: Dict[int, Dict[str, float | int]] = {
+                int(r["account_id"]): {
+                    "account_id": int(r["account_id"]),
+                    "start_total": 0.0,
+                    "trans_total": float(r["trans_total"] or 0.0),
                 }
-                for r in starting_rows:
-                    aid = int(r["account_id"])
-                    row = totals_map.get(aid)
-                    if row is None:
-                        totals_map[aid] = {
-                            "account_id": aid,
-                            "start_total": float(r["start_total"] or 0.0),
-                            "trans_total": 0.0,
-                        }
-                    else:
-                        row["start_total"] = float(r["start_total"] or 0.0)
-                totals_rows = list(totals_map.values())
+                for r in tx_rows
+            }
+            for r in starting_rows:
+                aid = int(r["account_id"])
+                row = totals_map.get(aid)
+                if row is None:
+                    totals_map[aid] = {
+                        "account_id": aid,
+                        "start_total": float(r["start_total"] or 0.0),
+                        "trans_total": 0.0,
+                    }
+                else:
+                    row["start_total"] = float(r["start_total"] or 0.0)
+            totals_rows = list(totals_map.values())
 
-        return has_credit_limit, accounts, totals_rows
+        return has_credit_limit, accounts, totals_rows, audit_map
 
-    has_credit_limit, accounts, totals_rows = run_db_retry(_run, retries=1)
+    has_credit_limit, accounts, totals_rows, audit_map = run_db_retry(_run, retries=1)
     starting = {int(r["account_id"]): float(r.get("start_total") or 0) for r in totals_rows}
     tx_totals = {int(r["account_id"]): float(r.get("trans_total") or 0) for r in totals_rows}
 
@@ -331,12 +457,22 @@ def bank_totals():
         start = starting.get(aid, 0.0)
         trans = tx_totals.get(aid, 0.0)
 
-        # NOTE: preserving your existing logic from accounts.py (start - trans)
-        balance = start - trans
+        # Keep balance math consistent with account-series/account-transactions-range:
+        # - investment: raw = start + trans
+        # - others:     raw = start - trans
+        # - credit display value is sign-flipped from raw
+        if acc_type == "investment":
+            raw_balance = start + trans
+        else:
+            raw_balance = start - trans
+        balance = (-raw_balance) if acc_type == "credit" else raw_balance
 
         bucket = acc_type if acc_type in by_type else "other"
         display_name = f'{a["institution"]} — {a["name"]}'
         item = {"id": aid, "name": display_name, "total": balance}
+        audit = audit_map.get(aid) or {}
+        item["last_csv_upload_at"] = _to_iso_or_none(audit.get("last_csv_upload_at"))
+        item["last_manual_verified_at"] = _to_iso_or_none(audit.get("last_manual_verified_at"))
 
         if bucket == "credit" and has_credit_limit:
             item["credit_limit"] = _to_float_or_zero(a.get("credit_limit"))

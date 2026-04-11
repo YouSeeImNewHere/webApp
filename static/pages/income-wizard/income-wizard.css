@@ -193,6 +193,30 @@
   line-height: 1.45;
 }
 
+.paycheck-matcher-card {
+  display: grid;
+  gap: 10px;
+}
+
+.paycheck-matcher-intro {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.paycheck-matcher-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.paycheck-matcher-input {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+}
+
 @media (max-width: 900px) {
   .income-wrap {
     padding: 10px 10px 92px;

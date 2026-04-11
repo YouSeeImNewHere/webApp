@@ -158,9 +158,107 @@ function renderSpentPie(items, spentMap) {
   let pageMonth = null;
   let payload = null;
 
+  function isCurrentViewedMonth() {
+    const now = new Date();
+    return pageYear === now.getFullYear() && pageMonth === (now.getMonth() + 1);
+  }
+
+  function monthStartDate(year, month) {
+    return new Date(year, month - 1, 1);
+  }
+
+  function monthEndISO(year, month) {
+    const end = new Date(year, month, 0);
+    const y = end.getFullYear();
+    const m = String(end.getMonth() + 1).padStart(2, "0");
+    const d = String(end.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function signedMoney(v) {
+    const n = Number(v || 0);
+    return `${n >= 0 ? "+" : "-"}${money(Math.abs(n))}`;
+  }
+
+  function setMonthLabel() {
+    const label = $("monthLabel");
+    if (label) label.textContent = formatMonthYearLong(monthStartDate(pageYear, pageMonth));
+  }
+
+  function syncMonthQuery() {
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set("year", String(pageYear));
+      u.searchParams.set("month", String(pageMonth));
+      window.history.replaceState({}, "", u.toString());
+    } catch (_) {}
+  }
+
+  function shiftMonth(delta) {
+    const base = monthStartDate(pageYear, pageMonth);
+    base.setMonth(base.getMonth() + Number(delta || 0));
+    pageYear = base.getFullYear();
+    pageMonth = base.getMonth() + 1;
+    setMonthLabel();
+    syncMonthQuery();
+  }
+
+  async function renderTrendPanel() {
+    const host = $("budgetTrendRows");
+    const empty = $("budgetTrendEmpty");
+    if (!host || !empty) return;
+
+    host.innerHTML = "";
+    empty.textContent = "Loading...";
+
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = monthStartDate(pageYear, pageMonth);
+      d.setMonth(d.getMonth() - i);
+      months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
+    }
+
+    const payloads = await Promise.all(
+      months.map(async (mm) => {
+        try {
+          const qs = new URLSearchParams({ year: String(mm.year), month: String(mm.month) });
+          const d = await fetchJSON("/month-budget?" + qs.toString());
+          return { ...mm, monthBudget: d || {} };
+        } catch (_) {
+          return { ...mm, monthBudget: null };
+        }
+      })
+    );
+
+    const rows = payloads.filter((r) => r.monthBudget && r.monthBudget.ok !== false);
+    if (!rows.length) {
+      empty.textContent = "No trend data yet.";
+      return;
+    }
+
+    empty.textContent = "";
+    for (const r of rows) {
+      const mb = r.monthBudget || {};
+      const allocated = Number(mb.allocations_total || 0);
+      const spent = Number(mb.budgeted_spent_total || 0);
+      const delta = allocated - spent;
+
+      const row = document.createElement("div");
+      row.className = "budget-trend-row";
+      row.innerHTML = `
+        <div>
+          <div class="month">${formatMonthYearLong(monthStartDate(r.year, r.month))}</div>
+          <div class="budget-muted">Allocated ${money(allocated)} • Spent ${money(spent)}</div>
+        </div>
+        <div class="delta ${delta >= 0 ? "is-good" : "is-bad"}">${signedMoney(delta)}</div>
+      `;
+      host.appendChild(row);
+    }
+  }
+
   function renderTop(d) {
   const mb = d.month || {};
-  $("asOf").textContent = `As of ${todayISO()}`;
+  $("asOf").textContent = `Viewing ${formatMonthYearLong(monthStartDate(pageYear, pageMonth))}`;
 
   $("kIncome").textContent = money(mb.expected_income || 0);
   $("kBills").textContent = money(mb.bills_remaining || 0);
@@ -591,6 +689,8 @@ renderSpentPie(items, spentMap);
 }
 
   async function load() {
+    setMonthLabel();
+    syncMonthQuery();
     const qs = new URLSearchParams({ year: String(pageYear), month: String(pageMonth) });
     payload = await fetchJSON("/page/budget?" + qs.toString());
     renderTop(payload);
@@ -601,13 +701,19 @@ renderSpentPie(items, spentMap);
     bindBillsRowClick();
 bindSpentRowClick();
 bindSafeRowClick();
+    await renderTrendPanel();
 
   }
 
   function initMonth() {
     const d = new Date();
-    pageYear = d.getFullYear();
-    pageMonth = d.getMonth() + 1;
+    const u = new URL(window.location.href);
+    const y = Number(u.searchParams.get("year"));
+    const m = Number(u.searchParams.get("month"));
+    pageYear = Number.isInteger(y) && y > 1900 ? y : d.getFullYear();
+    pageMonth = Number.isInteger(m) && m >= 1 && m <= 12 ? m : (d.getMonth() + 1);
+    setMonthLabel();
+    syncMonthQuery();
   }
 
   async function onSaveSavingsGoal() {
@@ -671,6 +777,14 @@ bindSafeRowClick();
   }
 
     async function loadDayLimit(forceRecalc = false) {
+      const recalcBtn = $("recalcTodayBtn");
+      if (!isCurrentViewedMonth()) {
+        if (recalcBtn) recalcBtn.disabled = true;
+        $("kTodayLeft").textContent = "—";
+        $("kTodayMeta").textContent = "Left Today is available for the current month only.";
+        return;
+      }
+      if (recalcBtn) recalcBtn.disabled = false;
       const dl = await fetchJSON(`/day-limit${forceRecalc ? "?recalc=1" : ""}`);
 
       // Left Today KPI
@@ -1005,10 +1119,10 @@ function kvRow(k, v, opts = {}) {
          `<div class="tx-kv__v ${escapeHtmlAttr(vClass)}">${escapeHtml(v)}</div>`;
 }
 
-async function openIncomeBreakdown() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth() + 1;
+async function openIncomeBreakdownLegacy() {
+  const year = pageYear;
+  const month = pageMonth;
+  const monthDate = monthStartDate(year, month);
 
   const profile0 = window.Profile?.get?.();
 if (!profile0) {
@@ -1055,7 +1169,7 @@ if (!profile0.paygrade) {
     const interestTotal = interestEvents.reduce((s, e) => s + Math.max(0, Number(e?.amount || 0)), 0);
     const grandTotal = paycheckTotal + interestTotal;
 
-  if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(today)}`;
+  if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(monthDate)}`;
 
     const payList = payEvents
       .slice()
@@ -1128,6 +1242,64 @@ if (!profile0.paygrade) {
       </div>
 
       ${breakdownHtml}
+    `;
+  } catch (err) {
+    console.error(err);
+    if (subEl) subEl.textContent = "Failed to load";
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+  }
+}
+
+async function openIncomeBreakdown() {
+  const year = pageYear;
+  const month = pageMonth;
+  const monthDate = monthStartDate(year, month);
+
+  const modal = ensureIncomeInspectModal();
+  const titleEl = document.getElementById("incomeInspectTitle");
+  const subEl = document.getElementById("incomeInspectSub");
+  const bodyEl = document.getElementById("incomeInspectBody");
+
+  if (titleEl) titleEl.textContent = "Expected income";
+  if (subEl) subEl.textContent = "Loading...";
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  modal.classList.remove("hidden");
+
+  try {
+    const mb = payload?.month || {};
+    const basis = mb.income_basis_month || {};
+    const basisRows = Array.isArray(mb.income_basis_paychecks) ? mb.income_basis_paychecks : [];
+    const basisTotal = Number(mb.income_basis_total || 0);
+    const recurringIncome = Number(mb.base_income || 0);
+    const grandTotal = Number(mb.expected_income || (basisTotal + recurringIncome));
+    const basisLabel = (basis.year && basis.month)
+      ? `${Number(basis.year)}-${String(Number(basis.month)).padStart(2, "0")}`
+      : "previous month";
+
+    if (subEl) subEl.textContent = `${money(grandTotal)} • ${formatMonthYearLong(monthDate)}`;
+
+    const payList = basisRows
+      .slice()
+      .sort((a, b) => String(a?.date || "").localeCompare(String(b?.date || "")))
+      .map((e) => `<div class="tx-kv__k">${escapeHtml(e?.date || "")}</div><div class="tx-kv__v">${escapeHtml(e?.merchant || "Paycheck")} • ${money(e?.amount || 0)}</div>`)
+      .join("");
+
+    bodyEl.innerHTML = `
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+        <span class="category-pill" style="padding:8px 10px;">Last month paychecks used: <strong style="margin-left:6px;">${money(basisTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Other recurring income: <strong style="margin-left:6px;">${money(recurringIncome)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Expected income total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
+      </div>
+
+      <div style="margin:0 0 12px; opacity:.7; font-size:12px;">
+        Budget basis for ${escapeHtml(formatMonthYearLong(monthDate))}: actual paycheck deposits from <strong>${escapeHtml(basisLabel)}</strong>.
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Paychecks used from ${escapeHtml(basisLabel)}</div>
+        <div class="tx-kv">${payList || `<div style="opacity:.7;">No paycheck deposits found for that month.</div>`}</div>
+      </div>
     `;
   } catch (err) {
     console.error(err);
@@ -1279,10 +1451,9 @@ async function openSpentBreakdown() {
   if (subEl) subEl.textContent = "Loading…";
   if (bodyEl) bodyEl.innerHTML = "";
 
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const start = monthStartDate(pageYear, pageMonth);
   const startISO = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}-${String(start.getDate()).padStart(2,"0")}`;
-  const endISO   = todayISO();
+  const endISO = isCurrentViewedMonth() ? todayISO() : monthEndISO(pageYear, pageMonth);
 
   try {
     const res = await fetch(`/spent-so-far-breakdown?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`, { cache: "no-store" });
@@ -1394,6 +1565,24 @@ async function openSpentBreakdown() {
   window.addEventListener("DOMContentLoaded", async () => {
     initMonth();
 
+    const prevBtn = $("prevMonthBtn");
+    if (prevBtn) {
+      prevBtn.addEventListener("click", async () => {
+        shiftMonth(-1);
+        await load();
+        await loadDayLimit(false);
+      });
+    }
+
+    const nextBtn = $("nextMonthBtn");
+    if (nextBtn) {
+      nextBtn.addEventListener("click", async () => {
+        shiftMonth(1);
+        await load();
+        await loadDayLimit(false);
+      });
+    }
+
     $("sgSave").addEventListener("click", onSaveSavingsGoal);
     const ru = $("roundupEnabled");
     if (ru) ru.addEventListener("change", saveRoundupSettings);
@@ -1487,6 +1676,7 @@ try {
 
           const btn = $("recalcTodayBtn");
           if (btn) {
+            btn.disabled = !isCurrentViewedMonth();
             btn.addEventListener("click", async () => {
               const old = btn.textContent;
               btn.disabled = true;
@@ -1497,7 +1687,7 @@ try {
                 console.error(e);
                 alert("Recalc failed: " + e.message);
               } finally {
-                btn.disabled = false;
+                btn.disabled = !isCurrentViewedMonth();
                 btn.textContent = old;
               }
             });

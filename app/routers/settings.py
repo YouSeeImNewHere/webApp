@@ -49,6 +49,8 @@ class DailyWeightsIn(BaseModel):
 class RoundUpSettingsIn(BaseModel):
     enabled: bool
 
+class PaycheckMatchersIn(BaseModel):
+    keywords: List[str]
 
 class EmailParserBackfillIn(BaseModel):
     days: int = 1
@@ -354,6 +356,35 @@ def _normalize_notification_prefs(raw: object) -> Dict[str, bool]:
     return out
 
 
+DEFAULT_PAYCHECK_MATCH_KEYWORDS: list[str] = [
+    "dfas",
+    "payroll",
+    "salary",
+    "direct deposit",
+    "mil pay",
+]
+
+
+def _normalize_paycheck_keywords(raw: object) -> list[str]:
+    if not isinstance(raw, list):
+        return list(DEFAULT_PAYCHECK_MATCH_KEYWORDS)
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        s = str(item or "").strip().lower()
+        if not s:
+            continue
+        if len(s) > 64:
+            s = s[:64]
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= 20:
+            break
+    return out or list(DEFAULT_PAYCHECK_MATCH_KEYWORDS)
+
+
 @router.get("/settings/notifications")
 def get_notification_settings(request: Request):
     _ensure_app_settings_pg()
@@ -482,6 +513,44 @@ def set_roundups(body: RoundUpSettingsIn):
         "enabled": bool(cfg.get("enabled", False)),
         "category": str(cfg.get("category") or "Round-ups"),
     }
+
+
+@router.get("/settings/paycheck-matchers")
+def get_paycheck_matchers():
+    _ensure_app_settings_pg()
+    rows = query_db(
+        "SELECT value_json FROM app_settings WHERE key = %s LIMIT 1",
+        (scoped_key("paycheck_matchers"),),
+    )
+    raw: object = {}
+    if rows:
+        try:
+            raw = json.loads(rows[0].get("value_json") or "{}")
+        except Exception:
+            raw = {}
+    keywords = _normalize_paycheck_keywords((raw or {}).get("keywords"))
+    return {"keywords": keywords}
+
+
+@router.post("/settings/paycheck-matchers")
+def set_paycheck_matchers(body: PaycheckMatchersIn):
+    keywords = _normalize_paycheck_keywords(body.keywords)
+    payload = json.dumps({"keywords": keywords})
+    _ensure_app_settings_pg()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO app_settings(key, value_json, updated_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (key)
+            DO UPDATE SET value_json = EXCLUDED.value_json,
+                          updated_at = now()
+            """,
+            (scoped_key("paycheck_matchers"), payload),
+        )
+        conn.commit()
+    bump_home_snapshot_version(current_tenant_id())
+    return {"ok": True, "keywords": keywords}
 
 
 def _require_approved_session_user(request: Request) -> tuple[int, str]:

@@ -169,6 +169,9 @@ def receipts_page():
 def email_parser_wizard_page():
     return FileResponse(os.path.join("static", "pages", "email-parser-wizard", "email-parser-wizard.html"))
 def _is_owner_request(request: Request) -> bool:
+    preview_header = str(request.headers.get("x-non-admin-preview") or "").strip().lower()
+    if preview_header in {"1", "true", "yes", "on"}:
+        return False
     if not MULTI_TENANT_ENABLED:
         return True
     session_email = (request.session.get("google_email") or "").strip().lower()

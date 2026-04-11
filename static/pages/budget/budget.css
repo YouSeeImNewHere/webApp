@@ -65,6 +65,50 @@
   flex: 0 0 auto;
 }
 
+.budget-month-nav{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.budget-month-label{
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.budget-trend-rows{
+  display: grid;
+  gap: 8px;
+}
+
+.budget-trend-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  background: var(--card, rgba(0,0,0,0.08));
+}
+
+.budget-trend-row .month{
+  font-weight: 700;
+}
+
+.budget-trend-row .delta{
+  font-weight: 800;
+}
+
+.budget-trend-row .delta.is-good{
+  color: var(--good, #2e7d32);
+}
+
+.budget-trend-row .delta.is-bad{
+  color: var(--bad, #c0392b);
+}
+
 @media (max-width: 700px){
   .spent-flex{
     flex-direction: column;

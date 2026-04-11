@@ -1117,6 +1117,17 @@ def _normalize_amount(v: str):
         return None
 
 
+def _maybe_invert_amount_value(amount: float | None, invert_amount_sign: bool):
+    if amount is None:
+        return None
+    if not bool(invert_amount_sign):
+        return amount
+    try:
+        return -1.0 * float(amount)
+    except Exception:
+        return amount
+
+
 def _normalize_time(v: str, fallback_header_date: str, date_mmddyy: str) -> str:
     s = str(v or "").strip()
     if not s:
@@ -1407,6 +1418,7 @@ def load_wizard_rules(email_addr: str):
                 "parser_slot": slot,
                 "override_on_primary": bool(cfg.get("override_on_primary")),
                 "backup_assume_unknown": bool(cfg.get("backup_assume_unknown")),
+                "invert_amount_sign": bool(cfg.get("invert_amount_sign")),
                 "rx": rx,
                 "field_map": {
                     "amount_group": int(fm.get("amount_group") or 0),
@@ -1549,6 +1561,7 @@ def process_wizard_email(
             time_raw = _extract_group_safe(m, int(fm.get("time_group") or 0))
 
         amount_val = _normalize_amount(amount_raw)
+        amount_val = _maybe_invert_amount_value(amount_val, bool(rule.get("invert_amount_sign")))
         if amount_val is None:
             dbg(f"Wizard rule {rule.get('draft_id')} matched but amount missing/unparseable; trying next parser")
             continue

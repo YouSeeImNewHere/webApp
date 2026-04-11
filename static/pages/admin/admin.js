@@ -72,6 +72,59 @@ async function loadPendingUsers() {
   }
 }
 
+function escHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function shortWhen(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString();
+  } catch {
+    return String(iso);
+  }
+}
+
+async function loadAdminErrorFeed() {
+  const box = byId("adminErrorList");
+  if (!box) return;
+  box.innerHTML = "";
+  let data;
+  try {
+    data = await apiGetJson("/admin/error-notifications?limit=150", { cache: "no-store" });
+  } catch (err) {
+    box.textContent = "Failed to load admin notifications.";
+    return;
+  }
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) {
+    box.textContent = "No server errors captured.";
+    return;
+  }
+  for (const it of items) {
+    const reqLine = `${it.method || ""} ${it.path || ""}${it.query_string ? ("?" + it.query_string) : ""}`.trim();
+    const row = document.createElement("div");
+    row.className = "admin-error";
+    row.innerHTML = `
+      <div class="admin-error__head">
+        <span>${escHtml(String(it.status_code || ""))}  ${escHtml(reqLine || "(request unknown)")}</span>
+        <span>${escHtml(shortWhen(it.created_at))}</span>
+      </div>
+      <div class="admin-error__msg">${escHtml(it.error_message || "Server error")}</div>
+      <div class="admin-error__meta">User: ${escHtml(it.user_email || "-")}  Tenant: ${escHtml(String(it.tenant_id ?? "-"))}  IP: ${escHtml(it.client_ip || "-")}</div>
+      <div class="admin-error__meta">Page: ${escHtml(it.page_url || it.referer || "-")}</div>
+    `;
+    box.appendChild(row);
+  }
+}
+
 async function loadTenants() {
   const sel = byId("tenantSelect");
   if (!sel) return;
@@ -147,8 +200,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   byId("refreshBtn")?.addEventListener("click", async () => {
     setStatus("Refreshing...");
     await loadPendingUsers();
+    await loadAdminErrorFeed();
     await loadTenants();
     setStatus("Refreshed.");
+  });
+  byId("refreshAdminErrorsBtn")?.addEventListener("click", async () => {
+    setStatus("Refreshing admin notifications...");
+    await loadAdminErrorFeed();
+    setStatus("Refreshed.");
+  });
+  byId("clearAdminErrorsBtn")?.addEventListener("click", async () => {
+    const ok = confirm("Clear all admin notifications?");
+    if (!ok) return;
+    try {
+      await apiPostJson("/admin/error-notifications/clear", {});
+      await loadAdminErrorFeed();
+      setStatus("Admin notifications cleared.");
+    } catch (err) {
+      setStatus("Failed clearing admin notifications.");
+    }
   });
   byId("loadFootprintBtn")?.addEventListener("click", () => loadFootprint());
   byId("dryRunBtn")?.addEventListener("click", () => runPurge(true));
@@ -156,6 +226,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   setStatus("Loading...");
   await loadPendingUsers();
+  await loadAdminErrorFeed();
   await loadTenants();
   setStatus("Ready.");
 });

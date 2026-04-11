@@ -131,6 +131,31 @@
     );
   }
 
+  function _formatMoney(n) {
+    const v = Number(n || 0);
+    if (typeof window.money === "function") return window.money(v);
+    try {
+      return v.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch {
+      return String(v);
+    }
+  }
+
+  function updateAnyVisibleTxRowsAmount(txId, nextAmount) {
+    const rows = document.querySelectorAll(
+      `.tx-row[data-tx-id="${CSS.escape(String(txId))}"]`
+    );
+    rows.forEach((row) => {
+      const amtEl = row.querySelector(".tx-amt");
+      if (amtEl) amtEl.textContent = _formatMoney(nextAmount);
+      row.dataset.amount = String(nextAmount);
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("tx:amount-updated", { detail: { txId, amount: Number(nextAmount || 0) } })
+    );
+  }
+
   function renderTxInspect(obj, txId) {
     const grid = document.getElementById("txInspectGrid");
     if (!grid) return;
@@ -192,6 +217,7 @@
       <div class="tx-k">edit</div>
       <div class="tx-v">
         <button id="txInspectMetaEditToggle" class="tx-edit-btn" type="button">Edit status/date</button>
+        <button id="txInspectInvertAmount" class="tx-edit-btn" type="button" style="margin-left:8px;">Invert amount</button>
         <div id="txInspectMetaEditPanel" style="display:none; margin-top:10px;">
           <div class="tx-inline-edit" style="gap:10px; flex-wrap:wrap;">
             <label style="display:flex; align-items:center; gap:6px;">
@@ -217,6 +243,7 @@
           </div>
           <div id="txInspectMetaStatus" class="tx-edit-status" aria-live="polite"></div>
         </div>
+        <div id="txInspectAmountStatus" class="tx-edit-status" aria-live="polite"></div>
       </div>
     `;
 
@@ -229,8 +256,10 @@
     const metaSave = document.getElementById("txInspectMetaSave");
     const metaCancel = document.getElementById("txInspectMetaCancel");
     const metaStatus = document.getElementById("txInspectMetaStatus");
+    const amountStatus = document.getElementById("txInspectAmountStatus");
     const statusInput = document.getElementById("txInspectStatusInput");
     const postedInput = document.getElementById("txInspectPostedDateInput");
+    const invertBtn = document.getElementById("txInspectInvertAmount");
 
     if (btn && input) {
       btn.onclick = async () => {
@@ -309,6 +338,30 @@
           }
         };
       }
+    }
+    if (invertBtn) {
+      invertBtn.onclick = async () => {
+        const ok = confirm("Invert this transaction amount?");
+        if (!ok) return;
+        invertBtn.disabled = true;
+        if (amountStatus) amountStatus.textContent = "Saving...";
+        try {
+          const res = await fetch(`/transaction/${encodeURIComponent(txId)}/invert-amount`, {
+            method: "POST",
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const out = await res.json();
+          const nextAmount = Number(out?.amount || 0);
+          obj.amount = nextAmount;
+          updateAnyVisibleTxRowsAmount(txId, nextAmount);
+          if (amountStatus) amountStatus.textContent = "Saved";
+          renderTxInspect(obj, txId);
+        } catch (e) {
+          console.error(e);
+          if (amountStatus) amountStatus.textContent = "Failed to invert";
+          invertBtn.disabled = false;
+        }
+      };
     }
     if (delBtn) {
       delBtn.onclick = async () => {

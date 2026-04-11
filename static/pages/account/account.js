@@ -35,6 +35,22 @@ function qs(name){
   return new URLSearchParams(window.location.search).get(name);
 }
 
+function parseNum(x) {
+  if (x == null) return null;
+  const s = String(x).trim();
+  if (!s) return null;
+  const v = Number(s.replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(v) ? v : null;
+}
+
+function isoTodayLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 async function initAccountSwitcher(currentAccountId){
   const topTitle = await waitForTopBarTitle();
   if (!topTitle) return;
@@ -625,6 +641,90 @@ async function downloadAccountCsv() {
   URL.revokeObjectURL(url);
 }
 
+function setAccountAddTxMessage(msg, isError = false) {
+  const el = document.getElementById("accountAddTxMsg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.classList.toggle("is-error", !!isError);
+}
+
+function initAccountAddTransaction(currentAccountId) {
+  const panel = document.getElementById("accountAddTxPanel");
+  const openBtn = document.getElementById("accountAddTxBtn");
+  const cancelBtn = document.getElementById("accountAddTxCancelBtn");
+  const saveBtn = document.getElementById("accountAddTxSaveBtn");
+  const dateEl = document.getElementById("accountAddTxDate");
+  const statusEl = document.getElementById("accountAddTxStatus");
+  const amountEl = document.getElementById("accountAddTxAmount");
+  const merchantEl = document.getElementById("accountAddTxMerchant");
+
+  if (!panel || !openBtn || !cancelBtn || !saveBtn) return;
+
+  const open = () => {
+    panel.hidden = false;
+    if (dateEl && !dateEl.value) dateEl.value = isoTodayLocal();
+    setAccountAddTxMessage("");
+  };
+
+  const close = () => {
+    panel.hidden = true;
+    setAccountAddTxMessage("");
+  };
+
+  openBtn.addEventListener("click", open);
+  cancelBtn.addEventListener("click", close);
+
+  saveBtn.addEventListener("click", async () => {
+    const date = (dateEl?.value || "").trim();
+    const status = (statusEl?.value || "posted").trim().toLowerCase();
+    const amount = parseNum(amountEl?.value);
+    const merchant = (merchantEl?.value || "").trim();
+
+    if (!date) {
+      setAccountAddTxMessage("Pick a date.", true);
+      return;
+    }
+    if (amount == null) {
+      setAccountAddTxMessage("Enter a valid amount.", true);
+      return;
+    }
+
+    saveBtn.disabled = true;
+    setAccountAddTxMessage("Saving...");
+    try {
+      const res = await fetch("/transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: Number(currentAccountId),
+          amount,
+          merchant,
+          status,
+          date,
+          source: "Manual",
+        }),
+      });
+      let out = {};
+      try { out = await res.json(); } catch (_) {}
+      if (!res.ok || !out?.ok) {
+        const errText = out?.detail?.error || out?.error || `Save failed (${res.status})`;
+        throw new Error(String(errText));
+      }
+
+      if (amountEl) amountEl.value = "";
+      if (merchantEl) merchantEl.value = "";
+      close();
+      await loadAccountChart(Number(currentAccountId));
+      await loadAccountTransactions(Number(currentAccountId));
+    } catch (err) {
+      console.error(err);
+      setAccountAddTxMessage(err?.message || "Failed to save transaction.", true);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
 function setActiveQuickButton(container, btn){
   container.querySelectorAll(".month-btn").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
@@ -696,6 +796,7 @@ initChartControls(ACCOUNT_CHART_IDS, async () => {
   if (exportBtn) {
     exportBtn.addEventListener("click", downloadAccountCsv);
   }
+  initAccountAddTransaction(accountId);
 
 
   // 6) wire update button

@@ -13,6 +13,11 @@ const GLOBAL_FETCH_INFLIGHT = new Map();
 const GLOBAL_FETCH_TIMEOUT_MS = 25000;
 const GLOBAL_FETCH_MAX_RETRIES = 1;
 const DEFAULT_API_SLOW_MS = 500;
+const CLIENT_ERROR_ENDPOINT = "/admin/error-notifications/client";
+const CLIENT_ERROR_MAX_EVENTS = 25;
+const CLIENT_ERROR_DEDUPE_MS = 20000;
+const CLIENT_ERROR_RECENT = new Map();
+let CLIENT_ERROR_SENT_COUNT = 0;
 
 const API_CACHE_RULES = [
   { prefix: "/notifications/unread", ttlMs: 15 * 1000 },
@@ -184,6 +189,112 @@ function shouldRetryStatus(status) {
   return status === 408 || status === 429 || status === 502 || status === 503 || status === 504;
 }
 
+function normalizeClientErrorKey(input) {
+  return String(input || "").slice(0, 300);
+}
+
+function shouldSendClientError(key) {
+  if (!key) return false;
+  if (CLIENT_ERROR_SENT_COUNT >= CLIENT_ERROR_MAX_EVENTS) return false;
+  const now = Date.now();
+  const prev = Number(CLIENT_ERROR_RECENT.get(key) || 0);
+  if (prev > 0 && now - prev < CLIENT_ERROR_DEDUPE_MS) return false;
+  CLIENT_ERROR_RECENT.set(key, now);
+  CLIENT_ERROR_SENT_COUNT += 1;
+  if (CLIENT_ERROR_RECENT.size > 120) {
+    const cutoff = now - (CLIENT_ERROR_DEDUPE_MS * 2);
+    for (const [k, ts] of CLIENT_ERROR_RECENT.entries()) {
+      if (Number(ts) < cutoff) CLIENT_ERROR_RECENT.delete(k);
+    }
+  }
+  return true;
+}
+
+function sendClientErrorReport(payload, dedupeKey = "") {
+  if (typeof window === "undefined") return;
+  const key = normalizeClientErrorKey(dedupeKey || payload?.message || payload?.source || "client-error");
+  if (!shouldSendClientError(key)) return;
+
+  let body = "{}";
+  try {
+    body = JSON.stringify(payload || {});
+  } catch {
+    body = JSON.stringify({ source: "client_report_json_error", message: "Failed to serialize payload" });
+  }
+
+  try {
+    if (navigator && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([body], { type: "application/json" });
+      navigator.sendBeacon(CLIENT_ERROR_ENDPOINT, blob);
+      return;
+    }
+  } catch {}
+
+  try {
+    fetch(CLIENT_ERROR_ENDPOINT, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+}
+
+function installClientErrorTracking() {
+  if (typeof window === "undefined") return;
+  if (window.__clientErrorTrackingInstalled) return;
+  window.__clientErrorTrackingInstalled = true;
+
+  window.addEventListener("error", (evt) => {
+    try {
+      const target = evt && evt.target;
+      const isResourceError = !!(target && target !== window);
+      const message = isResourceError
+        ? `resource_load_failed: ${String(target?.tagName || "unknown")}`
+        : String(evt?.message || "window_error");
+      const stack = String(evt?.error?.stack || "").slice(0, 3000);
+      const source = isResourceError ? "resource_error" : "window_error";
+      const requestUrl = String(evt?.filename || target?.src || target?.href || "").slice(0, 1000);
+      sendClientErrorReport(
+        {
+          source,
+          message,
+          stack,
+          page_url: String(window.location.href || "").slice(0, 1000),
+          route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+          request_url: requestUrl || null,
+          request_method: "CLIENT",
+          status_code: 0,
+          user_agent: String(navigator?.userAgent || "").slice(0, 500),
+        },
+        `${source}:${message}:${requestUrl}`,
+      );
+    } catch {}
+  }, true);
+
+  window.addEventListener("unhandledrejection", (evt) => {
+    try {
+      const reason = evt?.reason;
+      const msg = (reason && (reason.message || String(reason))) || "unhandled_rejection";
+      const stack = String(reason?.stack || "").slice(0, 3000);
+      sendClientErrorReport(
+        {
+          source: "unhandled_rejection",
+          message: String(msg).slice(0, 1000),
+          stack,
+          page_url: String(window.location.href || "").slice(0, 1000),
+          route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+          request_method: "CLIENT",
+          status_code: 0,
+          user_agent: String(navigator?.userAgent || "").slice(0, 500),
+        },
+        `unhandled_rejection:${String(msg).slice(0, 200)}`,
+      );
+    } catch {}
+  });
+}
+
 function resolveMethod(input, init) {
   if (init && init.method) return String(init.method).toUpperCase();
   if (input && typeof input === "object" && input.method) return String(input.method).toUpperCase();
@@ -228,8 +339,24 @@ async function rawFetchWithRetry(nativeFetch, input, init, method) {
   const startMs = nowMs();
   while (true) {
     const timeoutSetup = withTimeoutOptions(init, (method === "GET" || method === "HEAD") ? GLOBAL_FETCH_TIMEOUT_MS : 0);
+    const reqOpts = timeoutSetup.opts || {};
     try {
-      const res = await nativeFetch(input, timeoutSetup.opts);
+      if (typeof window !== "undefined" && String(url || "").startsWith("/")) {
+        const headers = new Headers(reqOpts.headers || {});
+        const href = String(window.location.href || "");
+        if (href) headers.set("X-Client-Page-Url", href.slice(0, 1000));
+        const route = `${window.location.pathname || "/"}${window.location.search || ""}`;
+        if (route) headers.set("X-Client-Page-Route", route.slice(0, 500));
+        let preview = "";
+        try {
+          preview = String(localStorage.getItem("settings_view_non_admin_preview") || "").trim();
+        } catch {}
+        if (preview === "1") headers.set("X-Non-Admin-Preview", "1");
+        reqOpts.headers = headers;
+      }
+    } catch {}
+    try {
+      const res = await nativeFetch(input, reqOpts);
       if (attempt < GLOBAL_FETCH_MAX_RETRIES && (method === "GET" || method === "HEAD") && shouldRetryStatus(res.status)) {
         attempt += 1;
         await sleep(200 * attempt);
@@ -308,9 +435,65 @@ async function fetchWithStaleFallback(url, options = {}) {
 
 export async function apiFetch(url, options = {}) {
   const opts = Object.assign({ credentials: "same-origin" }, options || {});
-  const res = await fetch(url, opts);
-  handleAuthFailure(res, opts);
-  return res;
+  try {
+    const res = await fetch(url, opts);
+    handleAuthFailure(res, opts);
+    const status = Number(res.status || 0);
+    const urlStr = String(url || "");
+    const isClientErrorEndpoint = urlStr.indexOf(CLIENT_ERROR_ENDPOINT) === 0;
+    if (!isClientErrorEndpoint && status >= 400 && !opts.skipClientErrorReport) {
+      const method = String(opts.method || "GET").toUpperCase();
+      let detailText = "";
+      try {
+        const clone = res.clone();
+        const ct = String(clone.headers.get("content-type") || "").toLowerCase();
+        if (ct.includes("application/json")) {
+          const data = await clone.json().catch(() => null);
+          if (data && typeof data === "object") {
+            if (typeof data.detail === "string") detailText = data.detail;
+            else detailText = JSON.stringify(data);
+          }
+        } else {
+          detailText = String(await clone.text().catch(() => "") || "");
+        }
+      } catch {}
+      const msg = `HTTP ${status} ${method} ${urlStr}${detailText ? ` | ${detailText}` : ""}`.slice(0, 1800);
+      sendClientErrorReport(
+        {
+          source: "api_response",
+          message: msg,
+          page_url: String(window.location.href || "").slice(0, 1000),
+          route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+          request_url: urlStr.slice(0, 1000),
+          request_method: method,
+          status_code: status,
+          user_agent: String(navigator?.userAgent || "").slice(0, 500),
+        },
+        `api_response:${status}:${method}:${urlStr}`,
+      );
+    }
+    return res;
+  } catch (err) {
+    if (!opts.skipClientErrorReport) {
+      const method = String(opts.method || "GET").toUpperCase();
+      const urlStr = String(url || "");
+      sendClientErrorReport(
+        {
+          source: "api_fetch_exception",
+          message: String(err?.message || err || "fetch_failed").slice(0, 1000),
+          stack: String(err?.stack || "").slice(0, 3000),
+          page_url: String(window.location.href || "").slice(0, 1000),
+          route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+          request_url: urlStr.slice(0, 1000),
+          request_method: method,
+          status_code: 0,
+          user_agent: String(navigator?.userAgent || "").slice(0, 500),
+        },
+        `api_fetch_exception:${method}:${urlStr}:${String(err?.message || "").slice(0, 200)}`,
+      );
+    }
+    throw err;
+  }
 }
 
 export async function apiGetJson(url, options = {}) {
@@ -389,3 +572,4 @@ export async function apiPostForm(url, formData, options = {}) {
 }
 
 installGlobalFetchOptimizations();
+installClientErrorTracking();

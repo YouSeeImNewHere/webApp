@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date, timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -180,6 +181,18 @@ class TxMetaUpdate(BaseModel):
     postedDate: Optional[str] = None
 
 
+class TxCreateRequest(BaseModel):
+    account_id: int
+    amount: float
+    merchant: str = ""
+    category: Optional[str] = ""
+    status: Optional[str] = "posted"
+    date: Optional[str] = None
+    purchaseDate: Optional[str] = None
+    postedDate: Optional[str] = None
+    source: Optional[str] = "Manual"
+
+
 def _normalize_status(v: Optional[str]) -> Optional[str]:
     if v is None:
         return None
@@ -206,13 +219,130 @@ def _normalize_posted_date(v: Optional[str]) -> Optional[str]:
     raise HTTPException(status_code=400, detail={"ok": False, "error": "invalid_postedDate"})
 
 
-def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
+def _normalize_flexible_date(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s.lower() == "unknown":
+        return None
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            d = datetime.strptime(s, fmt).date()
+            return d.strftime("%m/%d/%Y")
+        except ValueError:
+            pass
+    raise HTTPException(status_code=400, detail={"ok": False, "error": "invalid_date"})
+
+
+def _table_columns(cur, table_name: str) -> set[str]:
+    cur.execute(
+        """
+        SELECT lower(column_name) AS col
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return {str(r.get("col") or "").strip().lower() for r in (cur.fetchall() or [])}
+
+
+def _refresh_caches_for_tenant(tid: int | None) -> None:
     try:
         from app.routers.page_payloads import touch_widget_cache_for_tenant
 
         touch_widget_cache_for_tenant(tid)
     except Exception:
         pass
+    try:
+        from app.core.home_snapshot_cache import bump_home_snapshot_version
+
+        bump_home_snapshot_version(tid)
+    except Exception:
+        pass
+
+
+@router.post("/transaction")
+def transaction_create(body: TxCreateRequest):
+    tid = _require_tenant_id()
+    account_id = int(body.account_id)
+    amount = float(body.amount)
+    merchant = (body.merchant or "").strip()
+    category = (body.category or "").strip()
+    source = (body.source or "Manual").strip() or "Manual"
+    status = _normalize_status(body.status) or "posted"
+
+    explicit_date = _normalize_flexible_date(body.date)
+    explicit_purchase = _normalize_flexible_date(body.purchaseDate)
+    explicit_posted = _normalize_posted_date(body.postedDate) if body.postedDate is not None else None
+    effective = explicit_date or explicit_purchase or (explicit_posted if explicit_posted != "unknown" else None)
+    if effective is None:
+        effective = date.today().strftime("%m/%d/%Y")
+
+    purchase_date = explicit_purchase or effective
+    if explicit_posted is not None:
+        posted_date = explicit_posted
+    else:
+        posted_date = "unknown" if status == "pending" else effective
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "SELECT 1 FROM accounts WHERE id = %s " + ("AND tenant_id = %s " if tid else "") + "LIMIT 1",
+            ((int(account_id), int(tid)) if tid else (int(account_id),)),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail={"ok": False, "error": "account_not_found"})
+
+        cols = _table_columns(cur, "transactions")
+        tx_id = f"manual_{uuid4().hex}"
+        payload: dict[str, Any] = {
+            "id": tx_id,
+            "account_id": int(account_id),
+            "amount": float(amount),
+            "merchant": merchant,
+            "category": category if category else None,
+            "status": status,
+            "purchaseDate": purchase_date,
+            "postedDate": posted_date,
+            "source": source,
+            "time": "unknown",
+            "tenant_id": int(tid) if tid else 0,
+        }
+        insert_payload = {
+            k: v
+            for k, v in payload.items()
+            if (k.lower() in cols) and (v is not None)
+        }
+        if "tenant_id" in cols and tid:
+            insert_payload["tenant_id"] = int(tid)
+        elif "tenant_id" in insert_payload and not tid:
+            insert_payload["tenant_id"] = 0
+
+        required = {"id", "account_id", "amount"}
+        if not required.issubset({k.lower() for k in insert_payload.keys()}):
+            raise HTTPException(status_code=500, detail={"ok": False, "error": "transactions_schema_missing_required_columns"})
+
+        insert_cols = list(insert_payload.keys())
+        insert_vals = [insert_payload[c] for c in insert_cols]
+        placeholders = ", ".join(["%s"] * len(insert_cols))
+        cur.execute(
+            f"INSERT INTO transactions ({', '.join(insert_cols)}) VALUES ({placeholders})",
+            tuple(insert_vals),
+        )
+        conn.commit()
+
+    _refresh_caches_for_tenant(tid)
+    return {
+        "ok": True,
+        "id": tx_id,
+        "account_id": int(account_id),
+        "amount": float(amount),
+        "merchant": merchant,
+        "category": category,
+        "status": status,
+        "purchaseDate": purchase_date,
+        "postedDate": posted_date,
+    }
 
 
 @router.post("/transaction/{tx_id}/category")
@@ -244,7 +374,7 @@ def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
             raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
 
         conn.commit()
-    _refresh_widget_cache_for_tenant(tid)
+    _refresh_caches_for_tenant(tid)
 
     return {"ok": True, "id": tx_id, "category": category}
 
@@ -285,7 +415,7 @@ def transaction_update_meta(tx_id: str, body: TxMetaUpdate):
             conn.rollback()
             raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
         conn.commit()
-    _refresh_widget_cache_for_tenant(tid)
+    _refresh_caches_for_tenant(tid)
 
     return {
         "ok": True,
@@ -293,6 +423,39 @@ def transaction_update_meta(tx_id: str, body: TxMetaUpdate):
         "status": next_status,
         "postedDate": next_posted,
     }
+
+
+@router.post("/transaction/{tx_id}/invert-amount")
+def transaction_invert_amount(tx_id: str):
+    tid = _require_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        if tid:
+            cur.execute(
+                """
+                UPDATE transactions
+                SET amount = (-1 * amount::double precision)
+                WHERE id = %s AND tenant_id = %s
+                RETURNING amount::double precision AS amount
+                """,
+                (tx_id, int(tid)),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE transactions
+                SET amount = (-1 * amount::double precision)
+                WHERE id = %s
+                RETURNING amount::double precision AS amount
+                """,
+                (tx_id,),
+            )
+        row = cur.fetchone() or {}
+        if not row:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
+        conn.commit()
+    _refresh_caches_for_tenant(tid)
+    return {"ok": True, "id": tx_id, "amount": float(row.get("amount") or 0.0)}
 
 @router.delete("/transaction/{tx_id}")
 def transaction_delete(tx_id: str):
@@ -313,7 +476,7 @@ def transaction_delete(tx_id: str):
                     detail={"ok": False, "error": "not_found", "id": tx_id},
                 )
             conn.commit()
-            _refresh_widget_cache_for_tenant(tid)
+            _refresh_caches_for_tenant(tid)
             return {"ok": True, "deleted": tx_id}
         except HTTPException:
             raise

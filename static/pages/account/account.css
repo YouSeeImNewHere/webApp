@@ -6,16 +6,6 @@ body.page-account .top-title.account-title-switcher{
   text-overflow: clip !important;
 }
 
-body.page-account #topBarBack{
-  display: none !important;
-}
-
-@media (max-width: 900px){
-  body.page-account #topBarBack{
-    display: inline-flex !important;
-  }
-}
-
 body.page-account .account-title-switcher__select{
   width: 100%;
   min-width: 180px;
@@ -39,7 +29,7 @@ body.page-account .account-title-switcher__select{
 
   body.page-account .top-title.account-title-switcher{
     position: absolute;
-    left: calc(50% - var(--topbar-refresh-shift, 24px));
+    left: 50%;
     transform: translateX(-50%);
     width: calc(100% - 170px);
     max-width: calc(100% - 170px);
@@ -64,6 +54,25 @@ body.page-account .account-tx-header{
   gap: 10px;
 }
 
+body.page-account .account-tx-actions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.page-account .account-tx-add-btn{
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+}
+
 body.page-account .account-tx-export-btn{
   border: 1px solid var(--accent);
   background: var(--accent);
@@ -82,9 +91,76 @@ body.page-account .account-tx-export-btn:hover{
   filter: brightness(0.95);
 }
 
+body.page-account .account-tx-add-btn:hover{
+  background: color-mix(in srgb, var(--card) 78%, var(--text) 6%);
+}
+
+body.page-account .account-tx-add-btn:focus-visible,
 body.page-account .account-tx-export-btn:focus-visible{
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, white);
   outline-offset: 2px;
+}
+
+body.page-account .account-addtx-panel{
+  margin: 10px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--card) 90%, white 10%);
+}
+
+body.page-account .account-addtx-grid{
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(120px, 140px) minmax(120px, 150px) minmax(220px, 2fr);
+  gap: 10px;
+  align-items: end;
+}
+
+body.page-account .account-addtx-grid label{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 700;
+}
+
+body.page-account .account-addtx-status-field{
+  max-width: 140px;
+}
+
+body.page-account .account-addtx-merchant-field{
+  min-width: 0;
+}
+
+body.page-account .account-addtx-grid input,
+body.page-account .account-addtx-grid select{
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+}
+
+body.page-account .account-addtx-help{
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+body.page-account .account-addtx-actions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+body.page-account .account-addtx-msg{
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+body.page-account .account-addtx-msg.is-error{
+  color: #b3261e;
+  opacity: 1;
 }
 
 /* Account page: top-bar switcher makes chart title redundant. */
@@ -136,6 +212,24 @@ body.page-account .tx-right .tx-roundup-badge{
 }
 
 @media (max-width: 900px){
+  body.page-account .account-tx-header{
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  body.page-account .account-tx-actions{
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  body.page-account .account-addtx-grid{
+    grid-template-columns: 1fr;
+  }
+
+  body.page-account .account-addtx-status-field{
+    max-width: none;
+  }
+
   body.page-account .tx-row{
     min-height: 62px;
     padding-right: 10px;

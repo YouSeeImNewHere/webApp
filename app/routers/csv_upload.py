@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
+from app.routers.accounts import mark_account_csv_upload
 from db import with_db_cursor
 
 router = APIRouter()
@@ -1069,6 +1070,21 @@ def _parse_col_opt(v: str | None) -> int | None:
     return n if n >= 0 else None
 
 
+def _csv_start_index(*, has_header: bool, header_row: int, data_start_row: int) -> int:
+    """
+    Returns 0-based data start index.
+    If header is disabled and caller left default row settings
+    (header_row=1, data_start_row=2), include the first row as data.
+    """
+    header_idx = max(0, int(header_row) - 1)
+    start_idx = max(0, int(data_start_row) - 1)
+    if has_header:
+        return max(start_idx, header_idx + 1)
+    if int(header_row) == 1 and int(data_start_row) == 2:
+        return 0
+    return start_idx
+
+
 def _mapped_row_preview(row: list[str], max_len: int = 180) -> str:
     out = " | ".join((c or "").strip() for c in row[:8])
     if len(out) > max_len:
@@ -1349,10 +1365,11 @@ async def ingest_csv_mapped_dry_run(
 
     has_header_b = _to_bool(has_header, default=True)
     invert_amount_b = _to_bool(invert_amount, default=False)
-    header_idx = max(0, int(header_row) - 1)
-    start_idx = max(0, int(data_start_row) - 1)
-    if has_header_b:
-        start_idx = max(start_idx, header_idx + 1)
+    start_idx = _csv_start_index(
+        has_header=has_header_b,
+        header_row=int(header_row),
+        data_start_row=int(data_start_row),
+    )
 
     try:
         amount_idx = _parse_col_opt(amount_col)
@@ -1534,9 +1551,11 @@ async def preview_csv(
 
     has_header_b = _to_bool(has_header, default=True)
     header_idx = max(0, int(header_row) - 1)
-    start_idx = max(0, int(data_start_row) - 1)
-    if has_header_b:
-        start_idx = max(start_idx, header_idx + 1)
+    start_idx = _csv_start_index(
+        has_header=has_header_b,
+        header_row=int(header_row),
+        data_start_row=int(data_start_row),
+    )
 
     if header_idx >= len(rows):
         raise HTTPException(status_code=400, detail="header_row is past end of file")
@@ -1590,10 +1609,11 @@ async def ingest_csv_mapped(
 
     has_header_b = _to_bool(has_header, default=True)
     invert_amount_b = _to_bool(invert_amount, default=False)
-    header_idx = max(0, int(header_row) - 1)
-    start_idx = max(0, int(data_start_row) - 1)
-    if has_header_b:
-        start_idx = max(start_idx, header_idx + 1)
+    start_idx = _csv_start_index(
+        has_header=has_header_b,
+        header_row=int(header_row),
+        data_start_row=int(data_start_row),
+    )
 
     required_cols = [int(purchase_col), int(merchant_col)]
     if min(required_cols) < 0:
@@ -1803,6 +1823,10 @@ async def ingest_csv_mapped(
         conn.commit()
     if (inserted + updated + int(reconciled or 0) + int(stale_deleted or 0)) > 0:
         _refresh_widget_cache_for_tenant(tid)
+    try:
+        mark_account_csv_upload(int(account_id), tid)
+    except Exception:
+        pass
 
     skipped = int(mapped["summary"]["invalid_rows"]) + max(0, int(mapped["summary"]["valid_rows"]) - inserted - updated)
     return {

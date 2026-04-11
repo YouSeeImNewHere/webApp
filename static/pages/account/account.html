@@ -42,8 +42,40 @@
       <div class="category-box">
         <div class="category-box__header account-tx-header">
           <span>Transactions</span>
-          <button id="accountCsvExportBtn" type="button" class="account-tx-export-btn">Download Transactions CSV</button>
+          <div class="account-tx-actions">
+            <button id="accountAddTxBtn" type="button" class="account-tx-add-btn">Add Transaction</button>
+            <button id="accountCsvExportBtn" type="button" class="account-tx-export-btn">Download Transactions CSV</button>
+          </div>
         </div>
+        <section id="accountAddTxPanel" class="account-addtx-panel" hidden>
+          <div class="account-addtx-grid">
+            <label>
+              Date
+              <input id="accountAddTxDate" type="date" />
+            </label>
+            <label class="account-addtx-status-field">
+              Status
+              <select id="accountAddTxStatus">
+                <option value="posted">Posted</option>
+                <option value="pending">Pending</option>
+              </select>
+            </label>
+            <label>
+              Amount
+              <input id="accountAddTxAmount" type="number" step="0.01" placeholder="e.g. 24.99" />
+            </label>
+            <label class="account-addtx-merchant-field">
+              Merchant
+              <input id="accountAddTxMerchant" type="text" placeholder="e.g. Starbucks" />
+            </label>
+          </div>
+          <div class="account-addtx-help">Use positive for spending and negative for deposits/refunds.</div>
+          <div class="account-addtx-actions">
+            <button id="accountAddTxSaveBtn" type="button" class="settings-btn small">Save</button>
+            <button id="accountAddTxCancelBtn" type="button" class="settings-btn small">Cancel</button>
+            <div id="accountAddTxMsg" class="account-addtx-msg"></div>
+          </div>
+        </section>
         <div id="txList" class="tx-list"></div>
       </div>
     </section>

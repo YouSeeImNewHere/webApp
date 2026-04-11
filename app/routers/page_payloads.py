@@ -56,6 +56,7 @@ _PAGE_PAYLOAD_CACHE_LOCK = Lock()
 DAY_LIMIT_CACHE_TTL_SEC = 20
 MIN_WIDGET_SCRIPT_VERSION = 3
 _WIDGET_SUMMARY_SNAPSHOT_READY = False
+PAGE_HOME_SCHEMA_VERSION = 6
 
 _WIDGET_REDIS_KEY_PREFIX = "widget:v1"
 
@@ -480,6 +481,8 @@ def _payload_cache_set(key: str, payload: Dict[str, Any]):
 def _page_home_payload_fresh_for_today(payload: Dict[str, Any] | None) -> bool:
     if not isinstance(payload, dict):
         return False
+    if int(payload.get("_page_home_schema_version") or 0) != int(PAGE_HOME_SCHEMA_VERSION):
+        return False
     today_iso = today_local().isoformat()
     mb = payload.get("month_budget") if isinstance(payload.get("month_budget"), dict) else {}
     dl = payload.get("day_limit") if isinstance(payload.get("day_limit"), dict) else {}
@@ -498,7 +501,7 @@ def page_home(
     tid = _require_tenant_id()
     tkey = int(tid or 0)
     v_before = home_snapshot_version_for_tenant(tid)
-    cache_key = f"page:home:tenant={tkey}:tx_limit={int(tx_limit)}:v={int(v_before)}"
+    cache_key = f"page:home:tenant={tkey}:tx_limit={int(tx_limit)}:v={int(v_before)}:schema={int(PAGE_HOME_SCHEMA_VERSION)}"
     cached = _payload_cache_get(cache_key)
     if cached is not None and _page_home_payload_fresh_for_today(cached):
         return cached
@@ -533,6 +536,7 @@ def page_home(
         # add this if you have month_budget() defined in this file:
         "month_budget": month_budget_home_cached(now.year, now.month),
         "day_limit": day_limit(recalc=0),
+        "_page_home_schema_version": int(PAGE_HOME_SCHEMA_VERSION),
     }
     v_after = home_snapshot_version_for_tenant(tid)
     if int(v_before) == int(v_after):

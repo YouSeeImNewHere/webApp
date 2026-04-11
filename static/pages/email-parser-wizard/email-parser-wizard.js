@@ -167,6 +167,7 @@
     }
     if (setting.parser_mode && byId("epwParserMode")) byId("epwParserMode").value = String(setting.parser_mode);
     if (byId("epwParserSlot")) byId("epwParserSlot").value = ensureParserSlotOption(setting.parser_slot);
+    if (byId("epwInvertAmountSign")) byId("epwInvertAmountSign").checked = !!setting.invert_amount_sign;
     if (byId("epwPrimaryOverride")) byId("epwPrimaryOverride").checked = !!setting.override_on_primary;
     if (byId("epwBackupAssumeUnknown")) byId("epwBackupAssumeUnknown").checked = !!setting.backup_assume_unknown;
     if (setting.body_regex && byId("epwBodyRegex")) byId("epwBodyRegex").value = String(setting.body_regex);
@@ -206,6 +207,7 @@
     if (byId("epwSubjectFallback")) byId("epwSubjectFallback").value = "";
     if (byId("epwParserMode")) byId("epwParserMode").value = "guided";
     if (byId("epwParserSlot")) byId("epwParserSlot").value = "parser_1";
+    if (byId("epwInvertAmountSign")) byId("epwInvertAmountSign").checked = false;
     if (byId("epwBodyRegex")) byId("epwBodyRegex").value = "";
     if (byId("epwRegexFlags")) byId("epwRegexFlags").value = "i";
     if (byId("epwMapAmount")) byId("epwMapAmount").value = "1";
@@ -900,7 +902,7 @@
       const ext = r.extracted || {};
       const would = r.would_db_row || {};
       const parserLine = ok
-        ? `parser=${p.name || "(unnamed)"} [${p.slot || ""}] id=${p.draft_id || ""} account=${p.account_label || p.account_id || ""}`
+        ? `parser=${p.name || "(unnamed)"} [${p.slot || ""}] id=${p.draft_id || ""} account=${p.account_label || p.account_id || ""} invert_amount=${p.invert_amount_sign ? "on" : "off"}`
         : `reason=${r.skip_reason || "no_parser_match"}`;
       const extLine = ok
         ? `amount=${ext.amount || ""} merchant=${ext.merchant || ""} date=${ext.date || ""} time=${ext.time || ""}`
@@ -934,6 +936,7 @@
     const accountLabel = selectedAccount ? `${selectedAccount.institution || "Account"} ${selectedAccount.name || ""}`.trim() : `Account ${accountId}`;
     const name = `${accountLabel} ${subjectContains || "Email Rule"}`.trim();
     const parserSlot = normalizeParserSlot((byId("epwParserSlot")?.value || "parser_1").trim().toLowerCase());
+    const invertAmountSign = !!byId("epwInvertAmountSign")?.checked;
     const overrideOnPrimary = !!byId("epwPrimaryOverride")?.checked;
     const backupAssumeUnknown = !!byId("epwBackupAssumeUnknown")?.checked;
     const parsingMethod = "guided_blocks";
@@ -971,6 +974,7 @@
       parser_mode: parserMode,
       parsing_method: parsingMethod,
       parser_slot: parserSlot,
+      invert_amount_sign: invertAmountSign,
       override_on_primary: overrideOnPrimary,
       backup_assume_unknown: backupAssumeUnknown,
       pending_ttl_minutes: 30,

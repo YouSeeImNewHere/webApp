@@ -438,6 +438,7 @@ class TrialPreviewBody(BaseModel):
     parser_slot: str | None = "parser_1"
     override_on_primary: bool = False
     backup_assume_unknown: bool = False
+    invert_amount_sign: bool = False
     pending_ttl_minutes: int | None = 30
 
 
@@ -457,6 +458,7 @@ class TrialSaveBody(BaseModel):
     parser_slot: str | None = "parser_1"
     override_on_primary: bool = False
     backup_assume_unknown: bool = False
+    invert_amount_sign: bool = False
     pending_ttl_minutes: int | None = 30
 
 
@@ -512,6 +514,18 @@ def _normalize_time_str(v: str, received_at: str) -> str:
     if s:
         return s.lower()
     return _time_from_received_at(received_at).lower()
+
+
+def _maybe_invert_amount_str(amount_norm: str, invert_amount_sign: bool) -> str:
+    s = str(amount_norm or "").strip()
+    if not s:
+        return ""
+    if not bool(invert_amount_sign):
+        return s
+    try:
+        return f"{(-1.0 * float(s)):.2f}"
+    except Exception:
+        return s
 
 
 def _trial_corr_key(account_id: int, amount: str, date_s: str, time_s: str) -> str:
@@ -834,6 +848,7 @@ def _load_saved_parsers(cur, tenant_id: int, user_email: str, account_id: int | 
                 "parser_slot": slot,
                 "override_on_primary": bool(cfg.get("override_on_primary")),
                 "backup_assume_unknown": bool(cfg.get("backup_assume_unknown")),
+                "invert_amount_sign": bool(cfg.get("invert_amount_sign")),
                 "sender_pattern": sender_pattern,
                 "subject_contains": subject_contains,
                 "field_map": cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {},
@@ -1041,6 +1056,7 @@ def trial_account_settings(account_id: int, request: Request):
                 "parser_slot": slot,
                 "override_on_primary": bool(cfg.get("override_on_primary")),
                 "backup_assume_unknown": bool(cfg.get("backup_assume_unknown")),
+                "invert_amount_sign": bool(cfg.get("invert_amount_sign")),
                 "pending_ttl_minutes": max(1, min(_safe_int(cfg.get("pending_ttl_minutes"), 30), 24 * 60)),
                 "body_regex": str(cfg.get("body_regex") or "").strip(),
                 "flags": str(cfg.get("flags") or "i").strip() or "i",
@@ -1126,6 +1142,7 @@ def trial_save(body: TrialSaveBody, request: Request):
         "parser_slot": parser_slot,
         "override_on_primary": bool(body.override_on_primary),
         "backup_assume_unknown": bool(body.backup_assume_unknown),
+        "invert_amount_sign": bool(body.invert_amount_sign),
         "pending_ttl_minutes": max(1, min(int(body.pending_ttl_minutes or 30), 24 * 60)),
         "account_id": int(body.account_id),
         "sender_pattern": (body.sender_pattern or "").strip(),
@@ -1329,6 +1346,10 @@ def trial_correlation_preview(body: CorrelationPreviewBody, request: Request):
         cfg = primary_cfg if pm else secondary_cfg
         m = pm or sm
         extracted = _extract_from_match(m, cfg.get("field_map") if isinstance(cfg.get("field_map"), dict) else {}, received_at)
+        extracted["amount"] = _maybe_invert_amount_str(
+            _normalize_amount_str(str(extracted.get("amount") or "")),
+            bool(cfg.get("invert_amount_sign")),
+        )
         key = _trial_corr_key(
             int(body.account_id),
             extracted.get("amount") or "",
@@ -1526,6 +1547,7 @@ def trial_test_run(body: TrialTestRunBody, request: Request):
             ext = _extract_from_match(m, p.get("field_map") if isinstance(p.get("field_map"), dict) else {}, received_at)
             amt_raw = str(ext.get("amount") or "").strip()
             amt_norm = _normalize_amount_str(amt_raw)
+            amt_norm = _maybe_invert_amount_str(amt_norm, bool(p.get("invert_amount_sign")))
             merchant = str(ext.get("merchant") or "").strip() or "Unknown"
             if p.get("backup_assume_unknown") and _normalize_parser_slot(p.get("parser_slot"), default="parser_1") == "parser_2":
                 merchant = "Unknown"
@@ -1552,6 +1574,7 @@ def trial_test_run(body: TrialTestRunBody, request: Request):
                     "slot": str(p.get("parser_slot") or "").strip(),
                     "override_on_primary": bool(p.get("override_on_primary")),
                     "backup_assume_unknown": bool(p.get("backup_assume_unknown")),
+                    "invert_amount_sign": bool(p.get("invert_amount_sign")),
                 },
                 "would_insert": would_insert,
                 "skip_reason": "" if would_insert else "amount_missing_or_invalid",

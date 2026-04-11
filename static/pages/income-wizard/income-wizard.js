@@ -15,6 +15,66 @@
     return Math.max(1, Math.round(n));
   }
 
+  function normalizeKeywordLines(raw) {
+    const lines = String(raw || "")
+      .split(/\r?\n/g)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const seen = new Set();
+    const out = [];
+    for (const line of lines) {
+      const v = line.length > 64 ? line.slice(0, 64) : line;
+      if (seen.has(v)) continue;
+      seen.add(v);
+      out.push(v);
+      if (out.length >= 20) break;
+    }
+    return out;
+  }
+
+  async function loadPaycheckMatchers() {
+    const input = document.getElementById("paycheckKeywords");
+    const saveBtn = document.getElementById("savePaycheckMatchersBtn");
+    const statusEl = document.getElementById("paycheckMatchersStatus");
+    if (!input || !saveBtn) return;
+
+    try {
+      const res = await fetch("/settings/paycheck-matchers", { cache: "no-store" });
+      if (res.ok) {
+        const d = await res.json();
+        const keywords = Array.isArray(d?.keywords) ? d.keywords : [];
+        input.value = keywords.join("\n");
+      }
+    } catch (_err) {
+      if (statusEl) statusEl.textContent = "Failed to load paycheck matchers.";
+    }
+
+    saveBtn.addEventListener("click", async () => {
+      const keywords = normalizeKeywordLines(input.value);
+      saveBtn.disabled = true;
+      if (statusEl) statusEl.textContent = "Saving...";
+      try {
+        const res = await fetch("/settings/paycheck-matchers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keywords }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json().catch(() => ({}));
+        const saved = Array.isArray(d?.keywords) ? d.keywords : keywords;
+        input.value = saved.join("\n");
+        if (statusEl) statusEl.textContent = "Saved.";
+        setTimeout(() => {
+          if (statusEl) statusEl.textContent = "";
+        }, 1500);
+      } catch (_err) {
+        if (statusEl) statusEl.textContent = "Failed to save.";
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+  }
+
   function renderDailyWeightsPreview() {
     const el = document.getElementById("dailyWeightsPreview");
     if (!el || !monthBudgetSnapshot) return;
@@ -152,6 +212,7 @@
       window.Profile.mountEditor("#lesProfileMount");
     }
     bindIncomeTypePicker();
+    loadPaycheckMatchers().catch(() => {});
     loadDailyWeightsSettings().catch(() => {});
   });
 })();
