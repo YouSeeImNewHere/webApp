@@ -194,7 +194,11 @@
       const y = Math.max(0, Math.min(MAX_PULL_PX, Number(offsetPx || 0)));
       pullPx = y;
       document.body.style.transition = "none";
-      document.body.style.transform = `translateY(${y}px)`;
+      if (y > 0) {
+        document.body.style.transform = `translateY(${y}px)`;
+      } else {
+        document.body.style.removeProperty("transform");
+      }
 
       if (y <= 0) {
         indicator.style.opacity = "0";
@@ -217,9 +221,11 @@
       indicator.textContent = "Pull to refresh";
       if (animated) {
         window.setTimeout(() => {
+          document.body.style.removeProperty("transform");
           document.body.style.transition = "";
         }, 220);
       } else {
+        document.body.style.removeProperty("transform");
         document.body.style.transition = "";
       }
     }
