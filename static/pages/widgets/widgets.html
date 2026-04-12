@@ -112,10 +112,40 @@
       <div class="widget-mobile-body">
       <h2 class="settings-section-title widget-mobile-title">Android Widget</h2>
       <div class="settings-card widget-mobile-card">
-        <div class="android-widget-placeholder">
-          <div class="android-widget-title">Groundwork Ready</div>
-          <div class="settings-muted">This tab is reserved for Android widget templates and setup flow.</div>
-          <div class="settings-muted">Next step: add Android-specific preview cards and code generation endpoint.</div>
+        <div class="android-widget-setup">
+          <div class="android-widget-title">KWGT Quick Setup</div>
+          <ol class="android-widget-steps">
+            <li>Tap <strong>Generate + Copy Data URL</strong>.</li>
+            <li>In KWGT, add a text item and use <strong>Web Get (JSON)</strong> with that URL.</li>
+            <li>Pick a field (examples below) or copy one of the formulas.</li>
+          </ol>
+
+          <div class="settings-row" style="margin-top:10px;">
+            <button class="settings-btn primary" id="androidWidgetGenerateBtn" type="button">Generate + Copy Data URL</button>
+            <button class="settings-btn" id="androidWidgetRegenerateBtn" type="button">Regenerate Token</button>
+            <button class="settings-btn" id="androidWidgetOpenBtn" type="button">Open URL</button>
+          </div>
+
+          <label class="android-widget-label" for="androidWidgetUrl">KWGT Data URL</label>
+          <textarea id="androidWidgetUrl" readonly class="android-widget-url"></textarea>
+          <div class="settings-muted">Token is private. Anyone with this URL can read your widget data.</div>
+
+          <div class="android-widget-formulas">
+            <div class="android-widget-formula-row">
+              <code id="androidFormulaToday">$wg("URL", json, "today.remaining_today")$</code>
+              <button type="button" class="settings-btn" data-copy-formula="today">Copy</button>
+            </div>
+            <div class="android-widget-formula-row">
+              <code id="androidFormulaSafe">$wg("URL", json, "safe_to_spend")$</code>
+              <button type="button" class="settings-btn" data-copy-formula="safe">Copy</button>
+            </div>
+            <div class="android-widget-formula-row">
+              <code id="androidFormulaCreditPct">$wg("URL", json, "credit.pct")$</code>
+              <button type="button" class="settings-btn" data-copy-formula="credit_pct">Copy</button>
+            </div>
+          </div>
+
+          <div id="androidWidgetStatus" class="settings-muted" role="status" aria-live="polite"></div>
         </div>
       </div>
       </div>

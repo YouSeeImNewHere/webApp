@@ -654,10 +654,11 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         "scope": " ".join(scopes),
         "access_type": "offline",
         "include_granted_scopes": "true",
-        # Ensure Google returns a refresh token on reconnects.
-        "prompt": "consent",
         "state": state,
     }
+    session_email = _normalize_email(request.session.get("google_email"))
+    if session_email:
+        params["login_hint"] = session_email
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     return RedirectResponse(url=auth_url, status_code=302)
 
@@ -1163,6 +1164,18 @@ async def login(request: Request):
     if MULTI_TENANT_ENABLED:
         next_url = next_url if next_url.startswith("/") else "/"
         session_google_email = str(request.session.get("google_email") or "").strip()
+        if not session_google_email:
+            # If there is exactly one connected Google account on this deployment,
+            # restore it into session to avoid unnecessary OAuth prompts.
+            try:
+                connected = _list_connected_google_emails()
+            except Exception:
+                connected = []
+            if len(connected) == 1:
+                restored = _normalize_email(connected[0])
+                if restored:
+                    request.session["google_email"] = restored
+                    session_google_email = restored
         if not session_google_email:
             oauth_start = f"/gmail/oauth/start?next={next_url}"
             return RedirectResponse(url=oauth_start, status_code=302)

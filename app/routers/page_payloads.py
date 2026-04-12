@@ -804,6 +804,19 @@ def widget_summary(
 
     payload = _widget_redis_get_payload(tid)
     if not isinstance(payload, dict):
+        # Local/dev fallback: if Redis is unavailable, compute payload live so
+        # external widget clients (e.g. KWGT) still receive usable JSON.
+        if get_redis() is None:
+            live_version = int(current_version or 1)
+            live_payload = _build_widget_payload_for_tenant_version(tid, live_version)
+            live_payload["ok"] = True
+            live_payload["changed"] = True
+            live_payload["update_required"] = False
+            live_payload["widget_version"] = int(live_version)
+            live_payload["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
+            live_payload["tenant_id"] = tenant_out
+            return live_payload
+
         return {
             "ok": True,
             "changed": False,

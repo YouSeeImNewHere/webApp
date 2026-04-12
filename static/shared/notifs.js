@@ -60,6 +60,7 @@
     const refreshBtn = $("notifRefreshBtn");
     const markAllBtn = $("notifMarkAllReadBtn");
     const clearReadBtn = $("notifClearReadBtn");
+    const whatsNewBtn = $("notifWhatsNewBtn");
     const clearErrorsBtn = $("notifClearErrorsBtn");
     const listHost = $("notifList");
     const detail = $("notifDetail");
@@ -210,6 +211,7 @@
       }
       if (markAllBtn) markAllBtn.classList.toggle("hidden", state.activeTab !== "general");
       if (clearReadBtn) clearReadBtn.classList.toggle("hidden", state.activeTab !== "general");
+      if (whatsNewBtn) whatsNewBtn.classList.toggle("hidden", !showErrors);
       if (clearErrorsBtn) clearErrorsBtn.classList.toggle("hidden", state.activeTab !== "errors");
     }
 
@@ -461,6 +463,15 @@
     detailDismiss && detailDismiss.addEventListener("click", dismissSelected);
     markAllBtn && markAllBtn.addEventListener("click", markAllRead);
     clearReadBtn && clearReadBtn.addEventListener("click", clearRead);
+    whatsNewBtn && whatsNewBtn.addEventListener("click", async () => {
+      try {
+        if (typeof window.openLatestAppUpdatesModal === "function") {
+          await window.openLatestAppUpdatesModal();
+        }
+      } catch (e) {
+        console.error("open latest app updates failed:", e);
+      }
+    });
     clearErrorsBtn && clearErrorsBtn.addEventListener("click", clearErrors);
 
     modalClose && modalClose.addEventListener("click", closeModal);

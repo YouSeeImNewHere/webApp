@@ -88,6 +88,31 @@ def _redis_resolve_token(token_hash: str) -> dict[str, Any] | None:
         return None
 
 
+def _db_resolve_token(token_hash: str) -> dict[str, Any] | None:
+    _ensure_widget_tokens_table()
+    if not token_hash:
+        return None
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            SELECT tenant_id, user_email
+            FROM widget_api_tokens
+            WHERE token_hash = %s
+              AND revoked_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (str(token_hash),),
+        )
+        row = dict(cur.fetchone() or {})
+        conn.commit()
+    tenant_id = int(row.get("tenant_id") or 0)
+    user_email = str(row.get("user_email") or "").strip().lower()
+    if tenant_id <= 0 or not user_email:
+        return None
+    return {"tenant_id": tenant_id, "user_email": user_email}
+
+
 def _ensure_widget_tokens_table() -> None:
     global _WIDGET_TOKENS_READY
     if _WIDGET_TOKENS_READY:
@@ -185,11 +210,18 @@ def resolve_widget_token(token: str) -> dict[str, Any] | None:
 
     row = _redis_resolve_token(token_hash)
     if not row:
+        # Fallback for environments where Redis is unavailable/stale or when
+        # token issuance and widget fetch hit different worker processes.
+        row = _db_resolve_token(token_hash)
+    if not row:
         return None
     tenant_id = int(row.get("tenant_id") or 0)
     user_email = str(row.get("user_email") or "")
     if tenant_id <= 0:
         return None
+
+    # Best-effort: rehydrate Redis active-token mapping when resolved from DB.
+    _redis_store_active_token(token_hash, tenant_id, user_email)
 
     with _TOKEN_CACHE_LOCK:
         _TOKEN_CACHE[token_hash] = {

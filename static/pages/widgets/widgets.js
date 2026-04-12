@@ -1,4 +1,5 @@
 let _lastWidgetScript = "";
+let _lastAndroidWidgetUrl = "";
 
 function money(n) {
   const v = Number(n || 0);
@@ -76,6 +77,64 @@ async function fetchWidgetScript() {
   if (!script) throw new Error("script_missing");
   _lastWidgetScript = script;
   return script;
+}
+
+async function fetchWidgetToken() {
+  const res = await fetch("/settings/widget-token", { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const payload = await res.json();
+  const token = String(payload.widget_token || "").trim();
+  if (!token) throw new Error("widget_token_missing");
+  return token;
+}
+
+function buildAndroidWidgetUrlFromToken(token) {
+  const base = `${window.location.origin}/widget/summary`;
+  const qs = new URLSearchParams({
+    widget_token: String(token || ""),
+    widget_script_version: "1",
+  });
+  return `${base}?${qs.toString()}`;
+}
+
+function buildKwgtFormula(url, path) {
+  return `$wg("${String(url || "")}", json, "${String(path || "")}")$`;
+}
+
+function fillAndroidFormulaSamples(url) {
+  const today = document.getElementById("androidFormulaToday");
+  const safe = document.getElementById("androidFormulaSafe");
+  const creditPct = document.getElementById("androidFormulaCreditPct");
+  if (today) today.textContent = buildKwgtFormula(url, "today.remaining_today");
+  if (safe) safe.textContent = buildKwgtFormula(url, "safe_to_spend");
+  if (creditPct) creditPct.textContent = buildKwgtFormula(url, "credit.pct");
+}
+
+function setAndroidWidgetStatus(msg) {
+  const el = document.getElementById("androidWidgetStatus");
+  if (el) el.textContent = String(msg || "");
+}
+
+function setAndroidWidgetUrl(url) {
+  const el = document.getElementById("androidWidgetUrl");
+  if (el) el.value = String(url || "");
+  fillAndroidFormulaSamples(String(url || ""));
+}
+
+async function ensureAndroidWidgetUrl({ forceRotate = false } = {}) {
+  if (_lastAndroidWidgetUrl && !forceRotate) return _lastAndroidWidgetUrl;
+  const token = await fetchWidgetToken();
+  _lastAndroidWidgetUrl = buildAndroidWidgetUrlFromToken(token);
+  setAndroidWidgetUrl(_lastAndroidWidgetUrl);
+  return _lastAndroidWidgetUrl;
+}
+
+async function verifyAndroidWidgetUrl(url) {
+  const res = await fetch(String(url || ""), { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const payload = await res.json();
+  if (!payload || payload.ok !== true) throw new Error("bad_payload");
+  return payload;
 }
 
 function formatPreviewTime(d) {
@@ -219,6 +278,86 @@ function bindWidgetActions() {
   });
 }
 
+function bindAndroidWidgetActions() {
+  const generateBtn = document.getElementById("androidWidgetGenerateBtn");
+  const regenerateBtn = document.getElementById("androidWidgetRegenerateBtn");
+  const openBtn = document.getElementById("androidWidgetOpenBtn");
+  const formulaButtons = Array.from(document.querySelectorAll("[data-copy-formula]"));
+
+  const withBusy = async (btn, fn) => {
+    if (!btn) return fn();
+    btn.disabled = true;
+    try {
+      await fn();
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  if (generateBtn) {
+    generateBtn.addEventListener("click", () => withBusy(generateBtn, async () => {
+      setAndroidWidgetStatus("Generating secure URL...");
+      try {
+        const url = await ensureAndroidWidgetUrl({ forceRotate: false });
+        await copyToClipboard(url);
+        const check = await verifyAndroidWidgetUrl(url);
+        const tail = check?.warming ? " (cache warming, retry in a few seconds)." : ".";
+        setAndroidWidgetStatus(`Copied data URL. KWGT can connect${tail}`);
+      } catch (err) {
+        console.error(err);
+        setAndroidWidgetStatus("Failed to generate/copy URL.");
+      }
+    }));
+  }
+
+  if (regenerateBtn) {
+    regenerateBtn.addEventListener("click", () => withBusy(regenerateBtn, async () => {
+      setAndroidWidgetStatus("Regenerating token...");
+      try {
+        const url = await ensureAndroidWidgetUrl({ forceRotate: true });
+        await copyToClipboard(url);
+        setAndroidWidgetStatus("Token rotated. New URL copied. Update existing KWGT formulas.");
+      } catch (err) {
+        console.error(err);
+        setAndroidWidgetStatus("Failed to rotate token.");
+      }
+    }));
+  }
+
+  if (openBtn) {
+    openBtn.addEventListener("click", async () => {
+      try {
+        const url = await ensureAndroidWidgetUrl({ forceRotate: false });
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch (err) {
+        console.error(err);
+        setAndroidWidgetStatus("Generate URL first.");
+      }
+    });
+  }
+
+  formulaButtons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = String(btn.getAttribute("data-copy-formula") || "");
+      const pathByKind = {
+        today: "today.remaining_today",
+        safe: "safe_to_spend",
+        credit_pct: "credit.pct",
+      };
+      const path = pathByKind[kind];
+      if (!path) return;
+      try {
+        const url = await ensureAndroidWidgetUrl({ forceRotate: false });
+        await copyToClipboard(buildKwgtFormula(url, path));
+        setAndroidWidgetStatus(`Copied formula: ${path}`);
+      } catch (err) {
+        console.error(err);
+        setAndroidWidgetStatus("Failed to copy formula.");
+      }
+    });
+  });
+}
+
 function setActivePlatform(platform) {
   const tabs = Array.from(document.querySelectorAll(".widget-platform-tab"));
   const panes = Array.from(document.querySelectorAll("[data-platform-pane]"));
@@ -251,5 +390,6 @@ function bindPlatformTabs() {
 document.addEventListener("DOMContentLoaded", () => {
   bindPlatformTabs();
   bindWidgetActions();
+  bindAndroidWidgetActions();
   setActivePlatform("ios");
 });

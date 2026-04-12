@@ -4803,6 +4803,79 @@ body.page-account .upcoming-day-card__more{
   gap: 10px;
   background: var(--card);
 }
+
+/* App update modal readability */
+#appUpdatesModal .notif-modal-card{
+  width: min(680px, calc(100% - 24px));
+}
+
+#appUpdatesModal .notif-modal-title{
+  font-size: 22px;
+  font-weight: 900;
+}
+
+#appUpdatesModal .notif-modal-meta{
+  padding-top: 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#appUpdatesModal .notif-modal-body{
+  padding-top: 10px;
+}
+
+#appUpdatesModal .app-update-list{
+  display: grid;
+  gap: 10px;
+}
+
+#appUpdatesModal .app-update-item{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--card) 93%, var(--text) 3%);
+}
+
+#appUpdatesModal .app-update-item__meta{
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+#appUpdatesModal .app-update-item__subject{
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+#appUpdatesModal .app-update-item__bullets{
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+#appUpdatesModal .app-update-item__bullets li{
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px){
+  #appUpdatesModal .notif-modal-title{
+    font-size: 20px;
+  }
+
+  #appUpdatesModal .app-update-item{
+    padding: 9px 10px;
+  }
+
+  #appUpdatesModal .app-update-item__subject,
+  #appUpdatesModal .app-update-item__bullets li{
+    font-size: 13px;
+  }
+}
 /* Optional: remove the right-side detail area completely */
 .notif-detail{ display: none !important; }
 @media (min-width: 860px){

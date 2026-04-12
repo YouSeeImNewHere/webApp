@@ -170,6 +170,32 @@
       }
     }
 
+    function splitSubjectLines(subject) {
+      const s = String(subject || "").replace(/\s+/g, " ").trim();
+      if (!s) return [];
+
+      let parts = s.split(/\s+\|\s+|;\s+/).map((x) => x.trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+
+      parts = s
+        .split(/\s+(?=(?:Added|Fixed|Fix|Removed|Updated|Moved|Made|Improved|Implemented|Refactored|User can now|CSV importer|Budget page|Minor))/gi)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      return parts.length > 1 ? parts : [s];
+    }
+
+    function renderSubjectHtml(subject) {
+      const lines = splitSubjectLines(subject);
+      if (lines.length <= 1) {
+        return `<div class="app-update-item__subject">${escHtml(lines[0] || "Update")}</div>`;
+      }
+      return `
+        <ul class="app-update-item__bullets">
+          ${lines.map((line) => `<li>${escHtml(line)}</li>`).join("")}
+        </ul>
+      `;
+    }
+
     function ensureModal() {
       let root = document.getElementById("appUpdatesModal");
       if (root) return root;
@@ -205,17 +231,20 @@
 
       const safeRows = Array.isArray(rows) ? rows : [];
       if (meta) meta.textContent = `${safeRows.length} update${safeRows.length === 1 ? "" : "s"} since your last visit`;
-      body.innerHTML = safeRows.map((r) => {
-        const subj = escHtml(r?.subject || "Update");
+      body.innerHTML = `
+        <div class="app-update-list">
+          ${safeRows.map((r) => {
         const sid = escHtml(r?.short_id || "");
         const when = escHtml(formatWhen(r?.ts));
         return `
-          <div style="padding:8px 0; border-bottom:1px solid var(--border);">
-            <div style="font-weight:800; line-height:1.35;">${subj}</div>
-            <div style="opacity:.72; font-size:12px; margin-top:4px;">${sid}${when ? ` • ${when}` : ""}</div>
-          </div>
+          <article class="app-update-item">
+            <div class="app-update-item__meta">${sid}${when ? ` • ${when}` : ""}</div>
+            ${renderSubjectHtml(r?.subject)}
+          </article>
         `;
-      }).join("");
+      }).join("")}
+        </div>
+      `;
 
       root.classList.remove("hidden");
       root.setAttribute("aria-hidden", "false");
@@ -233,10 +262,28 @@
       });
     }
 
-    try {
+    async function fetchUpdates() {
       const res = await fetch(`/app/updates${v}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
+      if (!res.ok) {
+        console.warn("app updates fetch failed:", res.status);
+        return null;
+      }
+      return res.json();
+    }
+
+    window.openLatestAppUpdatesModal = async function openLatestAppUpdatesModal() {
+      try {
+        const data = await fetchUpdates();
+        const updates = Array.isArray(data?.updates) ? data.updates : [];
+        if (!updates.length) return;
+        await openModalWithRows([updates[0]]);
+      } catch (_err) {
+        // non-fatal
+      }
+    };
+
+    try {
+      const data = await fetchUpdates();
       const updates = Array.isArray(data?.updates) ? data.updates : [];
       const latestId = String(data?.latest_id || updates?.[0]?.id || data?.build_id || "").trim();
       if (!latestId) return;
@@ -244,18 +291,17 @@
       let lastSeen = "";
       try { lastSeen = String(localStorage.getItem(STORAGE_KEY) || "").trim(); } catch {}
 
-      if (!lastSeen) {
-        try { localStorage.setItem(STORAGE_KEY, latestId); } catch {}
-        return;
-      }
-      if (lastSeen === latestId) return;
-
       let unseen = [];
-      const idx = updates.findIndex((u) => String(u?.id || "") === lastSeen);
-      if (idx >= 0) {
-        unseen = updates.slice(0, idx);
+      if (!lastSeen) {
+        // First run on this browser: still show the latest update so users
+        // always get an initial "what changed" message.
+        unseen = updates.slice(0, Math.min(1, updates.length));
+      } else if (lastSeen !== latestId) {
+        const idx = updates.findIndex((u) => String(u?.id || "") === lastSeen);
+        if (idx >= 0) unseen = updates.slice(0, idx);
+        else unseen = updates.slice(0, Math.min(25, updates.length));
       } else {
-        unseen = updates.slice(0, Math.min(25, updates.length));
+        unseen = [];
       }
 
       if (!unseen.length) {
