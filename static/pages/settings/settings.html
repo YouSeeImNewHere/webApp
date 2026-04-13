@@ -80,28 +80,28 @@
           Tip: tap Customize Home Layout, drag cards/sections around, then press Done.
         </div>
         <div class="settings-muted" id="layoutMsg"></div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">Cache refresh</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Force rebuild and push latest home and widget values into cache now.</div>
+          </div>
+          <button class="settings-btn" id="forceRefreshHomeWidgetBtn" type="button">Cache Refresh</button>
+        </div>
+        <div id="homeWidgetRefreshStatus" class="settings-muted" role="status" aria-live="polite"></div>
       </div>
     </section>
 
-    <section class="settings-section">
+    <section class="settings-section" id="settingsWidgetsSection">
       <h2 class="settings-section-title">Widgets</h2>
       <div class="settings-card">
         <div class="settings-row settings-split-row" style="justify-content:space-between;">
           <div>
             <div style="font-weight:950;">Widget setup</div>
-            <div class="settings-muted" style="margin:4px 0 0 0;">Configure iOS and Android widget workflows on a dedicated page.</div>
+            <div class="settings-muted" id="widgetSetupDescription" style="margin:4px 0 0 0;">Configure iOS and Android widget workflows on a dedicated page.</div>
           </div>
-          <a class="settings-btn primary" href="/widgets">Open Page</a>
+          <a class="settings-btn primary" id="widgetSetupLink" href="/widgets">Open Page</a>
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
-        <div class="settings-row settings-split-row" style="justify-content:space-between;">
-          <div>
-            <div style="font-weight:950;">Home + widget cache refresh</div>
-            <div class="settings-muted" style="margin:4px 0 0 0;">Force rebuild and push latest values into cache now.</div>
-          </div>
-          <button class="settings-btn" id="forceRefreshHomeWidgetBtn" type="button">Force Refresh</button>
-        </div>
-        <div id="homeWidgetRefreshStatus" class="settings-muted" role="status" aria-live="polite"></div>
       </div>
     </section>
 

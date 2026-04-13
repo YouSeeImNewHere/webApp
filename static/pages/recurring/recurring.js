@@ -578,18 +578,198 @@ document.getElementById("includeStale")?.addEventListener("change", () => {
 });
 
 
-async function mergeMerchantPrompt(alias){
-  const canonical = prompt(
-    `Merge merchant:\n\n${alias}\n\nInto canonical merchant (type name exactly as shown):`
-  );
-  if (!canonical) return;
+const __mergeState = {
+  alias: "",
+  selectedKeys: new Set(),
+  choices: [],
+};
 
-  await fetch(
-    `/recurring/merchant-alias?alias=${encodeURIComponent(alias)}&canonical=${encodeURIComponent(canonical)}`,
-    { method: "POST" }
-  );
+function _normMerchantLabel(s){
+  return String(s || "").trim().toUpperCase();
+}
 
-  loadRecurring();
+function _patternMergeKey(p){
+  const cadence = String(p?.cadence || "").trim().toLowerCase();
+  const amt = Number(p?.amount || 0);
+  const sign = amt >= 0 ? 1 : -1;
+  const bucket = Math.round(Math.abs(amt) * 100) / 100;
+  const accountId = Number(p?.account_id ?? -1);
+  let day = 0;
+  try {
+    const ls = String(p?.last_seen || "");
+    if (ls) day = parseISODateLocal(ls).getDate();
+  } catch {}
+  return `${cadence}|${bucket.toFixed(2)}|${sign}|${accountId}|${day}`;
+}
+
+function _findMerchantGroup(alias){
+  const target = String(alias || "").trim().toUpperCase();
+  if (!target) return null;
+  const pools = [window.__mainData, window.__lastData, window.__ignoredData];
+  for (const p of pools) {
+    const rows = Array.isArray(p) ? p : [];
+    const hit = rows.find((g) => String(g?.merchant || "").trim().toUpperCase() === target);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function _collectMergeChoices(alias){
+  const g = _findMerchantGroup(alias);
+  const patterns = Array.isArray(g?.patterns) ? g.patterns : [];
+  const counts = new Map();
+  const rows = patterns
+    .map((p, idx) => {
+      const cadence = String(p?.cadence || "").trim().toLowerCase();
+      if (!cadence || cadence === "irregular" || cadence === "unknown") return null;
+      const key = _patternMergeKey(p);
+      counts.set(cadence, (counts.get(cadence) || 0) + 1);
+      return {
+        idx,
+        key,
+        cadence,
+        amount: Number(p?.amount || 0),
+        last: formatMMDDYY(p?.last_seen || ""),
+        occ: Number(p?.occurrences || 0),
+        accountId: Number(p?.account_id ?? -1),
+      };
+    })
+    .filter(Boolean);
+  const dupCadences = new Set(Array.from(counts.entries()).filter(([, n]) => n > 1).map(([c]) => c));
+  return rows.filter((x) => dupCadences.has(x.cadence));
+}
+
+function ensureMergeModal(){
+  if (document.getElementById("mergeModal")) return;
+
+  const root = document.createElement("div");
+  root.id = "mergeModal";
+  root.className = "occ-modal hidden";
+  root.innerHTML = `
+    <div class="occ-backdrop" data-merge-close></div>
+    <div class="occ-card" role="dialog" aria-modal="true" aria-label="Merge recurring patterns">
+      <div class="occ-head">
+        <div>
+          <div class="occ-title">Merge recurring patterns</div>
+          <div class="occ-sub" id="mergeAliasSub"></div>
+        </div>
+        <button class="occ-close" data-merge-close>&#10005;</button>
+      </div>
+      <div class="occ-body">
+        <div id="mergeChoices" class="merge-choices"></div>
+        <div class="merge-actions">
+          <button id="mergeCancelBtn" type="button">Cancel</button>
+          <button id="mergeConfirmBtn" type="button">Merge</button>
+        </div>
+        <div id="mergeStatus" class="merge-status" aria-live="polite"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const close = () => closeMergeModal();
+  root.querySelectorAll("[data-merge-close]").forEach((el) => el.addEventListener("click", close));
+  root.querySelector("#mergeCancelBtn")?.addEventListener("click", close);
+
+  root.querySelector("#mergeConfirmBtn")?.addEventListener("click", submitMergeSelection);
+}
+
+function closeMergeModal(){
+  document.getElementById("mergeModal")?.classList.add("hidden");
+}
+
+function renderMergeChoices(){
+  const root = document.getElementById("mergeModal");
+  if (!root) return;
+  const list = root.querySelector("#mergeChoices");
+  if (!__mergeState.choices.length) {
+    list.innerHTML = `<div style="opacity:.7; padding:8px 0;">No duplicate recurring patterns found for this merchant.</div>`;
+    root.querySelector("#mergeConfirmBtn").disabled = true;
+    return;
+  }
+
+  list.innerHTML = __mergeState.choices.map((x, idx) => {
+    const id = `mergeChoice_${idx}_${esc(x.key)}`;
+    const checked = __mergeState.selectedKeys.has(x.key) ? "checked" : "";
+    return `
+      <label class="merge-choice" for="${id}">
+        <input id="${id}" type="checkbox" name="mergeChoice" value="${esc(x.key)}" ${checked}>
+        <span class="merge-choice__label">${esc(x.cadence)} · ${money(x.amount)} · ${esc(x.last)}</span>
+        <div class="merge-choice__sub">occurrences: ${x.occ} · account: ${x.accountId}</div>
+      </label>
+    `;
+  }).join("");
+
+  list.querySelectorAll('input[name="mergeChoice"]').forEach((el) => {
+    el.addEventListener("change", (ev) => {
+      const key = String(ev.target?.value || "");
+      if (!key) return;
+      if (ev.target?.checked) __mergeState.selectedKeys.add(key);
+      else __mergeState.selectedKeys.delete(key);
+      root.querySelector("#mergeConfirmBtn").disabled = __mergeState.selectedKeys.size < 2;
+    });
+  });
+
+  root.querySelector("#mergeConfirmBtn").disabled = __mergeState.selectedKeys.size < 2;
+}
+
+async function submitMergeSelection(){
+  const root = document.getElementById("mergeModal");
+  if (!root) return;
+  const status = root.querySelector("#mergeStatus");
+  const btn = root.querySelector("#mergeConfirmBtn");
+  const keys = Array.from(__mergeState.selectedKeys);
+  const alias = String(__mergeState.alias || "").trim();
+
+  if (!alias || keys.length < 2) {
+    if (status) status.textContent = "Select at least 2 patterns to merge.";
+    return;
+  }
+
+  const selectedRows = __mergeState.choices.filter((x) => __mergeState.selectedKeys.has(x.key));
+  const cadenceSet = new Set(selectedRows.map((x) => x.cadence));
+  if (cadenceSet.size > 1) {
+    if (status) status.textContent = "Selected patterns must have the same cadence.";
+    return;
+  }
+
+  btn.disabled = true;
+  if (status) status.textContent = "Merging...";
+  try {
+    const res = await fetch(`/recurring/merge-patterns-selected`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ merchant: alias, pattern_keys: keys }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || out?.ok === false) {
+      throw new Error(out?.error || `HTTP ${res.status}`);
+    }
+    closeMergeModal();
+    await loadRecurring();
+    await loadCalendar();
+  } catch (err) {
+    if (status) status.textContent = `Merge failed: ${err?.message || err}`;
+    btn.disabled = false;
+  }
+}
+
+function mergeMerchantPrompt(alias){
+  ensureMergeModal();
+  const root = document.getElementById("mergeModal");
+  if (!root) return;
+
+  __mergeState.alias = String(alias || "").trim();
+  __mergeState.choices = _collectMergeChoices(__mergeState.alias);
+  __mergeState.selectedKeys = new Set();
+
+  const sub = root.querySelector("#mergeAliasSub");
+  if (sub) sub.textContent = `Merchant: ${_normMerchantLabel(__mergeState.alias)}`;
+  const status = root.querySelector("#mergeStatus");
+  if (status) status.textContent = "";
+
+  root.classList.remove("hidden");
+  renderMergeChoices();
 }
 
 function closeIgnoredModal(){
@@ -645,6 +825,8 @@ async function unignoreMerchant(name){
 
 window.ignoreMerchant = ignoreMerchant;
 window.unignoreMerchant = unignoreMerchant;
+window.ignorePattern = ignorePattern;
+window.mergeMerchantPrompt = mergeMerchantPrompt;
 window.openCalDayModal = openCalDayModal;
 window.closeCalDayModal = closeCalDayModal;
 window.openOccModal = openOccModal;

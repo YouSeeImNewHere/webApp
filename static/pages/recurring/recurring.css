@@ -4,3 +4,88 @@
 .occ-tx--sub { padding: 6px 0; }
 .occ-tx--sub .occ-merchant { font-size: 12px; font-weight: 600; }
 .occ-tx--sub .occ-meta { font-size: 11px; opacity: 0.75; }
+
+.merge-row{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.merge-row label{
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.8;
+}
+
+.merge-row input{
+  height: 34px;
+  border: 1px solid var(--border, rgba(0,0,0,0.16));
+  border-radius: 10px;
+  padding: 0 10px;
+  background: var(--card, #fff);
+  color: var(--text, #111);
+}
+
+.merge-choices{
+  margin-top: 10px;
+  max-height: min(40vh, 280px);
+  overflow: auto;
+  border: 1px solid var(--border, rgba(0,0,0,0.14));
+  border-radius: 12px;
+  padding: 6px;
+  background: var(--card-2, rgba(0,0,0,0.02));
+}
+
+.merge-choice{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.merge-choice:hover{
+  background: rgba(0,0,0,0.05);
+}
+
+.merge-choice.is-disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.merge-choice__label{
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.merge-choice__sub{
+  margin-left: 24px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.merge-note{
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.merge-actions{
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.merge-actions button{
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 0 12px;
+}
+
+.merge-status{
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.8;
+}

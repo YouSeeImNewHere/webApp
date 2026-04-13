@@ -1,6 +1,13 @@
 let _lastWidgetScript = "";
 let _lastAndroidWidgetUrl = "";
 
+function detectClientPlatform() {
+  const ua = String(navigator.userAgent || "");
+  if (/Android/i.test(ua)) return "android";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+  return "desktop";
+}
+
 function money(n) {
   const v = Number(n || 0);
   return v.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -92,7 +99,7 @@ function buildAndroidWidgetUrlFromToken(token) {
   const base = `${window.location.origin}/widget/summary`;
   const qs = new URLSearchParams({
     widget_token: String(token || ""),
-    widget_script_version: "1",
+    widget_script_version: "3",
   });
   return `${base}?${qs.toString()}`;
 }
@@ -104,10 +111,12 @@ function buildKwgtFormula(url, path) {
 function fillAndroidFormulaSamples(url) {
   const today = document.getElementById("androidFormulaToday");
   const safe = document.getElementById("androidFormulaSafe");
+  const daily = document.getElementById("androidFormulaDaily");
   const creditPct = document.getElementById("androidFormulaCreditPct");
-  if (today) today.textContent = buildKwgtFormula(url, "today.remaining_today");
-  if (safe) safe.textContent = buildKwgtFormula(url, "safe_to_spend");
-  if (creditPct) creditPct.textContent = buildKwgtFormula(url, "credit.pct");
+  if (today) today.textContent = buildKwgtFormula(url, ".today.remaining_today");
+  if (safe) safe.textContent = buildKwgtFormula(url, ".safe_to_spend");
+  if (daily) daily.textContent = buildKwgtFormula(url, ".today.daily_limit");
+  if (creditPct) creditPct.textContent = buildKwgtFormula(url, ".credit.pct");
 }
 
 function setAndroidWidgetStatus(msg) {
@@ -340,9 +349,10 @@ function bindAndroidWidgetActions() {
     btn.addEventListener("click", async () => {
       const kind = String(btn.getAttribute("data-copy-formula") || "");
       const pathByKind = {
-        today: "today.remaining_today",
-        safe: "safe_to_spend",
-        credit_pct: "credit.pct",
+        today: ".today.remaining_today",
+        safe: ".safe_to_spend",
+        daily: ".today.daily_limit",
+        credit_pct: ".credit.pct",
       };
       const path = pathByKind[kind];
       if (!path) return;
@@ -387,9 +397,27 @@ function bindPlatformTabs() {
   });
 }
 
+function initPlatformView() {
+  const params = new URLSearchParams(window.location.search);
+  const requested = String(params.get("platform") || "").toLowerCase();
+  const requestedPlatform = requested === "ios" || requested === "android" ? requested : "";
+  const detected = detectClientPlatform();
+  const lockedPlatform = requestedPlatform || (detected === "ios" || detected === "android" ? detected : "");
+
+  if (lockedPlatform) {
+    const switcher = document.getElementById("widgetPlatformSwitcherSection");
+    if (switcher) switcher.style.display = "none";
+    setActivePlatform(lockedPlatform);
+    return lockedPlatform;
+  }
+
+  setActivePlatform("ios");
+  return "";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  bindPlatformTabs();
+  const lockedPlatform = initPlatformView();
+  if (!lockedPlatform) bindPlatformTabs();
   bindWidgetActions();
   bindAndroidWidgetActions();
-  setActivePlatform("ios");
 });

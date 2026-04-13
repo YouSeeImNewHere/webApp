@@ -11,14 +11,14 @@
   <link rel="stylesheet" href="/static/css/base.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/styles/utilities.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
-  <link rel="stylesheet" href="/static/pages/widgets/widgets.css?v={{ BUILD_ID }}&rev=20260223a">
+  <link rel="stylesheet" href="/static/pages/widgets/widgets.css?v={{ BUILD_ID }}&rev=20260412a">
   <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
 
 <body class="widgets-page" data-page-title="Widgets">
   <div class="settings-wrap widgets-wrap">
-    <section class="settings-section">
+    <section class="settings-section" id="widgetPlatformSwitcherSection">
       <details class="widget-mobile-fold" open>
       <summary>Widget Platforms</summary>
       <div class="widget-mobile-body">
@@ -132,15 +132,19 @@
 
           <div class="android-widget-formulas">
             <div class="android-widget-formula-row">
-              <code id="androidFormulaToday">$wg("URL", json, "today.remaining_today")$</code>
+              <code id="androidFormulaToday">$wg("URL", json, ".today.remaining_today")$</code>
               <button type="button" class="settings-btn" data-copy-formula="today">Copy</button>
             </div>
             <div class="android-widget-formula-row">
-              <code id="androidFormulaSafe">$wg("URL", json, "safe_to_spend")$</code>
+              <code id="androidFormulaSafe">$wg("URL", json, ".safe_to_spend")$</code>
               <button type="button" class="settings-btn" data-copy-formula="safe">Copy</button>
             </div>
             <div class="android-widget-formula-row">
-              <code id="androidFormulaCreditPct">$wg("URL", json, "credit.pct")$</code>
+              <code id="androidFormulaDaily">$wg("URL", json, ".today.daily_limit")$</code>
+              <button type="button" class="settings-btn" data-copy-formula="daily">Copy</button>
+            </div>
+            <div class="android-widget-formula-row">
+              <code id="androidFormulaCreditPct">$wg("URL", json, ".credit.pct")$</code>
               <button type="button" class="settings-btn" data-copy-formula="credit_pct">Copy</button>
             </div>
           </div>
@@ -155,7 +159,7 @@
 
   <div id="sharedChrome"></div>
 
-  <script src="/static/pages/widgets/widgets.js?v={{ BUILD_ID }}&rev=20260223a" defer></script>
+  <script src="/static/pages/widgets/widgets.js?v={{ BUILD_ID }}&rev=20260412a" defer></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 </body>
 </html>

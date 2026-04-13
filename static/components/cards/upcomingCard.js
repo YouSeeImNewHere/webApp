@@ -117,6 +117,20 @@ function dedupeEvents(evts) {
   return out;
 }
 
+function isBottomTabsPointerEvent(e) {
+  const x = Number(e?.clientX);
+  const y = Number(e?.clientY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+
+  const tabs = document.querySelector("#bottomTabs .mobile-tabs, .mobile-tabs");
+  if (!tabs) return false;
+
+  const rect = tabs.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
   function buildCardHTML() {
     return `
       <section aria-label="Upcoming transactions" style="margin-top:14px;">
@@ -288,6 +302,7 @@ function dedupeEvents(evts) {
 
     // Direct handlers (primary path)
     cell.addEventListener("click", (e) => {
+      if (isBottomTabsPointerEvent(e)) return;
       e.stopPropagation();
       openDayModal(dateObj, items);
     });
@@ -350,6 +365,7 @@ function dedupeEvents(evts) {
 
     // Fallback delegated handlers: survives wrappers/DOM churn on Home.
     body.addEventListener("click", (e) => {
+      if (isBottomTabsPointerEvent(e)) return;
       const card = e.target?.closest?.(".upcoming-day-card");
       if (!card || !body.contains(card)) return;
       const iso = String(card.dataset.iso || "");

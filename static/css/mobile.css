@@ -325,6 +325,9 @@
     right: 0;
     bottom: env(safe-area-inset-bottom);
     transform: none;
+    z-index: 20000;
+    isolation: isolate;
+    pointer-events: auto;
 
     height: 64px;
     width: auto;
@@ -338,6 +341,22 @@
     gap: 10px;
   }
 
+  #bottomTabs{
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: env(safe-area-inset-bottom);
+    z-index: 20000;
+    pointer-events: none;
+  }
+
+  #bottomTabs .mobile-tabs{
+    position: relative;
+    bottom: 0 !important;
+    z-index: 1;
+    pointer-events: auto;
+  }
+
   .mobile-tab{
     border: 1px solid rgba(0,0,0,0.14);
     border-radius: 14px;
@@ -345,6 +364,9 @@
     font-size: 12px;
     padding: 0;
     justify-content: center;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .mobile-tab.active{

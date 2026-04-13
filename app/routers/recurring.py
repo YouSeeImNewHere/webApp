@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import json
 import calendar
+import uuid
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -526,6 +527,263 @@ def _is_income_pattern_event(
 
     return False
 
+
+def _ensure_recurring_pattern_merges_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recurring_pattern_merges (
+            tenant_id BIGINT NOT NULL,
+            merchant_norm TEXT NOT NULL,
+            cadence TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (tenant_id, merchant_norm, cadence)
+        )
+        """
+    )
+
+
+def _get_recurring_pattern_merges(tenant_id: int | None) -> dict[str, set[str]]:
+    if tenant_id is None:
+        return {}
+    with with_db_cursor() as (_conn, cur):
+        _ensure_recurring_pattern_merges_table(cur)
+        cur.execute(
+            """
+            SELECT merchant_norm, cadence
+            FROM recurring_pattern_merges
+            WHERE tenant_id = %s
+            """,
+            (int(tenant_id),),
+        )
+        rows = cur.fetchall() or []
+    out: dict[str, set[str]] = {}
+    for r in rows or []:
+        merchant = _norm_merchant(r.get("merchant_norm") or "").upper()
+        cadence = str(r.get("cadence") or "").strip().lower()
+        if not merchant or not cadence:
+            continue
+        out.setdefault(merchant, set()).add(cadence)
+    return out
+
+
+def _ensure_recurring_pattern_merge_groups_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recurring_pattern_merge_groups (
+            tenant_id BIGINT NOT NULL,
+            merchant_norm TEXT NOT NULL,
+            group_id TEXT NOT NULL,
+            pattern_key TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (tenant_id, merchant_norm, group_id, pattern_key)
+        )
+        """
+    )
+
+
+def _pattern_merge_key(p: dict) -> str:
+    cadence = str(p.get("cadence") or "").strip().lower()
+    amt = float(p.get("amount") or 0.0)
+    bucket = float(_amount_bucket(amt))
+    sign = 1 if amt >= 0 else -1
+    account_id = int(p.get("account_id") or -1)
+    day = 0
+    try:
+        ls = str(p.get("last_seen") or "")
+        if ls:
+            day = datetime.strptime(ls, "%Y-%m-%d").date().day
+    except Exception:
+        day = 0
+    return f"{cadence}|{bucket:.2f}|{sign}|{account_id}|{day}"
+
+
+def _get_pattern_merge_groups(tenant_id: int | None) -> dict[str, list[set[str]]]:
+    if tenant_id is None:
+        return {}
+    with with_db_cursor() as (_conn, cur):
+        _ensure_recurring_pattern_merge_groups_table(cur)
+        cur.execute(
+            """
+            SELECT merchant_norm, group_id, pattern_key
+            FROM recurring_pattern_merge_groups
+            WHERE tenant_id = %s
+            ORDER BY merchant_norm, group_id, pattern_key
+            """,
+            (int(tenant_id),),
+        )
+        rows = cur.fetchall() or []
+    out: dict[str, dict[str, set[str]]] = {}
+    for r in rows:
+        merchant = _norm_merchant(r.get("merchant_norm") or "").upper()
+        gid = str(r.get("group_id") or "").strip()
+        pkey = str(r.get("pattern_key") or "").strip()
+        if not merchant or not gid or not pkey:
+            continue
+        out.setdefault(merchant, {}).setdefault(gid, set()).add(pkey)
+    return {m: list(groups.values()) for m, groups in out.items()}
+
+
+def _dedupe_tx_rows(rows: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for t in rows or []:
+        key = "|".join(
+            [
+                str(t.get("id") or ""),
+                str(t.get("date") or ""),
+                str(t.get("amount") or ""),
+                str(t.get("account_id") or ""),
+                str(t.get("merchant") or ""),
+            ]
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+    out.sort(key=lambda x: str(x.get("date") or ""))
+    return out
+
+
+def _merge_patterns_same_cadence(patterns: list[dict], cadence: str) -> list[dict]:
+    if not patterns:
+        return patterns
+
+    idxs = [i for i, p in enumerate(patterns) if str(p.get("cadence") or "").strip().lower() == cadence]
+    if len(idxs) <= 1:
+        return patterns
+
+    parts = [patterns[i] for i in idxs]
+    merged_tx = _dedupe_tx_rows([t for p in parts for t in (p.get("tx") or []) if isinstance(t, dict)])
+    occ = sum(int(p.get("occurrences") or 0) for p in parts)
+
+    if merged_tx:
+        try:
+            amt = sum(float(t.get("amount") or 0.0) for t in merged_tx) / max(1, len(merged_tx))
+        except Exception:
+            amt = float(parts[0].get("amount") or 0.0)
+    else:
+        num = sum(float(p.get("amount") or 0.0) * max(1, int(p.get("occurrences") or 0)) for p in parts)
+        den = sum(max(1, int(p.get("occurrences") or 0)) for p in parts) or 1
+        amt = num / den
+
+    last_seen = max((str(p.get("last_seen") or "") for p in parts), default="")
+    acct_ids = {int(p.get("account_id")) for p in parts if p.get("account_id") is not None}
+    account_id = acct_ids.pop() if len(acct_ids) == 1 else -1
+    kind = next((str(p.get("kind") or "") for p in parts if str(p.get("kind") or "").strip()), "")
+
+    merged = {
+        "cadence": cadence,
+        "amount": round(float(amt), 2),
+        "last_seen": last_seen,
+        "occurrences": occ,
+        "account_id": account_id,
+        "tx": merged_tx,
+        "kind": kind,
+    }
+
+    first = idxs[0]
+    idx_set = set(idxs)
+    out: list[dict] = []
+    for i, p in enumerate(patterns):
+        if i == first:
+            out.append(merged)
+        elif i in idx_set:
+            continue
+        else:
+            out.append(p)
+    return out
+
+
+def _merge_pattern_indices(patterns: list[dict], idxs: list[int]) -> list[dict]:
+    if not patterns or len(idxs) <= 1:
+        return patterns
+    idxs = sorted(set(i for i in idxs if 0 <= i < len(patterns)))
+    if len(idxs) <= 1:
+        return patterns
+
+    parts = [patterns[i] for i in idxs]
+    merged_tx = _dedupe_tx_rows([t for p in parts for t in (p.get("tx") or []) if isinstance(t, dict)])
+    occ = sum(int(p.get("occurrences") or 0) for p in parts)
+
+    if merged_tx:
+        try:
+            amt = sum(float(t.get("amount") or 0.0) for t in merged_tx) / max(1, len(merged_tx))
+        except Exception:
+            amt = float(parts[0].get("amount") or 0.0)
+    else:
+        num = sum(float(p.get("amount") or 0.0) * max(1, int(p.get("occurrences") or 0)) for p in parts)
+        den = sum(max(1, int(p.get("occurrences") or 0)) for p in parts) or 1
+        amt = num / den
+
+    last_seen = max((str(p.get("last_seen") or "") for p in parts), default="")
+    acct_ids = {int(p.get("account_id")) for p in parts if p.get("account_id") is not None}
+    account_id = acct_ids.pop() if len(acct_ids) == 1 else -1
+    cadence = next((str(p.get("cadence") or "") for p in parts if str(p.get("cadence") or "").strip()), "")
+    kind = next((str(p.get("kind") or "") for p in parts if str(p.get("kind") or "").strip()), "")
+
+    merged = {
+        "cadence": cadence,
+        "amount": round(float(amt), 2),
+        "last_seen": last_seen,
+        "occurrences": occ,
+        "account_id": account_id,
+        "tx": merged_tx,
+        "kind": kind,
+    }
+
+    first = idxs[0]
+    idx_set = set(idxs)
+    out: list[dict] = []
+    for i, p in enumerate(patterns):
+        if i == first:
+            out.append(merged)
+        elif i in idx_set:
+            continue
+        else:
+            out.append(p)
+    return out
+
+
+def _apply_pattern_merge_overrides(groups: list[dict], tenant_id: int | None) -> list[dict]:
+    overrides = _get_recurring_pattern_merges(tenant_id)
+    selected_groups = _get_pattern_merge_groups(tenant_id)
+    if not overrides:
+        overrides = {}
+    if not selected_groups and not overrides:
+        return groups
+
+    out: list[dict] = []
+    for g in groups or []:
+        merchant = _norm_merchant(g.get("merchant") or "").upper()
+        patterns = list(g.get("patterns") or [])
+        wanted = overrides.get(merchant, set())
+        if wanted and patterns:
+            for cadence in sorted(wanted):
+                patterns = _merge_patterns_same_cadence(patterns, cadence)
+
+        merge_sets = selected_groups.get(merchant, [])
+        if merge_sets and patterns:
+            used: set[int] = set()
+            for want_keys in merge_sets:
+                idxs: list[int] = []
+                for i, p in enumerate(patterns):
+                    if i in used:
+                        continue
+                    if _pattern_merge_key(p) in want_keys:
+                        idxs.append(i)
+                if len(idxs) <= 1:
+                    continue
+                cadences = {str((patterns[i] or {}).get("cadence") or "").strip().lower() for i in idxs}
+                if len(cadences) > 1:
+                    continue
+                patterns = _merge_pattern_indices(patterns, idxs)
+                used = set()
+
+        g2 = dict(g)
+        g2["patterns"] = patterns
+        out.append(g2)
+    return out
+
 # -----------------------------
 # Endpoints
 # -----------------------------
@@ -533,6 +791,7 @@ def _is_income_pattern_event(
 def recurring(min_occ: int = 3, include_stale: bool = False):
     tid = _require_tenant_id()
     groups = get_recurring(min_occ=min_occ, include_stale=include_stale, tenant_id=tid)
+    groups = _apply_pattern_merge_overrides(groups, tid)
 
     # decorate transfer patterns with "From A to B"
     for g in (groups or []):
@@ -572,6 +831,68 @@ def recurring(min_occ: int = 3, include_stale: bool = False):
             g["merchant_display"] = labels[0]
 
     return groups
+
+
+@router.post("/recurring/merge-patterns")
+def merge_patterns(merchant: str, cadence: str):
+    tid = _require_tenant_id()
+    merchant_norm = _norm_merchant(merchant).upper()
+    cadence_norm = str(cadence or "").strip().lower()
+    allowed = {"weekly", "biweekly", "monthly", "quarterly", "yearly"}
+    if not merchant_norm:
+        return {"ok": False, "error": "merchant required"}
+    if cadence_norm not in allowed:
+        return {"ok": False, "error": f"cadence must be one of {sorted(allowed)}"}
+
+    with with_db_cursor() as (conn, cur):
+        _ensure_recurring_pattern_merges_table(cur)
+        cur.execute(
+            """
+            INSERT INTO recurring_pattern_merges (tenant_id, merchant_norm, cadence)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (tenant_id, merchant_norm, cadence)
+            DO UPDATE SET created_at = NOW()
+            """,
+            (int(tid), merchant_norm, cadence_norm),
+        )
+        conn.commit()
+    bump_home_snapshot_version(tid)
+    return {"ok": True}
+
+
+class MergeSelectedPatternsRequest(BaseModel):
+    merchant: str
+    pattern_keys: list[str]
+
+
+@router.post("/recurring/merge-patterns-selected")
+def merge_selected_patterns(payload: MergeSelectedPatternsRequest):
+    tid = _require_tenant_id()
+    merchant_norm = _norm_merchant(payload.merchant).upper()
+    keys = [str(x or "").strip() for x in (payload.pattern_keys or []) if str(x or "").strip()]
+    if not merchant_norm:
+        return {"ok": False, "error": "merchant required"}
+    if len(keys) < 2:
+        return {"ok": False, "error": "select at least 2 patterns"}
+    keys = sorted(set(keys))
+    cadence_parts = {k.split("|", 1)[0].strip().lower() for k in keys if "|" in k}
+    if len(cadence_parts) > 1:
+        return {"ok": False, "error": "selected patterns must have the same cadence"}
+
+    group_id = uuid.uuid4().hex
+    with with_db_cursor() as (conn, cur):
+        _ensure_recurring_pattern_merge_groups_table(cur)
+        for k in keys:
+            cur.execute(
+                """
+                INSERT INTO recurring_pattern_merge_groups (tenant_id, merchant_norm, group_id, pattern_key)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (int(tid), merchant_norm, group_id, k),
+            )
+        conn.commit()
+    bump_home_snapshot_version(tid)
+    return {"ok": True, "group_id": group_id}
 
 @router.get("/recurring/ignore")
 def get_recurring_ignores():
@@ -747,6 +1068,7 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
     month_end = date(year, month, _last_day_of_month(year, month))
 
     groups = get_recurring(min_occ=min_occ, include_stale=include_stale, tenant_id=tid)
+    groups = _apply_pattern_merge_overrides(groups, tid)
 
     events = []
     for g in (groups or []):

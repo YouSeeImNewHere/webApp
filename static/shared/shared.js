@@ -150,6 +150,7 @@
     window.__appUpdateSummaryInstalled = true;
 
     const STORAGE_KEY = "app_updates_last_seen_id";
+    const SESSION_KEY = "app_updates_last_seen_id_session";
 
     function escHtml(s) {
       return String(s ?? "")
@@ -221,7 +222,24 @@
       return root;
     }
 
-    function openModalWithRows(rows) {
+    function getLastSeenId() {
+      let local = "";
+      let session = "";
+      const mem = String(window.__appUpdatesLastSeenMem || "").trim();
+      try { local = String(localStorage.getItem(STORAGE_KEY) || "").trim(); } catch {}
+      try { session = String(sessionStorage.getItem(SESSION_KEY) || "").trim(); } catch {}
+      return local || session || mem;
+    }
+
+    function markSeen(id) {
+      const v = String(id || "").trim();
+      if (!v) return;
+      window.__appUpdatesLastSeenMem = v;
+      try { localStorage.setItem(STORAGE_KEY, v); } catch {}
+      try { sessionStorage.setItem(SESSION_KEY, v); } catch {}
+    }
+
+    function openModalWithRows(rows, latestIdForDismiss) {
       const root = ensureModal();
       const meta = document.getElementById("appUpdatesModalMeta");
       const body = document.getElementById("appUpdatesModalBody");
@@ -251,6 +269,10 @@
 
       return new Promise((resolve) => {
         const finish = () => {
+          if (latestIdForDismiss) {
+            window.__appUpdatesDismissedLatestId = String(latestIdForDismiss).trim();
+            markSeen(latestIdForDismiss);
+          }
           root.classList.add("hidden");
           root.setAttribute("aria-hidden", "true");
           closeBtn?.removeEventListener("click", finish);
@@ -288,8 +310,7 @@
       const latestId = String(data?.latest_id || updates?.[0]?.id || data?.build_id || "").trim();
       if (!latestId) return;
 
-      let lastSeen = "";
-      try { lastSeen = String(localStorage.getItem(STORAGE_KEY) || "").trim(); } catch {}
+      let lastSeen = getLastSeenId();
 
       let unseen = [];
       if (!lastSeen) {
@@ -305,14 +326,20 @@
       }
 
       if (!unseen.length) {
-        try { localStorage.setItem(STORAGE_KEY, latestId); } catch {}
+        markSeen(latestId);
+        return;
+      }
+
+      // If already dismissed in this tab/session, don't reopen in a loop.
+      if (String(window.__appUpdatesDismissedLatestId || "").trim() === latestId) {
+        markSeen(latestId);
         return;
       }
 
       // Show oldest->newest so stacked updates read like a changelog.
       unseen = unseen.slice().reverse();
-      await openModalWithRows(unseen);
-      try { localStorage.setItem(STORAGE_KEY, latestId); } catch {}
+      await openModalWithRows(unseen, latestId);
+      markSeen(latestId);
     } catch (_err) {
       // Non-fatal: app should continue even if updates feed is unavailable.
     }
@@ -333,6 +360,10 @@
       return tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable;
     };
 
+    const isBottomTabsTarget = (el) => {
+      return !!el?.closest?.("#bottomTabs, .mobile-tabs, .mobile-tab");
+    };
+
     let startY = 0;
     let pullPx = 0;
     let pulling = false;
@@ -340,6 +371,7 @@
     const THRESHOLD_PX = 90;
     const MAX_PULL_PX = 140;
     const DRAG_RESISTANCE = 0.55;
+    const START_DRAG_PX = 12;
 
     const indicator = document.createElement("div");
     indicator.id = "mobilePullRefreshIndicator";
@@ -410,6 +442,7 @@
         if (!canStartFromTop()) return;
         if (!e.touches || e.touches.length !== 1) return;
         if (isInteractiveTarget(e.target)) return;
+        if (isBottomTabsTarget(e.target)) return;
         startY = e.touches[0].clientY;
         pulling = true;
         triggered = false;
@@ -425,6 +458,7 @@
         if (!e.touches || e.touches.length !== 1) return;
         const dy = e.touches[0].clientY - startY;
         if (dy <= 0) return;
+        if (dy < START_DRAG_PX) return;
         if (!canStartFromTop()) {
           pulling = false;
           resetPullVisual(false);

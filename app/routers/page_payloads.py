@@ -186,6 +186,8 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
             "limit_sum": round(limit_sum, 2),
         },
         "safe_to_spend": mb["safe_to_spend"],
+        # Backward-compatible root alias for widget formulas.
+        "daily_limit": dl.get("baseline", 0.0),
         "month": mb,
         "cost_per_day": dl.get("baseline", 0.0),
         "days_left": mb.get("days_left", 0),
@@ -194,8 +196,15 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
             "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
             "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
         },
+        # Backward-compatible alias for older clients that expect "accounts.*".
+        "accounts": {
+            "checking": round(float((bt.get("checking") or {}).get("total") or 0), 2),
+            "savings": round(float((bt.get("savings") or {}).get("total") or 0), 2),
+        },
         "today": {
             "baseline": dl.get("baseline", 0.0),
+            # Alias "daily_limit" to today's baseline to match UI wording.
+            "daily_limit": dl.get("baseline", 0.0),
             "remaining_today": dl.get("remaining_today", 0.0),
             "spent_today_free": dl.get("spent_today_free", 0.0),
             "day": dl.get("day"),

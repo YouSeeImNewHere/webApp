@@ -1,5 +1,24 @@
 // static/txInspect.js
 (function () {
+  let _scrollLockY = 0;
+  let _isScrollLocked = false;
+
+  function lockBodyScroll() {
+    if (_isScrollLocked) return;
+    _scrollLockY = window.scrollY || window.pageYOffset || 0;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    _isScrollLocked = true;
+  }
+
+  function unlockBodyScroll() {
+    if (!_isScrollLocked) return;
+    document.documentElement.style.overflow = "";
+    document.body.style.overflow = "";
+    window.scrollTo(0, _scrollLockY || 0);
+    _isScrollLocked = false;
+  }
+
   function esc(s) {
     return String(s ?? "")
       .replaceAll("&", "&amp;")
@@ -25,7 +44,7 @@
     modal.innerHTML = `
       <div class="tx-inspect-header">
         <div class="tx-inspect-title">Transaction</div>
-        <button class="tx-inspect-close" type="button" aria-label="Close">✕</button>
+        <button class="tx-inspect-close" type="button" aria-label="Close">&times;</button>
       </div>
       <div class="tx-inspect-body">
         <div class="tx-inspect-grid" id="txInspectGrid"></div>
@@ -36,6 +55,7 @@
     function close() {
       backdrop.style.display = "none";
       modal.style.display = "none";
+      unlockBodyScroll();
     }
 
     backdrop.addEventListener("click", close);
@@ -79,7 +99,6 @@
     );
 
     rows.forEach((row) => {
-      // icon
       try {
         const iconWrap = row.querySelector(".tx-icon-wrap");
         if (iconWrap && typeof window.categoryIconHTML === "function") {
@@ -87,7 +106,6 @@
         }
       } catch {}
 
-      // category label (usually last .tx-sub)
       const subs = row.querySelectorAll(".tx-sub");
       if (subs && subs.length) {
         const catEl = subs[subs.length - 1];
@@ -135,7 +153,12 @@
     const v = Number(n || 0);
     if (typeof window.money === "function") return window.money(v);
     try {
-      return v.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return v.toLocaleString(undefined, {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
     } catch {
       return String(v);
     }
@@ -160,74 +183,114 @@
     const grid = document.getElementById("txInspectGrid");
     if (!grid) return;
 
-    const preferred = [
-      "id","status",
-      "purchaseDate","postedDate","dateISO","time",
-      "merchant","amount",
-      "bank","card","accountType","account_id",
-      "category","category_rule_id","category_rule_pattern","subcategory",
-      "where","source",
-      "transfer_peer",
-      "notes"
+    const normalizeKey = (k) => String(k || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const isEmpty = (v) => v == null || String(v).trim() === "";
+
+    const grouped = new Map();
+    Object.entries(obj || {}).forEach(([key, value]) => {
+      const norm = normalizeKey(key);
+      if (!grouped.has(norm)) grouped.set(norm, []);
+      grouped.get(norm).push({ key, value });
+    });
+
+    const read = (...aliases) => {
+      for (const alias of aliases) {
+        const arr = grouped.get(normalizeKey(alias));
+        if (!arr || !arr.length) continue;
+        const nonEmpty = arr.find((x) => !isEmpty(x.value));
+        return nonEmpty ? nonEmpty.value : arr[0].value;
+      }
+      return "";
+    };
+
+    const summaryNorms = new Set([
+      "merchant", "amount", "status", "time",
+      "purchasedate", "posteddate", "bank", "card", "accounttype", "category",
+    ]);
+
+    const rawAmount = read("amount");
+    const summaryRows = [
+      ["merchant", read("merchant")],
+      ["amount", rawAmount === "" || rawAmount == null ? "" : _formatMoney(rawAmount)],
+      ["status", read("status")],
+      ["time", read("time")],
+      ["purchase date", read("purchaseDate", "purchasedate")],
+      ["posted date", read("postedDate", "posteddate")],
+      ["bank", read("bank")],
+      ["card", read("card")],
+      ["account type", read("accountType", "account_type")],
     ];
 
-    const keys = new Set(Object.keys(obj || {}));
-    const ordered = [];
-    preferred.forEach(k => { if (keys.has(k)) { ordered.push(k); keys.delete(k); } });
-    [...keys].sort().forEach(k => ordered.push(k));
+    const currentCategory = String(read("category") ?? "");
+    const currentStatus = String(read("status") ?? "").trim().toLowerCase() || "posted";
+    const currentPosted = String(read("postedDate", "posteddate") ?? "").trim();
+    const useCategoryList = !window.matchMedia("(max-width: 900px)").matches;
+    const categoryListAttr = useCategoryList ? `list="txInspectCategoryOptions"` : "";
 
-    grid.innerHTML = ordered.map((k) => {
-      const v = obj[k];
+    const extraFields = [];
+    grouped.forEach((arr, norm) => {
+      if (norm === "tenantid") return;
+      if (summaryNorms.has(norm)) return;
+      const picked = arr.find((x) => !isEmpty(x.value)) || arr[0];
+      if (!picked) return;
+      extraFields.push({
+        key: picked.key,
+        value: picked.value,
+      });
+    });
+    extraFields.sort((a, b) => a.key.localeCompare(b.key));
 
-      if (k === "category") {
-        const cur = (v ?? "");
-        return `
-          <div class="tx-k">${esc(k)}</div>
-          <div class="tx-v">
-            <div class="tx-inline-edit" style="gap:10px;">
-              <input
-                id="txInspectCategoryInput"
-                class="tx-edit-input"
-                type="text"
-                list="txInspectCategoryOptions"
-                placeholder="Set category"
-                value="${esc(cur)}"
-                autocomplete="off"
-              />
-              <button id="txInspectCategorySave" class="tx-edit-btn" type="button">Save</button>
-              <button
-                id="txInspectDelete"
-                class="tx-edit-btn"
-                type="button"
-                style="background:#ff3b30;color:#fff;"
-              >Delete</button>
-            </div>
-            <div id="txInspectCategoryStatus" class="tx-edit-status" aria-live="polite"></div>
-          </div>
-        `;
-      }
+    const extraHtml = extraFields
+      .map(({ key, value }) => {
+        const val = (value === null || value === undefined || value === "") ? "—" : esc(value);
+        return `<div class="tx-tech-k">${esc(key)}</div><div class="tx-tech-v">${val}</div>`;
+      })
+      .join("");
 
-      const val = (v === null || v === undefined || v === "") ? "—" : esc(v);
-      return `<div class="tx-k">${esc(k)}</div><div class="tx-v">${val}</div>`;
-    }).join("");
+    grid.innerHTML = `
+      ${summaryRows
+        .map(([k, v]) => {
+          const val = (v === null || v === undefined || v === "") ? "—" : esc(v);
+          return `<div class="tx-k">${esc(k)}</div><div class="tx-v">${val}</div>`;
+        })
+        .join("")}
 
-    const currentStatus = String(obj?.status ?? "").trim();
-    const currentPosted = String(obj?.postedDate ?? "").trim();
-    grid.innerHTML += `
+      <div class="tx-k">category</div>
+      <div class="tx-v">
+        <div class="tx-inline-edit tx-inline-edit--category">
+          <input
+            id="txInspectCategoryInput"
+            class="tx-edit-input"
+            type="text"
+            ${categoryListAttr}
+            placeholder="Set category"
+            value="${esc(currentCategory)}"
+            autocomplete="off"
+          />
+          <button id="txInspectCategorySave" class="tx-edit-btn" type="button">Save</button>
+        </div>
+        <div id="txInspectCategoryStatus" class="tx-edit-status" aria-live="polite"></div>
+      </div>
+
       <div class="tx-k">edit</div>
       <div class="tx-v">
-        <button id="txInspectMetaEditToggle" class="tx-edit-btn" type="button">Edit status/date</button>
-        <button id="txInspectInvertAmount" class="tx-edit-btn" type="button" style="margin-left:8px;">Invert amount</button>
-        <div id="txInspectMetaEditPanel" style="display:none; margin-top:10px;">
-          <div class="tx-inline-edit" style="gap:10px; flex-wrap:wrap;">
-            <label style="display:flex; align-items:center; gap:6px;">
+        <div class="tx-inline-edit tx-inline-edit--toolbar tx-inline-edit--toolbar-fixed">
+          <button id="txInspectMetaEditToggle" class="tx-edit-btn" type="button">Edit status/date</button>
+          <button id="txInspectInvertAmount" class="tx-edit-btn" type="button">Invert amount</button>
+          <button id="txInspectDelete" class="tx-edit-btn tx-edit-btn--danger" type="button">Delete</button>
+        </div>
+        <div id="txInspectDeleteStatus" class="tx-edit-status tx-edit-status--danger" aria-live="polite"></div>
+
+        <div id="txInspectMetaEditPanel" class="tx-edit-panel" style="display:none;">
+          <div class="tx-inline-edit tx-inline-edit--meta">
+            <label class="tx-inline-field">
               <span>Status</span>
               <select id="txInspectStatusInput" class="tx-edit-input">
-                <option value="posted"${currentStatus.toLowerCase() === "posted" ? " selected" : ""}>posted</option>
-                <option value="pending"${currentStatus.toLowerCase() === "pending" ? " selected" : ""}>pending</option>
+                <option value="posted"${currentStatus === "posted" ? " selected" : ""}>posted</option>
+                <option value="pending"${currentStatus === "pending" ? " selected" : ""}>pending</option>
               </select>
             </label>
-            <label style="display:flex; align-items:center; gap:6px;">
+            <label class="tx-inline-field">
               <span>Posted Date</span>
               <input
                 id="txInspectPostedDateInput"
@@ -238,12 +301,23 @@
                 value="${esc(currentPosted)}"
               />
             </label>
+          </div>
+          <div class="tx-inline-edit tx-inline-edit--toolbar">
             <button id="txInspectMetaSave" class="tx-edit-btn" type="button">Save</button>
-            <button id="txInspectMetaCancel" class="tx-edit-btn" type="button">Cancel</button>
+            <button id="txInspectMetaCancel" class="tx-edit-btn tx-edit-btn--quiet" type="button">Cancel</button>
           </div>
           <div id="txInspectMetaStatus" class="tx-edit-status" aria-live="polite"></div>
         </div>
         <div id="txInspectAmountStatus" class="tx-edit-status" aria-live="polite"></div>
+      </div>
+
+      <div class="tx-k">details</div>
+      <div class="tx-v">
+        <section class="tx-tech-details">
+          <div class="tx-tech-grid">
+            ${extraHtml || `<div class="tx-tech-v">No additional fields.</div>`}
+          </div>
+        </section>
       </div>
     `;
 
@@ -256,6 +330,7 @@
     const metaSave = document.getElementById("txInspectMetaSave");
     const metaCancel = document.getElementById("txInspectMetaCancel");
     const metaStatus = document.getElementById("txInspectMetaStatus");
+    const deleteStatus = document.getElementById("txInspectDeleteStatus");
     const amountStatus = document.getElementById("txInspectAmountStatus");
     const statusInput = document.getElementById("txInspectStatusInput");
     const postedInput = document.getElementById("txInspectPostedDateInput");
@@ -266,7 +341,7 @@
         const next = (input.value || "").trim();
         btn.disabled = true;
         input.disabled = true;
-        if (status) status.textContent = "Saving…";
+        if (status) status.textContent = "Saving...";
 
         try {
           const res = await fetch(`/transaction/${encodeURIComponent(txId)}/category`, {
@@ -289,20 +364,25 @@
         }
       };
     }
+
     if (metaToggle && metaPanel && statusInput && postedInput) {
       metaToggle.onclick = () => {
-        metaPanel.style.display = "block";
-        metaToggle.style.display = "none";
+        const opening = metaPanel.style.display !== "block";
+        metaPanel.style.display = opening ? "block" : "none";
+        metaToggle.textContent = opening ? "Close edit" : "Edit status/date";
       };
+
       if (metaCancel) {
         metaCancel.onclick = () => {
           statusInput.value = (obj?.status == null ? "" : String(obj.status)).toLowerCase() || "posted";
           postedInput.value = obj?.postedDate == null ? "" : String(obj.postedDate);
           if (metaStatus) metaStatus.textContent = "";
+          if (deleteStatus) deleteStatus.textContent = "";
           metaPanel.style.display = "none";
-          metaToggle.style.display = "";
+          metaToggle.textContent = "Edit status/date";
         };
       }
+
       if (metaSave) {
         metaSave.onclick = async () => {
           const nextStatus = String(statusInput.value || "posted").toLowerCase();
@@ -339,6 +419,7 @@
         };
       }
     }
+
     if (invertBtn) {
       invertBtn.onclick = async () => {
         const ok = confirm("Invert this transaction amount?");
@@ -363,13 +444,14 @@
         }
       };
     }
+
     if (delBtn) {
       delBtn.onclick = async () => {
         const ok = confirm("Delete this transaction? This cannot be undone.");
         if (!ok) return;
 
         delBtn.disabled = true;
-        if (status) status.textContent = "Deleting…";
+        if (deleteStatus) deleteStatus.textContent = "Deleting...";
 
         try {
           const res = await fetch(`/transaction/${encodeURIComponent(txId)}`, {
@@ -379,19 +461,17 @@
 
           removeAnyVisibleTxRows(txId);
 
-          // close modal
           const backdrop = document.getElementById("txInspectBackdrop");
           const modal = document.getElementById("txInspectModal");
           if (backdrop) backdrop.style.display = "none";
           if (modal) modal.style.display = "none";
         } catch (e) {
           console.error(e);
-          if (status) status.textContent = "Failed to delete";
+          if (deleteStatus) deleteStatus.textContent = "Failed to delete";
           delBtn.disabled = false;
         }
       };
     }
-
   }
 
   async function openTxInspect(txId) {
@@ -402,8 +482,9 @@
     const grid = document.getElementById("txInspectGrid");
 
     backdrop.style.display = "block";
-    modal.style.display = "block";
-    grid.innerHTML = `<div class="tx-inspect-loading">Loading…</div>`;
+    modal.style.display = "flex";
+    lockBodyScroll();
+    grid.innerHTML = `<div class="tx-inspect-loading">Loading...</div>`;
 
     const [cats, res] = await Promise.all([
       getCategories(),
@@ -431,7 +512,11 @@
       const txId = row?.dataset?.txId;
       if (!txId) return;
 
-      try { await openTxInspect(txId); } catch (err) { console.error(err); }
+      try {
+        await openTxInspect(txId);
+      } catch (err) {
+        console.error(err);
+      }
     });
   }
 

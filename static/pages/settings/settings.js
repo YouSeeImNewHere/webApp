@@ -3,6 +3,33 @@ let _lastWidgetScript = "";
 let _notifSaveTimer = null;
 const NON_ADMIN_PREVIEW_KEY = "settings_view_non_admin_preview";
 
+function detectClientPlatform() {
+  const ua = String(navigator.userAgent || "");
+  if (/Android/i.test(ua)) return "android";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+  return "desktop";
+}
+
+function applyDeviceAwareWidgetUi() {
+  const platform = detectClientPlatform();
+  const widgetsSection = document.getElementById("settingsWidgetsSection");
+  const widgetLink = document.getElementById("widgetSetupLink");
+  const widgetDesc = document.getElementById("widgetSetupDescription");
+  if (!widgetsSection || !widgetLink) return;
+
+  if (platform === "desktop") {
+    widgetsSection.style.display = "none";
+    return;
+  }
+
+  widgetLink.setAttribute("href", `/widgets?platform=${platform}`);
+  if (widgetDesc) {
+    widgetDesc.textContent = platform === "ios"
+      ? "Open iPhone widget setup."
+      : "Open Android widget setup.";
+  }
+}
+
 function isNonAdminPreviewEnabled() {
   return localStorage.getItem(NON_ADMIN_PREVIEW_KEY) === "1";
 }
@@ -765,6 +792,8 @@ async function loadAdminVisibility() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  applyDeviceAwareWidgetUi();
+
   const btn = document.getElementById("resetHomeLayoutBtn");
   if (btn && window.LayoutStore) {
     btn.addEventListener("click", async () => {
