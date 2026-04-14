@@ -151,6 +151,7 @@
 
     const STORAGE_KEY = "app_updates_last_seen_id";
     const SESSION_KEY = "app_updates_last_seen_id_session";
+    const AUTO_SUPPRESS_SESSION_KEY = "app_updates_auto_suppressed_session";
 
     function escHtml(s) {
       return String(s ?? "")
@@ -228,7 +229,9 @@
       const mem = String(window.__appUpdatesLastSeenMem || "").trim();
       try { local = String(localStorage.getItem(STORAGE_KEY) || "").trim(); } catch {}
       try { session = String(sessionStorage.getItem(SESSION_KEY) || "").trim(); } catch {}
-      return local || session || mem;
+      // Prefer in-memory/session values for this tab so a stale localStorage
+      // value cannot force repeated reopen loops.
+      return mem || session || local;
     }
 
     function markSeen(id) {
@@ -239,7 +242,20 @@
       try { sessionStorage.setItem(SESSION_KEY, v); } catch {}
     }
 
+    function isAutoSuppressedForSession() {
+      try {
+        return String(sessionStorage.getItem(AUTO_SUPPRESS_SESSION_KEY) || "").trim() === "1";
+      } catch {
+        return false;
+      }
+    }
+
+    function suppressAutoForSession() {
+      try { sessionStorage.setItem(AUTO_SUPPRESS_SESSION_KEY, "1"); } catch {}
+    }
+
     function openModalWithRows(rows, latestIdForDismiss) {
+      if (window.__appUpdatesModalOpen) return Promise.resolve();
       const root = ensureModal();
       const meta = document.getElementById("appUpdatesModalMeta");
       const body = document.getElementById("appUpdatesModalBody");
@@ -266,21 +282,34 @@
 
       root.classList.remove("hidden");
       root.setAttribute("aria-hidden", "false");
+      window.__appUpdatesModalOpen = true;
 
       return new Promise((resolve) => {
         const finish = () => {
           if (latestIdForDismiss) {
             window.__appUpdatesDismissedLatestId = String(latestIdForDismiss).trim();
             markSeen(latestIdForDismiss);
+            suppressAutoForSession();
           }
           root.classList.add("hidden");
           root.setAttribute("aria-hidden", "true");
+          window.__appUpdatesModalOpen = false;
           closeBtn?.removeEventListener("click", finish);
           okBtn.removeEventListener("click", finish);
+          root.removeEventListener("click", onBackdropClick);
+          document.removeEventListener("keydown", onKeydown);
           resolve();
+        };
+        const onBackdropClick = (e) => {
+          if (e.target === root) finish();
+        };
+        const onKeydown = (e) => {
+          if (e.key === "Escape") finish();
         };
         closeBtn?.addEventListener("click", finish);
         okBtn.addEventListener("click", finish);
+        root.addEventListener("click", onBackdropClick);
+        document.addEventListener("keydown", onKeydown);
       });
     }
 
@@ -311,6 +340,10 @@
       if (!latestId) return;
 
       let lastSeen = getLastSeenId();
+      if (isAutoSuppressedForSession()) {
+        markSeen(latestId);
+        return;
+      }
 
       let unseen = [];
       if (!lastSeen) {

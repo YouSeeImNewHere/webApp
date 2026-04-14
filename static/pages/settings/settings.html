@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/static/components/modal/modal.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/components/toast/toast.css?v={{ BUILD_ID }}">
   <link rel="stylesheet" href="/static/css/mobile.css?v={{ BUILD_ID }}">
-  <link rel="stylesheet" href="/static/pages/settings/settings.css?v={{ BUILD_ID }}&rev=20260219b">
+  <link rel="stylesheet" href="/static/pages/settings/settings.css?v={{ BUILD_ID }}&rev=20260414b">
   <script src="/static/shared/theme.js?v={{ BUILD_ID }}"></script>
   <script src="/static/shared/globalLoading.js?v={{ BUILD_ID }}"></script>
 </head>
@@ -24,7 +24,7 @@
       <h2 class="settings-section-title">Appearance</h2>
       <div class="settings-card">
         <div class="settings-row" style="align-items:flex-end;">
-          <label style="display:flex; flex-direction:column; gap:6px; font-weight:800; font-size:12px; opacity:.85;">
+          <label class="settings-field-label">
             Color scheme
             <select id="themeSelect" style="padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--btn-bg); color:var(--btn-text); font-weight:800;">
               <option value="system">System</option>
@@ -142,7 +142,7 @@
           <div class="backfill-controls">
             <label class="backfill-field">
               <span>Lookback days</span>
-              <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="60" step="1" value="7">
+              <input id="emailParserBackfillDays" class="settings-input" type="number" min="1" max="99" step="1" value="7">
             </label>
             <label class="backfill-check">
               <input id="emailParserIncludeProcessed" type="checkbox" checked>
@@ -203,7 +203,7 @@
   <div id="sharedChrome"></div>
 
   <script src="/static/shared/layout.js?v={{ BUILD_ID }}"></script>
-  <script src="/static/pages/settings/settings.js?v={{ BUILD_ID }}&rev=20260221a" defer></script>
+  <script src="/static/pages/settings/settings.js?v={{ BUILD_ID }}&rev=20260414a" defer></script>
   <script src="/static/shared/shared.js?v={{ BUILD_ID }}" defer></script>
 </body>
 </html>

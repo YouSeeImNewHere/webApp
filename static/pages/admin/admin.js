@@ -92,6 +92,22 @@ function shortWhen(iso) {
   }
 }
 
+function emailParseTenantFilter() {
+  const raw = String(byId("emailParseTenantSelect")?.value || "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function formatEmailSent(whenRaw) {
+  const raw = String(whenRaw || "").trim();
+  if (!raw) return "-";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString();
+}
+
 async function loadAdminErrorFeed() {
   const box = byId("adminErrorList");
   if (!box) return;
@@ -125,8 +141,68 @@ async function loadAdminErrorFeed() {
   }
 }
 
+async function loadEmailParseLogs() {
+  const box = byId("emailParseLogList");
+  if (!box) return;
+  box.innerHTML = "";
+  let data;
+  try {
+    const tenantId = emailParseTenantFilter();
+    const q = tenantId ? `&tenant_id=${encodeURIComponent(tenantId)}` : "";
+    data = await apiGetJson(`/admin/email-parse-events?limit=200${q}`, { cache: "no-store" });
+  } catch (err) {
+    box.textContent = "Failed to load email parser logs.";
+    return;
+  }
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) {
+    box.textContent = "No parser logs captured yet.";
+    return;
+  }
+  for (const it of items) {
+    const row = document.createElement("div");
+    row.className = "admin-parse";
+    const isServerLine = String(it.status || "").trim().toLowerCase() === "server_log";
+    const subject = String(it.subject || "").trim() || "(no subject)";
+    const reason = String(it.reason || "").trim() || (it.matched ? "matched" : "skipped");
+    const parserLabel = it.parser_draft_id
+      ? `draft=${it.parser_draft_id}${it.parser_slot ? ` (${it.parser_slot})` : ""}`
+      : "parser=none";
+    const txBits = [
+      it.account_label || (it.account_id ? `Account ${it.account_id}` : ""),
+      it.merchant ? `merchant=${it.merchant}` : "",
+      (it.amount !== null && it.amount !== undefined) ? `amount=${it.amount}` : "",
+    ].filter(Boolean).join("  ");
+    if (isServerLine) {
+      row.innerHTML = `
+      <div class="admin-error__head">
+        <span>${escHtml(it.run_source || "server")}  LOG</span>
+        <span>${escHtml(shortWhen(it.created_at))}</span>
+      </div>
+      <div class="admin-parse__subject">${escHtml(reason || "(log line)")}</div>
+      <div class="admin-error__meta">User: ${escHtml(it.user_email || "-")}  Tenant: ${escHtml(String(it.tenant_id ?? "-"))}</div>
+    `;
+      box.appendChild(row);
+      continue;
+    }
+    row.innerHTML = `
+      <div class="admin-error__head">
+        <span>${escHtml(it.matched ? "MATCHED" : "SKIPPED")}  ${escHtml(reason)}</span>
+        <span>${escHtml(shortWhen(it.created_at))}</span>
+      </div>
+      <div class="admin-parse__subject">${escHtml(subject)}</div>
+      <div class="admin-error__meta">Email sent: ${escHtml(formatEmailSent(it.received_at))}</div>
+      <div class="admin-error__meta">Source: ${escHtml(it.run_source || "-")}  ${escHtml(parserLabel)}  inserted=${it.inserted ? "yes" : "no"} notified=${it.notified ? "yes" : "no"}  imap_id=${escHtml(it.imap_id || "-")}</div>
+      <div class="admin-error__meta">Sender: ${escHtml(it.sender || "-")}  User: ${escHtml(it.user_email || "-")}  Tenant: ${escHtml(String(it.tenant_id ?? "-"))}</div>
+      <div class="admin-error__meta">${escHtml(txBits || "No extracted transaction details.")}</div>
+    `;
+    box.appendChild(row);
+  }
+}
+
 async function loadTenants() {
   const sel = byId("tenantSelect");
+  const emailSel = byId("emailParseTenantSelect");
   if (!sel) return;
   let data;
   try {
@@ -137,6 +213,17 @@ async function loadTenants() {
   }
   TENANTS = Array.isArray(data?.items) ? data.items : [];
   sel.innerHTML = "";
+  if (emailSel) {
+    const prev = String(emailSel.value || "");
+    emailSel.innerHTML = `<option value="">All tenants</option>`;
+    for (const t of TENANTS) {
+      const opt = document.createElement("option");
+      opt.value = String(t.id);
+      opt.textContent = `${t.id} | ${t.slug} | ${t.name || ""}`.trim();
+      emailSel.appendChild(opt);
+    }
+    emailSel.value = prev;
+  }
   for (const t of TENANTS) {
     const opt = document.createElement("option");
     opt.value = String(t.id);
@@ -201,6 +288,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setStatus("Refreshing...");
     await loadPendingUsers();
     await loadAdminErrorFeed();
+    await loadEmailParseLogs();
     await loadTenants();
     setStatus("Refreshed.");
   });
@@ -220,6 +308,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       setStatus("Failed clearing admin notifications.");
     }
   });
+  byId("refreshEmailParseLogsBtn")?.addEventListener("click", async () => {
+    setStatus("Refreshing email parser logs...");
+    await loadEmailParseLogs();
+    setStatus("Refreshed.");
+  });
+  byId("emailParseTenantSelect")?.addEventListener("change", async () => {
+    await loadEmailParseLogs();
+  });
+  byId("clearEmailParseLogsBtn")?.addEventListener("click", async () => {
+    const tenantId = emailParseTenantFilter();
+    const scope = tenantId ? ` for tenant ${tenantId}` : "";
+    const ok = confirm(`Clear email parser logs${scope || " for all tenants"}?`);
+    if (!ok) return;
+    try {
+      await apiPostJson("/admin/email-parse-events/clear", {
+        tenant_id: tenantId,
+      });
+      await loadEmailParseLogs();
+      setStatus(`Email parser logs cleared${scope}.`);
+    } catch (err) {
+      setStatus("Failed clearing email parser logs.");
+    }
+  });
   byId("loadFootprintBtn")?.addEventListener("click", () => loadFootprint());
   byId("dryRunBtn")?.addEventListener("click", () => runPurge(true));
   byId("purgeBtn")?.addEventListener("click", () => runPurge(false));
@@ -228,5 +339,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadPendingUsers();
   await loadAdminErrorFeed();
   await loadTenants();
+  await loadEmailParseLogs();
   setStatus("Ready.");
 });

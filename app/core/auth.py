@@ -506,8 +506,27 @@ def _gmail_history_message_ids(access_token: str, start_history_id: str):
 
 
 def _trigger_event_processing(include_processed: bool = False, google_email: str | None = None):
+    def _push_log(message: str, *, email_for_scope: str | None = None, tenant_for_scope: int | None = None):
+        print(message)
+        try:
+            from app.core.email_parse_events import log_email_parse_server_line
+
+            log_email_parse_server_line(
+                message=message,
+                tenant_id=(int(tenant_for_scope) if tenant_for_scope is not None else None),
+                user_email=(str(email_for_scope or "").strip().lower() or None),
+                run_source="gmail_push",
+                context={"component": "app.core.auth"},
+            )
+        except Exception:
+            pass
+
     if not _PUSH_PROCESS_LOCK.acquire(blocking=False):
-        print("gmail push: processing already in progress; skipping duplicate trigger")
+        _push_log(
+            "gmail push: processing already in progress; skipping duplicate trigger",
+            email_for_scope=google_email,
+            tenant_for_scope=(_tenant_id_for_email(google_email) if google_email else None),
+        )
         return False
 
     def _run():
@@ -516,13 +535,21 @@ def _trigger_event_processing(include_processed: bool = False, google_email: str
 
             run_email = _normalize_email(google_email) or None
             tid = _tenant_id_for_email(run_email) if run_email else None
-            print(f"gmail push: starting emailFetch.run email={run_email or '-'} tenant_id={tid if tid is not None else '-'}")
+            _push_log(
+                f"gmail push: starting emailFetch.run email={run_email or '-'} tenant_id={tid if tid is not None else '-'}",
+                email_for_scope=run_email,
+                tenant_for_scope=tid,
+            )
             emailFetch.run(
                 include_processed=include_processed,
                 rules_user_email=run_email,
             )
         except Exception as e:
-            print("gmail push: emailFetch.run failed:", repr(e))
+            _push_log(
+                f"gmail push: emailFetch.run failed: {repr(e)}",
+                email_for_scope=google_email,
+                tenant_for_scope=(_tenant_id_for_email(google_email) if google_email else None),
+            )
         finally:
             _PUSH_PROCESS_LOCK.release()
 
@@ -884,6 +911,21 @@ def gmail_fetch_now(request: Request):
 # ---------------------------------------------------------
 @router.post("/gmail/push")
 async def gmail_push(request: Request):
+    def _push_log(message: str, *, email_for_scope: str | None = None, tenant_for_scope: int | None = None):
+        print(message)
+        try:
+            from app.core.email_parse_events import log_email_parse_server_line
+
+            log_email_parse_server_line(
+                message=message,
+                tenant_id=(int(tenant_for_scope) if tenant_for_scope is not None else None),
+                user_email=(str(email_for_scope or "").strip().lower() or None),
+                run_source="gmail_push",
+                context={"component": "app.core.auth"},
+            )
+        except Exception:
+            pass
+
     try:
         envelope = await request.json()
     except Exception:
@@ -904,10 +946,10 @@ async def gmail_push(request: Request):
     email = payload.get("emailAddress")
     tenant_id = _tenant_id_for_email(email)
 
-    print("Gmail push received")
-    print("History ID:", history_id)
-    print("Email:", email)
-    print("Tenant ID:", tenant_id if tenant_id is not None else "-")
+    _push_log("Gmail push received", email_for_scope=email, tenant_for_scope=tenant_id)
+    _push_log(f"History ID: {history_id}", email_for_scope=email, tenant_for_scope=tenant_id)
+    _push_log(f"Email: {email}", email_for_scope=email, tenant_for_scope=tenant_id)
+    _push_log(f"Tenant ID: {tenant_id if tenant_id is not None else '-'}", email_for_scope=email, tenant_for_scope=tenant_id)
 
     if not history_id:
         return {"status": "missing_history_id"}
@@ -921,13 +963,21 @@ async def gmail_push(request: Request):
                 last_error=last_error,
             )
         except Exception as e:
-            print("gmail push: failed to save push state:", repr(e))
+            _push_log(
+                f"gmail push: failed to save push state: {repr(e)}",
+                email_for_scope=google_email,
+                tenant_for_scope=(_tenant_id_for_email(google_email) if google_email else None),
+            )
 
     try:
         access_token, err = _refresh_google_access_token_if_needed(email)
     except Exception as e:
         msg = f"token_refresh_failed:{type(e).__name__}"
-        print("gmail push: transient failure during token refresh:", repr(e))
+        _push_log(
+            f"gmail push: transient failure during token refresh: {repr(e)}",
+            email_for_scope=email,
+            tenant_for_scope=tenant_id,
+        )
         _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=msg)
         return {"status": "transient_error", "error": msg}
 
@@ -939,7 +989,11 @@ async def gmail_push(request: Request):
         start_history_id = _get_last_history_id(email)
     except Exception as e:
         msg = f"history_checkpoint_read_failed:{type(e).__name__}"
-        print("gmail push: transient failure reading checkpoint:", repr(e))
+        _push_log(
+            f"gmail push: transient failure reading checkpoint: {repr(e)}",
+            email_for_scope=email,
+            tenant_for_scope=tenant_id,
+        )
         _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=msg)
         return {"status": "transient_error", "error": msg}
 
@@ -967,7 +1021,11 @@ async def gmail_push(request: Request):
     )
 
     if message_ids:
-        print(f"gmail push: {len(message_ids)} new message(s) since history {start_history_id}")
+        _push_log(
+            f"gmail push: {len(message_ids)} new message(s) since history {start_history_id}",
+            email_for_scope=email,
+            tenant_for_scope=tenant_id,
+        )
         _trigger_event_processing(google_email=email)
 
     return {

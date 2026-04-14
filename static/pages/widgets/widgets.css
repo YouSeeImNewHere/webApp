@@ -332,6 +332,12 @@
   opacity: 0.8;
 }
 
+.widget-manual-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 #widgetManualCopyText {
   width: 100%;
   min-height: 44vh;
@@ -370,6 +376,10 @@
 
   .widget-manual-copy-card {
     max-height: 86vh;
+  }
+
+  .widget-manual-copy-actions .settings-btn {
+    width: 100%;
   }
 
   .android-widget-formula-row {

@@ -1,6 +1,5 @@
 let _monthBudgetSnapshot = null;
 let _lastWidgetScript = "";
-let _notifSaveTimer = null;
 const NON_ADMIN_PREVIEW_KEY = "settings_view_non_admin_preview";
 
 function detectClientPlatform() {
@@ -510,9 +509,20 @@ function bindEmailParserBackfill() {
     return { userMessage: detail || `HTTP ${statusCode || "error"}`, oauthRequired: false };
   }
 
+  daysEl.addEventListener("input", () => {
+    const digits = String(daysEl.value || "").replace(/\D/g, "").slice(0, 2);
+    daysEl.value = digits;
+  });
+
+  daysEl.addEventListener("blur", () => {
+    const daysRaw = Number(daysEl.value || 7);
+    const days = Math.max(1, Math.min(99, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 7));
+    daysEl.value = String(days);
+  });
+
   btn.addEventListener("click", async () => {
     const daysRaw = Number(daysEl.value || 7);
-    const days = Math.max(1, Math.min(60, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 7));
+    const days = Math.max(1, Math.min(99, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 7));
     daysEl.value = String(days);
     const includeProcessed = !!includeEl.checked;
     btn.disabled = true;
@@ -597,104 +607,6 @@ async function loadInitialSetupProgress() {
     if (subEl) subEl.textContent = "Could not load setup completion status.";
   } finally {
     if (timer) window.clearTimeout(timer);
-  }
-}
-
-function setNotifStatus(message, isError = false) {
-  const el = document.getElementById("notifSettingsStatus");
-  if (!el) return;
-  el.textContent = String(message || "");
-  el.style.opacity = isError ? "1" : "";
-}
-
-function setNotifInputsDisabled(disabled) {
-  const ids = ["notifCreditUsageToggle", "notifCreditUsageTotalToggle", "notifBudgetOverToggle"];
-  for (const id of ids) {
-    const el = document.getElementById(id);
-    if (el) el.disabled = !!disabled;
-  }
-}
-
-function readNotifPrefsFromUi() {
-  return {
-    credit_usage: !!document.getElementById("notifCreditUsageToggle")?.checked,
-    credit_usage_total: !!document.getElementById("notifCreditUsageTotalToggle")?.checked,
-    budget_over: !!document.getElementById("notifBudgetOverToggle")?.checked,
-  };
-}
-
-function applyNotifPrefsToUi(prefs) {
-  const p = prefs || {};
-  const creditUsageEl = document.getElementById("notifCreditUsageToggle");
-  const creditUsageTotalEl = document.getElementById("notifCreditUsageTotalToggle");
-  const budgetOverEl = document.getElementById("notifBudgetOverToggle");
-  // Missing keys should default to enabled; only explicit false disables.
-  if (creditUsageEl) creditUsageEl.checked = p.credit_usage !== false;
-  if (creditUsageTotalEl) creditUsageTotalEl.checked = p.credit_usage_total !== false;
-  if (budgetOverEl) budgetOverEl.checked = p.budget_over !== false;
-}
-
-function applyPushoverKeyToUi(userKey) {
-  const el = document.getElementById("settingsPushoverUserKey");
-  if (!el) return;
-  const key = String(userKey || "").trim();
-  el.textContent = key || "Not set";
-}
-
-async function loadNotificationSettings() {
-  setNotifStatus("Loading...");
-  setNotifInputsDisabled(true);
-  try {
-    const res = await fetch("/settings/notifications", { cache: "no-store", credentials: "same-origin" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const out = await res.json();
-    applyNotifPrefsToUi(out.prefs || {});
-    applyPushoverKeyToUi(out.pushover_user_key || "");
-    setNotifStatus("");
-  } catch (_) {
-    setNotifStatus("Failed to load notification settings.", true);
-  } finally {
-    setNotifInputsDisabled(false);
-  }
-}
-
-async function saveNotificationSettings() {
-  const payload = readNotifPrefsFromUi();
-  setNotifInputsDisabled(true);
-  setNotifStatus("Saving...");
-  try {
-    const res = await fetch("/settings/notifications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const out = await res.json().catch(() => ({}));
-    applyNotifPrefsToUi(out.prefs || payload);
-    setNotifStatus("Saved.");
-    setTimeout(() => setNotifStatus(""), 1200);
-  } catch (_) {
-    setNotifStatus("Failed to save notification settings.", true);
-  } finally {
-    setNotifInputsDisabled(false);
-  }
-}
-
-function queueNotificationSettingsSave() {
-  if (_notifSaveTimer) {
-    window.clearTimeout(_notifSaveTimer);
-    _notifSaveTimer = null;
-  }
-  saveNotificationSettings().catch(() => {});
-}
-
-function bindNotificationSettings() {
-  const ids = ["notifCreditUsageToggle", "notifCreditUsageTotalToggle", "notifBudgetOverToggle"];
-  for (const id of ids) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    el.addEventListener("change", () => queueNotificationSettingsSave());
   }
 }
 

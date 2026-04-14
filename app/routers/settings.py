@@ -58,6 +58,7 @@ class EmailParserBackfillIn(BaseModel):
     max_emails: int = 2000
 
 class NotificationPrefsIn(BaseModel):
+    disable_all: Optional[bool] = None
     credit_usage: Optional[bool] = None
     credit_usage_total: Optional[bool] = None
     budget_over: Optional[bool] = None
@@ -72,6 +73,7 @@ class NotificationPrefsIn(BaseModel):
     cron_error: Optional[bool] = None
 
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
+    "disable_all": False,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
@@ -665,7 +667,7 @@ def refresh_home_widget_cache(request: Request):
 
 @router.post("/settings/email-parser/run")
 def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
-    _, session_email = _require_approved_session_user(request)
+    tenant_id, session_email = _require_approved_session_user(request)
     oauth_email = get_connected_google_email(session_email)
     if oauth_email and oauth_email != session_email:
         raise HTTPException(
@@ -682,6 +684,7 @@ def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
             include_processed=include_processed,
             max_emails=max_emails,
             rules_user_email=session_email,
+            tenant_id=int(tenant_id),
         )
         return result
     except HTTPException:

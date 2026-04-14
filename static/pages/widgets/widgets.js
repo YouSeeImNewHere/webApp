@@ -23,22 +23,38 @@ async function copyToClipboard(text) {
   if (!val) throw new Error("empty_text");
 
   if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(val);
-    return;
+    try {
+      await navigator.clipboard.writeText(val);
+      return;
+    } catch (_) {
+      // Fall through to legacy selection-based copy path.
+    }
   }
 
   const ta = document.createElement("textarea");
   ta.value = val;
   ta.setAttribute("readonly", "readonly");
   ta.style.position = "fixed";
-  ta.style.top = "-1000px";
-  ta.style.left = "-1000px";
+  ta.style.top = "12px";
+  ta.style.left = "12px";
+  ta.style.width = "1px";
+  ta.style.height = "1px";
+  ta.style.opacity = "0.01";
   document.body.appendChild(ta);
   ta.focus();
   ta.select();
+  ta.setSelectionRange(0, val.length);
   const ok = document.execCommand("copy");
   document.body.removeChild(ta);
   if (!ok) throw new Error("clipboard_copy_failed");
+}
+
+function selectManualCopyText() {
+  const ta = document.getElementById("widgetManualCopyText");
+  if (!ta) return;
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
 }
 
 function openManualCopySheet(text) {
@@ -53,26 +69,52 @@ function openManualCopySheet(text) {
     sheet.innerHTML = `
       <div class="widget-manual-copy-card">
         <div class="widget-manual-copy-title">Manual Copy (iPhone)</div>
-        <div class="widget-manual-copy-sub">Press and hold inside the text, then tap Select All and Copy.</div>
+        <div class="widget-manual-copy-sub">If auto-copy fails, tap Select All, then Copy.</div>
         <textarea id="widgetManualCopyText" readonly></textarea>
-        <div class="settings-row">
+        <div class="widget-manual-copy-actions">
+          <button type="button" class="settings-btn primary" id="widgetManualCopySelectAllBtn">Select All</button>
+          <button type="button" class="settings-btn" id="widgetManualCopyTryCopyBtn">Try Copy</button>
           <button type="button" class="settings-btn" id="widgetManualCopyCloseBtn">Close</button>
         </div>
+        <div id="widgetManualCopyStatus" class="settings-muted"></div>
       </div>
     `;
     document.body.appendChild(sheet);
     const closeBtn = sheet.querySelector("#widgetManualCopyCloseBtn");
+    const selectBtn = sheet.querySelector("#widgetManualCopySelectAllBtn");
+    const tryCopyBtn = sheet.querySelector("#widgetManualCopyTryCopyBtn");
+    const statusEl = sheet.querySelector("#widgetManualCopyStatus");
     if (closeBtn) {
       closeBtn.addEventListener("click", () => sheet.classList.remove("open"));
+    }
+    if (selectBtn) {
+      selectBtn.addEventListener("click", () => {
+        selectManualCopyText();
+        if (statusEl) statusEl.textContent = "Text selected.";
+      });
+    }
+    if (tryCopyBtn) {
+      tryCopyBtn.addEventListener("click", async () => {
+        const val = String(sheet.querySelector("#widgetManualCopyText")?.value || "");
+        if (!val) return;
+        try {
+          await copyToClipboard(val);
+          if (statusEl) statusEl.textContent = "Copied.";
+        } catch (_) {
+          selectManualCopyText();
+          if (statusEl) statusEl.textContent = "Copy blocked. Text selected for manual copy.";
+        }
+      });
     }
   }
 
   const ta = sheet.querySelector("#widgetManualCopyText");
+  const statusEl = sheet.querySelector("#widgetManualCopyStatus");
   if (ta) {
     ta.value = script;
-    ta.focus();
-    ta.setSelectionRange(0, Math.min(script.length, 65535));
+    selectManualCopyText();
   }
+  if (statusEl) statusEl.textContent = "";
   sheet.classList.add("open");
 }
 
@@ -268,16 +310,19 @@ function bindWidgetActions() {
   if (!copyBtn) return;
   copyBtn.addEventListener("click", async () => {
     copyBtn.disabled = true;
-    if (statusEl) statusEl.textContent = "Generating code...";
+    if (statusEl) statusEl.textContent = "Preparing code...";
     try {
-      const script = await fetchWidgetScript();
+      let script = _lastWidgetScript;
+      if (!script) script = await fetchWidgetScript();
       await copyToClipboard(script);
       if (statusEl) statusEl.textContent = "Copied. Paste into Scriptable as a new script.";
+      // Refresh token/script in the background for the next copy without blocking user gesture copy.
+      fetchWidgetScript().catch(() => {});
     } catch (_) {
       try {
         const fallbackScript = _lastWidgetScript || await fetchWidgetScript();
         openManualCopySheet(fallbackScript);
-        if (statusEl) statusEl.textContent = "iPhone blocked clipboard. Manual copy sheet opened.";
+        if (statusEl) statusEl.textContent = "Clipboard was blocked. Manual copy tools opened.";
       } catch (_) {
         if (statusEl) statusEl.textContent = "Failed to prepare widget code.";
       }

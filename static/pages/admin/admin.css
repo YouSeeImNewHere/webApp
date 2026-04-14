@@ -56,6 +56,11 @@
   gap: 8px;
 }
 
+.admin-select--sm {
+  min-width: 200px;
+  max-width: 320px;
+}
+
 .admin-user {
   border: 1px solid var(--border, #d8dce6);
   border-radius: 10px;
@@ -73,6 +78,21 @@
   display: grid;
   gap: 6px;
   background: rgba(0, 0, 0, 0.02);
+}
+
+.admin-parse {
+  border: 1px solid var(--border, #d8dce6);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  background: rgba(20, 85, 60, 0.06);
+}
+
+.admin-parse__subject {
+  font-size: 13px;
+  font-weight: 800;
+  word-break: break-word;
 }
 
 .admin-error__head {

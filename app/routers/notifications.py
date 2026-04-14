@@ -15,6 +15,7 @@ from db import with_db_cursor, query_db
 router = APIRouter()
 
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
+    "disable_all": False,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
@@ -91,6 +92,8 @@ def _notification_prefs_for_tenant(tenant_id: int | None) -> Dict[str, bool]:
 
 def _notification_kind_enabled(kind: str, tenant_id: int | None) -> bool:
     prefs = _notification_prefs_for_tenant(tenant_id)
+    if bool(prefs.get("disable_all")):
+        return False
     if kind not in prefs:
         return False
     return bool(prefs.get(kind))

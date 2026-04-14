@@ -12,6 +12,10 @@ from app.core.admin_error_events import (
     clear_admin_error_events,
     log_admin_error_event,
 )
+from app.core.email_parse_events import (
+    list_email_parse_events,
+    clear_email_parse_events,
+)
 from app.core.tenancy import current_tenant_id
 from db import with_db_cursor, query_db
 
@@ -36,6 +40,11 @@ class ClientErrorBody(BaseModel):
     request_method: str | None = None
     status_code: int | None = None
     user_agent: str | None = None
+
+
+class EmailParseEventsClearBody(BaseModel):
+    tenant_id: int | None = None
+    user_email: str | None = None
 
 
 def _is_owner_request(request: Request) -> bool:
@@ -253,6 +262,59 @@ def admin_error_notifications(request: Request, limit: int = 200):
 def admin_error_notifications_clear(request: Request):
     _require_owner(request)
     deleted = clear_admin_error_events()
+    return {"ok": True, "deleted": int(deleted)}
+
+
+@router.get("/admin/email-parse-events")
+def admin_email_parse_events(
+    request: Request,
+    limit: int = 200,
+    tenant_id: int | None = None,
+    user_email: str | None = None,
+):
+    _require_owner(request)
+    rows = list_email_parse_events(
+        limit=int(limit),
+        tenant_id=(int(tenant_id) if tenant_id is not None else None),
+        user_email=(str(user_email or "").strip().lower() or None),
+    )
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        items.append(
+            {
+                "id": int(r.get("id") or 0),
+                "created_at": (r["created_at"].isoformat() if r.get("created_at") else None),
+                "tenant_id": (int(r["tenant_id"]) if r.get("tenant_id") is not None else None),
+                "user_email": r.get("user_email"),
+                "run_source": r.get("run_source"),
+                "imap_id": r.get("imap_id"),
+                "sender": r.get("sender"),
+                "subject": r.get("subject"),
+                "received_at": r.get("received_at"),
+                "matched": bool(r.get("matched")),
+                "status": r.get("status"),
+                "reason": r.get("reason"),
+                "inserted": bool(r.get("inserted")),
+                "notified": bool(r.get("notified")),
+                "parser_draft_id": (int(r["parser_draft_id"]) if r.get("parser_draft_id") is not None else None),
+                "parser_slot": r.get("parser_slot"),
+                "account_id": (int(r["account_id"]) if r.get("account_id") is not None else None),
+                "account_label": r.get("account_label"),
+                "amount": (float(r["amount"]) if r.get("amount") is not None else None),
+                "merchant": r.get("merchant"),
+                "context": (r.get("context_json") if isinstance(r.get("context_json"), dict) else {}),
+            }
+        )
+    return {"ok": True, "items": items}
+
+
+@router.post("/admin/email-parse-events/clear")
+def admin_email_parse_events_clear(request: Request, body: EmailParseEventsClearBody):
+    _require_owner(request)
+    deleted = clear_email_parse_events(
+        tenant_id=(int(body.tenant_id) if body.tenant_id is not None else None),
+        user_email=(str(body.user_email or "").strip().lower() or None),
+    )
     return {"ok": True, "deleted": int(deleted)}
 
 

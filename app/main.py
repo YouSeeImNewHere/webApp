@@ -24,6 +24,7 @@ from app.core.admin_error_events import (
     ensure_admin_error_events_table_pg,
     log_admin_error_event,
 )
+from app.core.email_parse_events import ensure_email_parse_events_table_pg
 
 # Routers
 from app.routers import (
@@ -228,6 +229,7 @@ def create_app() -> FastAPI:
         ensure_account_totals_cache_pg()
         ensure_home_snapshot_cache_pg()
         ensure_admin_error_events_table_pg()
+        ensure_email_parse_events_table_pg()
         initialize_tenancy()
         prime_widget_tokens_cache_from_db()
         prime_widget_cache_from_db()

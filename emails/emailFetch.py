@@ -4,6 +4,7 @@ from email.header import decode_header
 from email.utils import parsedate_to_datetime
 import os
 import time
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
 import re
@@ -27,6 +28,7 @@ MAILBOXES = ["INBOX"]
 # Wizard pipeline is now the only supported email parser pipeline.
 USE_LEGACY_PIPELINE = False
 _GMAIL_LABEL_CACHE: dict[str, str] = {}
+_LOG_SCOPE = threading.local()
 
 
 def _lookup_pushover_user_key_from_db(email_addr: str) -> str:
@@ -82,6 +84,111 @@ def wake_web_app():
 def log(msg: str):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[emailFetch {ts}] {msg}", flush=True)
+    try:
+        from app.core.email_parse_events import log_email_parse_server_line
+
+        tenant_id = getattr(_LOG_SCOPE, "tenant_id", None)
+        user_email = getattr(_LOG_SCOPE, "user_email", None)
+        run_source = str(getattr(_LOG_SCOPE, "run_source", "") or "emailfetch")
+        log_email_parse_server_line(
+            message=f"[emailFetch {ts}] {msg}",
+            tenant_id=(int(tenant_id) if tenant_id is not None else None),
+            user_email=(str(user_email or "").strip().lower() or None),
+            run_source=run_source,
+            context={"component": "emails.emailFetch"},
+        )
+    except Exception:
+        pass
+
+
+def _set_log_scope(*, tenant_id: int | None, user_email: str | None, run_source: str) -> None:
+    _LOG_SCOPE.tenant_id = int(tenant_id) if tenant_id is not None else None
+    _LOG_SCOPE.user_email = str(user_email or "").strip().lower() or None
+    _LOG_SCOPE.run_source = str(run_source or "").strip().lower() or "emailfetch"
+
+
+def _tenant_id_for_email(email_addr: str | None) -> int | None:
+    e = str(email_addr or "").strip().lower()
+    if not e:
+        return None
+    try:
+        rows = query_db(
+            """
+            SELECT tenant_id
+            FROM users
+            WHERE lower(email) = lower(%s)
+            LIMIT 1
+            """,
+            (e,),
+        ) or []
+        if not rows:
+            return None
+        tid = rows[0].get("tenant_id")
+        return int(tid) if tid is not None else None
+    except Exception:
+        return None
+
+
+def _emit_parse_event(
+    *,
+    tenant_id: int | None,
+    user_email: str | None,
+    run_source: str,
+    imap_id: str,
+    sender: str,
+    subject: str,
+    received_at: str,
+    matched: bool,
+    status: str,
+    reason: str,
+    inserted: bool,
+    notified: bool,
+    parser: dict | None = None,
+    extracted: dict | None = None,
+    attempted_parsers: list | None = None,
+) -> None:
+    try:
+        from app.core.email_parse_events import log_email_parse_event
+
+        parser_obj = parser if isinstance(parser, dict) else {}
+        extracted_obj = extracted if isinstance(extracted, dict) else {}
+        amount_raw = extracted_obj.get("amount")
+        amount_num = None
+        if isinstance(amount_raw, (int, float)):
+            amount_num = float(amount_raw)
+        elif amount_raw is not None and str(amount_raw).strip():
+            try:
+                amount_num = float(str(amount_raw).replace(",", "").replace("$", "").strip())
+            except Exception:
+                amount_num = None
+
+        log_email_parse_event(
+            tenant_id=tenant_id,
+            user_email=user_email,
+            run_source=run_source,
+            imap_id=imap_id,
+            sender=sender,
+            subject=subject,
+            received_at=received_at,
+            matched=bool(matched),
+            status=str(status or "").strip() or None,
+            reason=str(reason or "").strip() or None,
+            inserted=bool(inserted),
+            notified=bool(notified),
+            parser_draft_id=int(parser_obj.get("draft_id") or 0) or None,
+            parser_slot=str(parser_obj.get("slot") or "").strip() or None,
+            account_id=int(extracted_obj.get("account_id") or 0) or None,
+            account_label=str(extracted_obj.get("account_label") or "").strip() or None,
+            amount=amount_num,
+            merchant=str(extracted_obj.get("merchant") or "").strip() or None,
+            context={
+                "attempted_parsers": (attempted_parsers or []),
+            },
+        )
+    except Exception:
+        pass
+
+
 def dbg(msg: str):
     if DEBUG:
         log(msg)
@@ -1499,12 +1606,31 @@ def process_wizard_email(
     access_token: str | None = None,
     processed_label_id: str | None = None,
     recipient_email: str | None = None,
+    tenant_id: int | None = None,
+    run_source: str = "cron",
 ):
     """
     Returns True if any wizard rule matched and was processed.
     """
     scoped_rules = _subject_scoped_rules(rules, subject)
     if not scoped_rules:
+        _emit_parse_event(
+            tenant_id=tenant_id,
+            user_email=recipient_email,
+            run_source=run_source,
+            imap_id=str(imap_id or ""),
+            sender=str(sender or ""),
+            subject=str(subject or ""),
+            received_at=str(header_date or ""),
+            matched=False,
+            status="skipped",
+            reason="no_subject_parser",
+            inserted=False,
+            notified=False,
+            parser=None,
+            extracted=None,
+            attempted_parsers=[],
+        )
         if return_detail:
             return {
                 "matched": False,
@@ -1644,27 +1770,47 @@ def process_wizard_email(
             dbg_notify_status(subject, f"wizard:{slot}", inserted=(result or {}).get("inserted"), fp=notified_key, reason="already_notified")
 
         _maybe_mark_processed(mail, imap_id, access_token=access_token, processed_label_id=processed_label_id)
+        event_reason = notify_reason or ("already_notified" if already_notified(notified_key) else "matched")
+        extracted_payload = {
+            "amount": float(amount_val),
+            "merchant": merchant,
+            "date": date_mmddyy,
+            "time": time_local,
+            "account_id": account_id,
+            "account_label": f"{meta['bank']} {meta['card']}".strip(),
+        }
+        parser_payload = {
+            "draft_id": int(rule.get("draft_id") or 0),
+            "slot": slot,
+            "subject_contains": str(rule.get("subject_contains") or ""),
+            "sender_pattern": str(rule.get("sender_pattern") or ""),
+        }
+        _emit_parse_event(
+            tenant_id=tenant_id,
+            user_email=recipient_email,
+            run_source=run_source,
+            imap_id=str(imap_id or ""),
+            sender=str(sender or ""),
+            subject=str(subject or ""),
+            received_at=str(header_date or ""),
+            matched=True,
+            status="matched",
+            reason=event_reason,
+            inserted=bool((result or {}).get("inserted")),
+            notified=bool(did_notify),
+            parser=parser_payload,
+            extracted=extracted_payload,
+            attempted_parsers=attempted,
+        )
         if return_detail:
             return {
                 "matched": True,
                 "status": "matched",
-                "reason": notify_reason or ("already_notified" if already_notified(notified_key) else "matched"),
-                "parser": {
-                    "draft_id": int(rule.get("draft_id") or 0),
-                    "slot": slot,
-                    "subject_contains": str(rule.get("subject_contains") or ""),
-                    "sender_pattern": str(rule.get("sender_pattern") or ""),
-                },
+                "reason": event_reason,
+                "parser": parser_payload,
                 "inserted": bool((result or {}).get("inserted")),
                 "notified": bool(did_notify),
-                "extracted": {
-                    "amount": float(amount_val),
-                    "merchant": merchant,
-                    "date": date_mmddyy,
-                    "time": time_local,
-                    "account_id": account_id,
-                    "account_label": f"{meta['bank']} {meta['card']}".strip(),
-                },
+                "extracted": extracted_payload,
             }
         return True
 
@@ -1676,6 +1822,23 @@ def process_wizard_email(
             fail_reason = "subject_matched_but_regex_failed"
         else:
             fail_reason = "subject_matched_but_parser_failed"
+        _emit_parse_event(
+            tenant_id=tenant_id,
+            user_email=recipient_email,
+            run_source=run_source,
+            imap_id=str(imap_id or ""),
+            sender=str(sender or ""),
+            subject=str(subject or ""),
+            received_at=str(header_date or ""),
+            matched=False,
+            status="skipped",
+            reason=fail_reason,
+            inserted=False,
+            notified=False,
+            parser=None,
+            extracted=None,
+            attempted_parsers=attempted,
+        )
         return {
             "matched": False,
             "status": "skipped",
@@ -1686,6 +1849,23 @@ def process_wizard_email(
             "extracted": None,
             "attempted_parsers": attempted,
         }
+    _emit_parse_event(
+        tenant_id=tenant_id,
+        user_email=recipient_email,
+        run_source=run_source,
+        imap_id=str(imap_id or ""),
+        sender=str(sender or ""),
+        subject=str(subject or ""),
+        received_at=str(header_date or ""),
+        matched=False,
+        status="skipped",
+        reason="subject_matched_but_parser_failed",
+        inserted=False,
+        notified=False,
+        parser=None,
+        extracted=None,
+        attempted_parsers=attempted,
+    )
     return False
 
 
@@ -1695,6 +1875,7 @@ def run_manual_wizard_parse(
     include_processed: bool = True,
     max_emails: int = 2000,
     rules_user_email: str | None = None,
+    tenant_id: int | None = None,
 ) -> dict:
     """
     Manual parse runner for Settings page.
@@ -1712,6 +1893,8 @@ def run_manual_wizard_parse(
         raise RuntimeError("Missing Gmail address")
 
     rules_owner = str(rules_user_email or "").strip().lower()
+    tenant_id = int(tenant_id) if tenant_id is not None else _tenant_id_for_email(rules_owner)
+    _set_log_scope(tenant_id=tenant_id, user_email=rules_owner, run_source="manual_settings")
     wizard_rules = load_wizard_rules(rules_owner)
     pending_table = "pushover_pending_test" if TEST_MODE else "pushover_pending"
     ensure_pending_table(pending_table)
@@ -1768,6 +1951,8 @@ def run_manual_wizard_parse(
             access_token=access_token,
             processed_label_id=processed_label_id,
             recipient_email=rules_owner,
+            tenant_id=tenant_id,
+            run_source="manual_settings",
         ) or {}
         row = {
             "imap_id": str(mid),
@@ -1831,7 +2016,8 @@ def run(include_processed: bool = False, rules_user_email: str | None = None):
             user_row = get_user_by_email(rules_owner)
             tenant_id = int((user_row or {}).get("tenant_id") or 0) or None
         except Exception:
-            tenant_id = None
+            tenant_id = _tenant_id_for_email(rules_owner)
+        _set_log_scope(tenant_id=tenant_id, user_email=rules_owner, run_source="cron")
         scope_tag = f"email={rules_owner} tenant_id={tenant_id if tenant_id is not None else '-'}"
         wizard_rules = load_wizard_rules(rules_owner)
         log(f"[{scope_tag}] Wizard pipeline enabled; loaded {len(wizard_rules)} parser rule(s)")
@@ -1895,6 +2081,8 @@ def run(include_processed: bool = False, rules_user_email: str | None = None):
                     access_token=access_token,
                     processed_label_id=processed_label_id,
                     recipient_email=rules_owner,
+                    tenant_id=tenant_id,
+                    run_source="cron",
                 )
                 if matched:
                     did_work = True

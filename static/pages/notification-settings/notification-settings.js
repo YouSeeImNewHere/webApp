@@ -1,6 +1,7 @@
 let _notifSaveTimer = null;
 
 const NOTIF_TOGGLES = [
+  { id: "notifDisableAllToggle", key: "disable_all" },
   { id: "notifCreditUsageToggle", key: "credit_usage" },
   { id: "notifCreditUsageTotalToggle", key: "credit_usage_total" },
   { id: "notifBudgetOverToggle", key: "budget_over" },
@@ -14,6 +15,15 @@ const NOTIF_TOGGLES = [
   { id: "notifUserSignupPendingToggle", key: "user_signup_pending" },
   { id: "notifCronErrorToggle", key: "cron_error" },
 ];
+
+function syncDisableAllUi() {
+  const disableAll = !!document.getElementById("notifDisableAllToggle")?.checked;
+  for (const item of NOTIF_TOGGLES) {
+    if (item.key === "disable_all") continue;
+    const el = document.getElementById(item.id);
+    if (el) el.disabled = disableAll;
+  }
+}
 
 function setNotifStatus(message, isError = false) {
   const el = document.getElementById("notifSettingsStatus");
@@ -50,8 +60,10 @@ function applyNotifPrefsToUi(prefs) {
   for (const item of NOTIF_TOGGLES) {
     const el = document.getElementById(item.id);
     if (!el) continue;
-    el.checked = p[item.key] !== false;
+    if (item.key === "disable_all") el.checked = p.disable_all === true;
+    else el.checked = p[item.key] !== false;
   }
+  syncDisableAllUi();
 }
 
 async function loadNotificationSettings() {
@@ -68,6 +80,7 @@ async function loadNotificationSettings() {
     setNotifStatus("Failed to load notification settings.", true);
   } finally {
     setNotifInputsDisabled(false);
+    syncDisableAllUi();
   }
 }
 
@@ -91,6 +104,7 @@ async function saveNotificationSettings() {
     setNotifStatus("Failed to save notification settings.", true);
   } finally {
     setNotifInputsDisabled(false);
+    syncDisableAllUi();
   }
 }
 
@@ -108,7 +122,10 @@ function bindNotificationSettings() {
   for (const item of NOTIF_TOGGLES) {
     const el = document.getElementById(item.id);
     if (!el) continue;
-    el.addEventListener("change", () => queueNotificationSettingsSave());
+    el.addEventListener("change", () => {
+      if (item.key === "disable_all") syncDisableAllUi();
+      queueNotificationSettingsSave();
+    });
   }
 }
 

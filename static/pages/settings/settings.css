@@ -3,6 +3,37 @@
   gap: 10px;
 }
 
+.settings-page .settings-card,
+.settings-page .settings-row,
+.settings-page .settings-muted,
+.settings-page .settings-btn,
+.settings-page .settings-input,
+.settings-page .settings-section-title {
+  font-size: 13px;
+}
+
+.settings-page .settings-section-title {
+  letter-spacing: 0.24px;
+}
+
+.settings-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.settings-check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .notification-setting-row {
   display: flex;
   align-items: center;
@@ -123,14 +154,37 @@
   align-items: center;
   gap: 8px;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.92;
   white-space: nowrap;
 }
 
 .backfill-field .settings-input {
-  width: 78px;
-  height: 40px;
+  width: 44px;
+  height: 24px;
+  border: 0;
+  border-radius: 8px;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  color: var(--text);
+  line-height: 1.1;
+}
+
+#emailParserBackfillDays::-webkit-outer-spin-button,
+#emailParserBackfillDays::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#emailParserBackfillDays {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.backfill-field .settings-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, var(--card));
+  outline-offset: 0;
+  background: color-mix(in srgb, var(--accent) 24%, var(--card));
 }
 
 .backfill-check {
@@ -138,7 +192,7 @@
   align-items: center;
   gap: 8px;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.92;
   height: 40px;
   white-space: nowrap;
@@ -184,7 +238,7 @@
   display: grid;
   gap: 6px;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.92;
 }
 
@@ -229,18 +283,18 @@
 }
 
 .backfill-row-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 900;
 }
 
 .backfill-row-reason {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   opacity: 0.9;
 }
 
 .backfill-row-meta {
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 4px;
   opacity: 0.95;
 }
@@ -604,5 +658,39 @@
 
   .widget-manual-copy-card {
     max-height: 86vh;
+  }
+}
+
+@media (max-width: 700px) {
+  .settings-page .settings-split-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .settings-page .settings-split-row > .settings-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .settings-inline-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .backfill-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .backfill-field,
+  .backfill-check {
+    width: 100%;
+    min-height: 0;
+  }
+
+  .backfill-run-btn {
+    width: 100%;
+    min-width: 0;
   }
 }
