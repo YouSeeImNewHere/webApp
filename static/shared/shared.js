@@ -144,6 +144,131 @@
     });
   })();
 
+  // 4.6) Global modal guards:
+  // - Lock background scroll when a blocking popup is open.
+  // - Keep pull-to-refresh from running while popups are visible.
+  (function installGlobalModalGuards() {
+    if (window.__globalModalGuardsInstalled) return;
+    window.__globalModalGuardsInstalled = true;
+
+    const BLOCKING_SELECTOR = [
+      "#appUpdatesModal",
+      "#notifModal",
+      "#notifOverlay",
+      ".upcoming-day-backdrop",
+      ".tx-inspect-backdrop",
+      ".tx-inspect__backdrop",
+      "#ruleModalBackdrop",
+      ".occ-modal",
+      ".sf-modal",
+      ".profile-modal",
+      ".modalBack",
+      ".widget-manual-copy-sheet",
+      ".c-modal-backdrop.is-open",
+    ].join(", ");
+
+    const state = {
+      locked: false,
+      scrollY: 0,
+      hadModalOpenClass: false,
+    };
+
+    function isVisible(el) {
+      if (!el || !el.isConnected) return false;
+      if (el.classList?.contains("hidden")) return false;
+      const style = window.getComputedStyle(el);
+      if (!style || style.display === "none" || style.visibility === "hidden") return false;
+      return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    }
+
+    function hasBlockingModalOpen() {
+      const nodes = document.querySelectorAll(BLOCKING_SELECTOR);
+      for (const el of nodes) {
+        if (isVisible(el)) return true;
+      }
+      return false;
+    }
+
+    function lockBackgroundScroll() {
+      if (state.locked) return;
+      const body = document.body;
+      if (!body) return;
+      state.locked = true;
+      state.scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      state.hadModalOpenClass = body.classList.contains("modal-open");
+      body.classList.add("modal-open");
+      body.style.position = "fixed";
+      body.style.top = `-${state.scrollY}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      body.style.overscrollBehaviorY = "none";
+    }
+
+    function unlockBackgroundScroll() {
+      if (!state.locked) return;
+      const body = document.body;
+      if (!body) return;
+      const y = state.scrollY;
+      state.locked = false;
+      if (!state.hadModalOpenClass) body.classList.remove("modal-open");
+      body.style.position = "";
+      body.style.top = "";
+      body.style.left = "";
+      body.style.right = "";
+      body.style.width = "";
+      body.style.overscrollBehaviorY = "";
+      window.scrollTo(0, y);
+    }
+
+    function syncModalLock() {
+      if (hasBlockingModalOpen()) lockBackgroundScroll();
+      else unlockBackgroundScroll();
+    }
+
+    window.__hasBlockingModalOpen = hasBlockingModalOpen;
+
+    const observer = new MutationObserver(() => syncModalLock());
+    if (document.body) {
+      observer.observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["class", "style", "aria-hidden"],
+      });
+    } else {
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!document.body) return;
+        observer.observe(document.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["class", "style", "aria-hidden"],
+        });
+        syncModalLock();
+      }, { once: true });
+    }
+
+    // Stop bubbling touch events from modal layers so global handlers
+    // (like pull-to-refresh) do not process those gestures.
+    for (const evt of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
+      document.addEventListener(
+        evt,
+        (e) => {
+          const t = e.target;
+          if (!t || !t.closest) return;
+          if (!t.closest(BLOCKING_SELECTOR)) return;
+          e.stopPropagation();
+        },
+        { passive: true }
+      );
+    }
+
+    window.addEventListener("pageshow", syncModalLock);
+    document.addEventListener("visibilitychange", syncModalLock);
+    syncModalLock();
+  })();
+
   // 4.75) Show a single "what changed" popup after deploys/new commits.
   (async function installAppUpdateSummary() {
     if (window.__appUpdateSummaryInstalled) return;
@@ -256,6 +381,8 @@
 
     function openModalWithRows(rows, latestIdForDismiss) {
       if (window.__appUpdatesModalOpen) return Promise.resolve();
+      const justClosedAt = Number(window.__appUpdatesModalClosedAt || 0);
+      if (justClosedAt && (Date.now() - justClosedAt) < 500) return Promise.resolve();
       const root = ensureModal();
       const meta = document.getElementById("appUpdatesModalMeta");
       const body = document.getElementById("appUpdatesModalBody");
@@ -291,6 +418,7 @@
             markSeen(latestIdForDismiss);
             suppressAutoForSession();
           }
+          window.__appUpdatesModalClosedAt = Date.now();
           root.classList.add("hidden");
           root.setAttribute("aria-hidden", "true");
           window.__appUpdatesModalOpen = false;
@@ -384,8 +512,16 @@
     window.__mobilePullToRefreshInstalled = true;
 
     const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
+    const hasBlockingModalOpen = () => {
+      try {
+        return !!(window.__hasBlockingModalOpen && window.__hasBlockingModalOpen());
+      } catch {
+        return false;
+      }
+    };
     const canStartFromTop = () =>
       isMobile() &&
+      !hasBlockingModalOpen() &&
       (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
 
     const isInteractiveTarget = (el) => {
@@ -472,6 +608,7 @@
     window.addEventListener(
       "touchstart",
       (e) => {
+        if (hasBlockingModalOpen()) return;
         if (!canStartFromTop()) return;
         if (!e.touches || e.touches.length !== 1) return;
         if (isInteractiveTarget(e.target)) return;
@@ -487,6 +624,12 @@
     window.addEventListener(
       "touchmove",
       (e) => {
+        if (hasBlockingModalOpen()) {
+          pulling = false;
+          triggered = false;
+          resetPullVisual(false);
+          return;
+        }
         if (!pulling || triggered) return;
         if (!e.touches || e.touches.length !== 1) return;
         const dy = e.touches[0].clientY - startY;
@@ -508,6 +651,12 @@
     window.addEventListener(
       "touchend",
       (e) => {
+        if (hasBlockingModalOpen()) {
+          pulling = false;
+          triggered = false;
+          resetPullVisual(false);
+          return;
+        }
         if (!pulling || triggered) return;
         const changed = e.changedTouches && e.changedTouches[0];
         const endY = changed ? changed.clientY : startY;
