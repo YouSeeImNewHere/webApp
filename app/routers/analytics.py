@@ -329,6 +329,284 @@ def spending_debug(start: str, end: str):
 
     return out
 
+
+# -----------------------------------------------------------------------------
+# /spending-unbudgeted-safe-range
+# -----------------------------------------------------------------------------
+@router.get("/spending-unbudgeted-safe-range")
+def spending_unbudgeted_safe_range(start: str, end: str):
+    tid = _require_tenant_id()
+    start_date = parse_iso(start)
+    end_date = parse_iso(end)
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_must_be_on_or_before_end")
+
+    rows = query_db(
+        f"""
+        WITH base AS (
+          SELECT
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            t.amount::double precision AS amount,
+            LOWER(TRIM(COALESCE(t.category,''))) AS category,
+            LOWER(a.accountType) AS accountType
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+        ),
+        norm AS (
+          SELECT
+            amount, category, accountType,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT d, amount, category, accountType
+        FROM norm
+        WHERE d IS NOT NULL
+          AND d BETWEEN %s AND %s
+        """,
+        ((int(tid), int(tid), start_date, end_date) if tid else (start_date, end_date)),
+    )
+
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_norm = _norm_cat(str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT))
+
+    excluded_by_month: dict[tuple[int, int], set[str]] = {}
+
+    def excluded_for_month(y: int, m: int) -> set[str]:
+        key = (int(y), int(m))
+        cached = excluded_by_month.get(key)
+        if cached is not None:
+            return cached
+        excluded: set[str] = set(["card payment", "transfer", "cash withdrawal"])
+        try:
+            groups = _get_budget_groups_for_month(int(y), int(m))
+            for g in (groups or []):
+                try:
+                    alloc = float(g.get("allocated") or 0.0)
+                except Exception:
+                    alloc = 0.0
+                if alloc <= 0:
+                    continue
+                for c in (g.get("categories") or []):
+                    cn = _norm_cat(c)
+                    if cn:
+                        excluded.add(cn)
+        except Exception:
+            pass
+        excluded_by_month[key] = excluded
+        return excluded
+
+    unbudgeted_by_day: dict[date, float] = {}
+    for r in rows:
+        d = r.get("d")
+        if not d:
+            continue
+        try:
+            amt = float(r.get("amount") or 0.0)
+        except Exception:
+            amt = 0.0
+        account_type = (r.get("accounttype") or "").strip().lower()
+        category = (r.get("category") or "").strip().lower()
+        if account_type not in ("checking", "credit") or amt <= 0:
+            continue
+
+        excluded = excluded_for_month(d.year, d.month)
+        if category in excluded:
+            continue
+
+        unbudgeted_by_day[d] = unbudgeted_by_day.get(d, 0.0) + amt
+        if roundup_enabled and is_roundup_eligible_tx(amt, account_type, category):
+            ru = roundup_amount_from_spend(amt)
+            if ru > 0 and roundup_norm not in excluded:
+                unbudgeted_by_day[d] = unbudgeted_by_day.get(d, 0.0) + ru
+
+    try:
+        baseline_rows = query_db(
+            "SELECT day, baseline FROM daily_limit_snapshot WHERE day BETWEEN %s AND %s AND tenant_id = %s",
+            (start_date, end_date, int(tid)),
+        )
+    except Exception:
+        baseline_rows = []
+    baseline_by_day = {r["day"]: float(r.get("baseline") or 0.0) for r in baseline_rows if r.get("day")}
+    baseline_fallback_by_month: dict[tuple[int, int], float] = {}
+
+    def fallback_baseline(y: int, m: int) -> float:
+        key = (int(y), int(m))
+        if key in baseline_fallback_by_month:
+            return baseline_fallback_by_month[key]
+        try:
+            from app.routers.category_rules import month_budget_home_cached
+            mb = month_budget_home_cached(int(y), int(m))
+            val = float((mb or {}).get("daily_limit") or 0.0)
+        except Exception:
+            val = 0.0
+        baseline_fallback_by_month[key] = val
+        return val
+
+    series: list[dict[str, float | str]] = []
+    dcur = start_date
+    while dcur <= end_date:
+        safe = baseline_by_day.get(dcur)
+        if safe is None:
+            safe = fallback_baseline(dcur.year, dcur.month)
+        series.append(
+            {
+                "date": dcur.isoformat(),
+                "unbudgeted_spend": round(float(unbudgeted_by_day.get(dcur, 0.0) or 0.0), 2),
+                "daily_safe_to_spend": round(float(safe or 0.0), 2),
+            }
+        )
+        dcur += timedelta(days=1)
+
+    return {"start": start_date.isoformat(), "end": end_date.isoformat(), "series": series}
+
+
+# -----------------------------------------------------------------------------
+# /spending-unbudgeted-day
+# -----------------------------------------------------------------------------
+@router.get("/spending-unbudgeted-day")
+def spending_unbudgeted_day(day: str):
+    tid = _require_tenant_id()
+    d = parse_iso(day)
+
+    def excluded_for_month(y: int, m: int) -> set[str]:
+        excluded: set[str] = set(["card payment", "transfer", "cash withdrawal"])
+        try:
+            groups = _get_budget_groups_for_month(int(y), int(m))
+            for g in (groups or []):
+                try:
+                    alloc = float(g.get("allocated") or 0.0)
+                except Exception:
+                    alloc = 0.0
+                if alloc <= 0:
+                    continue
+                for c in (g.get("categories") or []):
+                    cn = _norm_cat(c)
+                    if cn:
+                        excluded.add(cn)
+        except Exception:
+            pass
+        return excluded
+
+    excluded = excluded_for_month(d.year, d.month)
+    rows = query_db(
+        f"""
+        WITH base AS (
+          SELECT
+            t.id,
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            t.amount::double precision AS amount,
+            TRIM(COALESCE(t.category,'')) AS category_raw,
+            LOWER(TRIM(COALESCE(t.category,''))) AS category_lc,
+            TRIM(COALESCE(t.merchant,'')) AS merchant,
+            LOWER(a.accountType) AS accountType,
+            COALESCE(a.institution, '') AS bank,
+            COALESCE(a.name, '') AS account
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+        ),
+        norm AS (
+          SELECT
+            *,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
+        )
+        SELECT id, d, amount, category_raw, category_lc, merchant, accountType, bank, account
+        FROM norm
+        WHERE d = %s
+        ORDER BY id DESC
+        """,
+        ((int(tid), int(tid), d) if tid else (d,)),
+    )
+
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_cat = str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT).strip() or ROUNDUP_CATEGORY_DEFAULT
+    roundup_norm = _norm_cat(roundup_cat)
+
+    purchases: list[dict[str, Any]] = []
+    unbudgeted_total = 0.0
+    for r in rows:
+        try:
+            amt = float(r.get("amount") or 0.0)
+        except Exception:
+            amt = 0.0
+        category_lc = (r.get("category_lc") or "").strip().lower()
+        account_type = (r.get("accounttype") or "").strip().lower()
+        if account_type not in ("checking", "credit") or amt <= 0:
+            continue
+        if category_lc in excluded:
+            continue
+
+        category_disp = (r.get("category_raw") or "").strip() or "Unassigned"
+        merchant_disp = (r.get("merchant") or "").strip() or "(no merchant)"
+        purchases.append(
+            {
+                "id": str(r.get("id") or ""),
+                "kind": "purchase",
+                "merchant": merchant_disp,
+                "category": category_disp,
+                "amount": round(amt, 2),
+                "bank": str(r.get("bank") or ""),
+                "account": str(r.get("account") or ""),
+            }
+        )
+        unbudgeted_total += amt
+
+        if roundup_enabled and roundup_norm not in excluded and is_roundup_eligible_tx(amt, account_type, category_lc):
+            ru = roundup_amount_from_spend(amt)
+            if ru > 0:
+                purchases.append(
+                    {
+                        "id": f"{r.get('id')}_roundup",
+                        "kind": "roundup",
+                        "merchant": f"Round-up • {merchant_disp}",
+                        "category": roundup_cat,
+                        "amount": round(float(ru), 2),
+                        "bank": str(r.get("bank") or ""),
+                        "account": str(r.get("account") or ""),
+                    }
+                )
+                unbudgeted_total += ru
+
+    try:
+        baseline_rows = query_db(
+            "SELECT baseline FROM daily_limit_snapshot WHERE day = %s AND tenant_id = %s LIMIT 1",
+            (d, int(tid)),
+        )
+    except Exception:
+        baseline_rows = []
+    if baseline_rows:
+        daily_safe = float(baseline_rows[0].get("baseline") or 0.0)
+    else:
+        try:
+            from app.routers.category_rules import month_budget_home_cached
+            mb = month_budget_home_cached(int(d.year), int(d.month))
+            daily_safe = float((mb or {}).get("daily_limit") or 0.0)
+        except Exception:
+            daily_safe = 0.0
+
+    return {
+        "day": d.isoformat(),
+        "totals": {
+            "unbudgeted_spend": round(float(unbudgeted_total), 2),
+            "daily_safe_to_spend": round(float(daily_safe), 2),
+        },
+        "purchases": purchases,
+    }
+
 # -----------------------------------------------------------------------------
 # /category-totals-month
 # -----------------------------------------------------------------------------

@@ -12,6 +12,7 @@
 
       const ids = cfg.ids;
       const showToggle = cfg.showToggle !== false;
+      const nextFirst = cfg.nextFirst === true;
 
     mount.innerHTML = `
       <section class="chart-card">
@@ -45,22 +46,37 @@
     </div>
   </div>
 
-  <!-- BETWEEN: Dates + Update -->
+  <!-- BETWEEN: Dates + Update/Next stack -->
   <div class="chart-header-dates">
     <div class="chart-dates-inline chart-dates-inline--header">
       <label>Start <input type="date" id="${ids.start}"></label>
       <label>End <input type="date" id="${ids.end}"></label>
     </div>
-    <button id="${ids.update}" class="chart-btn primary chart-update--header">Update</button>
-  </div>
-
-  <!-- RIGHT: Next or custom action -->
-  <div class="chart-header-actions">
-    ${
-      showToggle
-        ? `<button id="${ids.toggle}" class="chart-toggle chart-toggle--header">${cfg.toggleText || ""}</button>`
-        : (cfg.headerActionsHtml || ``)
-    }
+    <div class="chart-header-date-actions">
+      ${
+        nextFirst
+          ? `
+            <div class="chart-header-actions">
+              ${
+                showToggle
+                  ? `<button id="${ids.toggle}" class="chart-toggle chart-toggle--header">${cfg.toggleText || ""}</button>`
+                  : (cfg.headerActionsHtml || ``)
+              }
+            </div>
+            <button id="${ids.update}" class="chart-btn primary chart-update--header">Update</button>
+          `
+          : `
+            <button id="${ids.update}" class="chart-btn primary chart-update--header">Update</button>
+            <div class="chart-header-actions">
+              ${
+                showToggle
+                  ? `<button id="${ids.toggle}" class="chart-toggle chart-toggle--header">${cfg.toggleText || ""}</button>`
+                  : (cfg.headerActionsHtml || ``)
+              }
+            </div>
+          `
+      }
+    </div>
   </div>
 </header>
 
@@ -115,7 +131,7 @@ if (growthToggle && canvasBox) {
 }
 
 
-  if (!showToggle) {
+  if (!showToggle && cfg.hideDotsWhenNoToggle !== false) {
     const dots = document.getElementById(ids.dots);
     if (dots) dots.style.display = "none";
   }

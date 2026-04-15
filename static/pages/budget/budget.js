@@ -915,7 +915,7 @@ function closeTxInspect() {
 }
 
 // =========================
-// Expected income popup (same as Home)
+// Last month's income popup (same as Home)
 // =========================
 function bindIncomeRowClick() {
   const incomeRow = document.getElementById("mbIncomeRow");
@@ -953,7 +953,7 @@ function ensureIncomeInspectModal() {
     <div class="tx-inspect__card" role="dialog" aria-modal="true">
       <div class="tx-inspect__head">
         <div>
-          <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
+          <div id="incomeInspectTitle" class="tx-inspect__title">Last month's income</div>
           <div id="incomeInspectSub" class="tx-inspect__sub">—</div>
         </div>
         <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">✕</button>
@@ -1074,7 +1074,7 @@ function openSafeBreakdown() {
       <div class="calc__section">
         <div class="calc__sectionTitle">Income</div>
         <div class="tx-kv calc__grid">
-          ${kvRow("Expected income (total)", money(expected_income))}
+          ${kvRow("Last month's income (total)", money(expected_income))}
           ${kvRow("Base income", money(base_income), { kClass: "is-sub" })}
           ${kvRow("LES income", money(les_income), { kClass: "is-sub" })}
         </div>
@@ -1196,7 +1196,7 @@ if (!profile0.paygrade) {
   const subEl = document.getElementById("incomeInspectSub");
   const bodyEl = document.getElementById("incomeInspectBody");
 
-  if (titleEl) titleEl.textContent = "Expected income";
+  if (titleEl) titleEl.textContent = "Last month's income";
   if (subEl) subEl.textContent = "Loading…";
   if (bodyEl) bodyEl.innerHTML = "";
 
@@ -1302,7 +1302,7 @@ if (!profile0.paygrade) {
   } catch (err) {
     console.error(err);
     if (subEl) subEl.textContent = "Failed to load";
-    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load last month's income breakdown.</div>`;
   }
 }
 
@@ -1316,7 +1316,7 @@ async function openIncomeBreakdown() {
   const subEl = document.getElementById("incomeInspectSub");
   const bodyEl = document.getElementById("incomeInspectBody");
 
-  if (titleEl) titleEl.textContent = "Expected income";
+  if (titleEl) titleEl.textContent = "Last month's income";
   if (subEl) subEl.textContent = "Loading...";
   if (bodyEl) bodyEl.innerHTML = "";
 
@@ -1345,7 +1345,7 @@ async function openIncomeBreakdown() {
       <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
         <span class="category-pill" style="padding:8px 10px;">Last month paychecks used: <strong style="margin-left:6px;">${money(basisTotal)}</strong></span>
         <span class="category-pill" style="padding:8px 10px;">Other recurring income: <strong style="margin-left:6px;">${money(recurringIncome)}</strong></span>
-        <span class="category-pill" style="padding:8px 10px;">Expected income total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Last month's income total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
       </div>
 
       <div style="margin:0 0 12px; opacity:.7; font-size:12px;">
@@ -1360,7 +1360,7 @@ async function openIncomeBreakdown() {
   } catch (err) {
     console.error(err);
     if (subEl) subEl.textContent = "Failed to load";
-    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load last month's income breakdown.</div>`;
   }
 }
 

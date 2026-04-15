@@ -190,32 +190,28 @@
 
   .chart-header.chart-header--metrics2{
     display: grid !important;
-    grid-template-columns: 1fr auto !important;
+    grid-template-columns: 1fr 1fr !important;
     grid-template-areas:
-      "title next"
+      "title title"
+      "dates dates"
       "total growth"
-      "gtoggle gtoggle"
-      "dates dates";
+      "gtoggle gtoggle";
     gap: 10px !important;
     align-items: start !important;
   }
 
   .chart-header--metrics2 .chart-header-center{
     grid-area: title !important;
-    justify-content: flex-start !important;
+    justify-content: center !important;
   }
 
-  .chart-title-wrap{ align-items: flex-start !important; }
+  .chart-title-wrap{ align-items: center !important; }
   .chart-title-wrap h2{
     max-width: 100% !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .chart-header--metrics2 .chart-header-actions{
-    grid-area: next !important;
-    justify-self: end !important;
+    text-align: center !important;
   }
 
   .chart-header--metrics2 .chart-header-metrics{ display: contents !important; }
@@ -251,15 +247,43 @@
   .chart-header-dates{
     grid-area: dates !important;
     display: grid !important;
-    grid-template-columns: 1fr 1fr auto !important;
+    grid-template-columns: 1fr 1fr !important;
     gap: 10px !important;
     max-width: 100%;
+    align-items: stretch !important;
   }
 
   .chart-dates-inline--header{ display: contents !important; }
   .chart-dates-inline--header input[type="date"]{
     height: 40px;
     width: 100%;
+  }
+
+  .chart-header-date-actions{
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    gap: 8px !important;
+  }
+
+  .chart-header-date-actions > .chart-update--header{
+    order: 1 !important;
+    flex: 1 1 0 !important;
+  }
+
+  .chart-header-date-actions > .chart-header-actions{
+    order: 2 !important;
+    display: block !important;
+    flex: 1 1 0 !important;
+  }
+
+  .chart-header-date-actions .chart-btn,
+  .chart-header-date-actions .chart-toggle{
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 40px !important;
   }
 
   /* Account page title centering */
@@ -1081,20 +1105,20 @@ body.page-recurring #recurringList{
   }
 
   /* Make Start/End not stretch crazy wide */
-.chart-header-dates{
+body.page-recurring .chart-header-dates{
   grid-template-columns: max-content max-content auto !important;
   justify-content: start !important;
 }
 
 /* Labels should size to content, not fill 1fr columns */
-.chart-dates-inline--header label{
+body.page-recurring .chart-dates-inline--header label{
   display: inline-flex !important;
   align-items: center !important;
   gap: 6px !important;
 }
 
 /* Cap the actual date input width */
-.chart-dates-inline--header input[type="date"]{
+body.page-recurring .chart-dates-inline--header input[type="date"]{
   width: 150px !important;
   max-width: 150px !important;
 }

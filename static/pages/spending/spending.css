@@ -1,1 +1,72 @@
 /* Page-scoped spending styles will move here incrementally from shared CSS. */
+
+.spending-day-panel {
+  width: min(520px, calc(100% - 16px));
+}
+
+.spending-day-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.spending-day-chip {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.spending-day-list {
+  display: grid;
+  gap: 8px;
+}
+
+.spending-day-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  background: var(--card);
+}
+
+.spending-day-row.is-roundup {
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+}
+
+.spending-day-row-main {
+  min-width: 0;
+}
+
+.spending-day-row-merchant {
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spending-day-row-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spending-day-row-amt {
+  font-weight: 900;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.spending-day-empty {
+  opacity: 0.75;
+  font-size: 13px;
+}

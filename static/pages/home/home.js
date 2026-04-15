@@ -1215,8 +1215,7 @@ function currentChart() {
 }
 
 function chartToggleLabelForIndex(i) {
-  const next = CHARTS[(i + 1) % CHARTS.length];
-  return `Next: ${next.title} \u25B6`;
+  return "Next \u25B6";
 }
 
 function ensureChartToggleFixedWidth() {
@@ -1473,18 +1472,37 @@ if (currentChart().key === "spending") {
 
 
     // ---- % Growth (uses potential EOM when toggle is on for Net Worth) ----
-  const startVal = (values.length ? Number(values[0] || 0) : 0);
-  const endValActual = (values.length ? Number(values[values.length - 1] || 0) : 0);
-
-  let endValForGrowth = endValActual;
-  if (currentChart().key === "net" && showPotentialGrowth && typeof potentialEOM === "number") {
-    endValForGrowth = Number(potentialEOM);
-  }
-
-  let growthStr = "";
-  if (values.length >= 2 && Math.abs(startVal) > 1e-9) {
-    const pct = ((endValForGrowth - startVal) / Math.abs(startVal)) * 100;
-    growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+  let growthStr = "—";
+  if (currentChart().key === "spending") {
+    const monthTotals = new Map();
+    data.forEach((p) => {
+      const iso = String(p?.date || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+      const key = iso.slice(0, 7);
+      const amt = Number(p?.value || 0);
+      if (!Number.isFinite(amt)) return;
+      monthTotals.set(key, (monthTotals.get(key) || 0) + amt);
+    });
+    const keys = Array.from(monthTotals.keys()).sort();
+    if (keys.length >= 2) {
+      const first = Number(monthTotals.get(keys[0]) || 0);
+      const last = Number(monthTotals.get(keys[keys.length - 1]) || 0);
+      if (Math.abs(first) > 1e-9) {
+        const pct = ((last - first) / Math.abs(first)) * 100;
+        growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+      }
+    }
+  } else {
+    const startVal = (values.length ? Number(values[0] || 0) : 0);
+    const endValActual = (values.length ? Number(values[values.length - 1] || 0) : 0);
+    let endValForGrowth = endValActual;
+    if (currentChart().key === "net" && showPotentialGrowth && typeof potentialEOM === "number") {
+      endValForGrowth = Number(potentialEOM);
+    }
+    if (values.length >= 2 && Math.abs(startVal) > 1e-9) {
+      const pct = ((endValForGrowth - startVal) / Math.abs(startVal)) * 100;
+      growthStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+    }
   }
 
   setInlineGrowth("% Growth", growthStr);
@@ -1533,27 +1551,15 @@ const isMobile = window.matchMedia(
 const isSpending = currentChart().key === "spending";
 
 const datasets = isSpending ? [
-
   {
-    label: "Total (cumulative)",
-    data: cumulative,
-    tension: 0.2,
-    pointRadius: 0,
-    pointHitRadius: 12,
-    pointHoverRadius: 4,
-    borderWidth: 2,
-    fill: false
-  },
-  {
-    label: "Daily",
+    label: "Daily spending",
     data: values,
-    tension: 0.2,
-    pointRadius: 0,
-    pointHitRadius: 12,
-    pointHoverRadius: 4,
-    borderWidth: 2.5,
-    borderDash: [4, 4],
-    fill: false
+    backgroundColor: "rgba(59, 130, 246, 0.52)",
+    borderColor: "rgba(59, 130, 246, 0.95)",
+    borderWidth: 1,
+    barPercentage: 0.9,
+    categoryPercentage: 0.82,
+    borderRadius: 4
   }
 ] : (() => {
   const base = {
@@ -1589,7 +1595,7 @@ const datasets = isSpending ? [
 
 
 netWorthChartInstance = new Chart(ctx, {
-  type: "line",
+  type: isSpending ? "bar" : "line",
   data: {
     labels,
     datasets
@@ -1614,15 +1620,9 @@ if (currentChart().key === "net" && ctx.datasetIndex === 1) {
         // Default label for Savings/Investments charts
 if (currentChart().key === "spending") {
   const i = ctx.dataIndex;
-
-  // datasetIndex 0 = Total (cumulative), datasetIndex 1 = Daily
-  if (ctx.datasetIndex === 0) {
-    const total = Number(cumulative[i] || 0);
-    return `Total: ${money(total)}`;
-  }
-
   const daily = Number(values[i] || 0);
-  return `Daily: ${money(daily)}`;
+  const total = Number(cumulative[i] || 0);
+  return [`Daily: ${money(daily)}`, `Running total: ${money(total)}`];
 }
 
 
@@ -2067,7 +2067,8 @@ const btn = document.getElementById("goBudgetBtn");
 mountChartCard("#homeChartMount", {
   ids: HOME_IDS,
   title: "Net Worth",
-  toggleText: "Next: Savings \u25B6",
+  toggleText: "Next \u25B6",
+  nextFirst: true,
   breakdownLabel: "Net",
   breakdownValue: "$0",
 
@@ -2568,8 +2569,8 @@ function mountMonthBudgetCard(mountSel) {
     </div>
 
     <ul class="category-box__list">
-      <li id="mbIncomeRow" class="category-pill" role="button" tabindex="0" style="cursor:pointer;" title="View expected income breakdown">
-        <span class="cat-name">Expected income</span>
+      <li id="mbIncomeRow" class="category-pill" role="button" tabindex="0" style="cursor:pointer;" title="View last month's income breakdown">
+        <span class="cat-name">Income</span>
         <span style="display:flex; align-items:center; gap:6px;">
           <span id="mbIncome" class="cat-amt"></span>
           <span style="opacity:.45;"></span>
@@ -2781,7 +2782,7 @@ function ensureIncomeInspectModal() {
     <div class="tx-inspect__card" role="dialog" aria-modal="true">
       <div class="tx-inspect__head">
         <div>
-          <div id="incomeInspectTitle" class="tx-inspect__title">Expected income</div>
+          <div id="incomeInspectTitle" class="tx-inspect__title">Last month's income</div>
           <div id="incomeInspectSub" class="tx-inspect__sub"></div>
         </div>
         <button class="tx-inspect__close" type="button" data-income-close aria-label="Close">x</button>
@@ -2874,7 +2875,7 @@ async function openIncomeBreakdownLegacy() {
   const subEl = document.getElementById("incomeInspectSub");
   const bodyEl = document.getElementById("incomeInspectBody");
 
-  if (titleEl) titleEl.textContent = "Expected income";
+  if (titleEl) titleEl.textContent = "Last month's income";
   if (subEl) subEl.textContent = "Loading";
   if (bodyEl) bodyEl.innerHTML = "";
 
@@ -2886,7 +2887,7 @@ async function openIncomeBreakdownLegacy() {
       fetchInterestForMonth(year, month),
     ]);
 
-    // Match the Home "Expected income" number:
+    // Match the Home "Last month's income" number:
     // - Only count items that land inside the displayed month (deposit date)
     // - Only count "IN" that lands in account_id 3 (your spendable account)
     const SPENDABLE_ACCOUNT_ID = 3;
@@ -2984,7 +2985,7 @@ async function openIncomeBreakdownLegacy() {
   } catch (err) {
     console.error(err);
     if (subEl) subEl.textContent = "Failed to load";
-    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load last month's income breakdown.</div>`;
   }
 }
 
@@ -2999,7 +3000,7 @@ async function openIncomeBreakdown() {
   const subEl = document.getElementById("incomeInspectSub");
   const bodyEl = document.getElementById("incomeInspectBody");
 
-  if (titleEl) titleEl.textContent = "Expected income";
+  if (titleEl) titleEl.textContent = "Last month's income";
   if (subEl) subEl.textContent = "Loading";
   if (bodyEl) bodyEl.innerHTML = "";
 
@@ -3028,7 +3029,7 @@ async function openIncomeBreakdown() {
       <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
         <span class="category-pill" style="padding:8px 10px;">Last month paychecks used: <strong style="margin-left:6px;">${money(basisTotal)}</strong></span>
         <span class="category-pill" style="padding:8px 10px;">Other recurring income: <strong style="margin-left:6px;">${money(recurringIncome)}</strong></span>
-        <span class="category-pill" style="padding:8px 10px;">Expected income total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
+        <span class="category-pill" style="padding:8px 10px;">Last month's income total: <strong style="margin-left:6px;">${money(grandTotal)}</strong></span>
       </div>
 
       <div style="margin:0 0 12px; opacity:.7; font-size:12px;">
@@ -3043,7 +3044,7 @@ async function openIncomeBreakdown() {
   } catch (err) {
     console.error(err);
     if (subEl) subEl.textContent = "Failed to load";
-    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load expected income breakdown.</div>`;
+    if (bodyEl) bodyEl.innerHTML = `<div style="opacity:.8;">Could not load last month's income breakdown.</div>`;
   }
 }
 

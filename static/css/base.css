@@ -991,7 +991,7 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
 
 .chart-header--metrics2{
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
 }
 
@@ -1064,7 +1064,7 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   align-items: flex-end;
   gap: 10px;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .chart-dates-inline--header label{
@@ -1075,10 +1075,26 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
 
 .chart-update--header{ height: 34px; }
 
-/* Next button stays right */
+.chart-header-date-actions{
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .chart-header-actions{
-  grid-column: 4;
-  justify-self: end;
+  display: flex;
+  align-items: stretch;
+}
+
+.chart-header-date-actions .chart-btn,
+.chart-header-date-actions .chart-toggle{
+  min-width: 140px;
+}
+
+.chart-header-actions .chart-btn,
+.chart-header-actions .chart-toggle{
+  width: 100%;
 }
 
 /* =============================================================================
