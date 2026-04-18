@@ -33,6 +33,7 @@
   const accountsCountChipEl = document.getElementById("accountsCountChip");
   const addAccountBtnEl = document.getElementById("addAccountBtn");
   const cancelEditBtnEl = document.getElementById("cancelEditBtn");
+  const deleteAccountBtnEl = document.getElementById("deleteAccountBtn");
   const NON_ADMIN_PREVIEW_KEY = "settings_view_non_admin_preview";
 
   let editingAccountId = null;
@@ -148,6 +149,24 @@
     editingAccountId = on && account ? Number(account.id) : null;
     if (addAccountBtnEl) addAccountBtnEl.textContent = editingAccountId ? "Save Account Changes" : "Add Account";
     if (cancelEditBtnEl) cancelEditBtnEl.style.display = editingAccountId ? "" : "none";
+    if (deleteAccountBtnEl) deleteAccountBtnEl.style.display = editingAccountId ? "" : "none";
+  }
+
+  function loadBenefitsForEdit(account) {
+    const host = document.getElementById("benefitRows");
+    if (!host) return;
+    host.innerHTML = "";
+    const acctType = String(account?.accounttype || "").toLowerCase();
+    const saved = Array.isArray(account?.card_benefits) ? account.card_benefits : [];
+    if (acctType === "credit" && saved.length) {
+      saved.forEach((b) => {
+        const category = String((b || {}).benefit_type || "");
+        const pct = (b || {}).cashback_percent;
+        addBenefitRow(category, pct === null || pct === undefined ? "" : String(pct));
+      });
+    } else {
+      addBenefitRow("", "");
+    }
   }
 
   function startEditAccount(accountId) {
@@ -160,6 +179,7 @@
     document.getElementById("interestPostDay").value = (a.interest_post_day ?? "") === null ? "" : String(a.interest_post_day ?? "");
     document.getElementById("receivesEmails").checked = !!a.receives_emails;
     document.getElementById("isPaycheckAccount").checked = !!a.is_paycheck_account;
+    loadBenefitsForEdit(a);
     // Keep Step 2 import target in sync with the account selected in Step 1.
     csvPreferredAccountId = Number(a.id || 0);
     CSV_MODAL_STATE.selectedAccountId = Number(a.id || 0);
@@ -1157,6 +1177,26 @@
     }
   }
 
+  async function deleteEditingAccount() {
+    addResultEl.textContent = "";
+    const id = Number(editingAccountId || 0);
+    if (!id) {
+      addResultEl.textContent = "Select an account to delete.";
+      return;
+    }
+    const ok = window.confirm("Delete this account and all of its transactions? This cannot be undone.");
+    if (!ok) return;
+    try {
+      const out = await api(`/onboarding/accounts/${id}`, { method: "DELETE" });
+      addResultEl.textContent = `Deleted account id ${out.account_id}. Removed ${Number(out.deleted_transactions || 0)} transactions.`;
+      setEditMode(false, null);
+      resetAccountForm();
+      await refreshStatus();
+    } catch (e) {
+      addResultEl.textContent = `Delete failed: ${e.message}`;
+    }
+  }
+
   async function markComplete() {
     try {
       await api("/onboarding/complete", { method: "POST", body: JSON.stringify({ completed: true }) });
@@ -1213,6 +1253,9 @@
       resetAccountForm();
       addResultEl.textContent = "Edit cancelled.";
     });
+  }
+  if (deleteAccountBtnEl) {
+    deleteAccountBtnEl.addEventListener("click", deleteEditingAccount);
   }
   const openParserWizardBtn = document.getElementById("openParserWizardBtn");
   if (openParserWizardBtn) openParserWizardBtn.addEventListener("click", openParserWizard);

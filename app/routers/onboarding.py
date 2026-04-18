@@ -21,6 +21,44 @@ from db import query_db, with_db_cursor
 
 router = APIRouter()
 
+_SEQUENCE_REALIGN_TABLES = {
+    "card_benefits",
+    "card_benefits_new",
+    "interest_rates",
+    "interest_rates_new",
+}
+
+
+def _realign_table_id_sequence(cur, table_name: str) -> None:
+    """
+    Ensure SERIAL/BIGSERIAL id sequences are >= MAX(id) for known tables.
+    This prevents duplicate-key failures after manual/migrated inserts.
+    """
+    if table_name not in _SEQUENCE_REALIGN_TABLES:
+        return
+    try:
+        cur.execute("SELECT to_regclass(%s) AS tbl", (table_name,))
+        row = cur.fetchone() or {}
+        if not row.get("tbl"):
+            return
+        cur.execute("SELECT pg_get_serial_sequence(%s, 'id') AS seq", (table_name,))
+        seq_row = cur.fetchone() or {}
+        seq_name = str(seq_row.get("seq") or "").strip()
+        if not seq_name:
+            return
+        cur.execute(
+            f"""
+            SELECT setval(
+              %s,
+              GREATEST((SELECT COALESCE(MAX(id), 0) FROM {table_name}), 1),
+              true
+            )
+            """,
+            (seq_name,),
+        )
+    except Exception:
+        return
+
 
 def _require_tenant_id() -> int:
     if not MULTI_TENANT_ENABLED:
@@ -29,6 +67,15 @@ def _require_tenant_id() -> int:
     if not tid:
         raise HTTPException(status_code=403, detail="tenant_required")
     return int(tid)
+
+
+def _table_exists(cur, table_name: str) -> bool:
+    try:
+        cur.execute("SELECT to_regclass(%s) AS tbl", (table_name,))
+        row = cur.fetchone() or {}
+        return bool(row.get("tbl"))
+    except Exception:
+        return False
 
 
 class OnboardingCompleteBody(BaseModel):
@@ -150,6 +197,32 @@ def onboarding_status(request: Request):
         (tid,),
     )
     account_ids = [int((a or {}).get("id") or 0) for a in (accounts or []) if int((a or {}).get("id") or 0) > 0]
+    benefit_rows: list[dict[str, Any]] = []
+    if account_ids:
+        with with_db_cursor() as (_, cur):
+            if _table_exists(cur, "card_benefits"):
+                cur.execute(
+                    """
+                    SELECT card_id, benefit_type, rate
+                    FROM card_benefits
+                    WHERE tenant_id = %s
+                      AND card_id = ANY(%s)
+                    ORDER BY card_id, id ASC
+                    """,
+                    (tid, account_ids),
+                )
+                benefit_rows = [dict(r) for r in (cur.fetchall() or [])]
+    benefits_by_card: dict[int, list[dict[str, Any]]] = {}
+    for row in benefit_rows:
+        card_id = int((row or {}).get("card_id") or 0)
+        if card_id <= 0:
+            continue
+        benefits_by_card.setdefault(card_id, []).append(
+            {
+                "benefit_type": str((row or {}).get("benefit_type") or "").strip(),
+                "cashback_percent": float((row or {}).get("rate") or 0.0),
+            }
+        )
 
     csv_ready_ids: set[int] = set()
     parser_ready_ids: set[int] = set()
@@ -198,6 +271,7 @@ def onboarding_status(request: Request):
             "parser_ready": parser_ready,
             "missing": missing,
         }
+        a["card_benefits"] = benefits_by_card.get(aid, [])
         out_accounts.append(a)
 
     return {
@@ -409,6 +483,8 @@ def onboarding_create_account(body: OnboardingAccountCreate):
                 END $$;
                 """
             )
+            _realign_table_id_sequence(cur, "interest_rates")
+            _realign_table_id_sequence(cur, "interest_rates_new")
             cur.execute(
                 """
                 INSERT INTO interest_rates (account_id, apr, effective_date, note, created_at, tenant_id)
@@ -445,6 +521,8 @@ def onboarding_create_account(body: OnboardingAccountCreate):
             cur.execute("ALTER TABLE card_benefits ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_card_id ON card_benefits(card_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_tenant_id ON card_benefits(tenant_id)")
+            _realign_table_id_sequence(cur, "card_benefits")
+            _realign_table_id_sequence(cur, "card_benefits_new")
             for category, pct in benefits:
                 cur.execute(
                     """
@@ -600,6 +678,8 @@ def onboarding_update_account(account_id: int, body: OnboardingAccountCreate):
                 END $$;
                 """
             )
+            _realign_table_id_sequence(cur, "interest_rates")
+            _realign_table_id_sequence(cur, "interest_rates_new")
             cur.execute(
                 """
                 INSERT INTO interest_rates (account_id, apr, effective_date, note, created_at, tenant_id)
@@ -637,6 +717,8 @@ def onboarding_update_account(account_id: int, body: OnboardingAccountCreate):
             cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_card_id ON card_benefits(card_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_card_benefits_tenant_id ON card_benefits(tenant_id)")
             cur.execute("DELETE FROM card_benefits WHERE tenant_id = %s AND card_id = %s", (tid, account_id_i))
+            _realign_table_id_sequence(cur, "card_benefits")
+            _realign_table_id_sequence(cur, "card_benefits_new")
             for category, pct in benefits:
                 cur.execute(
                     """
@@ -656,3 +738,60 @@ def onboarding_update_account(account_id: int, body: OnboardingAccountCreate):
 
     set_onboarding_completed(tid, False)
     return {"ok": True, "account_id": account_id_i}
+
+
+@router.delete("/onboarding/accounts/{account_id}")
+def onboarding_delete_account(account_id: int):
+    tid = _require_tenant_id()
+    account_id_i = int(account_id)
+    if account_id_i <= 0:
+        raise HTTPException(status_code=422, detail="invalid_account_id")
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "SELECT id FROM accounts WHERE id = %s AND tenant_id = %s LIMIT 1",
+            (account_id_i, tid),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="account_not_found_for_tenant")
+
+        cur.execute(
+            "DELETE FROM transactions WHERE tenant_id = %s AND account_id = %s",
+            (tid, account_id_i),
+        )
+        deleted_tx = int(cur.rowcount or 0)
+
+        cur.execute(
+            "DELETE FROM startingbalance WHERE tenant_id = %s AND account_id = %s",
+            (tid, account_id_i),
+        )
+        if _table_exists(cur, "interest_rates"):
+            cur.execute(
+                "DELETE FROM interest_rates WHERE tenant_id = %s AND account_id = %s",
+                (tid, account_id_i),
+            )
+        if _table_exists(cur, "card_benefits"):
+            cur.execute(
+                "DELETE FROM card_benefits WHERE tenant_id = %s AND card_id = %s",
+                (tid, account_id_i),
+            )
+        if _table_exists(cur, "csv_mapping_presets"):
+            cur.execute(
+                "DELETE FROM csv_mapping_presets WHERE COALESCE(tenant_id, 0) = %s AND account_id = %s",
+                (tid, account_id_i),
+            )
+        if _table_exists(cur, "email_parser_trial_drafts"):
+            cur.execute(
+                "DELETE FROM email_parser_trial_drafts WHERE tenant_id = %s AND account_id = %s",
+                (tid, account_id_i),
+            )
+
+        cur.execute(
+            "DELETE FROM accounts WHERE id = %s AND tenant_id = %s",
+            (account_id_i, tid),
+        )
+        conn.commit()
+
+    set_onboarding_completed(tid, False)
+    return {"ok": True, "account_id": account_id_i, "deleted_transactions": deleted_tx}
