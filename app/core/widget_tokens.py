@@ -80,9 +80,6 @@ def _redis_resolve_token(token_hash: str) -> dict[str, Any] | None:
         user_email = str(payload.get("user_email") or "").strip().lower()
         if tenant_id <= 0 or not user_email:
             return None
-        active_hash = str(r.get(_redis_active_key(tenant_id, user_email)) or "")
-        if active_hash != token_hash:
-            return None
         return {"tenant_id": tenant_id, "user_email": user_email}
     except Exception:
         return None
@@ -158,20 +155,7 @@ def issue_widget_token(tenant_id: int, user_email: str) -> str:
     token_hash = _hash_token(token)
     token_prefix = token[:14]
 
-    revoked_hashes: list[str] = []
     with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            UPDATE widget_api_tokens
-            SET revoked_at = now()
-            WHERE tenant_id = %s
-              AND lower(user_email) = lower(%s)
-              AND revoked_at IS NULL
-            RETURNING token_hash
-            """,
-            (tenant_id, email),
-        )
-        revoked_hashes = [str((r or {}).get("token_hash") or "") for r in (cur.fetchall() or [])]
         cur.execute(
             """
             INSERT INTO widget_api_tokens (tenant_id, user_email, token_hash, token_prefix)
@@ -187,9 +171,6 @@ def issue_widget_token(tenant_id: int, user_email: str) -> str:
             "tenant_id": tenant_id,
             "user_email": email,
         }
-    for old_hash in revoked_hashes:
-        if old_hash:
-            _redis_revoke_token(old_hash)
     _redis_store_active_token(token_hash, tenant_id, email)
     return token
 

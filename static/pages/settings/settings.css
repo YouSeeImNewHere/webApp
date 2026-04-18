@@ -111,6 +111,7 @@
 .settings-page .backfill-run-btn {
   width: var(--settings-action-btn-w);
   min-width: var(--settings-action-btn-w);
+  min-height: 48px;
   justify-content: center;
   text-align: center;
 }
@@ -603,12 +604,12 @@
   }
 
   .backfill-field {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-start;
   }
 
   .backfill-field .settings-input {
-    width: 84px;
+    width: 56px;
   }
 
   .backfill-check {
@@ -673,24 +674,39 @@
   }
 
   .settings-inline-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .backfill-controls {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "lookback run"
+      "include run";
     width: 100%;
     gap: 8px;
+    align-items: center;
   }
 
-  .backfill-field,
+  .backfill-field {
+    grid-area: lookback;
+    width: auto;
+    min-height: 0;
+    justify-content: flex-start;
+  }
+
   .backfill-check {
-    width: 100%;
+    grid-area: include;
+    width: auto;
     min-height: 0;
   }
 
-  .backfill-run-btn {
-    width: 100%;
-    min-width: 0;
+  .settings-page .backfill-run-btn {
+    grid-area: run;
+    width: 84px;
+    min-width: 84px;
+    height: 34px;
+    justify-self: end;
+    align-self: start;
   }
 }

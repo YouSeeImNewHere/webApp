@@ -589,10 +589,13 @@ def create_widget_script(request: Request):
     if not MULTI_TENANT_ENABLED:
         raise HTTPException(status_code=400, detail="widget_token_requires_multi_tenant")
     tenant_id, session_email = _require_approved_session_user(request)
+    user = get_user_by_email(session_email) or {}
+    is_owner = bool(user.get("is_owner"))
     token = issue_widget_token(tenant_id=tenant_id, user_email=session_email)
     widget_version = _refresh_widget_cache_for_tenant_best_effort(int(tenant_id))
 
-    script_path = Path("scripts") / "scriptable_finance_widget.js"
+    script_name = "scriptable_finance_widget_admin.js" if is_owner else "scriptable_finance_widget.js"
+    script_path = Path("scripts") / script_name
     script_template = script_path.read_text(encoding="utf-8")
 
     base_url = str(request.base_url).rstrip("/")

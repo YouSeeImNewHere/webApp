@@ -370,10 +370,10 @@ function bindAndroidWidgetActions() {
       try {
         const url = await ensureAndroidWidgetUrl({ forceRotate: true });
         await copyToClipboard(url);
-        setAndroidWidgetStatus("Token rotated. New URL copied. Update existing KWGT formulas.");
+        setAndroidWidgetStatus("New token generated and copied.");
       } catch (err) {
         console.error(err);
-        setAndroidWidgetStatus("Failed to rotate token.");
+        setAndroidWidgetStatus("Failed to generate token.");
       }
     }));
   }

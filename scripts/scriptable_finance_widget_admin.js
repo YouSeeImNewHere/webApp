@@ -6,6 +6,12 @@ const EXPECTED_TENANT_ID = 0;
 const ENDPOINT = "/widget/summary";
 const WIDGET_SCRIPT_VERSION = 3;
 
+const EGG_FOLDER_NAME = "EggAnim";
+const EGG_STAGES = 6;
+const EGG_REPEATS_PER_STAGE = 3;
+const EGG_IMAGE_SIZE = 45;
+const EGG_STATE_FILE = "egg_anim_state.json";
+
 const fmLocal = FileManager.local();
 
 function cacheKeyForToken() {
@@ -299,6 +305,43 @@ function remainingBarWithText(pctRemaining, fillColor, remainingText, width = 17
   return ctx.getImage();
 }
 
+async function getNextEggImageOrNull() {
+  try {
+    const fm = FileManager.iCloud();
+    const docs = fm.documentsDirectory();
+    const baseDir = fm.joinPath(docs, EGG_FOLDER_NAME);
+    const statePath = fm.joinPath(docs, EGG_STATE_FILE);
+
+    let tick = 0;
+    if (fm.fileExists(statePath)) {
+      await fm.downloadFileFromiCloud(statePath);
+      try {
+        tick = JSON.parse(fm.readString(statePath)).tick || 0;
+      } catch {}
+    }
+
+    const totalTicks = EGG_STAGES * EGG_REPEATS_PER_STAGE;
+    tick = tick % totalTicks;
+    const stageIndex = Math.floor(tick / EGG_REPEATS_PER_STAGE) + 1;
+
+    await fm.downloadFileFromiCloud(baseDir);
+    const files = fm.listContents(baseDir);
+    const target = `stage${stageIndex}`.toLowerCase();
+    const match = files.find(f => f.toLowerCase().startsWith(target + "."));
+    if (!match) return null;
+
+    const imgPath = fm.joinPath(baseDir, match);
+    await fm.downloadFileFromiCloud(imgPath);
+    const img = fm.readImage(imgPath);
+
+    fm.writeString(statePath, JSON.stringify({ tick: (tick + 1) % totalTicks }));
+
+    return img;
+  } catch (_) {
+    return null;
+  }
+}
+
 if (!WIDGET_ENABLED) {
   const w = new ListWidget();
   w.addText("Finance widget paused");
@@ -482,10 +525,23 @@ const dlBarStack = left.addStack();
 const dlBar = dlBarStack.addImage(dailyBarWithText(leftToday, baseline, 170, 12));
 dlBar.imageSize = new Size(170, 12);
 
+left.addSpacer(1);
+
+const footer = left.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+footer.font = Font.systemFont(10);
+footer.textOpacity = 0.6;
+
 row.addSpacer(16);
 const right = row.addStack();
 right.layoutVertically();
-right.spacing = 8;
+right.spacing = 1;
+right.size = new Size(0, 155);
+
+const totalsHead = right.addText("TOTALS");
+totalsHead.font = Font.semiboldSystemFont(13);
+totalsHead.textOpacity = 0.9;
+
+right.addSpacer(1);
 
 function kv(label, value) {
   const s = right.addStack();
@@ -500,13 +556,18 @@ function kv(label, value) {
 kv("Checking", money2(totals.checking));
 kv("Savings", money2(totals.savings));
 
-w.addSpacer(8);
-const footer = w.addText(
-  usedCache
-    ? `Cache ${Math.round(cacheAgeMin)}m`
-    : "Live"
-);
-footer.font = Font.systemFont(10);
-footer.textOpacity = 0.6;
+const filler = right.addStack();
+filler.layoutVertically();
+filler.addSpacer();
+
+const eggRow = right.addStack();
+eggRow.layoutHorizontally();
+eggRow.addSpacer();
+
+const eggImg = await getNextEggImageOrNull();
+if (eggImg) {
+  const eggEl = eggRow.addImage(eggImg);
+  eggEl.imageSize = new Size(EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+}
 
 return finish(w);
