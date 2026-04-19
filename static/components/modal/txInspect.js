@@ -243,7 +243,12 @@
     const extraHtml = extraFields
       .map(({ key, value }) => {
         const val = (value === null || value === undefined || value === "") ? "—" : esc(value);
-        return `<div class="tx-tech-k">${esc(key)}</div><div class="tx-tech-v">${val}</div>`;
+        return `
+          <div class="tx-tech-row">
+            <span class="tx-tech-k">${esc(key)}:</span>
+            <span class="tx-tech-v">${val}</span>
+          </div>
+        `;
       })
       .join("");
 
@@ -315,7 +320,7 @@
       <div class="tx-v">
         <section class="tx-tech-details">
           <div class="tx-tech-grid">
-            ${extraHtml || `<div class="tx-tech-v">No additional fields.</div>`}
+            ${extraHtml || `<div class="tx-tech-row"><span class="tx-tech-v">No additional fields.</span></div>`}
           </div>
         </section>
       </div>

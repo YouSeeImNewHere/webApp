@@ -57,6 +57,21 @@
   opacity: 1;
 }
 
+.alltx-abs-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.alltx-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 900px) {
   .addtx-grid {
     grid-template-columns: 1fr;
@@ -64,5 +79,9 @@
 
   .addtx-status-field {
     max-width: none;
+  }
+
+  .alltx-action-row {
+    gap: 8px;
   }
 }

@@ -3534,7 +3534,7 @@ body{
 .tx-tech-grid{
   margin-top: 0;
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 8px 10px;
   padding: 0;
   border: 0;
@@ -3542,14 +3542,24 @@ body{
   background: transparent;
 }
 
+.tx-tech-row{
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  text-transform: uppercase;
+}
+
 .tx-tech-k{
   font-size: 12px;
   font-weight: 700;
   color: var(--muted, #666);
+  white-space: nowrap;
 }
 
 .tx-tech-v{
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
   word-break: break-word;
 }
 
@@ -3637,10 +3647,12 @@ body{
   }
 
   .tx-tech-k{
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    margin-top: 4px;
+    font-size: 12px;
+    margin-top: 0;
+  }
+
+  .tx-tech-v{
+    font-size: 12px;
   }
 }
 

@@ -200,17 +200,58 @@ function clamp01(v) {
   return n;
 }
 
+function creditFillColor(pct) {
+  const p = clamp01(pct);
+  if (p < 0.3) return "#34C759";
+  if (p < 0.6) return "#FF9F0A";
+  return "#FF453A";
+}
+
+function dayFillColor(leftToday, baseline) {
+  const b = Number(baseline || 0);
+  const r = Number(leftToday || 0);
+  if (r < 0) return "#FF453A";
+  const pctRem = b > 0 ? clamp01(r / b) : 0;
+  if (pctRem < 0.3) return "#FF9F0A";
+  return "#34C759";
+}
+
+function monthElapsedPct() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const fracDay = (now.getHours() + now.getMinutes() / 60) / 24;
+  return clamp01(((now.getDate() - 1) + fracDay) / daysInMonth);
+}
+
+function safeFillColor(remaining, total) {
+  const r = Number(remaining || 0);
+  const t = Number(total || 0);
+  if (t <= 0) return "#34C759";
+  const elapsed = monthElapsedPct();
+  const expectedRemaining = t * (1 - elapsed);
+  const tol = Math.max(t * 0.05, 25);
+  if (r > expectedRemaining + tol) return "#34C759";
+  if (r < expectedRemaining - tol) return "#FF453A";
+  return "#FF9F0A";
+}
+
 function setFillWidth(id, ratio) {
   const el = document.getElementById(id);
   if (!el) return;
   el.style.width = `${Math.round(clamp01(ratio) * 100)}%`;
 }
 
+function setFillColor(id, color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.background = color;
+}
+
 async function loadWidgetPreview() {
   const updatedEl = document.getElementById("widgetPreviewUpdated");
-  if (!updatedEl) return;
-
-  updatedEl.textContent = "Loading...";
+  if (updatedEl) updatedEl.textContent = "Loading...";
   try {
     const [monthRes, dayRes, bankRes] = await Promise.all([
       fetch("/month-budget", { cache: "no-store" }),
@@ -248,26 +289,64 @@ async function loadWidgetPreview() {
     };
 
     setText("widgetPreviewCreditPct", `${Math.round(creditPct * 100)}%`);
-    setText("widgetPreviewCreditAvail", money(creditAvail));
-    setText("widgetPreviewMonthGoal", money(monthGoal));
+    setText("widgetPreviewCreditAvail", money0(creditAvail));
+    setText("widgetPreviewMonthGoal", money0(monthGoal));
     setText("widgetPreviewSafeValue", money(safe));
-    setText("widgetPreviewBaseline", money(baseline));
+    setText("widgetPreviewBaseline", money0(baseline));
     setText("widgetPreviewToday", money(leftToday));
     setText("widgetPreviewChecking", money(((bank.checking || {}).total || 0)));
     setText("widgetPreviewSavings", money(((bank.savings || {}).total || 0)));
+    setText("widgetPreviewFooter", "Live");
 
     setFillWidth("widgetPreviewCreditFill", creditPct);
     setFillWidth("widgetPreviewSafeFill", safePct);
     setFillWidth("widgetPreviewDayFill", dayPct);
+    const creditFill = document.getElementById("widgetPreviewCreditFill");
+    const safeFill = document.getElementById("widgetPreviewSafeFill");
+    const dayFill = document.getElementById("widgetPreviewDayFill");
+    if (creditFill) creditFill.style.background = creditFillColor(creditPct);
+    if (safeFill) safeFill.style.background = safeFillColor(safe, monthGoal);
+    if (dayFill) dayFill.style.background = dayFillColor(leftToday, baseline);
 
-    setText("widgetPreviewInline", `Left ${money0(leftToday)}`);
-    setText("widgetPreviewCircular", money0(leftToday));
+    setText("widgetPreviewSmallCreditPct", `${Math.round(creditPct * 100)}%`);
+    setText("widgetPreviewSmallCreditAvail", money0(creditAvail));
+    setText("widgetPreviewSmallMonthGoal", money0(monthGoal));
+    setText("widgetPreviewSmallSafeValue", money(safe));
+    setText("widgetPreviewSmallBaseline", money0(baseline));
+    setText("widgetPreviewSmallToday", money(leftToday));
+    setText("widgetPreviewSmallFooter", "Live");
+    setFillWidth("widgetPreviewSmallCreditFill", creditPct);
+    setFillWidth("widgetPreviewSmallSafeFill", safePct);
+    setFillWidth("widgetPreviewSmallDayFill", dayPct);
+    setFillColor("widgetPreviewSmallCreditFill", creditFillColor(creditPct));
+    setFillColor("widgetPreviewSmallSafeFill", safeFillColor(safe, monthGoal));
+    setFillColor("widgetPreviewSmallDayFill", dayFillColor(leftToday, baseline));
+
+    setText("widgetPreviewLargeCreditPct", `${Math.round(creditPct * 100)}%`);
+    setText("widgetPreviewLargeCreditAvail", money0(creditAvail));
+    setText("widgetPreviewLargeMonthGoal", money0(monthGoal));
+    setText("widgetPreviewLargeSafeValue", money(safe));
+    setText("widgetPreviewLargeBaseline", money0(baseline));
+    setText("widgetPreviewLargeToday", money(leftToday));
+    setText("widgetPreviewLargeChecking", money(((bank.checking || {}).total || 0)));
+    setText("widgetPreviewLargeSavings", money(((bank.savings || {}).total || 0)));
+    setText("widgetPreviewLargePillToday", money(leftToday));
+    setText("widgetPreviewLargePillSafe", money0(safe));
+    setText("widgetPreviewLargePillCredit", money0(creditAvail));
+    setText("widgetPreviewLargeFooter", "Live");
+    setFillWidth("widgetPreviewLargeCreditFill", creditPct);
+    setFillWidth("widgetPreviewLargeSafeFill", safePct);
+    setFillWidth("widgetPreviewLargeDayFill", dayPct);
+    setFillColor("widgetPreviewLargeCreditFill", creditFillColor(creditPct));
+    setFillColor("widgetPreviewLargeSafeFill", safeFillColor(safe, monthGoal));
+    setFillColor("widgetPreviewLargeDayFill", dayFillColor(leftToday, baseline));
+
     setText("widgetPreviewRectToday", money(leftToday));
     setText("widgetPreviewRectPct", `${Math.round(creditPct * 100)}%`);
-    setText("widgetPreviewRectBase", `Base ${money(baseline)}/day`);
-    setText("widgetPreviewRectSafe", `Safe ${money(safe)}`);
+    setText("widgetPreviewRectBase", `Base ${money0(baseline)}/day`);
+    setText("widgetPreviewRectSafe", `Safe ${money0(safe)}`);
 
-    updatedEl.textContent = `Updated ${formatPreviewTime(new Date())}`;
+    if (updatedEl) updatedEl.textContent = `Updated ${formatPreviewTime(new Date())}`;
   } catch (_) {
     const ids = [
       "widgetPreviewCreditPct",
@@ -278,8 +357,26 @@ async function loadWidgetPreview() {
       "widgetPreviewToday",
       "widgetPreviewChecking",
       "widgetPreviewSavings",
-      "widgetPreviewInline",
-      "widgetPreviewCircular",
+      "widgetPreviewFooter",
+      "widgetPreviewSmallCreditPct",
+      "widgetPreviewSmallCreditAvail",
+      "widgetPreviewSmallMonthGoal",
+      "widgetPreviewSmallSafeValue",
+      "widgetPreviewSmallBaseline",
+      "widgetPreviewSmallToday",
+      "widgetPreviewSmallFooter",
+      "widgetPreviewLargeCreditPct",
+      "widgetPreviewLargeCreditAvail",
+      "widgetPreviewLargeMonthGoal",
+      "widgetPreviewLargeSafeValue",
+      "widgetPreviewLargeBaseline",
+      "widgetPreviewLargeToday",
+      "widgetPreviewLargeChecking",
+      "widgetPreviewLargeSavings",
+      "widgetPreviewLargePillToday",
+      "widgetPreviewLargePillSafe",
+      "widgetPreviewLargePillCredit",
+      "widgetPreviewLargeFooter",
       "widgetPreviewRectToday",
       "widgetPreviewRectPct",
       "widgetPreviewRectBase",
@@ -292,7 +389,13 @@ async function loadWidgetPreview() {
     setFillWidth("widgetPreviewCreditFill", 0);
     setFillWidth("widgetPreviewSafeFill", 0);
     setFillWidth("widgetPreviewDayFill", 0);
-    updatedEl.textContent = "Retry";
+    setFillWidth("widgetPreviewSmallCreditFill", 0);
+    setFillWidth("widgetPreviewSmallSafeFill", 0);
+    setFillWidth("widgetPreviewSmallDayFill", 0);
+    setFillWidth("widgetPreviewLargeCreditFill", 0);
+    setFillWidth("widgetPreviewLargeSafeFill", 0);
+    setFillWidth("widgetPreviewLargeDayFill", 0);
+    if (updatedEl) updatedEl.textContent = "Retry";
   }
 }
 
@@ -314,18 +417,22 @@ function bindWidgetActions() {
     try {
       let script = _lastWidgetScript;
       if (!script) script = await fetchWidgetScript();
-      await copyToClipboard(script);
-      if (statusEl) statusEl.textContent = "Copied. Paste into Scriptable as a new script.";
-      // Refresh token/script in the background for the next copy without blocking user gesture copy.
+      openManualCopySheet(script);
+      const ta = document.getElementById("widgetManualCopyText");
+      const val = String((ta && ta.value) || script || "");
+      const manualStatus = document.getElementById("widgetManualCopyStatus");
+      try {
+        await copyToClipboard(val);
+        if (manualStatus) manualStatus.textContent = "Copied.";
+        if (statusEl) statusEl.textContent = "Copied. Paste into Scriptable as a new script.";
+      } catch (_) {
+        selectManualCopyText();
+        if (manualStatus) manualStatus.textContent = "Copy blocked. Text selected for manual copy.";
+        if (statusEl) statusEl.textContent = "Copy blocked. Manual copy sheet opened.";
+      }
       fetchWidgetScript().catch(() => {});
     } catch (_) {
-      try {
-        const fallbackScript = _lastWidgetScript || await fetchWidgetScript();
-        openManualCopySheet(fallbackScript);
-        if (statusEl) statusEl.textContent = "Clipboard was blocked. Manual copy tools opened.";
-      } catch (_) {
-        if (statusEl) statusEl.textContent = "Failed to prepare widget code.";
-      }
+      if (statusEl) statusEl.textContent = "Failed to prepare widget code.";
     } finally {
       copyBtn.disabled = false;
     }

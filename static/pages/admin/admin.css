@@ -14,6 +14,37 @@
   margin: 0 0 8px 0;
 }
 
+.admin-fold {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.admin-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-fold > summary.admin-title {
+  margin-bottom: 8px;
+}
+
+.admin-fold > summary.admin-title::before {
+  content: "\25B8";
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 12px;
+  transform: translateY(-1px);
+}
+
+.admin-fold[open] > summary.admin-title::before {
+  content: "\25BE";
+}
+
 .admin-card {
   background: var(--card-bg, #fff);
   border: 1px solid var(--border, #d8dce6);

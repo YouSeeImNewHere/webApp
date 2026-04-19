@@ -185,6 +185,7 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
             "available": round(available, 2),
             "limit_sum": round(limit_sum, 2),
         },
+        "notifications_unread": int(unread_count() or 0),
         "safe_to_spend": mb["safe_to_spend"],
         # Backward-compatible root alias for widget formulas.
         "daily_limit": dl.get("baseline", 0.0),
@@ -1352,7 +1353,7 @@ def _compute_extra_saved_rollover(
     # If today's snapshot does not exist yet, use today's computed baseline.
     if today not in by_day:
         by_day[today] = {
-            "baseline": float(fallback_today_baseline or 0.0),
+            "baseline": max(0.0, float(fallback_today_baseline or 0.0)),
             "computed_at": None,
         }
 
@@ -1367,7 +1368,7 @@ def _compute_extra_saved_rollover(
             dcur += timedelta(days=1)
             continue
 
-        baseline = float(item.get("baseline") or 0.0)
+        baseline = max(0.0, float(item.get("baseline") or 0.0))
         spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(dcur)
         leftover = baseline - spent_free
 
@@ -1428,7 +1429,7 @@ def day_limit(recalc: int = 0):
     )
     if force_refresh or not row:
         mb = month_budget_home_cached(today.year, today.month, force_refresh=force_refresh)
-        baseline = float(mb.get("daily_limit") or 0.0)
+        baseline = max(0.0, float(mb.get("daily_limit") or 0.0))
 
         with with_db_cursor() as (conn, cur):
             cur.execute(
@@ -1447,7 +1448,7 @@ def day_limit(recalc: int = 0):
             (today, int(tid)),
         )
 
-    baseline = float(row[0]["baseline"])
+    baseline = max(0.0, float(row[0]["baseline"]))
     computed_at = row[0]["computed_at"]
 
     spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(today)
@@ -1494,7 +1495,7 @@ def extra_saved():
 
     today = today_local()
     mb = month_budget_home_cached(today.year, today.month)
-    fallback_today_baseline = float((mb or {}).get("daily_limit") or 0.0)
+    fallback_today_baseline = max(0.0, float((mb or {}).get("daily_limit") or 0.0))
     total_extra, _, days_counted = _compute_extra_saved_rollover(
         tid=int(tid),
         year=today.year,
@@ -1524,7 +1525,7 @@ def extra_saved_detail():
     today = today_local()
     month_start = date(today.year, today.month, 1)
     mb = month_budget_home_cached(today.year, today.month)
-    fallback_today_baseline = float((mb or {}).get("daily_limit") or 0.0)
+    fallback_today_baseline = max(0.0, float((mb or {}).get("daily_limit") or 0.0))
     total, days, _ = _compute_extra_saved_rollover(
         tid=int(tid),
         year=today.year,

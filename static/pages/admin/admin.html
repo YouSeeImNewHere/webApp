@@ -38,29 +38,33 @@
     </section>
 
     <section class="admin-section">
-      <h2 class="admin-title">Admin Notifications</h2>
-      <div class="admin-card">
-        <div class="admin-row">
-          <button id="refreshAdminErrorsBtn" class="settings-btn" type="button">Refresh Feed</button>
-          <button id="clearAdminErrorsBtn" class="settings-btn danger" type="button">Clear Feed</button>
+      <details class="admin-fold">
+        <summary class="admin-title">Admin Notifications</summary>
+        <div class="admin-card">
+          <div class="admin-row">
+            <button id="refreshAdminErrorsBtn" class="settings-btn" type="button">Refresh Feed</button>
+            <button id="clearAdminErrorsBtn" class="settings-btn danger" type="button">Clear Feed</button>
+          </div>
+          <div id="adminErrorList" class="admin-list"></div>
         </div>
-        <div id="adminErrorList" class="admin-list"></div>
-      </div>
+      </details>
     </section>
 
     <section class="admin-section">
-      <h2 class="admin-title">Email Parser Logs</h2>
-      <div class="admin-card">
-        <div class="admin-row">
-          <label for="emailParseTenantSelect">Tenant</label>
-          <select id="emailParseTenantSelect" class="admin-select admin-select--sm">
-            <option value="">All tenants</option>
-          </select>
-          <button id="refreshEmailParseLogsBtn" class="settings-btn" type="button">Refresh Logs</button>
-          <button id="clearEmailParseLogsBtn" class="settings-btn danger" type="button">Clear Logs</button>
+      <details class="admin-fold">
+        <summary class="admin-title">Email Parser Logs</summary>
+        <div class="admin-card">
+          <div class="admin-row">
+            <label for="emailParseTenantSelect">Tenant</label>
+            <select id="emailParseTenantSelect" class="admin-select admin-select--sm">
+              <option value="">All tenants</option>
+            </select>
+            <button id="refreshEmailParseLogsBtn" class="settings-btn" type="button">Refresh Logs</button>
+            <button id="clearEmailParseLogsBtn" class="settings-btn danger" type="button">Clear Logs</button>
+          </div>
+          <div id="emailParseLogList" class="admin-list"></div>
         </div>
-        <div id="emailParseLogList" class="admin-list"></div>
-      </div>
+      </details>
     </section>
 
     <section class="admin-section">

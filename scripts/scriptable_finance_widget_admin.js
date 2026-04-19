@@ -50,7 +50,9 @@ function updateRequiredWidget() {
   w.setPadding(14, 14, 14, 14);
   w.addText("FINANCE").font = Font.boldSystemFont(12);
   w.addSpacer(6);
-  w.addText("Go to settings and update your widget").font = Font.boldSystemFont(13);
+  const msg = w.addText("Go to webapp and copy new widget code");
+  msg.font = Font.boldSystemFont(13);
+  msg.minimumScaleFactor = 0.75;
   return w;
 }
 
@@ -420,6 +422,7 @@ const credit = data.credit || {};
 const totals = data.totals || {};
 
 const safe = Number(data.safe_to_spend || 0);
+const unread = Number(data.notifications_unread || 0);
 const monthTotal = Number((data.month && data.month.free_spend_goal) || 0);
 const today = data.today || {};
 const baseline = Number(today.baseline || 0);
@@ -464,6 +467,179 @@ if (fam === "accessoryRectangular") {
   safeLine.font = Font.systemFont(12);
   safeLine.textOpacity = 0.75;
 
+  return finish(w);
+}
+
+if (fam === "small") {
+  const w = new ListWidget();
+  w.setPadding(10, 10, 10, 10);
+
+  const cuHead = w.addStack();
+  cuHead.layoutHorizontally();
+  cuHead.centerAlignContent();
+  const cuLabel = cuHead.addText("CREDIT USAGE");
+  cuLabel.font = Font.boldSystemFont(10);
+  cuLabel.textOpacity = 0.55;
+  cuHead.addSpacer(6);
+  const cuPct = cuHead.addText(`${Math.round(clamp01(pct) * 100)}%`);
+  cuPct.font = Font.boldSystemFont(10);
+  cuPct.textColor = creditColor(pct);
+
+  const cuBar = w.addImage(progressBar(pct, 130, 12, money0(credit.available)));
+  cuBar.imageSize = new Size(130, 12);
+
+  w.addSpacer(4);
+  const safeHead = w.addStack();
+  safeHead.layoutHorizontally();
+  safeHead.centerAlignContent();
+  const safeLabel = safeHead.addText("SAFE TO SPEND");
+  safeLabel.font = Font.boldSystemFont(10);
+  safeLabel.textOpacity = 0.55;
+  safeHead.addSpacer();
+  const safeTotal = safeHead.addText(money0(monthTotal));
+  safeTotal.font = Font.boldSystemFont(12);
+
+  const pctRemainingMonth = monthTotal > 0 ? (safe / monthTotal) : 0;
+  const paceCol = paceColorForRemaining(safe, monthTotal);
+  const safeBar = w.addImage(remainingBarWithText(pctRemainingMonth, paceCol, money2(safe), 130, 12));
+  safeBar.imageSize = new Size(130, 12);
+
+  w.addSpacer(4);
+  const dlHead = w.addStack();
+  dlHead.layoutHorizontally();
+  dlHead.centerAlignContent();
+  const dlLabel = dlHead.addText("DAILY LIMIT");
+  dlLabel.font = Font.boldSystemFont(10);
+  dlLabel.textOpacity = 0.55;
+  dlHead.addSpacer();
+  const dlBase = dlHead.addText(money0(baseline));
+  dlBase.font = Font.boldSystemFont(12);
+
+  const dlBar = w.addImage(dailyBarWithText(leftToday, baseline, 130, 12));
+  dlBar.imageSize = new Size(130, 12);
+
+  w.addSpacer(4);
+  const footer = w.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+  footer.font = Font.systemFont(10);
+  footer.textOpacity = 0.6;
+  return finish(w);
+}
+
+if (fam === "large") {
+  const w = new ListWidget();
+  w.setPadding(14, 14, 14, 14);
+
+  const top = w.addStack();
+  top.layoutHorizontally();
+
+  const left = top.addStack();
+  left.layoutVertically();
+  left.spacing = 6;
+  left.size = new Size(190, 0);
+
+  const cuHead = left.addStack();
+  cuHead.layoutHorizontally();
+  cuHead.centerAlignContent();
+  const cuLabel = cuHead.addText("CREDIT USAGE");
+  cuLabel.font = Font.boldSystemFont(10);
+  cuLabel.textOpacity = 0.55;
+  cuHead.addSpacer(6);
+  const cuPct = cuHead.addText(`${Math.round(clamp01(pct) * 100)}%`);
+  cuPct.font = Font.boldSystemFont(10);
+  cuPct.textColor = creditColor(pct);
+
+  const cuBar = left.addImage(progressBar(pct, 190, 12, money0(credit.available)));
+  cuBar.imageSize = new Size(190, 12);
+
+  left.addSpacer(4);
+  const safeHead = left.addStack();
+  safeHead.layoutHorizontally();
+  safeHead.centerAlignContent();
+  const safeLabel = safeHead.addText("SAFE TO SPEND");
+  safeLabel.font = Font.boldSystemFont(10);
+  safeLabel.textOpacity = 0.55;
+  safeHead.addSpacer();
+  const safeTotal = safeHead.addText(money0(monthTotal));
+  safeTotal.font = Font.boldSystemFont(12);
+
+  const pctRemainingMonth = monthTotal > 0 ? (safe / monthTotal) : 0;
+  const paceCol = paceColorForRemaining(safe, monthTotal);
+  const safeBar = left.addImage(remainingBarWithText(pctRemainingMonth, paceCol, money2(safe), 190, 12));
+  safeBar.imageSize = new Size(190, 12);
+
+  left.addSpacer(4);
+  const dlHead = left.addStack();
+  dlHead.layoutHorizontally();
+  dlHead.centerAlignContent();
+  const dlLabel = dlHead.addText("DAILY LIMIT");
+  dlLabel.font = Font.boldSystemFont(10);
+  dlLabel.textOpacity = 0.55;
+  dlHead.addSpacer();
+  const dlBase = dlHead.addText(money0(baseline));
+  dlBase.font = Font.boldSystemFont(12);
+
+  const dlBar = left.addImage(dailyBarWithText(leftToday, baseline, 190, 12));
+  dlBar.imageSize = new Size(190, 12);
+
+  top.addSpacer(16);
+  const right = top.addStack();
+  right.layoutVertically();
+  right.spacing = 2;
+  right.size = new Size(0, 190);
+  const totalsHead = right.addText("TOTALS");
+  totalsHead.font = Font.semiboldSystemFont(13);
+  totalsHead.textOpacity = 0.9;
+
+  function kvLarge(label, value) {
+    const s = right.addStack();
+    s.layoutHorizontally();
+    const l = s.addText(label);
+    l.font = Font.systemFont(12);
+    l.textOpacity = 0.75;
+    s.addSpacer();
+    const v = s.addText(value);
+    v.font = Font.boldSystemFont(12);
+  }
+  kvLarge("Checking", money2(totals.checking));
+  kvLarge("Savings", money2(totals.savings));
+  kvLarge("Alerts", String(Math.max(0, Math.floor(unread))));
+
+  const filler = right.addStack();
+  filler.layoutVertically();
+  filler.addSpacer();
+  const eggRow = right.addStack();
+  eggRow.layoutHorizontally();
+  eggRow.addSpacer();
+  const eggImg = await getNextEggImageOrNull();
+  if (eggImg) {
+    const eggEl = eggRow.addImage(eggImg);
+    eggEl.imageSize = new Size(EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+  }
+
+  w.addSpacer(10);
+  const metrics = w.addStack();
+  metrics.layoutHorizontally();
+  metrics.centerAlignContent();
+
+  function pill(parent, label, value) {
+    const p = parent.addStack();
+    p.layoutVertically();
+    const l = p.addText(label);
+    l.font = Font.systemFont(10);
+    l.textOpacity = 0.65;
+    const v = p.addText(value);
+    v.font = Font.boldSystemFont(12);
+  }
+  pill(metrics, "Today", money2(leftToday));
+  metrics.addSpacer(16);
+  pill(metrics, "Safe", money0(safe));
+  metrics.addSpacer(16);
+  pill(metrics, "Credit Avail", money0(credit.available));
+
+  w.addSpacer();
+  const footer = w.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+  footer.font = Font.systemFont(10);
+  footer.textOpacity = 0.6;
   return finish(w);
 }
 
@@ -555,6 +731,7 @@ function kv(label, value) {
 }
 kv("Checking", money2(totals.checking));
 kv("Savings", money2(totals.savings));
+kv("Alerts", String(Math.max(0, Math.floor(unread))));
 
 const filler = right.addStack();
 filler.layoutVertically();

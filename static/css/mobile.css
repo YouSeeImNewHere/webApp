@@ -1202,6 +1202,7 @@ body.page-recurring .chart-dates-inline--header input[type="date"]{
   }
 
   body.page-alltx #qGrid input,
+  body.page-alltx #qGrid select,
   body.page-alltx #amtGrid input,
   body.page-alltx #amtGrid select{
     width: 100% !important;

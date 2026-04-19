@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime
 from typing import Any
 
 from db import query_db, with_db_cursor
@@ -197,17 +198,62 @@ def log_email_parse_server_line(
     run_source: str = "server",
     context: dict[str, Any] | None = None,
 ) -> None:
+    ensure_email_parse_events_table_pg()
+    raw = str(message or "").strip()
+    if not raw:
+        return
+
+    line = f"[{datetime.now().strftime('%H:%M:%S')}] {raw}"
+    tid = int(tenant_id) if tenant_id is not None else None
+    email = str(user_email or "").strip().lower() or None
+    source = str(run_source or "").strip().lower() or "server"
+    ctx = context if isinstance(context, dict) else {}
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            SELECT id, reason
+            FROM email_parse_events
+            WHERE status = 'server_log'
+              AND run_source = %s
+              AND COALESCE(tenant_id, 0) = COALESCE(%s, 0)
+              AND COALESCE(lower(user_email), '') = COALESCE(lower(%s), '')
+              AND created_at >= date_trunc('minute', now())
+              AND created_at < (date_trunc('minute', now()) + interval '1 minute')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (source, tid, email),
+        )
+        row = cur.fetchone() or {}
+        event_id = int(row.get("id") or 0)
+        if event_id > 0:
+            prior = str(row.get("reason") or "").strip()
+            merged = f"{prior}\n{line}" if prior else line
+            if len(merged) > 4000:
+                merged = merged[-4000:]
+            cur.execute(
+                """
+                UPDATE email_parse_events
+                SET reason = %s
+                WHERE id = %s
+                """,
+                (merged, event_id),
+            )
+            conn.commit()
+            return
+
     log_email_parse_event(
-        tenant_id=tenant_id,
-        user_email=user_email,
-        run_source=run_source,
+        tenant_id=tid,
+        user_email=email,
+        run_source=source,
         imap_id=None,
         sender=None,
         subject=None,
         received_at=None,
         matched=False,
         status="server_log",
-        reason=str(message or "").strip()[:4000],
+        reason=line[:4000],
         inserted=False,
         notified=False,
         parser_draft_id=None,
@@ -216,5 +262,5 @@ def log_email_parse_server_line(
         account_label=None,
         amount=None,
         merchant=None,
-        context=(context or {}),
+        context=ctx,
     )

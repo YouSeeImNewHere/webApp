@@ -24,6 +24,7 @@ let LOADING = false;
 let DONE = false;
 let LAST_REQ_KEY = "";
 let ADD_TX_ACCOUNTS_LOADED = false;
+let FILTER_OPTIONS_LOADED = false;
 
 function setStatus(msg){
   const el = document.getElementById("txStatus");
@@ -202,14 +203,6 @@ function resetAndReload(){
   });
 }
 
-function debounce(fn, ms){
-  let t = null;
-  return (...args) => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
 function initLoadMoreButton(){
   const btn = document.getElementById("txLoadMoreBtn");
   if (!btn) return;
@@ -365,16 +358,70 @@ function initAddTransactionUI(){
   });
 }
 
-function initFilters(){
-  const onChange = debounce(() => resetAndReload(), 250);
+function populateSelectOptions(selectEl, options, emptyLabel){
+  if (!selectEl) return;
+  const current = String(selectEl.value || "");
+  const uniq = Array.from(new Set((options || []).map(v => String(v || "").trim()).filter(Boolean)));
+  uniq.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
-  const ids = ["qMerchant","qCard","qCategory","dateFrom","dateTo","amtMode","amtA","amtB","amtAbs"];
-  ids.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener("input", onChange);
-    el.addEventListener("change", onChange);
+  selectEl.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = emptyLabel || "Any";
+  selectEl.appendChild(empty);
+
+  uniq.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.appendChild(opt);
   });
+
+  if (current && uniq.includes(current)) {
+    selectEl.value = current;
+  }
+}
+
+async function loadFilterOptions(){
+  if (FILTER_OPTIONS_LOADED) return;
+  const cardSel = document.getElementById("qCard");
+  const categorySel = document.getElementById("qCategory");
+  if (!cardSel || !categorySel) return;
+
+  try {
+    const [bankRes, categoriesRes] = await Promise.all([
+      fetch("/bank-info", { cache: "no-store" }),
+      fetch("/categories", { cache: "no-store" }),
+    ]);
+
+    const bankPayload = bankRes.ok ? await bankRes.json() : {};
+    const categoriesPayload = categoriesRes.ok ? await categoriesRes.json() : [];
+
+    const accountNames = []
+      .concat((bankPayload?.accounts || []).map(a => String(a?.name || "").trim()))
+      .concat((bankPayload?.credit_cards || []).map(c => String(c?.name || "").trim()))
+      .filter(Boolean);
+    const categories = Array.isArray(categoriesPayload)
+      ? categoriesPayload.map(c => String(c || "").trim()).filter(Boolean)
+      : [];
+
+    populateSelectOptions(cardSel, accountNames, "Any account");
+    populateSelectOptions(categorySel, categories, "Any category");
+    FILTER_OPTIONS_LOADED = true;
+  } catch (err) {
+    console.error("Failed to load transaction filter options", err);
+    populateSelectOptions(cardSel, [], "Any account");
+    populateSelectOptions(categorySel, [], "Any category");
+  }
+}
+
+function initFilters(){
+  const searchBtn = document.getElementById("searchFilters");
+  if (searchBtn) {
+    searchBtn.addEventListener("click", () => {
+      resetAndReload();
+    });
+  }
 
   const clearBtn = document.getElementById("clearFilters");
   if (clearBtn){
@@ -417,6 +464,7 @@ function initFilters(){
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  loadFilterOptions().catch(err => console.error(err));
   initLoadMoreButton();
   initFilters();
   initAddTransactionUI();
