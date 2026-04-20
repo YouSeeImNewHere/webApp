@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hmac
 import json
 from typing import Optional, Dict
 
@@ -229,7 +230,9 @@ def push_notification(payload: NotificationPush, x_notif_secret: str = Header(de
     # 2) Authenticated in-app pushes (session tenant present).
     # Home uses in-app pushes for credit-usage notifications.
     has_session_tenant = bool(current_tenant_id())
-    has_valid_secret = bool(NOTIF_SECRET) and (x_notif_secret == NOTIF_SECRET)
+    provided_secret = str(x_notif_secret or "")
+    expected_secret = str(NOTIF_SECRET or "")
+    has_valid_secret = bool(expected_secret) and bool(provided_secret) and hmac.compare_digest(provided_secret, expected_secret)
     if not (has_valid_secret or has_session_tenant):
         raise HTTPException(status_code=401, detail="Unauthorized")
 

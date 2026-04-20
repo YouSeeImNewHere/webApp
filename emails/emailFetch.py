@@ -1914,7 +1914,7 @@ def run_manual_wizard_parse(
 
     from app.core.auth import _refresh_google_access_token_if_needed
 
-    access_token, err = _refresh_google_access_token_if_needed(rules_owner)
+    access_token, err, _ = _refresh_google_access_token_if_needed(rules_owner)
     if not access_token:
         raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
 
@@ -2034,7 +2034,7 @@ def run(include_processed: bool = False, rules_user_email: str | None = None):
         # 20–30 minutes is what you wanted; default 30, configurable
         PENDING_TTL_MINUTES = int(os.getenv("PUSHOVER_PENDING_TTL_MINUTES") or "30")
 
-        access_token, err = _refresh_google_access_token_if_needed(rules_owner)
+        access_token, err, _ = _refresh_google_access_token_if_needed(rules_owner)
         if not access_token:
             raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
         processed_label_id = None

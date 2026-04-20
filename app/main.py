@@ -2,6 +2,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from urllib.parse import parse_qsl, urlencode
 from app.core import auth
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -53,6 +54,35 @@ from app.routers import (
 )
 from app.routers.page_payloads import prime_widget_cache_from_db
 
+
+_SENSITIVE_QUERY_KEYS = {
+    "token",
+    "widget_token",
+    "access_token",
+    "refresh_token",
+    "code",
+    "state",
+}
+
+
+def _scrub_query_string(raw_query: str) -> str:
+    q = str(raw_query or "").strip()
+    if not q:
+        return ""
+    try:
+        pairs = parse_qsl(q, keep_blank_values=True)
+    except Exception:
+        return ""
+    scrubbed: list[tuple[str, str]] = []
+    for k, v in pairs:
+        key = str(k or "")
+        if key.lower() in _SENSITIVE_QUERY_KEYS:
+            scrubbed.append((key, "***"))
+        else:
+            scrubbed.append((key, str(v or "")))
+    return urlencode(scrubbed)
+
+
 def create_app() -> FastAPI:
     app = FastAPI()
     app.add_middleware(GZipMiddleware, minimum_size=700)
@@ -99,7 +129,7 @@ def create_app() -> FastAPI:
                 user_email=(session_email or None),
                 method=str(request.method or ""),
                 path=path,
-                query_string=(request.url.query or ""),
+                query_string=_scrub_query_string(request.url.query or ""),
                 page_url=(request.headers.get("x-client-page-url") or ""),
                 referer=(request.headers.get("referer") or ""),
                 request_id=(request.headers.get("x-request-id") or ""),
@@ -149,6 +179,30 @@ def create_app() -> FastAPI:
             raise
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
         response.headers["X-Response-Time-Ms"] = str(elapsed_ms)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if (request.url.scheme or "").lower() == "https":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        content_type = str(response.headers.get("content-type") or "").lower()
+        if "text/html" in content_type:
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "; ".join(
+                    [
+                        "default-src 'self'",
+                        "base-uri 'self'",
+                        "frame-ancestors 'none'",
+                        "object-src 'none'",
+                        "form-action 'self'",
+                        "img-src 'self' data: blob:",
+                        "style-src 'self' 'unsafe-inline'",
+                        "script-src 'self' 'unsafe-inline'",
+                        "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://gmail.googleapis.com",
+                    ]
+                ),
+            )
 
         if not path.startswith("/static/"):
             tid = getattr(request.state, "tenant_id", None)
