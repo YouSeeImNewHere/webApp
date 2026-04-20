@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import html
 import json
 import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 from fastapi import APIRouter, Request
@@ -26,6 +29,12 @@ from app.core.tenancy import (
     approve_user,
 )
 from app.core.widget_tokens import resolve_widget_token
+from app.core.secret_crypto import (
+    ensure_token_encryption_ready,
+    encrypt_secret,
+    decrypt_secret,
+    is_encrypted_secret,
+)
 from app.core.config import (
     WIDGET_SECRET,
     SESSION_SECRET,
@@ -40,25 +49,42 @@ from app.core.config import (
     GOOGLE_CLIENT_SECRET,
     GOOGLE_OAUTH_REDIRECT_URI,
     GOOGLE_PUBSUB_TOPIC,
+    GMAIL_PUSH_REQUIRE_OIDC,
+    GMAIL_PUSH_OIDC_AUDIENCE,
+    GMAIL_PUSH_OIDC_EMAIL,
+    ALLOW_WIDGET_TOKEN_QUERY_PARAM,
 )
 
 router = APIRouter()
 _PUSH_PROCESS_LOCK = threading.Lock()
 _OAUTH_TABLES_LOCK = threading.Lock()
 _OAUTH_TABLES_READY = False
+_LOGIN_RATE_LIMIT_LOCK = threading.Lock()
+_LOGIN_FAILURES_BY_IP: dict[str, list[float]] = {}
+_LOGIN_BLOCKED_UNTIL_BY_IP: dict[str, float] = {}
+_LOGIN_RATE_LIMIT_WINDOW_SEC = 10 * 60
+_LOGIN_RATE_LIMIT_MAX_FAILURES = 8
+_LOGIN_RATE_LIMIT_BLOCK_SEC = 10 * 60
+_PUSH_OIDC_CACHE_LOCK = threading.Lock()
+_PUSH_OIDC_CACHE: dict[str, float] = {}
+_PUSH_OIDC_CACHE_TTL_SEC = 5 * 60
 
 # Public endpoints (no login required)
 PUBLIC_EXACT = {
     "/__ping",
     "/login",
     "/favicon.ico",
-    "/__whoami",
     "/health",
     "/gmail/push",
     "/gmail/oauth/callback",
     "/gmail/watch/renew",
 }
 PUBLIC_PREFIXES = {"/static/"}
+CSRF_EXEMPT_EXACT = {
+    "/login",
+    "/gmail/push",
+    "/gmail/watch/renew",
+}
 
 
 def _is_authed(request: Request) -> bool:
@@ -233,6 +259,65 @@ def _normalize_email(v: str | None) -> str:
     return str(v or "").strip().lower()
 
 
+def _encrypt_google_tokens_for_storage(
+    *,
+    access_token: str,
+    refresh_token: str | None,
+) -> tuple[str, str | None]:
+    access_plain = str(access_token or "")
+    refresh_plain = (str(refresh_token or "") if refresh_token is not None else None)
+    return encrypt_secret(access_plain), (encrypt_secret(refresh_plain) if refresh_plain is not None else None)
+
+
+def _decrypt_google_tokens_from_row(row: dict | None) -> tuple[str, str, bool]:
+    """
+    Returns (access_token_plain, refresh_token_plain, had_plaintext_fields).
+    """
+    r = dict(row or {})
+    raw_access = str(r.get("access_token") or "")
+    raw_refresh = str(r.get("refresh_token") or "")
+    had_plaintext = (raw_access != "" and not is_encrypted_secret(raw_access)) or (
+        raw_refresh != "" and not is_encrypted_secret(raw_refresh)
+    )
+    access_plain = decrypt_secret(raw_access, allow_plaintext=True)
+    refresh_plain = decrypt_secret(raw_refresh, allow_plaintext=True)
+    return access_plain, refresh_plain, bool(had_plaintext)
+
+
+def _best_effort_encrypt_token_row(
+    *,
+    google_email: str,
+    access_token: str,
+    refresh_token: str | None,
+) -> None:
+    email = _normalize_email(google_email)
+    if not email:
+        return
+    enc_access, enc_refresh = _encrypt_google_tokens_for_storage(
+        access_token=access_token,
+        refresh_token=refresh_token,
+    )
+
+    def _write():
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                UPDATE gmail_oauth_tokens
+                SET access_token = %s,
+                    refresh_token = COALESCE(%s, refresh_token),
+                    updated_at = now()
+                WHERE lower(google_email) = lower(%s)
+                """,
+                (enc_access, enc_refresh, email),
+            )
+            conn.commit()
+
+    try:
+        _run_db_with_retry(_write)
+    except Exception:
+        return
+
+
 def _get_google_tokens(google_email: str | None = None):
     _ensure_oauth_tables()
     email = _normalize_email(google_email)
@@ -261,7 +346,19 @@ def _get_google_tokens(google_email: str | None = None):
                 )
             return cur.fetchone()
 
-    return _run_db_with_retry(_query)
+    row = _run_db_with_retry(_query)
+    if not row:
+        return row
+    access_plain, refresh_plain, had_plaintext = _decrypt_google_tokens_from_row(row)
+    row["access_token"] = access_plain
+    row["refresh_token"] = refresh_plain
+    if had_plaintext:
+        _best_effort_encrypt_token_row(
+            google_email=str(row.get("google_email") or email),
+            access_token=access_plain,
+            refresh_token=(refresh_plain if refresh_plain else None),
+        )
+    return row
 
 
 def _list_connected_google_emails() -> list[str]:
@@ -308,6 +405,11 @@ def _save_google_tokens(
     if not email:
         raise RuntimeError("google_email_required")
 
+    enc_access, enc_refresh = _encrypt_google_tokens_for_storage(
+        access_token=access_token,
+        refresh_token=refresh_token,
+    )
+
     def _write():
         with with_db_cursor() as (conn, cur):
             cur.execute(
@@ -322,7 +424,7 @@ def _save_google_tokens(
                     updated_at = now()
                 WHERE lower(google_email) = lower(%s)
                 """,
-                (access_token, refresh_token, token_type, scope, expires_at, email),
+                (enc_access, enc_refresh, token_type, scope, expires_at, email),
             )
             if int(cur.rowcount or 0) <= 0:
                 cur.execute(
@@ -332,7 +434,7 @@ def _save_google_tokens(
                     VALUES
                         (%s, %s, %s, %s, %s, %s, now())
                     """,
-                    (email, access_token, refresh_token, token_type, scope, expires_at),
+                    (email, enc_access, enc_refresh, token_type, scope, expires_at),
                 )
             conn.commit()
 
@@ -409,10 +511,10 @@ def _save_push_state(
 def _refresh_google_access_token_if_needed(google_email: str | None = None):
     email = _normalize_email(google_email)
     if not email:
-        return None, "google_email_required"
+        return None, "google_email_required", None
     row = _get_google_tokens(google_email=email)
     if not row:
-        return None, "not_connected"
+        return None, "not_connected", None
 
     access_token = row.get("access_token") or ""
     refresh_token = row.get("refresh_token") or ""
@@ -425,10 +527,10 @@ def _refresh_google_access_token_if_needed(google_email: str | None = None):
         except Exception:
             expires_utc = expires_at.replace(tzinfo=timezone.utc)
         if expires_utc > (now_utc + timedelta(seconds=120)):
-            return access_token, None
+            return access_token, None, None
 
     if not refresh_token:
-        return None, "token_expired_no_refresh_token"
+        return None, "token_expired_no_refresh_token", None
 
     _require_google_env()
     token_resp = requests.post(
@@ -442,12 +544,27 @@ def _refresh_google_access_token_if_needed(google_email: str | None = None):
         timeout=20,
     )
     if token_resp.status_code != 200:
-        return None, f"refresh_failed_http_{token_resp.status_code}"
+        detail: dict[str, object] = {}
+        try:
+            payload = token_resp.json() or {}
+            if isinstance(payload, dict):
+                detail = payload
+            else:
+                detail = {"body": str(payload)}
+        except Exception:
+            detail = {"body": (token_resp.text or "")[:500]}
+        detail["status_code"] = int(token_resp.status_code)
+
+        err = f"refresh_failed_http_{token_resp.status_code}"
+        err_code = str(detail.get("error") or "").strip()
+        if err_code:
+            err = f"{err}:{err_code}"
+        return None, err, detail
 
     td = token_resp.json()
     new_access = td.get("access_token") or ""
     if not new_access:
-        return None, "refresh_missing_access_token"
+        return None, "refresh_missing_access_token", {"status_code": 200, "body": td}
 
     expires_in = int(td.get("expires_in") or 3600)
     new_expires = now_utc + timedelta(seconds=max(0, expires_in - 60))
@@ -459,7 +576,7 @@ def _refresh_google_access_token_if_needed(google_email: str | None = None):
         expires_at=new_expires,
         google_email=row.get("google_email") or email,
     )
-    return new_access, None
+    return new_access, None, None
 
 
 def _gmail_history_message_ids(access_token: str, start_history_id: str):
@@ -560,7 +677,204 @@ def _trigger_event_processing(include_processed: bool = False, google_email: str
 def _is_notif_secret_authorized(request: Request) -> bool:
     provided = (request.headers.get("x-notif-secret", "") or "").strip()
     expected = (NOTIF_SECRET or "").strip()
-    return bool(expected) and provided == expected
+    return bool(expected) and bool(provided) and hmac.compare_digest(provided, expected)
+
+
+def _extract_bearer_token(request: Request) -> str:
+    authz = (request.headers.get("authorization") or "").strip()
+    if authz.lower().startswith("bearer "):
+        return authz[7:].strip()
+    return ""
+
+
+def _oidc_cache_has(token: str) -> bool:
+    if not token:
+        return False
+    now_ts = time.time()
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _PUSH_OIDC_CACHE_LOCK:
+        exp = float(_PUSH_OIDC_CACHE.get(digest) or 0.0)
+        if exp > now_ts:
+            return True
+        if exp:
+            _PUSH_OIDC_CACHE.pop(digest, None)
+    return False
+
+
+def _oidc_cache_put(token: str, ttl_sec: int = _PUSH_OIDC_CACHE_TTL_SEC) -> None:
+    if not token:
+        return
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _PUSH_OIDC_CACHE_LOCK:
+        _PUSH_OIDC_CACHE[digest] = time.time() + max(30, int(ttl_sec or _PUSH_OIDC_CACHE_TTL_SEC))
+
+
+def _verify_push_oidc_bearer(request: Request) -> tuple[bool, str]:
+    """
+    Optional Pub/Sub push OIDC verification using Google's tokeninfo endpoint.
+    Enable by setting GMAIL_PUSH_REQUIRE_OIDC=true.
+    """
+    token = _extract_bearer_token(request)
+    if not token:
+        return False, "missing_bearer"
+    if _oidc_cache_has(token):
+        return True, "ok_cached"
+
+    try:
+        resp = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": token},
+            timeout=10,
+        )
+    except Exception:
+        return False, "tokeninfo_request_failed"
+
+    if int(resp.status_code or 0) != 200:
+        return False, f"tokeninfo_http_{int(resp.status_code or 0)}"
+
+    try:
+        payload = resp.json() or {}
+    except Exception:
+        return False, "tokeninfo_invalid_json"
+
+    aud = str(payload.get("aud") or "").strip()
+    iss = str(payload.get("iss") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    email_verified = str(payload.get("email_verified") or "").strip().lower()
+    exp_raw = str(payload.get("exp") or "").strip()
+    try:
+        exp_ts = int(exp_raw) if exp_raw else 0
+    except Exception:
+        exp_ts = 0
+    now_ts = int(time.time())
+    if exp_ts and exp_ts <= now_ts:
+        return False, "token_expired"
+
+    if iss not in {"https://accounts.google.com", "accounts.google.com"}:
+        return False, "issuer_invalid"
+
+    expected_aud = str(GMAIL_PUSH_OIDC_AUDIENCE or "").strip()
+    if expected_aud and aud != expected_aud:
+        return False, "audience_mismatch"
+
+    expected_email = str(GMAIL_PUSH_OIDC_EMAIL or "").strip().lower()
+    if expected_email:
+        if not email or not hmac.compare_digest(email, expected_email):
+            return False, "email_mismatch"
+        if email_verified not in {"true", "1"}:
+            return False, "email_unverified"
+
+    ttl = _PUSH_OIDC_CACHE_TTL_SEC
+    if exp_ts:
+        ttl = max(30, min(_PUSH_OIDC_CACHE_TTL_SEC, exp_ts - now_ts))
+    _oidc_cache_put(token, ttl_sec=ttl)
+    return True, "ok"
+
+
+def _sanitize_next_url(next_url: str | None, default: str = "/") -> str:
+    s = str(next_url or "").strip()
+    if not s:
+        return default
+    if not s.startswith("/"):
+        return default
+    # Block protocol-relative redirects and path confusion via backslashes.
+    if s.startswith("//") or ("\\" in s):
+        return default
+    # Never land on internal shared partials after auth handoff.
+    if s.startswith("/static/shared/"):
+        return default
+    return s
+
+
+def _client_ip_for_rate_limit(request: Request) -> str:
+    try:
+        if request.client and request.client.host:
+            return str(request.client.host).strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _prune_login_failures(now_ts: float) -> None:
+    cutoff = now_ts - float(_LOGIN_RATE_LIMIT_WINDOW_SEC)
+    stale_keys: list[str] = []
+    for ip, times in _LOGIN_FAILURES_BY_IP.items():
+        kept = [t for t in (times or []) if t >= cutoff]
+        if kept:
+            _LOGIN_FAILURES_BY_IP[ip] = kept
+        else:
+            stale_keys.append(ip)
+    for ip in stale_keys:
+        _LOGIN_FAILURES_BY_IP.pop(ip, None)
+
+    stale_blocked: list[str] = []
+    for ip, until in _LOGIN_BLOCKED_UNTIL_BY_IP.items():
+        if float(until or 0.0) <= now_ts:
+            stale_blocked.append(ip)
+    for ip in stale_blocked:
+        _LOGIN_BLOCKED_UNTIL_BY_IP.pop(ip, None)
+
+
+def _login_is_rate_limited(ip: str) -> int:
+    now_ts = time.time()
+    with _LOGIN_RATE_LIMIT_LOCK:
+        _prune_login_failures(now_ts)
+        until = float(_LOGIN_BLOCKED_UNTIL_BY_IP.get(ip) or 0.0)
+        if until > now_ts:
+            return int(max(1, round(until - now_ts)))
+    return 0
+
+
+def _record_login_failure(ip: str) -> None:
+    now_ts = time.time()
+    with _LOGIN_RATE_LIMIT_LOCK:
+        _prune_login_failures(now_ts)
+        arr = _LOGIN_FAILURES_BY_IP.setdefault(ip, [])
+        arr.append(now_ts)
+        cutoff = now_ts - float(_LOGIN_RATE_LIMIT_WINDOW_SEC)
+        arr = [t for t in arr if t >= cutoff]
+        _LOGIN_FAILURES_BY_IP[ip] = arr
+        if len(arr) >= int(_LOGIN_RATE_LIMIT_MAX_FAILURES):
+            _LOGIN_BLOCKED_UNTIL_BY_IP[ip] = now_ts + float(_LOGIN_RATE_LIMIT_BLOCK_SEC)
+            _LOGIN_FAILURES_BY_IP[ip] = []
+
+
+def _clear_login_failures(ip: str) -> None:
+    with _LOGIN_RATE_LIMIT_LOCK:
+        _LOGIN_FAILURES_BY_IP.pop(ip, None)
+        _LOGIN_BLOCKED_UNTIL_BY_IP.pop(ip, None)
+
+
+def _request_host(request: Request) -> str:
+    return str(request.headers.get("host") or "").strip().lower()
+
+
+def _origin_host(header_value: str) -> str:
+    raw = str(header_value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return ""
+    return str(parsed.netloc or "").strip().lower()
+
+
+def _passes_csrf_origin_check(request: Request) -> bool:
+    """
+    Browser CSRF mitigation for cookie-authenticated writes:
+    require Origin/Referer host to match request Host.
+    """
+    host = _request_host(request)
+    if not host:
+        return False
+    origin = _origin_host(request.headers.get("origin") or "")
+    if origin:
+        return hmac.compare_digest(origin, host)
+    referer = _origin_host(request.headers.get("referer") or "")
+    if referer:
+        return hmac.compare_digest(referer, host)
+    return False
 
 
 def _extract_widget_token(request: Request) -> str:
@@ -581,10 +895,11 @@ def _extract_widget_token(request: Request) -> str:
     if legacy:
         return legacy
 
-    # Last-resort fallback for clients that cannot set custom headers.
-    qp = (request.query_params.get("widget_token") or "").strip()
-    if qp:
-        return qp
+    # Optional fallback for legacy clients that cannot set custom headers.
+    if ALLOW_WIDGET_TOKEN_QUERY_PARAM:
+        qp = (request.query_params.get("widget_token") or "").strip()
+        if qp:
+            return qp
     return ""
 
 
@@ -598,9 +913,12 @@ def _start_gmail_watch(google_email: str | None = None):
     email = _normalize_email(google_email)
     if not email:
         return JSONResponse({"ok": False, "error": "google_email_required"}, status_code=400)
-    access_token, err = _refresh_google_access_token_if_needed(email)
+    access_token, err, err_detail = _refresh_google_access_token_if_needed(email)
     if not access_token:
-        return JSONResponse({"ok": False, "error": err}, status_code=401)
+        return JSONResponse(
+            {"ok": False, "error": err, "refresh_error_detail": err_detail},
+            status_code=401,
+        )
 
     resp = requests.post(
         "https://gmail.googleapis.com/gmail/v1/users/me/watch",
@@ -665,7 +983,7 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
 
     state = secrets.token_urlsafe(24)
     request.session["google_oauth_state"] = state
-    request.session["google_oauth_next"] = next if next.startswith("/") else "/settings"
+    request.session["google_oauth_next"] = _sanitize_next_url(next, default="/settings")
 
     scopes = [
         "openid",
@@ -768,7 +1086,7 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
 
     request.session["google_oauth_state"] = None
     request.session["google_email"] = google_email
-    next_url = request.session.get("google_oauth_next") or "/settings"
+    next_url = _sanitize_next_url(request.session.get("google_oauth_next"), default="/settings")
     return RedirectResponse(url=next_url, status_code=302)
 
 
@@ -911,6 +1229,13 @@ def gmail_fetch_now(request: Request):
 # ---------------------------------------------------------
 @router.post("/gmail/push")
 async def gmail_push(request: Request):
+    if not _is_notif_secret_authorized(request):
+        return JSONResponse({"status": "unauthorized"}, status_code=401)
+    if GMAIL_PUSH_REQUIRE_OIDC:
+        ok, reason = _verify_push_oidc_bearer(request)
+        if not ok:
+            return JSONResponse({"status": "unauthorized_oidc", "reason": reason}, status_code=401)
+
     def _push_log(message: str, *, email_for_scope: str | None = None, tenant_for_scope: int | None = None):
         print(message)
         try:
@@ -970,7 +1295,7 @@ async def gmail_push(request: Request):
             )
 
     try:
-        access_token, err = _refresh_google_access_token_if_needed(email)
+        access_token, err, err_detail = _refresh_google_access_token_if_needed(email)
     except Exception as e:
         msg = f"token_refresh_failed:{type(e).__name__}"
         _push_log(
@@ -982,8 +1307,13 @@ async def gmail_push(request: Request):
         return {"status": "transient_error", "error": msg}
 
     if not access_token:
-        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=err)
-        return {"status": "token_error", "error": err}
+        err_msg = str(err or "token_refresh_failed")
+        if isinstance(err_detail, dict):
+            code = str(err_detail.get("error") or "").strip()
+            if code:
+                err_msg = f"{err_msg}:{code}"
+        _safe_save(last_history_id=history_id, google_email=email, processed_count=0, last_error=err_msg)
+        return {"status": "token_error", "error": err_msg, "detail": err_detail}
 
     try:
         start_history_id = _get_last_history_id(email)
@@ -1111,6 +1441,25 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
                 resolved_tid = int(tenant_id)
                 set_current_tenant_id(resolved_tid)
                 request.state.tenant_id = resolved_tid
+                # Enforce OAuth freshness: if refresh fails, require user to re-auth Google.
+                # This prevents stale/invalid Gmail credentials from appearing as a "logged-in"
+                # healthy session in the web app.
+                access_token, token_err, _ = _refresh_google_access_token_if_needed(session_email)
+                if not access_token:
+                    request.session.pop("google_email", None)
+                    accept = request.headers.get("accept", "")
+                    if "text/html" in accept:
+                        return RedirectResponse(url=f"/gmail/oauth/start?next={path}", status_code=302)
+                    return JSONResponse(
+                        {"ok": False, "error": "google_reauth_required", "detail": token_err or "token_refresh_failed"},
+                        status_code=401,
+                    )
+
+            # CSRF guard for cookie-authenticated state-changing requests.
+            method = str(request.method or "").upper()
+            if method in {"POST", "PUT", "PATCH", "DELETE"} and path not in CSRF_EXEMPT_EXACT:
+                if not _passes_csrf_origin_check(request):
+                    return JSONResponse({"ok": False, "error": "csrf_failed"}, status_code=403)
 
             return await call_next(request)
         finally:
@@ -1125,7 +1474,8 @@ async def favicon():
 
 @router.get("/login")
 def login_page(next: str = "/"):
-    html = f"""
+    safe_next = html.escape(_sanitize_next_url(next, default="/"), quote=True)
+    page_html = f"""
     <!doctype html>
     <html>
       <head>
@@ -1159,7 +1509,7 @@ def login_page(next: str = "/"):
           <h2 style="margin:0 0 10px 0;">Login</h2>
 
           <form method="post" action="/login" autocomplete="off">
-            <input type="hidden" name="next" value="{next}"/>
+            <input type="hidden" name="next" value="{safe_next}"/>
 
             <!-- Fake hidden password field (tricks iOS/Chrome) -->
             <input type="password" style="display:none">
@@ -1184,7 +1534,7 @@ def login_page(next: str = "/"):
       </body>
     </html>
     """
-    return HTMLResponse(html)
+    return HTMLResponse(page_html)
 
 
 @router.post("/login")
@@ -1192,6 +1542,14 @@ async def login(request: Request):
     if not APP_PASSWORD:
         # Fail closed if you forgot to set APP_PASSWORD on Render
         return JSONResponse({"ok": False, "error": "APP_PASSWORD not set on server"}, status_code=500)
+    ip = _client_ip_for_rate_limit(request)
+    retry_after = _login_is_rate_limited(ip)
+    if retry_after > 0:
+        return JSONResponse(
+            {"ok": False, "error": "too_many_attempts", "retry_after_seconds": int(retry_after)},
+            status_code=429,
+            headers={"Retry-After": str(int(retry_after))},
+        )
 
     ct = (request.headers.get("content-type") or "").lower()
     password = ""
@@ -1207,20 +1565,20 @@ async def login(request: Request):
         password = (str(form.get("secret_field_1", "")) or "").strip()
         next_url = str(form.get("next", "/") or "/")
 
-    # Never land on internal shared partials after login.
-    if next_url.startswith("/static/shared/"):
-        next_url = "/"
+    next_url = _sanitize_next_url(next_url, default="/")
 
-    if password != APP_PASSWORD:
+    if not hmac.compare_digest(password, APP_PASSWORD):
+        _record_login_failure(ip)
         accept = request.headers.get("accept", "")
         if "text/html" in accept:
             return RedirectResponse(url="/login", status_code=302)
         return JSONResponse({"ok": False, "error": "bad_password"}, status_code=401)
 
+    _clear_login_failures(ip)
     request.session["authed"] = True
     request.session["app_password_ok"] = True
     if MULTI_TENANT_ENABLED:
-        next_url = next_url if next_url.startswith("/") else "/"
+        next_url = _sanitize_next_url(next_url, default="/")
         session_google_email = str(request.session.get("google_email") or "").strip()
         if not session_google_email:
             # If there is exactly one connected Google account on this deployment,
@@ -1241,20 +1599,17 @@ async def login(request: Request):
 
     # If it was a form submit, always redirect
     if "application/x-www-form-urlencoded" in ct or "multipart/form-data" in ct:
-        return RedirectResponse(url=next_url or "/", status_code=302)
+        return RedirectResponse(url=_sanitize_next_url(next_url, default="/"), status_code=302)
 
     # Otherwise JSON (fetch)
-    if not next_url.startswith("/"):
-        next_url = "/"
-    return {"ok": True}
+    return {"ok": True, "next": _sanitize_next_url(next_url, default="/")}
 
 
 @router.get("/__whoami")
 def __whoami(request: Request):
     return {
         "authed": bool(request.session.get("authed")),
-        "cookies": dict(request.cookies),
-        "session": dict(request.session),
+        "google_email": _normalize_email(request.session.get("google_email")),
     }
 
 
@@ -1297,6 +1652,7 @@ def add_auth_middlewares(app):
     """Register auth/session middleware on the FastAPI app."""
     if not SESSION_SECRET:
         raise RuntimeError("SESSION_SECRET env var is required")
+    ensure_token_encryption_ready()
 
     # NOTE: In Starlette/FastAPI, the last added middleware runs first.
     # We add SessionMiddleware last so request.session exists inside RequireLoginMiddleware.
@@ -1307,5 +1663,5 @@ def add_auth_middlewares(app):
         session_cookie="webapp_session",
         same_site="lax",
         max_age=int(max(1, int(SESSION_MAX_AGE_DAYS)) * 24 * 60 * 60),
-        https_only=IS_RENDER,
+        https_only=(IS_RENDER or WEBAPP_URL.startswith("https://")),
     )

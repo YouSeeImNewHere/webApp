@@ -5,6 +5,7 @@ const WIDGET_TOKEN = "wgt_REPLACED_BY_SERVER";
 const EXPECTED_TENANT_ID = 0;
 const ENDPOINT = "/widget/summary";
 const WIDGET_SCRIPT_VERSION = 3;
+const LIVE_DATA_MAX_AGE_MIN = 20;
 
 const EGG_FOLDER_NAME = "EggAnim";
 const EGG_STAGES = 6;
@@ -43,6 +44,31 @@ function loadCache() {
 function cacheAgeMinutes(cache) {
   if (!cache || !cache.ts) return Infinity;
   return (Date.now() - cache.ts) / 60000;
+}
+
+function parseMsFromIso(v) {
+  if (!v) return null;
+  try {
+    const ms = new Date(String(v)).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function dataAgeMinutes(payload, fallbackMin = Infinity) {
+  const genMs = parseMsFromIso(payload && payload.generated_at);
+  if (!genMs) return fallbackMin;
+  return Math.max(0, (Date.now() - genMs) / 60000);
+}
+
+function fmtAge(mins) {
+  const m = Math.max(0, Math.round(Number(mins || 0)));
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h`;
+  const d = Math.round(h / 24);
+  return `${d}d`;
 }
 
 function updateRequiredWidget() {
@@ -431,6 +457,9 @@ const leftToday = Number(today.remaining_today || 0);
 const used = Number(credit.used || 0);
 const cap = Number(credit.cap || 0);
 const pct = cap > 0 ? (used / cap) : 0;
+const dataAgeMin = dataAgeMinutes(data, cacheAgeMin);
+const isLiveFresh = (!usedCache) && Number.isFinite(dataAgeMin) && dataAgeMin <= LIVE_DATA_MAX_AGE_MIN;
+const footerText = isLiveFresh ? "Live" : `Cache ${fmtAge(dataAgeMin)} old`;
 
 if (fam === "accessoryInline") {
   const w = new ListWidget();
@@ -519,7 +548,7 @@ if (fam === "small") {
   dlBar.imageSize = new Size(130, 12);
 
   w.addSpacer(4);
-  const footer = w.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+  const footer = w.addText(footerText);
   footer.font = Font.systemFont(10);
   footer.textOpacity = 0.6;
   return finish(w);
@@ -637,7 +666,7 @@ if (fam === "large") {
   pill(metrics, "Credit Avail", money0(credit.available));
 
   w.addSpacer();
-  const footer = w.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+  const footer = w.addText(footerText);
   footer.font = Font.systemFont(10);
   footer.textOpacity = 0.6;
   return finish(w);
@@ -703,7 +732,7 @@ dlBar.imageSize = new Size(170, 12);
 
 left.addSpacer(1);
 
-const footer = left.addText(usedCache ? `Cache ${Math.round(cacheAgeMin)}m` : "Live");
+const footer = left.addText(footerText);
 footer.font = Font.systemFont(10);
 footer.textOpacity = 0.6;
 

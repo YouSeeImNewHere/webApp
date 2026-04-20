@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, List
 from datetime import date, datetime, timedelta
 from copy import deepcopy
 import json
+import hashlib
 import time
 from threading import Lock
 
@@ -124,6 +125,19 @@ def _widget_redis_incr_version(tid: Optional[int]) -> int:
         return 0
 
 
+def _widget_semantic_version_from_payload(payload: Dict[str, Any]) -> int:
+    """
+    Build a deterministic numeric version from semantic payload fields.
+    Excludes volatile timestamps so the version only changes when business data changes.
+    """
+    semantic = deepcopy(payload or {})
+    semantic.pop("generated_at", None)
+    semantic.pop("widget_version", None)
+    raw = json.dumps(semantic, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]  # 48-bit: JS-safe integer
+    return int(digest, 16)
+
+
 def _widget_refresh_on_day_rollover(tid: Optional[int]) -> None:
     """
     Ensure widget payload/version rolls forward once per local day.
@@ -212,6 +226,7 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
         },
         "widget_version": int(current_version),
         "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
+        "generated_at": now_local().isoformat(),
         "meta": {"cron": "OK"},
     }
 
@@ -788,6 +803,28 @@ def widget_summary(
 ):
     tid = _require_tenant_id()
     tenant_out = int(tid or 0)
+    if get_redis() is None:
+        # No Redis available: compute a semantic hash version from live payload.
+        # This preserves changed/no-changed semantics for polling clients.
+        live_payload = _build_widget_payload_for_tenant_version(tid, 0)
+        live_version = int(_widget_semantic_version_from_payload(live_payload))
+        if widget_version is not None and int(widget_version) == int(live_version):
+            return {
+                "ok": True,
+                "changed": False,
+                "update_required": False,
+                "widget_script_min_version": int(MIN_WIDGET_SCRIPT_VERSION),
+                "widget_version": int(live_version),
+                "tenant_id": tenant_out,
+            }
+        live_payload["ok"] = True
+        live_payload["changed"] = True
+        live_payload["update_required"] = False
+        live_payload["widget_version"] = int(live_version)
+        live_payload["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
+        live_payload["tenant_id"] = tenant_out
+        return live_payload
+
     _widget_refresh_on_day_rollover(tid)
     current_version = _widget_redis_get_version(tid)
     script_v = int(widget_script_version) if widget_script_version is not None else 0
@@ -814,19 +851,6 @@ def widget_summary(
 
     payload = _widget_redis_get_payload(tid)
     if not isinstance(payload, dict):
-        # Local/dev fallback: if Redis is unavailable, compute payload live so
-        # external widget clients (e.g. KWGT) still receive usable JSON.
-        if get_redis() is None:
-            live_version = int(current_version or 1)
-            live_payload = _build_widget_payload_for_tenant_version(tid, live_version)
-            live_payload["ok"] = True
-            live_payload["changed"] = True
-            live_payload["update_required"] = False
-            live_payload["widget_version"] = int(live_version)
-            live_payload["widget_script_min_version"] = int(MIN_WIDGET_SCRIPT_VERSION)
-            live_payload["tenant_id"] = tenant_out
-            return live_payload
-
         return {
             "ok": True,
             "changed": False,
@@ -850,6 +874,9 @@ def widget_summary(
 @router.get("/widget/version")
 def widget_version():
     tid = _require_tenant_id()
+    if get_redis() is None:
+        payload = _build_widget_payload_for_tenant_version(tid, 0)
+        return {"ok": True, "widget_version": int(_widget_semantic_version_from_payload(payload))}
     version = _widget_redis_get_version(tid)
     return {"ok": True, "widget_version": version}
 

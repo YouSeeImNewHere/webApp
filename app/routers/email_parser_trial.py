@@ -34,7 +34,11 @@ def _cache_key(tenant_id: int | None, user_email: str) -> tuple[int, str]:
 
 def _sample_store_dir() -> Path:
     p = Path(tempfile.gettempdir()) / "webapp_email_parser_samples"
-    p.mkdir(parents=True, exist_ok=True)
+    p.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        os.chmod(p, 0o700)
+    except Exception:
+        pass
     return p
 
 
@@ -65,9 +69,36 @@ def _read_sample_bucket(tenant_id: int | None, user_email: str) -> dict[str, dic
 
 def _write_sample_bucket(tenant_id: int | None, user_email: str, bucket: dict[str, dict[str, Any]]) -> None:
     f = _sample_store_file(tenant_id, user_email)
-    tmp = f.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(bucket, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, f)
+    payload = json.dumps(bucket, ensure_ascii=False)
+    f.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(f.parent),
+            prefix=f".{f.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            tmp_name = tmp.name
+            try:
+                os.chmod(tmp_name, 0o600)
+            except Exception:
+                pass
+            tmp.write(payload)
+            tmp.flush()
+        os.replace(tmp_name, f)
+        try:
+            os.chmod(f, 0o600)
+        except Exception:
+            pass
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            try:
+                os.remove(tmp_name)
+            except Exception:
+                pass
 
 
 def _cache_trial_samples(tenant_id: int | None, user_email: str, items: list[dict[str, Any]]) -> None:
@@ -932,7 +963,7 @@ def trial_samples(body: TrialSamplesBody, request: Request):
     if not sender_query:
         raise HTTPException(status_code=422, detail="sender_query_required")
 
-    access_token, err = _refresh_google_access_token_if_needed(session_email)
+    access_token, err, _ = _refresh_google_access_token_if_needed(session_email)
     if not access_token:
         raise HTTPException(status_code=401, detail=f"gmail_not_connected:{err or 'unknown'}")
 
@@ -1477,7 +1508,7 @@ def trial_test_run(body: TrialTestRunBody, request: Request):
     sender_query = (body.sender_query or "").strip()
     subject_query = (body.subject_query or "").strip()
 
-    access_token, err = _refresh_google_access_token_if_needed(session_email)
+    access_token, err, _ = _refresh_google_access_token_if_needed(session_email)
     if not access_token:
         raise HTTPException(status_code=401, detail=f"gmail_not_connected:{err or 'unknown'}")
 
