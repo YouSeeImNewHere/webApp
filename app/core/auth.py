@@ -1229,8 +1229,8 @@ def gmail_fetch_now(request: Request):
 # ---------------------------------------------------------
 @router.post("/gmail/push")
 async def gmail_push(request: Request):
-    if not _is_notif_secret_authorized(request):
-        return JSONResponse({"status": "unauthorized"}, status_code=401)
+    # Pub/Sub push requests do not include our custom x-notif-secret header.
+    # Use OIDC validation when enabled; otherwise allow delivery for backward compatibility.
     if GMAIL_PUSH_REQUIRE_OIDC:
         ok, reason = _verify_push_oidc_bearer(request)
         if not ok:
@@ -1441,19 +1441,6 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
                 resolved_tid = int(tenant_id)
                 set_current_tenant_id(resolved_tid)
                 request.state.tenant_id = resolved_tid
-                # Enforce OAuth freshness: if refresh fails, require user to re-auth Google.
-                # This prevents stale/invalid Gmail credentials from appearing as a "logged-in"
-                # healthy session in the web app.
-                access_token, token_err, _ = _refresh_google_access_token_if_needed(session_email)
-                if not access_token:
-                    request.session.pop("google_email", None)
-                    accept = request.headers.get("accept", "")
-                    if "text/html" in accept:
-                        return RedirectResponse(url=f"/gmail/oauth/start?next={path}", status_code=302)
-                    return JSONResponse(
-                        {"ok": False, "error": "google_reauth_required", "detail": token_err or "token_refresh_failed"},
-                        status_code=401,
-                    )
 
             # CSRF guard for cookie-authenticated state-changing requests.
             method = str(request.method or "").upper()
