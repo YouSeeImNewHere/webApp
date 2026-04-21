@@ -21,6 +21,7 @@ from app.core.tenancy import initialize_tenancy, current_tenant_id
 from app.core.account_totals_cache import ensure_account_totals_cache_pg
 from app.core.home_snapshot_cache import ensure_home_snapshot_cache_pg
 from app.core.widget_tokens import prime_widget_tokens_cache_from_db
+from app.core.redis_cache import get_redis
 from app.core.admin_error_events import (
     ensure_admin_error_events_table_pg,
     log_admin_error_event,
@@ -285,6 +286,14 @@ def create_app() -> FastAPI:
         ensure_admin_error_events_table_pg()
         ensure_email_parse_events_table_pg()
         initialize_tenancy()
+        try:
+            r = get_redis()
+            if r is None:
+                request_logger.warning("redis startup status=disconnected")
+            else:
+                request_logger.info("redis startup status=connected")
+        except Exception as e:
+            request_logger.warning(f"redis startup status=error detail={type(e).__name__}")
         prime_widget_tokens_cache_from_db()
         prime_widget_cache_from_db()
 
