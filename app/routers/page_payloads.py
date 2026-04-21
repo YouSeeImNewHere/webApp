@@ -171,8 +171,13 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
         n = now_local()
         mb = month_budget_home_cached(n.year, n.month)
         dl = day_limit(recalc=0)
+        unread_raw = unread_count()
     finally:
         reset_current_tenant_id(token)
+    if isinstance(unread_raw, dict):
+        unread_val = int(unread_raw.get("unread") or 0)
+    else:
+        unread_val = int(unread_raw or 0)
 
     credit_accounts = ((bt.get("credit") or {}).get("accounts") or [])
 
@@ -199,7 +204,7 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
             "available": round(available, 2),
             "limit_sum": round(limit_sum, 2),
         },
-        "notifications_unread": int(unread_count() or 0),
+        "notifications_unread": int(unread_val),
         "safe_to_spend": mb["safe_to_spend"],
         # Backward-compatible root alias for widget formulas.
         "daily_limit": dl.get("baseline", 0.0),

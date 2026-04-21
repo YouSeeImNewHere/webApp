@@ -100,17 +100,27 @@ def _session_email(request: Request) -> str:
 
 
 def _refresh_widget_cache_for_tenant_best_effort(tenant_id: int) -> int | None:
+    primary_err: Exception | None = None
     try:
         from app.routers.page_payloads import refresh_widget_cache_for_tenant
         version = int(refresh_widget_cache_for_tenant(int(tenant_id), bump_version=True) or 0)
         if version > 0:
             return version
-        # Hard fallback when refresh returns 0.
-        from app.routers.page_payloads import _widget_bump_version_for_tenant
-        return int(_widget_bump_version_for_tenant(int(tenant_id)) or 0)
     except Exception as e:
+        primary_err = e
         _LOG.warning("widget refresh failed tenant_id=%s detail=%s", int(tenant_id), type(e).__name__)
+    try:
+        # Hard fallback when refresh returns 0 or throws.
+        from app.routers.page_payloads import _widget_bump_version_for_tenant
+        bumped = int(_widget_bump_version_for_tenant(int(tenant_id)) or 0)
+        if bumped > 0:
+            return bumped
+    except Exception as e:
+        _LOG.warning("widget fallback bump failed tenant_id=%s detail=%s", int(tenant_id), type(e).__name__)
+    if primary_err:
+        _LOG.warning("widget refresh unresolved tenant_id=%s", int(tenant_id))
         return None
+    return 0
 
 # -----------------------------
 # Table ensure helpers (Postgres)
