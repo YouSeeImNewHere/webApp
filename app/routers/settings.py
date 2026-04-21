@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -16,6 +17,7 @@ from app.core.widget_tokens import issue_widget_token
 from app.core.auth import get_connected_google_email
 
 router = APIRouter()
+_LOG = logging.getLogger("uvicorn.error")
 
 # =============================================================================
 # Settings (Postgres) — ported from settings.py
@@ -100,8 +102,14 @@ def _session_email(request: Request) -> str:
 def _refresh_widget_cache_for_tenant_best_effort(tenant_id: int) -> int | None:
     try:
         from app.routers.page_payloads import refresh_widget_cache_for_tenant
-        return int(refresh_widget_cache_for_tenant(int(tenant_id), bump_version=True) or 0)
-    except Exception:
+        version = int(refresh_widget_cache_for_tenant(int(tenant_id), bump_version=True) or 0)
+        if version > 0:
+            return version
+        # Hard fallback when refresh returns 0.
+        from app.routers.page_payloads import _widget_bump_version_for_tenant
+        return int(_widget_bump_version_for_tenant(int(tenant_id)) or 0)
+    except Exception as e:
+        _LOG.warning("widget refresh failed tenant_id=%s detail=%s", int(tenant_id), type(e).__name__)
         return None
 
 # -----------------------------
