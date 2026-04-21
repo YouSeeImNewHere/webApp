@@ -237,7 +237,11 @@ def refresh_widget_cache_for_tenant(tid: Optional[int], *, bump_version: bool = 
     Returns the version written (or 0 when Redis is unavailable).
     """
     if get_redis() is None:
-        return 0
+        # Redis-less fallback: keep a monotonic DB version so polling clients
+        # can still observe version bumps (including manual force-refresh).
+        if bump_version:
+            return _widget_bump_version_for_tenant(tid)
+        return _widget_version_for_tenant_cached(tid)
 
     if bump_version:
         next_version = _widget_redis_incr_version(tid)
@@ -453,6 +457,31 @@ def _widget_version_for_tenant(tid: Optional[int]) -> int:
             row = cur.fetchone() or {}
         conn.commit()
     return int(row.get("version") or 0)
+
+
+def _widget_bump_version_for_tenant(tid: Optional[int]) -> int:
+    _ensure_widget_refresh_tracking_pg()
+    tkey = _widget_tenant_key(tid)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO widget_refresh_state (tenant_id, version, updated_at)
+            VALUES (%s, 1, now())
+            ON CONFLICT (tenant_id)
+            DO UPDATE SET
+              version = widget_refresh_state.version + 1,
+              updated_at = now()
+            RETURNING version
+            """,
+            (int(tkey),),
+        )
+        row = cur.fetchone() or {}
+        conn.commit()
+    version = int(row.get("version") or 0)
+    cache_key = f"tenant={int(tkey)}"
+    with _WIDGET_VERSION_CACHE_LOCK:
+        _WIDGET_VERSION_CACHE[cache_key] = {"ts": time.time(), "version": int(version)}
+    return int(version)
 
 
 def _widget_version_for_tenant_cached(tid: Optional[int]) -> int:
@@ -804,10 +833,9 @@ def widget_summary(
     tid = _require_tenant_id()
     tenant_out = int(tid or 0)
     if get_redis() is None:
-        # No Redis available: compute a semantic hash version from live payload.
-        # This preserves changed/no-changed semantics for polling clients.
-        live_payload = _build_widget_payload_for_tenant_version(tid, 0)
-        live_version = int(_widget_semantic_version_from_payload(live_payload))
+        # No Redis available: use DB-backed monotonic version tracking.
+        live_version = int(_widget_version_for_tenant_cached(tid))
+        live_payload = _build_widget_payload_for_tenant_version(tid, int(live_version))
         if widget_version is not None and int(widget_version) == int(live_version):
             return {
                 "ok": True,
