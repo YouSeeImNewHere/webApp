@@ -198,8 +198,8 @@ def create_app() -> FastAPI:
                         "form-action 'self'",
                         "img-src 'self' data: blob:",
                         "style-src 'self' 'unsafe-inline'",
-                        "script-src 'self' 'unsafe-inline'",
-                        "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://gmail.googleapis.com",
+                        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+                        "connect-src 'self' https://cdn.jsdelivr.net https://www.googleapis.com https://oauth2.googleapis.com https://gmail.googleapis.com",
                     ]
                 ),
             )
