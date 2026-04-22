@@ -1,0 +1,51 @@
+.external-apps-list {
+  display: grid;
+  gap: 10px;
+}
+
+.external-apps-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--card-bg) 86%, transparent);
+}
+
+.external-apps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.external-apps-title {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.external-apps-platform {
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.85;
+  text-transform: uppercase;
+}
+
+.external-apps-desc {
+  margin: 0 0 8px 0;
+}
+
+.external-apps-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.external-apps-unavailable {
+  margin-top: 8px;
+}
+
+@media (max-width: 700px) {
+  .external-apps-actions .settings-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}

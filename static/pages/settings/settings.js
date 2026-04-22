@@ -29,6 +29,29 @@ function applyDeviceAwareWidgetUi() {
   }
 }
 
+function applyExternalAppsSetupUi(isOwner) {
+  const row = document.getElementById("externalAppsSetupRow");
+  const desc = document.getElementById("externalAppsSetupDescription");
+  if (!row) return;
+  const platform = detectClientPlatform();
+  const owner = !!isOwner;
+
+  if (platform === "desktop" && !owner) {
+    row.style.display = "none";
+    return;
+  }
+
+  row.style.display = "";
+  if (!desc) return;
+  if (platform === "android") {
+    desc.textContent = "Install Android apps used for widgets and push alerts.";
+  } else if (platform === "ios") {
+    desc.textContent = "Install iOS apps used for widgets and push alerts.";
+  } else {
+    desc.textContent = "Owner desktop view: review iOS and Android app requirements.";
+  }
+}
+
 function isNonAdminPreviewEnabled() {
   return localStorage.getItem(NON_ADMIN_PREVIEW_KEY) === "1";
 }
@@ -675,12 +698,38 @@ function bindForceRefreshHomeWidget() {
         const wv = Number(out.widget_version || 0);
         statusEl.textContent = `Cache refreshed. Home v${hv}, Widget v${wv}.`;
       }
+      renderCurrentCacheVersions(out);
     } catch (err) {
       if (statusEl) statusEl.textContent = `Refresh failed: ${err?.message || err}`;
     } finally {
       btn.disabled = false;
     }
   });
+}
+
+function renderCurrentCacheVersions(out) {
+  const el = document.getElementById("homeWidgetCurrentVersionStatus");
+  if (!el) return;
+  const hv = Number(out?.home_snapshot_version || 0);
+  const wv = Number(out?.widget_version || 0);
+  el.textContent = `Current versions: Home v${hv}, Widget v${wv}.`;
+}
+
+async function loadCurrentCacheVersions() {
+  const el = document.getElementById("homeWidgetCurrentVersionStatus");
+  if (!el) return;
+  el.textContent = "Current versions: loading...";
+  try {
+    const res = await fetch("/settings/cache-versions", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || !out?.ok) throw new Error(`HTTP ${res.status}`);
+    renderCurrentCacheVersions(out);
+  } catch (_) {
+    el.textContent = "Current versions unavailable.";
+  }
 }
 
 async function loadAdminVisibility() {
@@ -705,6 +754,7 @@ async function loadAdminVisibility() {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyDeviceAwareWidgetUi();
+  applyExternalAppsSetupUi(false);
 
   const btn = document.getElementById("resetHomeLayoutBtn");
   if (btn && window.LayoutStore) {
@@ -727,7 +777,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadInitialSetupProgress().catch((err) => console.error(err));
   loadGoogleOAuthStatus().catch((err) => console.error(err));
-  loadAdminVisibility().catch((err) => console.error(err));
+  loadAdminVisibility()
+    .then((isOwner) => applyExternalAppsSetupUi(!!isOwner))
+    .catch((err) => {
+      console.error(err);
+      applyExternalAppsSetupUi(false);
+    });
+  loadCurrentCacheVersions().catch((err) => console.error(err));
   bindEmailParserBackfill();
   bindGoogleOAuthActions();
   bindForceRefreshHomeWidget();

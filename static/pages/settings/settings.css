@@ -102,6 +102,13 @@
   flex-wrap: nowrap;
 }
 
+.settings-admin-widget-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 :root {
   --settings-action-btn-w: 164px;
 }
@@ -675,6 +682,15 @@
 
   .settings-inline-actions {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .settings-admin-widget-actions {
+    justify-content: stretch;
+  }
+
+  .settings-admin-widget-actions .settings-btn {
+    width: 100%;
+    min-width: 0;
   }
 
   .backfill-controls {

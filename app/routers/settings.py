@@ -11,7 +11,7 @@ from db import with_db_cursor, query_db
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenant_keys import scoped_key
 from app.core.roundups import get_roundup_settings, set_roundup_settings
-from app.core.home_snapshot_cache import bump_home_snapshot_version
+from app.core.home_snapshot_cache import bump_home_snapshot_version, home_snapshot_version_for_tenant
 from app.core.tenancy import current_tenant_id, get_user_by_email, get_user_pushover_key_by_email
 from app.core.widget_tokens import issue_widget_token
 from app.core.auth import get_connected_google_email
@@ -683,6 +683,31 @@ def refresh_home_widget_cache(request: Request):
         "home_snapshot_version": int(home_version or 0),
         "home_cache_warmed": bool(home_warmed),
         "widget_version": int(widget_version or 0),
+    }
+
+
+@router.get("/settings/cache-versions")
+def get_cache_versions(request: Request):
+    tid = current_tenant_id()
+    if MULTI_TENANT_ENABLED:
+        tenant_id, _ = _require_approved_session_user(request)
+        tid = int(tenant_id)
+    else:
+        tid = int(tid or 0)
+
+    home_version = int(home_snapshot_version_for_tenant(tid) or 0)
+    widget_version = 0
+    try:
+        from app.routers.page_payloads import _widget_version_for_tenant_cached
+        widget_version = int(_widget_version_for_tenant_cached(tid) or 0)
+    except Exception:
+        widget_version = int(_refresh_widget_cache_for_tenant_best_effort(int(tid)) or 0)
+
+    return {
+        "ok": True,
+        "tenant_id": int(tid),
+        "home_snapshot_version": int(home_version),
+        "widget_version": int(widget_version),
     }
 
 

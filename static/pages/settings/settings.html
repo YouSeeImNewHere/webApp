@@ -88,6 +88,7 @@
           </div>
           <button class="settings-btn" id="forceRefreshHomeWidgetBtn" type="button">Cache Refresh</button>
         </div>
+        <div id="homeWidgetCurrentVersionStatus" class="settings-muted" role="status" aria-live="polite"></div>
         <div id="homeWidgetRefreshStatus" class="settings-muted" role="status" aria-live="polite"></div>
       </div>
     </section>
@@ -132,6 +133,14 @@
             <div class="settings-muted" style="margin:4px 0 0 0;">Create and maintain live parser rules.</div>
           </div>
           <a class="settings-btn primary" href="/email-parser-wizard">Open Wizard</a>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="settings-row settings-split-row" id="externalAppsSetupRow" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">External apps</div>
+            <div class="settings-muted" id="externalAppsSetupDescription" style="margin:4px 0 0 0;">Install required mobile apps for widgets and push notifications.</div>
+          </div>
+          <a class="settings-btn primary" href="/static/pages/external-apps/external-apps.html">Open Page</a>
         </div>
         <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
         <div class="backfill-panel">
@@ -195,6 +204,17 @@
             <div class="settings-muted" style="margin:4px 0 0 0;">Tenant management, pending user approvals, and tenant data purge.</div>
           </div>
           <a class="settings-btn primary" href="/admin">Open Admin Console</a>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">
+        <div class="settings-row settings-split-row" style="justify-content:space-between;">
+          <div>
+            <div style="font-weight:950;">Widget setup links</div>
+            <div class="settings-muted" style="margin:4px 0 0 0;">Open platform-specific widget setup pages directly.</div>
+          </div>
+          <div class="settings-inline-actions settings-admin-widget-actions">
+            <a class="settings-btn primary" id="adminWidgetIosLink" href="/widgets?platform=ios">iOS Widgets</a>
+            <a class="settings-btn primary" id="adminWidgetAndroidLink" href="/widgets?platform=android">Android Widgets</a>
+          </div>
         </div>
       </div>
     </section>

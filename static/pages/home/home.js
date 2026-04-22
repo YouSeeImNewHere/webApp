@@ -319,6 +319,15 @@ async function loadExtraSaved() {
     const el = document.getElementById("mbExtraSaved");
     if (el) el.textContent = money(j.extra_saved);
   } catch (e) {
+    const msg = String((e && e.message) || e || "");
+    const isAbort = (e && e.name === "AbortError") || /aborted/i.test(msg);
+    if (isAbort) {
+      // Non-fatal: API wrapper timeout/abort. Retry once in the background.
+      setTimeout(() => {
+        loadExtraSaved().catch(() => {});
+      }, 1200);
+      return;
+    }
     console.error("extra-saved failed", e);
   }
 }
