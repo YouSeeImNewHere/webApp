@@ -7,6 +7,14 @@ const EXTERNAL_APPS = [
     description: "Custom widget builder for Android. Use it to place and run your finance widget on your home screen.",
   },
   {
+    id: "kwgt_template_android",
+    platform: "android",
+    name: "Finance Widget Template (.kwgt)",
+    url: "/settings/external-apps/kwgt-template",
+    description: "Prebuilt KWGT template file. Download and import this into KWGT to set up the Android widget quickly.",
+    download: true,
+  },
+  {
     id: "pushover_android",
     platform: "android",
     name: "Pushover",
@@ -62,7 +70,7 @@ function renderAppList(items) {
       </div>
       <p class="settings-muted external-apps-desc">${app.description}</p>
       <div class="external-apps-actions">
-        <a class="settings-btn primary" href="${app.url}" target="_blank" rel="noopener noreferrer">Open Store</a>
+        <a class="settings-btn primary" href="${app.url}" ${app.download ? "download" : 'target="_blank" rel="noopener noreferrer"'}>${app.download ? "Download File" : "Open Store"}</a>
       </div>
     </article>
   `).join("");

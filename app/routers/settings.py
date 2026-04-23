@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from db import with_db_cursor, query_db
 from app.core.config import MULTI_TENANT_ENABLED
@@ -18,6 +19,7 @@ from app.core.auth import get_connected_google_email
 
 router = APIRouter()
 _LOG = logging.getLogger("uvicorn.error")
+_ANDROID_KWGT_TEMPLATE_PATH = Path("static/downloads/android/finance-widget-template.kwgt")
 
 # =============================================================================
 # Settings (Postgres) — ported from settings.py
@@ -753,3 +755,17 @@ def get_settings_view_flags(request: Request):
         return {"ok": True, "is_owner": False}
     user = get_user_by_email(session_email) or {}
     return {"ok": True, "is_owner": bool(user.get("is_owner"))}
+
+
+@router.get("/settings/external-apps/kwgt-template")
+def download_android_kwgt_template(request: Request):
+    _require_approved_session_user(request)
+    path = _ANDROID_KWGT_TEMPLATE_PATH
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="kwgt_template_not_found")
+    return FileResponse(
+        path=str(path),
+        media_type="application/octet-stream",
+        filename="finance-widget-template.kwgt",
+        headers={"Cache-Control": "no-store"},
+    )
