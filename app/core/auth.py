@@ -76,7 +76,9 @@ PUBLIC_EXACT = {
     "/favicon.ico",
     "/health",
     "/gmail/push",
+    "/gmail/oauth/start",
     "/gmail/oauth/callback",
+    "/gmail/oauth/status",
     "/gmail/watch/renew",
 }
 PUBLIC_PREFIXES = {"/static/"}
