@@ -89,6 +89,9 @@ CSRF_EXEMPT_EXACT = {
 
 def _is_authed(request: Request) -> bool:
     try:
+        # In multi-tenant mode, Google OAuth identity is the source of truth.
+        if MULTI_TENANT_ENABLED and bool((request.session.get("google_email") or "").strip()):
+            return True
         return bool(request.session.get("authed"))
     except Exception:
         return False
@@ -1085,6 +1088,8 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
             print("gmail oauth callback: auto watch start failed:", repr(e))
 
     request.session["google_oauth_state"] = None
+    request.session["authed"] = True
+    request.session["app_password_ok"] = True
     request.session["google_email"] = google_email
     next_url = _sanitize_next_url(request.session.get("google_oauth_next"), default="/settings")
     return RedirectResponse(url=next_url, status_code=302)
@@ -1406,6 +1411,8 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
                 if path == "/static/shared/shared.html":
                     return await call_next(request)
                 if path.lower().endswith(".html") and not _is_authed(request):
+                    if MULTI_TENANT_ENABLED:
+                        return RedirectResponse(url=f"/gmail/oauth/start?next={path}", status_code=302)
                     return RedirectResponse(url=f"/login?next={path}", status_code=302)
                 return await call_next(request)
 
@@ -1413,6 +1420,8 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
             if not _is_authed(request):
                 accept = request.headers.get("accept", "")
                 if "text/html" in accept:
+                    if MULTI_TENANT_ENABLED:
+                        return RedirectResponse(url=f"/gmail/oauth/start?next={path}", status_code=302)
                     return RedirectResponse(url=f"/login?next={path}", status_code=302)
                 return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
 
@@ -1461,6 +1470,9 @@ async def favicon():
 
 @router.get("/login")
 def login_page(next: str = "/"):
+    if MULTI_TENANT_ENABLED:
+        safe_next = _sanitize_next_url(next, default="/")
+        return RedirectResponse(url=f"/gmail/oauth/start?next={safe_next}", status_code=302)
     safe_next = html.escape(_sanitize_next_url(next, default="/"), quote=True)
     page_html = f"""
     <!doctype html>
@@ -1526,6 +1538,22 @@ def login_page(next: str = "/"):
 
 @router.post("/login")
 async def login(request: Request):
+    if MULTI_TENANT_ENABLED:
+        ct = (request.headers.get("content-type") or "").lower()
+        next_url = "/"
+        if "application/json" in ct:
+            data = await request.json()
+            next_url = str((data or {}).get("next", "/") or "/")
+        else:
+            form = await request.form()
+            next_url = str(form.get("next", "/") or "/")
+        next_url = _sanitize_next_url(next_url, default="/")
+        oauth_start = f"/gmail/oauth/start?next={next_url}"
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept or "application/x-www-form-urlencoded" in ct or "multipart/form-data" in ct:
+            return RedirectResponse(url=oauth_start, status_code=302)
+        return {"ok": False, "error": "password_login_disabled", "redirect": oauth_start}
+
     if not APP_PASSWORD:
         # Fail closed if you forgot to set APP_PASSWORD on Render
         return JSONResponse({"ok": False, "error": "APP_PASSWORD not set on server"}, status_code=500)
