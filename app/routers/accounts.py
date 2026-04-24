@@ -10,6 +10,7 @@ from db import with_db_cursor, query_db, run_db_retry
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
 from app.core.home_snapshot_cache import bump_home_snapshot_version
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 
 router = APIRouter()
 
@@ -351,6 +352,7 @@ def bank_info_refresh():
 
 @router.get("/bank-totals")
 def bank_totals():
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
 
     def _run():
@@ -422,6 +424,7 @@ def bank_totals():
                         ) AS raw_date
                       FROM transactions
                       WHERE tenant_id = %s
+                        AND COALESCE(is_ignored, false) = false
                     ),
                     norm AS (
                       SELECT
@@ -454,6 +457,7 @@ def bank_totals():
                           NULLIF(TRIM(purchaseDate), 'unknown')
                         ) AS raw_date
                       FROM transactions
+                      WHERE COALESCE(is_ignored, false) = false
                     ),
                     norm AS (
                       SELECT
@@ -513,12 +517,13 @@ def bank_totals():
         # Keep balance math consistent with account-series/account-transactions-range:
         # - investment: raw = start + trans
         # - others:     raw = start - trans
-        # - credit display value is sign-flipped from raw
+        # - for credit in home payloads, keep signed raw value:
+        #   negative=debt, positive=surplus (used by home/widget credit-usage logic)
         if acc_type == "investment":
             raw_balance = start + trans
         else:
             raw_balance = start - trans
-        balance = (-raw_balance) if acc_type == "credit" else raw_balance
+        balance = raw_balance
 
         bucket = acc_type if acc_type in by_type else "other"
         display_name = f'{a["institution"]} — {a["name"]}'
@@ -533,6 +538,10 @@ def bank_totals():
         by_type[bucket].append(item)
 
     for k in by_type:
-        by_type[k].sort(key=lambda x: x["total"], reverse=True)
+        if k == "credit":
+            # With signed credit totals (negative=debt), sort by magnitude so largest debt appears first.
+            by_type[k].sort(key=lambda x: abs(float(x.get("total") or 0.0)), reverse=True)
+        else:
+            by_type[k].sort(key=lambda x: x["total"], reverse=True)
 
     return {k: {"total": sum(x["total"] for x in lst), "accounts": lst} for k, lst in by_type.items()}

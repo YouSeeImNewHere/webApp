@@ -1,6 +1,7 @@
 # db.py
 import os
 import time
+from threading import Lock
 from dotenv import load_dotenv
 from contextlib import contextmanager
 from psycopg_pool import ConnectionPool
@@ -35,6 +36,32 @@ pool = ConnectionPool(
     kwargs={"row_factory": dict_row},
     open=False,
 )
+
+_IGNORE_COL_READY = False
+_IGNORE_COL_LOCK = Lock()
+
+
+def _ensure_transactions_ignore_column_best_effort():
+    global _IGNORE_COL_READY
+    if _IGNORE_COL_READY:
+        return
+    with _IGNORE_COL_LOCK:
+        if _IGNORE_COL_READY:
+            return
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        ALTER TABLE transactions
+                        ADD COLUMN IF NOT EXISTS is_ignored BOOLEAN NOT NULL DEFAULT false
+                        """
+                    )
+                conn.commit()
+            _IGNORE_COL_READY = True
+        except Exception:
+            # Non-fatal: caller will still raise original error if retry fails.
+            pass
 
 
 def ensure_performance_indexes():
@@ -82,7 +109,16 @@ def query_db(sql: str, params=()):
     def _run():
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, params)
+                try:
+                    cur.execute(sql, params)
+                except Exception as e:
+                    msg = str(e).lower()
+                    if "is_ignored" in msg and "does not exist" in msg:
+                        conn.rollback()
+                        _ensure_transactions_ignore_column_best_effort()
+                        cur.execute(sql, params)
+                    else:
+                        raise
                 if cur.description:
                     return cur.fetchall()
                 return []

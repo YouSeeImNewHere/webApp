@@ -1791,8 +1791,8 @@ async function getSavingsGoalConfig(){
 
 
 // Credit-card balance formatting:
-//   negative = you owe (debt)
-//   positive = you have a surplus/credit
+//   debt is shown as a positive amount
+//   credit/surplus is shown as "CR $X"
 // Also avoid displaying "-$0.00" from tiny float noise.
 function formatCardBalance(n, { showLabel = false } = {}) {
   let x = Number(n || 0);
@@ -1802,13 +1802,13 @@ function formatCardBalance(n, { showLabel = false } = {}) {
   const absStr = money(Math.abs(x));
 
   if (showLabel) {
-    if (x < 0) return `Cards: -${absStr}`;
-    if (x > 0) return `Cards: +${absStr}`;
+    if (x < 0) return `Cards: ${absStr}`;
+    if (x > 0) return `Cards: CR ${absStr}`;
     return `Cards: ${money(0)}`;
   }
 
-  if (x < 0) return `-${absStr}`;
-  if (x > 0) return `+${absStr}`;
+  if (x < 0) return `${absStr}`;
+  if (x > 0) return `CR ${absStr}`;
   return money(0);
 }
 
@@ -2297,6 +2297,11 @@ function renderTxList(data){
   function renderOneTxRow(row){
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
+    const isIgnored = !!row?.is_ignored;
+    if (isIgnored) {
+      wrap.classList.add("is-ignored");
+      wrap.dataset.ignored = "1";
+    }
 
     if (String(row.status || "").toLowerCase() === "pending") {
       wrap.classList.add("is-pending");

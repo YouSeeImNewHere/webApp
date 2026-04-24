@@ -50,6 +50,7 @@
         <div class="tx-inspect-grid" id="txInspectGrid"></div>
         <datalist id="txInspectCategoryOptions"></datalist>
       </div>
+      <div class="tx-inspect-footer" id="txInspectFooter"></div>
     `;
 
     function close() {
@@ -149,6 +150,21 @@
     );
   }
 
+  function updateAnyVisibleTxRowsIgnored(txId, ignored) {
+    const rows = document.querySelectorAll(
+      `.tx-row[data-tx-id="${CSS.escape(String(txId))}"]`
+    );
+    const isIgnored = !!ignored;
+    rows.forEach((row) => {
+      row.classList.toggle("is-ignored", isIgnored);
+      row.dataset.ignored = isIgnored ? "1" : "0";
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("tx:ignored-updated", { detail: { txId, ignored: isIgnored } })
+    );
+  }
+
   function _formatMoney(n) {
     const v = Number(n || 0);
     if (typeof window.money === "function") return window.money(v);
@@ -181,7 +197,8 @@
 
   function renderTxInspect(obj, txId) {
     const grid = document.getElementById("txInspectGrid");
-    if (!grid) return;
+    const footer = document.getElementById("txInspectFooter");
+    if (!grid || !footer) return;
 
     const normalizeKey = (k) => String(k || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const isEmpty = (v) => v == null || String(v).trim() === "";
@@ -277,45 +294,6 @@
         <div id="txInspectCategoryStatus" class="tx-edit-status" aria-live="polite"></div>
       </div>
 
-      <div class="tx-k">edit</div>
-      <div class="tx-v">
-        <div class="tx-inline-edit tx-inline-edit--toolbar tx-inline-edit--toolbar-fixed">
-          <button id="txInspectMetaEditToggle" class="tx-edit-btn" type="button">Edit status/date</button>
-          <button id="txInspectInvertAmount" class="tx-edit-btn" type="button">Invert amount</button>
-          <button id="txInspectDelete" class="tx-edit-btn tx-edit-btn--danger" type="button">Delete</button>
-        </div>
-        <div id="txInspectDeleteStatus" class="tx-edit-status tx-edit-status--danger" aria-live="polite"></div>
-
-        <div id="txInspectMetaEditPanel" class="tx-edit-panel" style="display:none;">
-          <div class="tx-inline-edit tx-inline-edit--meta">
-            <label class="tx-inline-field">
-              <span>Status</span>
-              <select id="txInspectStatusInput" class="tx-edit-input">
-                <option value="posted"${currentStatus === "posted" ? " selected" : ""}>posted</option>
-                <option value="pending"${currentStatus === "pending" ? " selected" : ""}>pending</option>
-              </select>
-            </label>
-            <label class="tx-inline-field">
-              <span>Posted Date</span>
-              <input
-                id="txInspectPostedDateInput"
-                class="tx-edit-input"
-                type="text"
-                inputmode="numeric"
-                placeholder="MM/DD/YYYY or unknown"
-                value="${esc(currentPosted)}"
-              />
-            </label>
-          </div>
-          <div class="tx-inline-edit tx-inline-edit--toolbar">
-            <button id="txInspectMetaSave" class="tx-edit-btn" type="button">Save</button>
-            <button id="txInspectMetaCancel" class="tx-edit-btn tx-edit-btn--quiet" type="button">Cancel</button>
-          </div>
-          <div id="txInspectMetaStatus" class="tx-edit-status" aria-live="polite"></div>
-        </div>
-        <div id="txInspectAmountStatus" class="tx-edit-status" aria-live="polite"></div>
-      </div>
-
       <div class="tx-k">details</div>
       <div class="tx-v">
         <section class="tx-tech-details">
@@ -324,6 +302,47 @@
           </div>
         </section>
       </div>
+    `;
+
+    const isIgnored = !!obj?.is_ignored;
+
+    footer.innerHTML = `
+      <div class="tx-inline-edit tx-inline-edit--toolbar tx-inline-edit--toolbar-fixed">
+        <button id="txInspectMetaEditToggle" class="tx-edit-btn" type="button">Edit status/date</button>
+        <button id="txInspectInvertAmount" class="tx-edit-btn" type="button">Invert amount</button>
+        <button id="txInspectIgnore" class="tx-edit-btn tx-edit-btn--quiet" type="button">${isIgnored ? "Unignore" : "Ignore"}</button>
+        <button id="txInspectDelete" class="tx-edit-btn tx-edit-btn--danger tx-edit-btn--push-right" type="button">Delete</button>
+      </div>
+      <div id="txInspectDeleteStatus" class="tx-edit-status tx-edit-status--danger" aria-live="polite"></div>
+      <div id="txInspectIgnoreStatus" class="tx-edit-status" aria-live="polite"></div>
+      <div id="txInspectMetaEditPanel" class="tx-edit-panel" style="display:none;">
+        <div class="tx-inline-edit tx-inline-edit--meta">
+          <label class="tx-inline-field">
+            <span>Status</span>
+            <select id="txInspectStatusInput" class="tx-edit-input">
+              <option value="posted"${currentStatus === "posted" ? " selected" : ""}>posted</option>
+              <option value="pending"${currentStatus === "pending" ? " selected" : ""}>pending</option>
+            </select>
+          </label>
+          <label class="tx-inline-field">
+            <span>Posted Date</span>
+            <input
+              id="txInspectPostedDateInput"
+              class="tx-edit-input"
+              type="text"
+              inputmode="numeric"
+              placeholder="MM/DD/YYYY or unknown"
+              value="${esc(currentPosted)}"
+            />
+          </label>
+        </div>
+        <div class="tx-inline-edit tx-inline-edit--toolbar">
+          <button id="txInspectMetaSave" class="tx-edit-btn" type="button">Save</button>
+          <button id="txInspectMetaCancel" class="tx-edit-btn tx-edit-btn--quiet" type="button">Cancel</button>
+        </div>
+        <div id="txInspectMetaStatus" class="tx-edit-status" aria-live="polite"></div>
+      </div>
+      <div id="txInspectAmountStatus" class="tx-edit-status" aria-live="polite"></div>
     `;
 
     const btn = document.getElementById("txInspectCategorySave");
@@ -340,6 +359,8 @@
     const statusInput = document.getElementById("txInspectStatusInput");
     const postedInput = document.getElementById("txInspectPostedDateInput");
     const invertBtn = document.getElementById("txInspectInvertAmount");
+    const ignoreBtn = document.getElementById("txInspectIgnore");
+    const ignoreStatus = document.getElementById("txInspectIgnoreStatus");
 
     if (btn && input) {
       btn.onclick = async () => {
@@ -450,6 +471,31 @@
       };
     }
 
+    if (ignoreBtn) {
+      ignoreBtn.onclick = async () => {
+        const nextIgnored = !Boolean(obj?.is_ignored);
+        ignoreBtn.disabled = true;
+        if (ignoreStatus) ignoreStatus.textContent = "Saving...";
+        try {
+          const res = await fetch(`/transaction/${encodeURIComponent(txId)}/ignore`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ignored: nextIgnored }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const out = await res.json();
+          obj.is_ignored = !!out?.is_ignored;
+          updateAnyVisibleTxRowsIgnored(txId, obj.is_ignored);
+          if (ignoreStatus) ignoreStatus.textContent = obj.is_ignored ? "Ignored from calculations" : "Included in calculations";
+          renderTxInspect(obj, txId);
+        } catch (e) {
+          console.error(e);
+          if (ignoreStatus) ignoreStatus.textContent = "Failed to update";
+          ignoreBtn.disabled = false;
+        }
+      };
+    }
+
     if (delBtn) {
       delBtn.onclick = async () => {
         const ok = confirm("Delete this transaction? This cannot be undone.");
@@ -485,11 +531,13 @@
     const backdrop = document.getElementById("txInspectBackdrop");
     const modal = document.getElementById("txInspectModal");
     const grid = document.getElementById("txInspectGrid");
+    const footer = document.getElementById("txInspectFooter");
 
     backdrop.style.display = "block";
     modal.style.display = "flex";
     lockBodyScroll();
     grid.innerHTML = `<div class="tx-inspect-loading">Loading...</div>`;
+    if (footer) footer.innerHTML = "";
 
     const [cats, res] = await Promise.all([
       getCategories(),

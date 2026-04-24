@@ -56,6 +56,10 @@ function renderAppend(list){
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
     wrap.dataset.txId = String(row.id ?? "");
+    if (!!row?.is_ignored) {
+      wrap.classList.add("is-ignored");
+      wrap.dataset.ignored = "1";
+    }
 
     if (String(row.status || "").toLowerCase() === "pending") {
       wrap.classList.add("is-pending");

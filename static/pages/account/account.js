@@ -9,6 +9,7 @@ const AUDIT_MODE = /^(1|true|yes)$/i.test(String(qs("audit") || ""));
 let latestAccountRows = [];
 let pendingBalanceMultiplier = -1;
 let latestAccountHeader = null;
+let currentAccountType = "";
 
 
 const ACCOUNT_CHART_IDS = {
@@ -115,6 +116,23 @@ function isoTodayLocal() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function isCreditAccountType(v) {
+  const t = String(v || "").trim().toLowerCase();
+  return t.includes("credit");
+}
+
+function moneyCreditTotalDisplay(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return money(0);
+  if (n < 0) return `CR ${money(Math.abs(n))}`;
+  return money(n);
+}
+
+function moneyForRunningBalance(v) {
+  if (isCreditAccountType(currentAccountType)) return moneyCreditTotalDisplay(v);
+  return money(v);
 }
 
 async function initAccountSwitcher(currentAccountId){
@@ -260,6 +278,7 @@ async function loadAccountHeader(accountId){
   const res = await fetch(`/account/${accountId}`);
   const a = await res.json();
   latestAccountHeader = a;
+  currentAccountType = String(a?.accountType || "");
 
   // Keep breakdown label contextual while chart title is removed on account page.
   const breakLabel = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
@@ -367,7 +386,7 @@ events = events.filter(e => Number(e.account_id) === Number(accountId));
   const l = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
   const v = document.getElementById(ACCOUNT_CHART_IDS.breakValue);
   if (l) l.textContent = l.textContent || "Balance";
-  if (v) v.textContent = money(last);
+  if (v) v.textContent = moneyForRunningBalance(last);
 
   const ctx = document.getElementById("accountChart").getContext("2d");
   if (chart) chart.destroy();
@@ -474,7 +493,7 @@ async function loadAccountTransactions(accountId, opts = {}){
     h.innerHTML = `
       <div class="tx-day-header__date">${isPendingHeader ? "Pending" : escHtml(headerDateLabel(dateKey))}</div>
       <div class="tx-day-header__right">
-        <div class="tx-day-header__bal">${(endOfDayBalance == null || isPendingHeader) ? "" : money(endOfDayBalance)}</div>
+        <div class="tx-day-header__bal">${(endOfDayBalance == null || isPendingHeader) ? "" : moneyForRunningBalance(endOfDayBalance)}</div>
         ${showAuditVerify ? `<button type="button" class="tx-day-verify-btn" data-verify-date="${escHtml(String(dateKey))}">Verify</button>` : ""}
       </div>
     `;
@@ -507,6 +526,10 @@ async function loadAccountTransactions(accountId, opts = {}){
   function renderRow(row, balanceOverride = null) {
     const wrap = document.createElement("div");
     wrap.className = "tx-row";
+    if (!!row?.is_ignored) {
+      wrap.classList.add("is-ignored");
+      wrap.dataset.ignored = "1";
+    }
     if (AUDIT_MODE) {
       wrap.classList.add("is-audit-row");
       wrap.setAttribute("data-tip", "Click anywhere to mark as correct");
@@ -553,7 +576,7 @@ async function loadAccountTransactions(accountId, opts = {}){
       <div class="tx-right">
         ${roundupBadge}
         <div class="tx-amt">${money(row.amount)}</div>
-        <div class="tx-bal">${shownBal == null ? "" : money(shownBal)}</div>
+        <div class="tx-bal">${shownBal == null ? "" : moneyForRunningBalance(shownBal)}</div>
       </div>
     `;
 

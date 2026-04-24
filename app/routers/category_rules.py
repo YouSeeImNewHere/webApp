@@ -37,6 +37,7 @@ from app.core.home_snapshot_cache import (
 from app.core.tenant_keys import scoped_key
 from app.core.tenancy import current_tenant_id, get_user_pushover_key_by_email
 from app.core.pushover import send_pushover
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 
 router = APIRouter()
 
@@ -45,6 +46,7 @@ UNKNOWN_MERCHANT_CACHE_TTL_SEC = int(os.getenv("UNKNOWN_MERCHANT_CACHE_TTL_SEC",
 _MONTH_BUDGET_CACHE: dict[str, dict[str, Any]] = {}
 _UNKNOWN_MERCHANT_CACHE: dict[str, dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
+MONTH_BUDGET_CALC_VERSION = 2
 
 # =============================================================================
 # Category Rules (Postgres) — ported from category_rules.py
@@ -209,6 +211,7 @@ def _ensure_daily_limit_snapshot_pg(tid: int | None = None):
         conn.commit()
 
 def _compute_spent_free_for_day(day: date, tid: int | None = None) -> tuple[float, float, float]:
+    ensure_transactions_ignore_column()
     year = day.year
     month = day.month
     if tid is None:
@@ -225,7 +228,8 @@ def _compute_spent_free_for_day(day: date, tid: int | None = None) -> tuple[floa
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE COALESCE(t.is_ignored, false) = false" if not tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else ""}
         ),
         norm AS (
           SELECT
@@ -257,7 +261,11 @@ def _compute_spent_free_for_day(day: date, tid: int | None = None) -> tuple[floa
             continue
         amt = float(r["amount"] or 0.0)
         account_type = (r["accounttype"] or "").lower()
-        if account_type in ("checking", "credit") and amt > 0:
+        is_spend_direction = (
+            (account_type == "checking" and amt > 0)
+            or (account_type == "credit" and amt != 0)
+        )
+        if is_spend_direction:
             dtx = r["d"]
             spent_by_day[dtx] = spent_by_day.get(dtx, 0.0) + amt
             day_cat = cat_spent_by_day.setdefault(dtx, {})
@@ -682,6 +690,7 @@ def _month_budget_home(
     include_stale: bool = False,
     pushover_user_key: str | None = None,
 ):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     today = today_local()
     month_start = date(year, month, 1)
@@ -780,7 +789,7 @@ def _month_budget_home(
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -814,7 +823,11 @@ def _month_budget_home(
 
         amt = float(r["amount"] or 0.0)
         account_type = (r["accounttype"] or "").lower()
-        if account_type in ("checking", "credit") and amt > 0:
+        is_spend_direction = (
+            (account_type == "checking" and amt > 0)
+            or (account_type == "credit" and amt != 0)
+        )
+        if is_spend_direction:
             spent_so_far += amt
             if category:
                 cat_spent[category] = cat_spent.get(category, 0.0) + amt
@@ -958,6 +971,7 @@ def _month_budget_home(
     )
 
     return {
+        "_calc_version": int(MONTH_BUDGET_CALC_VERSION),
         "ok": True,
         "month_start": month_start.isoformat(),
         "month_end": month_end.isoformat(),
@@ -1035,6 +1049,8 @@ def month_budget_home_cached(
     def _is_fresh_for_today(payload: dict[str, Any] | None) -> bool:
         if not isinstance(payload, dict):
             return False
+        if int(payload.get("_calc_version") or 0) != int(MONTH_BUDGET_CALC_VERSION):
+            return False
         if not is_current_month:
             return True
         return str(payload.get("as_of") or "") == today.isoformat()
@@ -1060,7 +1076,8 @@ def month_budget_home_cached(
 
     key = (
         f"month-budget:tenant={tid or 0}:year={int(year)}:month={int(month)}:"
-        f"min_occ={int(min_occ)}:include_stale={int(bool(include_stale))}:user_key={(pushover_user_key or '')}"
+        f"min_occ={int(min_occ)}:include_stale={int(bool(include_stale))}:"
+        f"calc_v={int(MONTH_BUDGET_CALC_VERSION)}:user_key={(pushover_user_key or '')}"
     )
     if not force_refresh:
         cached = _cache_get(_MONTH_BUDGET_CACHE, key, MONTH_BUDGET_CACHE_TTL_SEC)

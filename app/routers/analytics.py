@@ -21,6 +21,7 @@ from app.core.roundups import (
     is_roundup_eligible_tx,
     roundup_amount_from_spend,
 )
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 from app.routers.budget_groups import _get_budget_groups_for_month, _norm_cat
 
 from db import with_db_cursor, query_db
@@ -94,6 +95,7 @@ def _roundup_totals_for_rows(rows: list[dict[str, Any]]) -> tuple[float, int]:
 # -----------------------------------------------------------------------------
 @router.get("/net-worth")
 def net_worth(start: str, end: str):
+    ensure_transactions_ignore_column()
     _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -156,6 +158,7 @@ def net_worth(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/savings")
 def savings(start: str, end: str):
+    ensure_transactions_ignore_column()
     _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -174,6 +177,7 @@ def savings(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/investments")
 def investments(start: str, end: str):
+    ensure_transactions_ignore_column()
     _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -192,6 +196,7 @@ def investments(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/spending")
 def spending(start: str, end: str):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -206,7 +211,7 @@ def spending(start: str, end: str):
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -264,6 +269,7 @@ def spending(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/spending-debug")
 def spending_debug(start: str, end: str):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -282,7 +288,7 @@ def spending_debug(start: str, end: str):
             a.name AS account
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -335,6 +341,7 @@ def spending_debug(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/spending-unbudgeted-safe-range")
 def spending_unbudgeted_safe_range(start: str, end: str):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -351,7 +358,7 @@ def spending_unbudgeted_safe_range(start: str, end: str):
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -472,6 +479,7 @@ def spending_unbudgeted_safe_range(start: str, end: str):
 # -----------------------------------------------------------------------------
 @router.get("/spending-unbudgeted-day")
 def spending_unbudgeted_day(day: str):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     d = parse_iso(day)
 
@@ -510,7 +518,7 @@ def spending_unbudgeted_day(day: str):
             COALESCE(a.name, '') AS account
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -612,6 +620,7 @@ def spending_unbudgeted_day(day: str):
 # -----------------------------------------------------------------------------
 @router.get("/category-totals-month")
 def category_totals_month():
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     today = today_local()
     first = today.replace(day=1)
@@ -628,6 +637,7 @@ def category_totals_month():
           AND TRIM(t.merchant) <> ''
           AND LOWER(TRIM(t.merchant)) <> 'unknown'
           {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          AND COALESCE(t.is_ignored, false) = false
         """,
         ((int(tid), int(tid)) if tid else ()),
     )[0]["c"]
@@ -644,6 +654,7 @@ def category_totals_month():
             AND t.category IS NOT NULL
             AND TRIM(t.category) <> ''
             {"AND t.tenant_id = %s" if tid else ""}
+            AND COALESCE(t.is_ignored, false) = false
         ),
         norm AS (
           SELECT
@@ -701,7 +712,7 @@ def category_totals_month():
                 COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
               FROM transactions t
               JOIN accounts a ON a.id = t.account_id
-              {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+              {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
             ),
             norm AS (
               SELECT
@@ -738,6 +749,7 @@ def category_totals_month():
 # -----------------------------------------------------------------------------
 @router.get("/category-trend")
 def category_trend(category: str, period: str = "1m"):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     cat = (category or "").strip().lower()
     roundup_cfg = get_roundup_settings()
@@ -755,7 +767,7 @@ def category_trend(category: str, period: str = "1m"):
                 COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
               FROM transactions t
               JOIN accounts a ON a.id = t.account_id
-              {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+              {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
             ),
             norm AS (
               SELECT
@@ -808,6 +820,7 @@ def category_trend(category: str, period: str = "1m"):
               WHERE t.amount::double precision > 0
                 AND LOWER(a.accountType) IN ('checking','credit')
                 {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+                AND COALESCE(t.is_ignored, false) = false
             ),
             norm AS (
               SELECT
@@ -843,6 +856,7 @@ def category_trend(category: str, period: str = "1m"):
               FROM transactions t
               WHERE LOWER(TRIM(COALESCE(t.category,''))) = LOWER(TRIM(%s))
                 {"AND t.tenant_id = %s" if tid else ""}
+                AND COALESCE(t.is_ignored, false) = false
             ),
             norm AS (
               SELECT
@@ -872,6 +886,7 @@ def category_trend(category: str, period: str = "1m"):
 # -----------------------------------------------------------------------------
 @router.get("/category-transactions")
 def category_transactions(category: str, start: str, end: str, limit: int = 500):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -899,7 +914,7 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
                 COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
               FROM transactions t
               JOIN accounts a ON a.id = t.account_id
-              {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+              {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
             ),
             norm AS (
               SELECT
@@ -973,6 +988,7 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
               JOIN accounts a ON a.id = t.account_id
               WHERE LOWER(TRIM(COALESCE(t.merchant,''))) = 'unknown'
                 {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+                AND COALESCE(t.is_ignored, false) = false
             ),
             norm AS (
               SELECT
@@ -1042,6 +1058,7 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
           JOIN accounts a ON a.id = t.account_id
           WHERE TRIM(t.category) = TRIM(%s)
             {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            AND COALESCE(t.is_ignored, false) = false
         ),
         norm AS (
           SELECT
@@ -1095,6 +1112,7 @@ def category_transactions(category: str, start: str, end: str, limit: int = 500)
 # -----------------------------------------------------------------------------
 @router.get("/category-totals-lifetime")
 def category_totals_lifetime():
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     rows = query_db(
         f"""
@@ -1105,6 +1123,7 @@ def category_totals_lifetime():
         WHERE category IS NOT NULL
           AND TRIM(category) <> ''
           AND amount::double precision > 0
+          AND COALESCE(is_ignored, false) = false
           {"AND tenant_id = %s" if tid else ""}
         GROUP BY TRIM(category)
         ORDER BY total DESC
@@ -1124,7 +1143,7 @@ def category_totals_lifetime():
               LOWER(a.accountType) AS accountType
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
-            {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
             """,
             ((int(tid), int(tid)) if tid else ()),
         )
@@ -1140,6 +1159,7 @@ def category_totals_lifetime():
 # -----------------------------------------------------------------------------
 @router.get("/category-totals-range")
 def category_totals_range(start: str, end: str):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -1158,6 +1178,7 @@ def category_totals_range(start: str, end: str):
             AND TRIM(t.category) <> ''
             AND LOWER(TRIM(t.category)) NOT IN ('card payment','transfer')
             {"AND t.tenant_id = %s" if tid else ""}
+            AND COALESCE(t.is_ignored, false) = false
         ),
         norm AS (
           SELECT
@@ -1195,7 +1216,7 @@ def category_totals_range(start: str, end: str):
                 COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
               FROM transactions t
               JOIN accounts a ON a.id = t.account_id
-              {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+              {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
             ),
             norm AS (
               SELECT

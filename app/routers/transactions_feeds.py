@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.core.config import MAX_TRANSFER_WINDOW_DAYS, MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -181,6 +182,10 @@ class TxMetaUpdate(BaseModel):
     postedDate: Optional[str] = None
 
 
+class TxIgnoreUpdate(BaseModel):
+    ignored: bool
+
+
 class TxCreateRequest(BaseModel):
     account_id: int
     amount: float
@@ -264,6 +269,7 @@ def _refresh_caches_for_tenant(tid: int | None) -> None:
 
 @router.post("/transaction")
 def transaction_create(body: TxCreateRequest):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     account_id = int(body.account_id)
     amount = float(body.amount)
@@ -347,6 +353,7 @@ def transaction_create(body: TxCreateRequest):
 
 @router.post("/transaction/{tx_id}/category")
 def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
+    ensure_transactions_ignore_column()
     category = (body.category or "").strip()
     tid = _require_tenant_id()
 
@@ -381,6 +388,7 @@ def transaction_set_category(tx_id: str, body: TxCategoryUpdate):
 
 @router.patch("/transaction/{tx_id}/meta")
 def transaction_update_meta(tx_id: str, body: TxMetaUpdate):
+    ensure_transactions_ignore_column()
     next_status = _normalize_status(body.status)
     next_posted = _normalize_posted_date(body.postedDate)
     if next_status is None and next_posted is None:
@@ -427,6 +435,7 @@ def transaction_update_meta(tx_id: str, body: TxMetaUpdate):
 
 @router.post("/transaction/{tx_id}/invert-amount")
 def transaction_invert_amount(tx_id: str):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     with with_db_cursor() as (conn, cur):
         if tid:
@@ -462,6 +471,7 @@ def transaction_delete(tx_id: str):
     """
     Permanently deletes a transaction by id.
     """
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     with with_db_cursor() as (conn, cur):
         try:
@@ -483,3 +493,40 @@ def transaction_delete(tx_id: str):
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/transaction/{tx_id}/ignore")
+def transaction_ignore(tx_id: str, body: TxIgnoreUpdate):
+    ensure_transactions_ignore_column()
+    tid = _require_tenant_id()
+    ignored = bool(body.ignored)
+
+    with with_db_cursor() as (conn, cur):
+        if tid:
+            cur.execute(
+                """
+                UPDATE transactions
+                SET is_ignored = %s
+                WHERE id = %s AND tenant_id = %s
+                RETURNING COALESCE(is_ignored, false) AS is_ignored
+                """,
+                (ignored, tx_id, int(tid)),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE transactions
+                SET is_ignored = %s
+                WHERE id = %s
+                RETURNING COALESCE(is_ignored, false) AS is_ignored
+                """,
+                (ignored, tx_id),
+            )
+        row = cur.fetchone() or {}
+        if not row:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
+        conn.commit()
+
+    _refresh_caches_for_tenant(tid)
+    return {"ok": True, "id": tx_id, "is_ignored": bool(row.get("is_ignored"))}

@@ -10,6 +10,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from db import with_db_cursor
 from app.core.config import BUILD_ID, MULTI_TENANT_ENABLED, OWNER_GOOGLE_EMAIL
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 from app.core.templates import templates
 from app.core.tenancy import current_tenant_id, get_or_create_onboarding_state
 
@@ -187,6 +188,7 @@ def account_page():
 @router.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
     """Return *all* columns for a single transaction, plus account metadata (Postgres)."""
+    ensure_transactions_ignore_column()
     tid = current_tenant_id() if MULTI_TENANT_ENABLED else None
     with with_db_cursor() as (conn, cur):
         cur.execute(

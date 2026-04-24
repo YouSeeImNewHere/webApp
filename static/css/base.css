@@ -3399,6 +3399,17 @@ body{
   flex: 1 1 auto;
   min-height: 0;
   overscroll-behavior: contain;
+  padding-bottom: 14px;
+}
+
+.tx-inspect-footer{
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border, rgba(0,0,0,0.08));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card, #fff) 86%, transparent) 0%, var(--card, #fff) 24%);
+  backdrop-filter: blur(6px);
 }
 
 .tx-inspect-grid {
@@ -3508,6 +3519,11 @@ body{
   background: #b92f2f;
 }
 
+.tx-edit-btn--push-right{
+  margin-left: auto;
+  justify-self: end;
+}
+
 .tx-edit-status{
   margin-top: 6px;
   font-size: 12px;
@@ -3592,9 +3608,13 @@ body{
     padding: 10px;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
     min-height: 0;
     touch-action: pan-y;
+  }
+
+  .tx-inspect-footer{
+    padding: 8px 10px calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
   .tx-inspect-grid{
@@ -3613,7 +3633,7 @@ body{
 
   .tx-inline-edit--toolbar-fixed{
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 
@@ -4872,6 +4892,13 @@ body.page-spending .chart-canvas-box{
 :root[data-theme] .tx-row.is-pending:hover,
 :root:not([data-theme]) .tx-row.is-pending:hover{
   background: var(--pending-hover) !important;
+}
+
+/* ignored transactions are visible but visually de-emphasized */
+:root[data-theme] .tx-row.is-ignored,
+:root:not([data-theme]) .tx-row.is-ignored{
+  opacity: 0.72;
+  border-style: dashed;
 }
 
 /* Shared upcoming day modal layout (Home + Account) */

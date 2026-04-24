@@ -31,6 +31,7 @@ from app.core.roundups import (
     is_roundup_eligible_tx,
     roundup_amount_from_spend,
 )
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 
 # Import the underlying route helpers we bundle into page payloads.
 from app.routers.transactions import transactions, transactions_all, account_transactions
@@ -57,7 +58,7 @@ _PAGE_PAYLOAD_CACHE_LOCK = Lock()
 DAY_LIMIT_CACHE_TTL_SEC = 20
 MIN_WIDGET_SCRIPT_VERSION = 3
 _WIDGET_SUMMARY_SNAPSHOT_READY = False
-PAGE_HOME_SCHEMA_VERSION = 6
+PAGE_HOME_SCHEMA_VERSION = 7
 
 _WIDGET_REDIS_KEY_PREFIX = "widget:v1"
 
@@ -755,6 +756,7 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
       - "freq"   => most frequent unassigned merchants
       - "recent" => most recent unassigned transactions
     """
+    ensure_transactions_ignore_column()
     limit = max(1, min(int(limit or 25), 500))
     mode = (mode or "freq").strip().lower()
     tid = _require_tenant_id()
@@ -774,6 +776,7 @@ def get_unassigned(limit: int = 25, mode: str = "freq"):
         JOIN accounts a ON a.id = t.account_id
         {tenant_where}
         WHERE (t.category IS NULL OR TRIM(t.category) = '')
+          AND COALESCE(t.is_ignored, false) = false
           AND t.merchant IS NOT NULL
           AND TRIM(t.merchant) <> ''
           AND LOWER(TRIM(t.merchant)) <> 'unknown'
@@ -1105,6 +1108,7 @@ def category_page():
     return FileResponse("static/pages/category/category.html")
 
 def _category_totals_month_display(year: int, month: int):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     # month range
     month_start = date(year, month, 1)
@@ -1120,6 +1124,7 @@ def _category_totals_month_display(year: int, month: int):
         WHERE t.category IS NOT NULL
           AND TRIM(t.category) <> ''
           {"AND t.tenant_id = %s" if tid else ""}
+          AND COALESCE(t.is_ignored, false) = false
       ),
       norm AS (
         SELECT
@@ -1164,7 +1169,7 @@ def _category_totals_month_display(year: int, month: int):
                 LOWER(a.accountType) AS accountType
               FROM transactions t
               JOIN accounts a ON a.id = t.account_id
-              {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+              {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
             ),
             norm AS (
               SELECT
@@ -1288,6 +1293,7 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
                 to_take -= used
         return max(0.0, float(covered))
 
+    ensure_transactions_ignore_column()
     year = day.year
     month = day.month
     tid = _require_tenant_id()
@@ -1304,7 +1310,7 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
             LOWER(a.accountType) AS accountType
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -1338,7 +1344,11 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
 
         amt = float(r["amount"] or 0.0)
         account_type = (r["accounttype"] or "").lower()
-        if account_type in ("checking", "credit") and amt > 0:
+        is_spend_direction = (
+            (account_type == "checking" and amt > 0)
+            or (account_type == "credit" and amt != 0)
+        )
+        if is_spend_direction:
             dtx = r["d"]
             spent_by_day[dtx] = spent_by_day.get(dtx, 0.0) + amt
             day_cat = cat_spent_by_day.setdefault(dtx, {})
@@ -1607,6 +1617,7 @@ def extra_saved_detail():
 # -----------------------------------------------------------------------------
 @router.get("/spent-so-far-transactions")
 def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     today = today_local()
     month_start = date(today.year, today.month, 1)
@@ -1626,10 +1637,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
             WITH base AS (
               SELECT
                 t.id,
-                CASE
-                  WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
-                  ELSE t.amount::double precision
-                END AS amount,
+                t.amount::double precision AS amount,
                 t.merchant,
                 TRIM(t.category) AS category,
                 a.institution AS bank,
@@ -1641,6 +1649,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
               JOIN accounts a ON a.id = t.account_id
               WHERE LOWER(a.accountType) IN ('checking','credit')
                 {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+                AND COALESCE(t.is_ignored, false) = false
                 AND (
                   (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
                   OR
@@ -1707,10 +1716,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
         WITH base AS (
           SELECT
             t.id,
-            CASE
-              WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
-              ELSE t.amount::double precision
-            END AS amount,
+            t.amount::double precision AS amount,
             t.merchant,
             TRIM(t.category) AS category,
             a.institution AS bank,
@@ -1722,6 +1728,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
           JOIN accounts a ON a.id = t.account_id
           WHERE LOWER(a.accountType) IN ('checking','credit')
             {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            AND COALESCE(t.is_ignored, false) = false
             AND (
               (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
               OR
@@ -1774,6 +1781,7 @@ def spent_so_far_transactions(category: str, start: str = "", end: str = ""):
 # -----------------------------------------------------------------------------
 @router.get("/spent-so-far-breakdown")
 def spent_so_far_breakdown(start: str = "", end: str = ""):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     """
     Returns a breakdown of *free* spending (what counts toward "Spent so far"),
@@ -1851,10 +1859,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
             t.amount::double precision AS signed_amount,
 
             -- normalized amount for "spend" math (credit may be stored negative)
-            CASE
-              WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
-              ELSE t.amount::double precision
-            END AS amount,
+            t.amount::double precision AS amount,
 
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
             LOWER(a.accountType) AS accountType,
@@ -1863,6 +1868,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
           JOIN accounts a ON a.id = t.account_id
           WHERE LOWER(a.accountType) IN ('checking','credit')
             {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            AND COALESCE(t.is_ignored, false) = false
             AND (
               (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
               OR
@@ -1922,16 +1928,14 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
         f"""
         WITH base AS (
           SELECT
-            CASE
-              WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
-              ELSE t.amount::double precision
-            END AS amount,
+            t.amount::double precision AS amount,
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
             TRIM(t.category) AS category_trim
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
           WHERE LOWER(a.accountType) IN ('checking','credit')
             {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+            AND COALESCE(t.is_ignored, false) = false
             AND (
               (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
               OR
@@ -1971,10 +1975,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
             f"""
             WITH base AS (
               SELECT
-                CASE
-                  WHEN LOWER(a.accountType) = 'credit' THEN ABS(t.amount::double precision)
-                  ELSE t.amount::double precision
-                END AS amount,
+                t.amount::double precision AS amount,
                 LOWER(a.accountType) AS accountType,
                 LOWER(TRIM(COALESCE(t.category,''))) AS category_lc,
                 COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date
@@ -1982,6 +1983,7 @@ def spent_so_far_breakdown(start: str = "", end: str = ""):
               JOIN accounts a ON a.id = t.account_id
               WHERE LOWER(a.accountType) IN ('checking','credit')
                 {"AND t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+                AND COALESCE(t.is_ignored, false) = false
                 AND (
                   (LOWER(a.accountType) = 'checking' AND t.amount::double precision > 0)
                   OR

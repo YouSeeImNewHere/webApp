@@ -3,6 +3,7 @@ from datetime import date as _date, timedelta as _timedelta
 from db import query_db
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 
 
 def _tenant_id_or_none() -> int | None:
@@ -36,6 +37,7 @@ def load_transactions_pg() -> List[Dict[str, Any]]:
     Rule preserved: use postedDate if present else purchaseDate; skip unknown/broken.
     :contentReference[oaicite:3]{index=3}
     """
+    ensure_transactions_ignore_column()
     tid = _tenant_id_or_none()
     rows = query_db(
         f"""
@@ -50,7 +52,7 @@ def load_transactions_pg() -> List[Dict[str, Any]]:
             ) AS raw_date
           FROM transactions t
           JOIN accounts a ON a.id = t.account_id
-          {"WHERE t.tenant_id = %s AND a.tenant_id = %s" if tid else ""}
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
         ),
         norm AS (
           SELECT
@@ -89,7 +91,7 @@ def load_transactions_pg() -> List[Dict[str, Any]]:
             "date": d,
             "account_id": int(r["account_id"]),
             "amount": amt,
-            "accountType": (r.get("account_type") or "other"),
+            "accountType": (r.get("accounttype") or "other"),
         })
 
     # already ordered by SQL, but keep stable:

@@ -14,6 +14,7 @@ from app.core.time import today_local
 from datetime import date as _date, timedelta as _timedelta
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
+from app.core.transactions_ignore import ensure_transactions_ignore_column
 from app.core.roundups import (
     get_roundup_settings,
     is_roundup_eligible_tx,
@@ -90,6 +91,7 @@ def latest_rates_map_pg() -> Dict[int, float]:
 
 @router.get("/transactions")
 def transactions(limit: int = Query(15, ge=1, le=1000)):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     rows = query_db(
         f"""
@@ -101,6 +103,7 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
             t.merchant,
             t.amount::double precision AS amount,
             t.status,
+            COALESCE(t.is_ignored, false) AS is_ignored,
             t.account_id,
             TRIM(t.category) AS category,
             a.institution AS bank,
@@ -128,6 +131,7 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
           merchant,
           amount,
           status,
+          is_ignored,
           bank,
           card,
           account_type,
@@ -146,6 +150,7 @@ def transactions(limit: int = Query(15, ge=1, le=1000)):
 
 @router.get("/account-transactions")
 def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     rows = query_db(
         f"""
@@ -155,6 +160,7 @@ def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)
             COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
             t.merchant,
             t.amount::double precision AS amount,
+            COALESCE(t.is_ignored, false) AS is_ignored,
             TRIM(t.category) AS category
           FROM transactions t
           WHERE t.account_id = %s
@@ -175,6 +181,7 @@ def account_transactions(account_id: int, limit: int = Query(200, ge=1, le=5000)
           raw_date AS postedDate,
           merchant,
           amount,
+          is_ignored,
           category,
           d AS "dateISO",
           %s::int AS account_id
@@ -217,6 +224,7 @@ def transactions_all(
     amt_max: float | None = None,
     amt_abs: int = 1,
 ):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
 
     """
@@ -339,6 +347,7 @@ def account_series(account_id: int, start: str, end: str):
       - credit display value is (-bal)
     """
 
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_date = parse_iso(start)
     end_date = parse_iso(end)
@@ -370,6 +379,7 @@ def account_series(account_id: int, start: str, end: str):
             SELECT posteddate, purchasedate, amount
             FROM transactions
             WHERE account_id = %s
+              AND COALESCE(is_ignored, false) = false
               {"AND tenant_id = %s" if tid else ""}
             """,
             ((int(account_id), int(tid)) if tid else (int(account_id),)),
@@ -438,6 +448,7 @@ def account_transactions_range(
     end: str,
     limit: int = Query(500, ge=1, le=5000),
 ):
+    ensure_transactions_ignore_column()
     tid = _require_tenant_id()
     start_d = parse_iso(start)   # python date
     end_d = parse_iso(end)       # python date
@@ -497,6 +508,7 @@ def account_transactions_range(
                 amount::double precision AS amount
               FROM transactions
               WHERE account_id = %s
+                AND COALESCE(is_ignored, false) = false
                 {"AND tenant_id = %s" if tid else ""}
             ),
             norm AS (
@@ -530,6 +542,7 @@ def account_transactions_range(
                 %s::int AS account_id,
                 merchant,
                 amount::double precision AS amount,
+                COALESCE(is_ignored, false) AS is_ignored,
                 TRIM(category) AS category,
                 COALESCE(NULLIF(TRIM(status), ''), 'posted') AS status,
                 TRIM(postedDate) AS "postedDate_raw",
@@ -549,6 +562,7 @@ def account_transactions_range(
                 account_id,
                 merchant,
                 amount,
+                is_ignored,
                 category,
                 status,
                 "postedDate_raw",
@@ -577,6 +591,7 @@ def account_transactions_range(
                 account_id,
                 merchant,
                 amount,
+                is_ignored,
                 category,
                 status,
                 "postedDate_raw",
@@ -587,6 +602,7 @@ def account_transactions_range(
                 SUM(
                   CASE
                     WHEN LOWER(COALESCE(status, 'posted')) = 'pending' THEN 0
+                    WHEN COALESCE(is_ignored, false) = true THEN 0
                     ELSE amount
                   END
                 ) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum
@@ -599,6 +615,7 @@ def account_transactions_range(
               "dateISO",
               merchant,
               amount,
+              is_ignored,
               category,
               status,
               "postedDate_raw" AS "postedDate",
