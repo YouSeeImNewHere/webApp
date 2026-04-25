@@ -1,5 +1,6 @@
 ﻿import { apiFetch, apiGetJson, apiPostJson, apiPostForm } from "/static/shared/api.module.js";
 import { escapeHtml, escapeHtmlAttr, cssEscapeAttr } from "/static/shared/dom.module.js";
+import { apiPeekCachedJson } from "/static/shared/api.module.js";
 import { isoLocal, isoLocalDate, parseISODateLocal, formatMMMdd, formatMonthYearLong, shortDate, fmtISOToShort } from "/static/shared/dates.module.js";
 import { money } from "/static/shared/format.module.js";
 import { mountUpcomingCard } from "/static/components/cards/upcomingCard.js";
@@ -827,33 +828,58 @@ function createAccountAuditInlineButton(a) {
 
 async function loadHomePayload() {
   const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const payload = await apiGetJson("/page/home?tx_limit=15");
+  const homePayloadUrl = "/page/home?tx_limit=15";
 
-  //  Recent transactions
-  if (Array.isArray(payload.transactions)) {
-    renderTxList(payload.transactions);   // < this exists in your file
-    await yieldToMain();
-  }
+  const applyHomePayload = async (payload) => {
+    if (!payload || typeof payload !== "object") return;
 
-  //  Category totals (this month)
-  if (payload.category_totals_month) {
-    await loadCategoryTotalsThisMonth(payload.category_totals_month, payload.unknown_merchant_total_month);
-    await yieldToMain();
-  }
-
-  //  Unread badge
-  if (payload.notifications_unread && typeof payload.notifications_unread.unread === "number") {
-    // setUnreadBadge was missing in your earlier errors sometimes; guard it.
-    if (typeof window.setUnreadBadge === "function") {
-      window.setUnreadBadge(payload.notifications_unread.unread);
+    // Recent transactions
+    if (Array.isArray(payload.transactions)) {
+      renderTxList(payload.transactions);
+      await yieldToMain();
     }
+
+    // Category totals (this month)
+    if (payload.category_totals_month) {
+      await loadCategoryTotalsThisMonth(payload.category_totals_month, payload.unknown_merchant_total_month);
+      await yieldToMain();
+    }
+
+    // Unread badge
+    if (payload.notifications_unread && typeof payload.notifications_unread.unread === "number") {
+      if (typeof window.setUnreadBadge === "function") {
+        window.setUnreadBadge(payload.notifications_unread.unread);
+      }
+    }
+
+    // Bank totals
+    if (payload.bank_totals) {
+      await loadBankTotals(payload.bank_totals);
+    }
+  };
+
+  const cachedPayload = apiPeekCachedJson(homePayloadUrl);
+  if (cachedPayload && typeof cachedPayload === "object") {
+    await applyHomePayload(cachedPayload);
+
+    // Stale-while-revalidate: keep UI instant, then fetch fresh silently.
+    Promise.resolve().then(async () => {
+      try {
+        const freshPayload = await apiGetJson(homePayloadUrl, { forceRefresh: true });
+        await applyHomePayload(freshPayload);
+        if (document.getElementById("mbSafe")) {
+          refreshMonthBudgetCard(false, freshPayload);
+        }
+      } catch (err) {
+        console.warn("home payload background refresh failed:", err);
+      }
+    });
+
+    return cachedPayload;
   }
 
-  //  Bank totals
-  if (payload.bank_totals) {
-    await loadBankTotals(payload.bank_totals);
-  }
-
+  const payload = await apiGetJson(homePayloadUrl);
+  await applyHomePayload(payload);
   return payload;
 }
 

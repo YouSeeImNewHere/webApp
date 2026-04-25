@@ -55,6 +55,8 @@ _WIDGET_VERSION_CACHE_LOCK = Lock()
 PAGE_PAYLOAD_CACHE_TTL_SEC = 30
 _PAGE_PAYLOAD_CACHE: dict[str, dict[str, Any]] = {}
 _PAGE_PAYLOAD_CACHE_LOCK = Lock()
+_DAILY_LIMIT_SNAPSHOT_READY = False
+_DAILY_LIMIT_SNAPSHOT_LOCK = Lock()
 DAY_LIMIT_CACHE_TTL_SEC = 20
 MIN_WIDGET_SCRIPT_VERSION = 3
 _WIDGET_SUMMARY_SNAPSHOT_READY = False
@@ -1203,55 +1205,194 @@ def _category_totals_month_display(year: int, month: int):
     return out
 
 def _ensure_daily_limit_snapshot_pg(tid: int | None = None):
-    with with_db_cursor() as (conn, cur):
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS daily_limit_snapshot (
-              tenant_id BIGINT NOT NULL,
-              day DATE NOT NULL,
-              baseline DOUBLE PRECISION NOT NULL,
-              computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-            """
+    global _DAILY_LIMIT_SNAPSHOT_READY
+    if _DAILY_LIMIT_SNAPSHOT_READY:
+        return
+    with _DAILY_LIMIT_SNAPSHOT_LOCK:
+        if _DAILY_LIMIT_SNAPSHOT_READY:
+            return
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_limit_snapshot (
+                  tenant_id BIGINT NOT NULL,
+                  day DATE NOT NULL,
+                  baseline DOUBLE PRECISION NOT NULL,
+                  computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                """
+            )
+            cur.execute("ALTER TABLE daily_limit_snapshot ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
+            cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_limit_snapshot_tenant_day ON daily_limit_snapshot(tenant_id, day)"
+            )
+            if tid:
+                cur.execute("UPDATE daily_limit_snapshot SET tenant_id = %s WHERE tenant_id IS NULL", (int(tid),))
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'daily_limit_snapshot_pkey'
+                      AND conrelid = 'daily_limit_snapshot'::regclass
+                  ) THEN
+                    ALTER TABLE daily_limit_snapshot DROP CONSTRAINT daily_limit_snapshot_pkey;
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'daily_limit_snapshot_tenant_day_pkey'
+                      AND conrelid = 'daily_limit_snapshot'::regclass
+                  ) THEN
+                    ALTER TABLE daily_limit_snapshot
+                    ADD CONSTRAINT daily_limit_snapshot_tenant_day_pkey PRIMARY KEY (tenant_id, day);
+                  END IF;
+                END $$;
+                """
+            )
+            conn.commit()
+        _DAILY_LIMIT_SNAPSHOT_READY = True
+
+
+def _budgeted_covered_spend_total(groups: list[dict[str, Any]], cat_totals: dict[str, float]) -> float:
+    remaining = {str(k): max(0.0, float(v or 0.0)) for k, v in (cat_totals or {}).items()}
+    covered = 0.0
+    for g in (groups or []):
+        alloc = max(0.0, float(g.get("allocated") or 0.0))
+        if alloc <= 0:
+            continue
+        cats: list[str] = []
+        for c in (g.get("categories") or []):
+            cn = _norm_cat(c)
+            if cn and cn not in cats:
+                cats.append(cn)
+        if not cats:
+            continue
+        eligible = sum(float(remaining.get(cn, 0.0)) for cn in cats)
+        take_total = min(alloc, max(0.0, eligible))
+        if take_total <= 0:
+            continue
+        covered += take_total
+        to_take = take_total
+        for cn in cats:
+            if to_take <= 0:
+                break
+            avail = float(remaining.get(cn, 0.0))
+            if avail <= 0:
+                continue
+            used = min(avail, to_take)
+            remaining[cn] = avail - used
+            to_take -= used
+    return max(0.0, float(covered))
+
+
+def _compute_spent_free_by_day_month_to_date(
+    *,
+    tid: int | None,
+    month_start: date,
+    day_end: date,
+) -> dict[date, tuple[float, float, float]]:
+    """
+    Compute (spent_today_total, spent_today_budgeted, spent_today_free) for each day
+    from month_start..day_end in a single pass.
+    """
+    year = month_start.year
+    month = month_start.month
+    tx_rows = query_db(
+        f"""
+        WITH base AS (
+          SELECT
+            COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+            t.amount::double precision AS amount,
+            LOWER(TRIM(COALESCE(t.category,''))) AS category,
+            LOWER(a.accountType) AS accountType
+          FROM transactions t
+          JOIN accounts a ON a.id = t.account_id
+          {"WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false" if tid else "WHERE COALESCE(t.is_ignored, false) = false"}
+        ),
+        norm AS (
+          SELECT
+            *,
+            CASE
+              WHEN raw_date IS NULL THEN NULL
+              WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+              WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+              ELSE NULL
+            END AS d
+          FROM base
         )
-        cur.execute("ALTER TABLE daily_limit_snapshot ADD COLUMN IF NOT EXISTS tenant_id BIGINT")
-        cur.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_limit_snapshot_tenant_day ON daily_limit_snapshot(tenant_id, day)"
+        SELECT d, amount, category, accountType
+        FROM norm
+        WHERE d BETWEEN %s AND %s
+        """,
+        ((int(tid), int(tid), month_start, day_end) if tid else (month_start, day_end)),
+    )
+
+    spent_by_day: dict[date, float] = {}
+    cat_spent_by_day: dict[date, dict[str, float]] = {}
+    roundup_cfg = get_roundup_settings()
+    roundup_enabled = bool(roundup_cfg.get("enabled", False))
+    roundup_norm = _norm_cat(str(roundup_cfg.get("category") or ROUNDUP_CATEGORY_DEFAULT))
+
+    for r in tx_rows:
+        dtx = r.get("d")
+        if not dtx:
+            continue
+        category = (r["category"] or "").strip().lower()
+        if category in ("card payment", "transfer", "cash withdrawal"):
+            continue
+
+        amt = float(r["amount"] or 0.0)
+        account_type = (r["accounttype"] or "").lower()
+        is_spend_direction = (
+            (account_type == "checking" and amt > 0)
+            or (account_type == "credit" and amt != 0)
         )
-        if tid:
-            cur.execute("UPDATE daily_limit_snapshot SET tenant_id = %s WHERE tenant_id IS NULL", (int(tid),))
-        cur.execute(
-            """
-            DO $$
-            BEGIN
-              IF EXISTS (
-                SELECT 1
-                FROM pg_constraint
-                WHERE conname = 'daily_limit_snapshot_pkey'
-                  AND conrelid = 'daily_limit_snapshot'::regclass
-              ) THEN
-                ALTER TABLE daily_limit_snapshot DROP CONSTRAINT daily_limit_snapshot_pkey;
-              END IF;
-            END $$;
-            """
-        )
-        cur.execute(
-            """
-            DO $$
-            BEGIN
-              IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint
-                WHERE conname = 'daily_limit_snapshot_tenant_day_pkey'
-                  AND conrelid = 'daily_limit_snapshot'::regclass
-              ) THEN
-                ALTER TABLE daily_limit_snapshot
-                ADD CONSTRAINT daily_limit_snapshot_tenant_day_pkey PRIMARY KEY (tenant_id, day);
-              END IF;
-            END $$;
-            """
-        )
-        conn.commit()
+        if not is_spend_direction:
+            continue
+
+        spent_by_day[dtx] = spent_by_day.get(dtx, 0.0) + amt
+        day_cat = cat_spent_by_day.setdefault(dtx, {})
+        if category:
+            day_cat[category] = day_cat.get(category, 0.0) + amt
+        if roundup_enabled and is_roundup_eligible_tx(amt, account_type, category):
+            ru = roundup_amount_from_spend(amt)
+            if ru > 0:
+                spent_by_day[dtx] = spent_by_day.get(dtx, 0.0) + ru
+                day_cat[roundup_norm] = day_cat.get(roundup_norm, 0.0) + ru
+
+    groups = _get_budget_groups_for_month(year, month)
+    cumulative_cat_spent: dict[str, float] = {}
+    covered_prev = 0.0
+    out: dict[date, tuple[float, float, float]] = {}
+
+    dcur = month_start
+    while dcur <= day_end:
+        day_cat = cat_spent_by_day.get(dcur) or {}
+        for cn, amt in day_cat.items():
+            k = _norm_cat(cn)
+            if not k:
+                continue
+            cumulative_cat_spent[k] = cumulative_cat_spent.get(k, 0.0) + float(amt)
+        covered_now = _budgeted_covered_spend_total(groups, cumulative_cat_spent)
+        spent_today = float(spent_by_day.get(dcur, 0.0))
+        spent_budgeted = max(0.0, covered_now - covered_prev)
+        spent_budgeted = min(spent_today, spent_budgeted)
+        spent_free = spent_today - spent_budgeted
+        out[dcur] = (spent_today, spent_budgeted, spent_free)
+        covered_prev = covered_now
+        dcur += timedelta(days=1)
+
+    return out
 
 def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
     """
@@ -1262,37 +1403,6 @@ def _compute_spent_free_for_day(day: date) -> tuple[float, float, float]:
       - budgeted = categories inside budget groups for this month
       - free = total - budgeted
     """
-    def _budgeted_covered_spend_total(groups: list[dict[str, Any]], cat_totals: dict[str, float]) -> float:
-        remaining = {str(k): max(0.0, float(v or 0.0)) for k, v in (cat_totals or {}).items()}
-        covered = 0.0
-        for g in (groups or []):
-            alloc = max(0.0, float(g.get("allocated") or 0.0))
-            if alloc <= 0:
-                continue
-            cats: list[str] = []
-            for c in (g.get("categories") or []):
-                cn = _norm_cat(c)
-                if cn and cn not in cats:
-                    cats.append(cn)
-            if not cats:
-                continue
-            eligible = sum(float(remaining.get(cn, 0.0)) for cn in cats)
-            take_total = min(alloc, max(0.0, eligible))
-            if take_total <= 0:
-                continue
-            covered += take_total
-            to_take = take_total
-            for cn in cats:
-                if to_take <= 0:
-                    break
-                avail = float(remaining.get(cn, 0.0))
-                if avail <= 0:
-                    continue
-                used = min(avail, to_take)
-                remaining[cn] = avail - used
-                to_take -= used
-        return max(0.0, float(covered))
-
     ensure_transactions_ignore_column()
     year = day.year
     month = day.month
@@ -1427,6 +1537,13 @@ def _compute_extra_saved_rollover(
             "computed_at": None,
         }
 
+    ensure_transactions_ignore_column()
+    spent_free_by_day = _compute_spent_free_by_day_month_to_date(
+        tid=int(tid),
+        month_start=month_start,
+        day_end=today,
+    )
+
     balance = 0.0
     days_counted = 0
     out_days: list[dict[str, Any]] = []
@@ -1439,7 +1556,7 @@ def _compute_extra_saved_rollover(
             continue
 
         baseline = max(0.0, float(item.get("baseline") or 0.0))
-        spent_today, spent_budgeted, spent_free = _compute_spent_free_for_day(dcur)
+        spent_today, spent_budgeted, spent_free = spent_free_by_day.get(dcur, (0.0, 0.0, 0.0))
         leftover = baseline - spent_free
 
         # Apply rollover rules.

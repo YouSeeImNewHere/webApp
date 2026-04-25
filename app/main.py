@@ -52,9 +52,11 @@ from app.routers import (
     admin,
     onboarding,
     email_parser_trial,
-    receipts,
 )
-from app.routers.page_payloads import prime_widget_cache_from_db
+
+
+def _env_enabled(name: str, default: str = "1") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
 _SENSITIVE_QUERY_KEYS = {
@@ -287,8 +289,14 @@ def create_app() -> FastAPI:
                 request_logger.info("redis startup status=connected")
         except Exception as e:
             request_logger.warning(f"redis startup status=error detail={type(e).__name__}")
-        prime_widget_tokens_cache_from_db()
-        prime_widget_cache_from_db()
+        if _env_enabled("ENABLE_STARTUP_WARMUP", "1"):
+            prime_widget_tokens_cache_from_db()
+            # Import lazily: avoids eager module work when warmup is disabled.
+            from app.routers.page_payloads import prime_widget_cache_from_db
+
+            prime_widget_cache_from_db()
+        else:
+            request_logger.info("startup warmup status=skipped")
 
     @app.on_event("shutdown")
     def _shutdown():
@@ -320,7 +328,12 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)
-    app.include_router(receipts.router)
+    if _env_enabled("ENABLE_RECEIPTS_ROUTES", "1"):
+        from app.routers import receipts
+
+        app.include_router(receipts.router)
+    else:
+        request_logger.info("receipts routes status=disabled")
     app.include_router(auth.router)
     app.include_router(csv_upload_router)
 

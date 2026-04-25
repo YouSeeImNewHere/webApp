@@ -118,6 +118,7 @@ function clearApiGetCache() {
 }
 
 function readCachedOrNull(url, options = {}) {
+  if (options && options.forceRefresh === true) return null;
   const ttlMs = resolveCacheTtlMs(url, options);
   if (isCacheDisabled(options) || ttlMs <= 0) return null;
   return readCachedJson(url, ttlMs);
@@ -515,6 +516,13 @@ export async function apiGetJson(url, options = {}) {
 
   API_INFLIGHT.set(inflightKey, p);
   return p;
+}
+
+export function apiPeekCachedJson(url, options = {}) {
+  const ttlMs = resolveCacheTtlMs(url, options);
+  if (isCacheDisabled(options) || ttlMs <= 0) return null;
+  const allowStale = options && options.allowStale === true;
+  return readCachedJson(url, ttlMs, allowStale ? API_CACHE_MAX_STALE_MS : 0);
 }
 
 export async function apiPostJson(url, body, options = {}) {

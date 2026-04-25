@@ -16,6 +16,10 @@ from app.core.tenancy import current_tenant_id, get_or_create_onboarding_state
 
 router = APIRouter()
 
+def _receipts_enabled() -> bool:
+    return str(os.getenv("ENABLE_RECEIPTS_ROUTES", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 # =============================================================================
 # Pages / Static routes (ported from pages.py)
 # =============================================================================
@@ -224,6 +228,8 @@ def transaction_detail(tx_id: str):
 
 @router.get("/receipts-page")
 def receipts_page():
+    if not _receipts_enabled():
+        raise HTTPException(status_code=404, detail="not_found")
     return FileResponse(os.path.join("static", "pages", "receipts", "receipts.html"))
 
 

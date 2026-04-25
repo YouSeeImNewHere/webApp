@@ -21,7 +21,6 @@
   else if (path.includes("spending.html")) active = "spending";
   else if (path.includes("all-transactions.html")) active = "all";
   else if (path.includes("pages/recurring/recurring.html") || path.includes("recurring.html")) active = "recurring";
-  else if (path.includes("receipts.html")) active = "receipts";
   // NOTE: Settings is NOT a bottom tab anymore → no active tab on /settings
 
   // 3) Apply active class

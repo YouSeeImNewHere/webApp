@@ -39,9 +39,12 @@
     const res = await fetch(path, merged);
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      const err = new Error(res.status + " " + t);
+      const raw = String(t || "").replace(/\s+/g, " ").trim();
+      const looksHtml = /<!doctype html|<html/i.test(raw);
+      const snippet = looksHtml ? "Upstream 502/HTML error page" : (raw.slice(0, 220) || "Request failed");
+      const err = new Error(res.status + " " + snippet);
       err.status = res.status;
-      err.body = t;
+      err.body = snippet;
       throw err;
     }
     const ct = res.headers.get("content-type") || "";

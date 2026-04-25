@@ -27,6 +27,10 @@ services:
         value: "30"
       - key: DB_POOL_MAX_LIFETIME_SECONDS
         value: "900"
+      - key: ENABLE_STARTUP_WARMUP
+        value: "0"
+      - key: ENABLE_RECEIPTS_ROUTES
+        value: "0"
 
 databases:
   - name: webapp-db

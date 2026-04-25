@@ -5,18 +5,40 @@ import json
 import os
 import re
 import uuid
+from functools import lru_cache
 from typing import Any
 
-import cv2
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.tenancy import current_tenant_id
 from db import with_db_cursor
-from Receipts.receipts import DATA_DIR, run_receipt_ocr
 
 
 router = APIRouter(tags=["receipts"])
+
+
+@lru_cache(maxsize=1)
+def _get_cv2():
+    # Lazy-load OpenCV so the web process can stay lean at idle.
+    import cv2  # type: ignore
+
+    return cv2
+
+
+@lru_cache(maxsize=1)
+def _get_receipt_ocr_runner():
+    # Lazy-load OCR pipeline (pulls cv2/numpy/tesseract and optional paddle deps).
+    from Receipts.receipts import run_receipt_ocr
+
+    return run_receipt_ocr
+
+
+@lru_cache(maxsize=1)
+def _get_receipts_data_dir() -> str:
+    from Receipts.receipts import DATA_DIR
+
+    return str(DATA_DIR)
 
 
 def _table_columns(cur, table_name: str) -> set[str]:
@@ -121,7 +143,7 @@ async def upload_receipt(file: UploadFile = File(...)) -> JSONResponse:
         raise HTTPException(status_code=400, detail="No filename")
 
     receipt_id = str(uuid.uuid4())
-    receipt_dir = os.path.join(DATA_DIR, receipt_id)
+    receipt_dir = os.path.join(_get_receipts_data_dir(), receipt_id)
     os.makedirs(receipt_dir, exist_ok=True)
 
     ext = os.path.splitext(file.filename)[1].lower() or ".jpg"
@@ -133,12 +155,13 @@ async def upload_receipt(file: UploadFile = File(...)) -> JSONResponse:
         f.write(await file.read())
 
     norm_path = os.path.join(receipt_dir, "orig.jpg")
+    cv2 = _get_cv2()
     img = cv2.imread(orig_path)
     if img is None:
         raise HTTPException(status_code=400, detail="Invalid image")
     cv2.imwrite(norm_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
 
-    ocr = run_receipt_ocr(receipt_id, norm_path)
+    ocr = _get_receipt_ocr_runner()(receipt_id, norm_path)
     parsed = (ocr.get("parsed") if isinstance(ocr.get("parsed"), dict) else {}) or {}
 
     with open(os.path.join(receipt_dir, "ocr.json"), "w", encoding="utf-8") as f:
@@ -332,7 +355,7 @@ def get_receipt_parsed(receipt_id: str):
 
 @router.get("/receipts/{receipt_id}/ocr_debug")
 def get_receipt_ocr_debug(receipt_id: str):
-    p = os.path.join(DATA_DIR, receipt_id, "ocr.json")
+    p = os.path.join(_get_receipts_data_dir(), receipt_id, "ocr.json")
     if not os.path.exists(p):
         raise HTTPException(status_code=404, detail="Not Found")
     with open(p, "r", encoding="utf-8") as f:
@@ -361,7 +384,7 @@ def get_receipt_image(receipt_id: str):
         if p and os.path.exists(p):
             return FileResponse(p)
 
-    fallback = os.path.join(DATA_DIR, receipt_id, "orig.jpg")
+    fallback = os.path.join(_get_receipts_data_dir(), receipt_id, "orig.jpg")
     if os.path.exists(fallback):
         return FileResponse(fallback)
     raise HTTPException(status_code=404, detail="Receipt not found")
@@ -372,7 +395,7 @@ def get_debug_file(receipt_id: str, filename: str):
     name = os.path.basename(str(filename or ""))
     if not name or name != filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
-    p = os.path.join(DATA_DIR, receipt_id, "debug", name)
+    p = os.path.join(_get_receipts_data_dir(), receipt_id, "debug", name)
     if not os.path.exists(p):
         raise HTTPException(status_code=404, detail="Debug file not found")
     return FileResponse(p)
@@ -393,11 +416,11 @@ def reprocess_receipt(receipt_id: str):
             raise HTTPException(status_code=404, detail="Not Found")
 
         d = dict(row)
-        image_path = _receipt_image_path_from_row(d) or os.path.join(DATA_DIR, receipt_id, "orig.jpg")
+        image_path = _receipt_image_path_from_row(d) or os.path.join(_get_receipts_data_dir(), receipt_id, "orig.jpg")
         if not os.path.exists(image_path):
             raise HTTPException(status_code=404, detail="Receipt image not found")
 
-        ocr = run_receipt_ocr(receipt_id, image_path)
+        ocr = _get_receipt_ocr_runner()(receipt_id, image_path)
         parsed = (ocr.get("parsed") if isinstance(ocr.get("parsed"), dict) else {}) or {}
         purchase_iso = _coerce_iso_from_mmddyy(parsed.get("purchase_date_mmddyy") or parsed.get("purchase_date"))
         updates: dict[str, Any] = {}
@@ -421,7 +444,7 @@ def reprocess_receipt(receipt_id: str):
             )
             conn.commit()
 
-    receipt_dir = os.path.join(DATA_DIR, receipt_id)
+    receipt_dir = os.path.join(_get_receipts_data_dir(), receipt_id)
     try:
         with open(os.path.join(receipt_dir, "ocr.json"), "w", encoding="utf-8") as f:
             json.dump(ocr, f, ensure_ascii=False, indent=2)

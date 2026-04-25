@@ -1,5 +1,6 @@
 import { money } from "/static/shared/format.module.js";
 import { shortDate } from "/static/shared/dates.module.js";
+import { apiGetJson, apiPeekCachedJson } from "/static/shared/api.module.js";
 
 function parseNum(x){
   if (x == null) return null;
@@ -156,8 +157,12 @@ function currentRequestKey(){
   return p.toString();
 }
 
-async function loadNextPage(){
+async function loadNextPage(opts = {}){
+  const forceRefresh = !!opts.forceRefresh;
+  const resetOffset = !!opts.resetOffset;
+  const replaceFirstPage = !!opts.replaceFirstPage;
   if (LOADING || DONE) return;
+  if (resetOffset) OFFSET = 0;
 
   const reqKey = currentRequestKey();
   if (LAST_REQ_KEY && LAST_REQ_KEY !== reqKey){
@@ -171,12 +176,14 @@ async function loadNextPage(){
 
   try{
     const params = buildQueryParams();
-    const res = await fetch(`/transactions-all?${params.toString()}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`Failed /transactions-all (${res.status})`);
-
-    let rows = await res.json();
+    const url = `/transactions-all?${params.toString()}`;
+    let rows = await apiGetJson(url, forceRefresh ? { forceRefresh: true } : {});
     if (!Array.isArray(rows)) rows = [];
 
+    if (replaceFirstPage && OFFSET === 0){
+      clearList();
+      DONE = false;
+    }
     renderAppend(rows);
 
     if (rows.length < PAGE_SIZE){
@@ -201,6 +208,23 @@ function resetAndReload(){
   clearList();
   setStatus("");
   updateLoadMoreButton();
+  try {
+    const params = buildQueryParams();
+    const url = `/transactions-all?${params.toString()}`;
+    const cached = apiPeekCachedJson(url);
+    if (Array.isArray(cached)) {
+      renderAppend(cached);
+      OFFSET = cached.length;
+      DONE = cached.length < PAGE_SIZE;
+      setStatus(DONE && cached.length ? "End of list." : "");
+      updateLoadMoreButton();
+      loadNextPage({ forceRefresh: true, resetOffset: true, replaceFirstPage: true }).catch(err => {
+        console.error(err);
+      });
+      return;
+    }
+  } catch (_) {}
+
   loadNextPage().catch(err => {
     console.error(err);
     setStatus("Failed to load transactions.");

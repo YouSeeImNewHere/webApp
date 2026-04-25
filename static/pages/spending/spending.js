@@ -1,5 +1,6 @@
 import { money } from "/static/shared/format.module.js";
 import { formatMMMdd } from "/static/shared/dates.module.js";
+import { apiGetJson, apiPeekCachedJson } from "/static/shared/api.module.js";
 
 let spendingChart = null;
 let chartView = 0;
@@ -222,37 +223,23 @@ async function openSpendingDayPanel(dayIso) {
   }
 }
 
-async function fetchCategoryTotalsWithUnknown(start, end) {
-  const res = await fetch(`/category-totals-range?start=${start}&end=${end}`);
-  const data = await res.json();
-
-  const rows = (Array.isArray(data) ? data : [])
+function buildCategoryRowsWithUnknown(categoriesPayload, unknownPayload) {
+  const rows = (Array.isArray(categoriesPayload) ? categoriesPayload : [])
     .map((r) => ({ category: String(r.category ?? ""), total: Number(r.total ?? 0) }))
     .filter((r) => r.category && Number.isFinite(r.total));
 
-  const unkRes = await fetch(`/unknown-merchant-total-range?start=${start}&end=${end}`);
-  if (unkRes.ok) {
-    const payload = await unkRes.json();
-    const total = Number(payload?.total || 0);
-    const txCount = Number(payload?.tx_count || 0);
-    if (total > 0 && txCount > 0) {
-      rows.push({
-        category: `Unknown merchant (${txCount})`,
-        total,
-        _linkCategory: "Unknown merchant",
-      });
-    }
+  const total = Number(unknownPayload?.total || 0);
+  const txCount = Number(unknownPayload?.tx_count || 0);
+  if (total > 0 && txCount > 0) {
+    rows.push({
+      category: `Unknown merchant (${txCount})`,
+      total,
+      _linkCategory: "Unknown merchant",
+    });
   }
 
   rows.sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
   return rows;
-}
-
-async function fetchUnbudgetedVsSafeSeries(start, end) {
-  const res = await fetch(`/spending-unbudgeted-safe-range?start=${start}&end=${end}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const out = await res.json().catch(() => ({}));
-  return Array.isArray(out?.series) ? out.series : [];
 }
 
 function renderSpendingCategoryList(rows) {
@@ -517,22 +504,53 @@ function renderCurrentView() {
 }
 
 async function renderSpending(start, end) {
-  const [spRes, catRows, unbudgetedSafe] = await Promise.all([
-    fetch(`/spending?start=${start}&end=${end}`).then((r) => r.json()),
-    fetchCategoryTotalsWithUnknown(start, end),
-    fetchUnbudgetedVsSafeSeries(start, end).catch(() => []),
-  ]);
+  const spUrl = `/spending?start=${start}&end=${end}`;
+  const catUrl = `/category-totals-range?start=${start}&end=${end}`;
+  const unkUrl = `/unknown-merchant-total-range?start=${start}&end=${end}`;
+  const safeUrl = `/spending-unbudgeted-safe-range?start=${start}&end=${end}`;
 
-  lastPayload = {
-    start,
-    end,
-    spendingSeries: Array.isArray(spRes) ? spRes : [],
-    categoryRows: Array.isArray(catRows) ? catRows : [],
-    unbudgetedSafeSeries: Array.isArray(unbudgetedSafe) ? unbudgetedSafe : [],
+  const applyPayload = (spRes, catRes, unkRes, safeRes) => {
+    lastPayload = {
+      start,
+      end,
+      spendingSeries: Array.isArray(spRes) ? spRes : [],
+      categoryRows: buildCategoryRowsWithUnknown(catRes, unkRes),
+      unbudgetedSafeSeries: Array.isArray(safeRes?.series) ? safeRes.series : [],
+    };
+    renderSpendingCategoryList(lastPayload.categoryRows);
+    renderCurrentView();
   };
 
-  renderSpendingCategoryList(lastPayload.categoryRows);
-  renderCurrentView();
+  const cachedSp = apiPeekCachedJson(spUrl);
+  const cachedCat = apiPeekCachedJson(catUrl);
+  const cachedUnk = apiPeekCachedJson(unkUrl);
+  const cachedSafe = apiPeekCachedJson(safeUrl);
+
+  if (cachedSp !== null && cachedCat !== null && cachedSafe !== null) {
+    applyPayload(cachedSp, cachedCat, cachedUnk || {}, cachedSafe);
+    Promise.resolve().then(async () => {
+      try {
+        const [spRes, catRes, unkRes, safeRes] = await Promise.all([
+          apiGetJson(spUrl, { forceRefresh: true }),
+          apiGetJson(catUrl, { forceRefresh: true }),
+          apiGetJson(unkUrl, { forceRefresh: true }),
+          apiGetJson(safeUrl, { forceRefresh: true }),
+        ]);
+        applyPayload(spRes, catRes, unkRes || {}, safeRes || {});
+      } catch (err) {
+        console.warn("spending background refresh failed:", err);
+      }
+    });
+    return;
+  }
+
+  const [spRes, catRes, unkRes, safeRes] = await Promise.all([
+    apiGetJson(spUrl),
+    apiGetJson(catUrl),
+    apiGetJson(unkUrl),
+    apiGetJson(safeUrl).catch(() => ({})),
+  ]);
+  applyPayload(spRes, catRes, unkRes || {}, safeRes || {});
 }
 
 document.addEventListener("DOMContentLoaded", () => {

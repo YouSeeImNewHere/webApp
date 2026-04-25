@@ -1,6 +1,7 @@
 import { money } from "/static/shared/format.module.js";
 import { isoLocal, parseISODateLocal, shortDate, formatMMDD, formatWeekdayShort } from "/static/shared/dates.module.js";
 import { mountUpcomingCard } from "/static/components/cards/upcomingCard.js";
+import { apiGetJson } from "/static/shared/api.module.js";
 
 let chart = null;
 let accountId = null;
@@ -273,11 +274,10 @@ function sameMonthISO(aIso, bIso) {
   return String(aIso).slice(0, 7) === String(bIso).slice(0, 7);
 }
 
-async function loadAccountHeader(accountId){
+async function loadAccountHeader(accountId, opts = {}){
   if (TX_MODE === "test") return null;
 
-  const res = await fetch(`/account/${accountId}`);
-  const a = await res.json();
+  const a = await apiGetJson(`/account/${accountId}`, opts?.forceRefresh ? { forceRefresh: true } : {});
   latestAccountHeader = a;
   currentAccountType = String(a?.accountType || a?.accounttype || "");
 
@@ -287,14 +287,16 @@ async function loadAccountHeader(accountId){
   return a;
 }
 
-async function loadAccountChart(accountId){
+async function loadAccountChart(accountId, opts = {}){
   const start = document.getElementById("a-start").value;
   const end   = document.getElementById("a-end").value;
   if (!start || !end) return;
 
   const seriesUrl = TX_MODE === "test" ? "/transactions-test-series" : "/account-series";
-  const res = await fetch(`${seriesUrl}?account_id=${accountId}&start=${start}&end=${end}`);
-  const data = await res.json();
+  const data = await apiGetJson(
+    `${seriesUrl}?account_id=${accountId}&start=${start}&end=${end}`,
+    opts?.forceRefresh ? { forceRefresh: true } : {},
+  );
 
   const labels = data.map(d => formatMMDD(d.date));
   const values = data.map(d => Number(d.value));
@@ -317,11 +319,10 @@ async function loadAccountChart(accountId){
       const minOcc = 3;
       const includeStale = "false";
 
-      const calRes = await fetch(
-        `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`
-      );
-
-      const calJson = calRes.ok ? await calRes.json() : { events: [] };
+      const calJson = await apiGetJson(
+        `/recurring/calendar?year=${encodeURIComponent(y)}&month=${encodeURIComponent(m)}&min_occ=${encodeURIComponent(minOcc)}&include_stale=${includeStale}`,
+        opts?.forceRefresh ? { forceRefresh: true } : {},
+      ).catch(() => ({ events: [] }));
       let events = Array.isArray(calJson?.events) ? calJson.events : [];
 
       // ✅ If calendar events include account_id, filter to this account
@@ -437,21 +438,19 @@ async function loadAccountTransactions(accountId, opts = {}){
       ? "/transactions-test-range"
       : "/account-transactions-range";
 
-  const res = await fetch(
-    `${baseUrl}?account_id=${accountId}&start=${start}&end=${end}&limit=500`,
-    { cache: "no-store" }
-  );
-
   const list = document.getElementById("txList");
   if (!list) return;
-
-  if (!res.ok) {
-    console.error("account-transactions-range failed:", res.status);
-    list.innerHTML = `<div style="padding:10px;">Failed to load (${res.status}).</div>`;
+  let payload = null;
+  try {
+    payload = await apiGetJson(
+      `${baseUrl}?account_id=${accountId}&start=${start}&end=${end}&limit=500`,
+      opts?.forceRefresh ? { forceRefresh: true } : {},
+    );
+  } catch (err) {
+    console.error("account-transactions-range failed:", err);
+    list.innerHTML = `<div style="padding:10px;">Failed to load.</div>`;
     return;
   }
-
-  const payload = await res.json(); // ✅ only once
   const data = payload.transactions || [];
   latestAccountRows = Array.isArray(data) ? data : [];
   const mult = Number(payload?.pending_balance_multiplier);
@@ -977,10 +976,27 @@ initChartControls(ACCOUNT_CHART_IDS, async () => {
   if (!AUDIT_MODE) {
     await loadAccountChart(accountId);
     await loadAccountTransactions(accountId);
+    Promise.resolve().then(async () => {
+      try {
+        await loadAccountHeader(accountId, { forceRefresh: true });
+        await loadAccountChart(accountId, { forceRefresh: true });
+        await loadAccountTransactions(accountId, { forceRefresh: true });
+      } catch (err) {
+        console.warn("account background refresh failed:", err);
+      }
+    });
     return;
   }
   const auditRange = resolveAuditRange(latestAccountHeader || {});
   await loadAccountTransactions(accountId, auditRange);
+  Promise.resolve().then(async () => {
+    try {
+      await loadAccountHeader(accountId, { forceRefresh: true });
+      await loadAccountTransactions(accountId, { ...auditRange, forceRefresh: true });
+    } catch (err) {
+      console.warn("account background refresh failed:", err);
+    }
+  });
 });
 
 

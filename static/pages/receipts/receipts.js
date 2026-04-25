@@ -35,8 +35,14 @@ async function copyText(text) {
 async function api(url, opts={}) {
   const res = await fetch(url, opts);
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`HTTP ${res.status}: ${t}`);
+    const t = await res.text().catch(() => "");
+    const raw = String(t || "").replace(/\s+/g, " ").trim();
+    const looksHtml = /<!doctype html|<html/i.test(raw);
+    const snippet = looksHtml ? "Upstream 502/HTML error page" : (raw.slice(0, 220) || "Request failed");
+    const err = new Error(`HTTP ${res.status}: ${snippet}`);
+    err.status = res.status;
+    err.body_preview = snippet;
+    throw err;
   }
   return res.json();
 }
