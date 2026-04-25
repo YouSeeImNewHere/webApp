@@ -32,6 +32,31 @@ function setStatus(msg, isError = false) {
   el.style.color = isError ? "var(--danger)" : "var(--text-muted)";
 }
 
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForRuleApplyJob(jobId, { timeoutMs = 10 * 60 * 1000, pollMs = 1500, onTick } = {}) {
+  const started = Date.now();
+  const id = Number(jobId || 0);
+  if (!id) throw new Error("invalid_job_id");
+
+  while ((Date.now() - started) < timeoutMs) {
+    const res = await fetch(`/category-rules/jobs/${encodeURIComponent(String(id))}`, { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.detail || data?.error || `job_status_failed_${res.status}`);
+    }
+    const job = data?.job || {};
+    if (typeof onTick === "function") onTick(job);
+    const status = String(job.status || "").toLowerCase();
+    if (status === "completed") return job;
+    if (status === "failed") throw new Error(job.error || "apply_failed");
+    await sleepMs(pollMs);
+  }
+  throw new Error("job_timeout");
+}
+
 function renderCheckResults(data) {
   const host = document.getElementById("rulesCheckResults");
   if (!host) return;
@@ -256,11 +281,9 @@ function attachRuleHandlers({ root, id, pattern, flags }) {
   const testBtn = root.querySelector(".test-btn");
   const delBtn = root.querySelector(".delete-btn");
   const activeToggle = root.querySelector(".active-toggle");
-  const reapplyToggle = root.querySelector(".reapply-toggle");
 
   if (saveBtn && input) {
     saveBtn.onclick = async () => {
-      const reapply = !!(reapplyToggle && reapplyToggle.checked);
       saveBtn.disabled = true;
 
       try {
@@ -269,7 +292,7 @@ function attachRuleHandlers({ root, id, pattern, flags }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             category: input.value,
-            reapply_existing: reapply,
+            reapply_existing: true,
           }),
         });
 
@@ -279,11 +302,30 @@ function attachRuleHandlers({ root, id, pattern, flags }) {
           return;
         }
 
-        setStatus(
-          reapply
-            ? `Saved + re-applied (${data?.applied || 0} transactions)`
-            : "Saved"
-        );
+        const jobId = Number(data?.apply_job?.id || 0);
+        if (jobId > 0) {
+          setStatus(`Saved. Re-apply queued (job #${jobId})...`);
+          await loadRules(true);
+          (async () => {
+            try {
+              const job = await waitForRuleApplyJob(jobId, {
+                onTick: (j) => {
+                  const st = String(j?.status || "").toLowerCase();
+                  if (st === "in_progress") {
+                    setStatus(`Re-applying in background (job #${jobId})...`);
+                  }
+                },
+              });
+              setStatus(`Saved + re-applied (${Number(job?.total_applied || 0)} transactions)`);
+              await loadRules(true);
+            } catch (err) {
+              setStatus(`Saved, but re-apply failed: ${err?.message || "unknown"}`, true);
+            }
+          })();
+          return;
+        }
+
+        setStatus(`Saved + re-applied (${data?.applied || 0} transactions)`);
 
         await loadRules(true);
       } catch (e) {
@@ -380,10 +422,7 @@ function renderRulesChunk(rules) {
           </div>
 
           <div class="rule-toggles">
-            <label class="toggle">
-              <input type="checkbox" class="reapply-toggle" />
-              <span>Re-apply to existing</span>
-            </label>
+            <span class="settings-muted">Always re-applies to existing</span>
           </div>
 
           <div class="rule-actions">
@@ -411,12 +450,7 @@ function renderRulesChunk(rules) {
           value="${esc(r.category)}"
           data-id="${esc(r.id)}"
         />
-        <div class="rule-subrow">
-          <label class="toggle">
-            <input type="checkbox" class="reapply-toggle" />
-            <span>Re-apply to existing</span>
-          </label>
-        </div>
+        <div class="rule-subrow"><span class="settings-muted">Always re-applies to existing</span></div>
       </td>
       <td><span class="pill mono">${esc(matchCount)}</span></td>
       <td>

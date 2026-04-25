@@ -6,7 +6,7 @@ import re
 import time
 from copy import deepcopy
 from datetime import date, datetime, timedelta
-from threading import Lock
+from threading import Lock, Thread
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Request
@@ -46,6 +46,9 @@ UNKNOWN_MERCHANT_CACHE_TTL_SEC = int(os.getenv("UNKNOWN_MERCHANT_CACHE_TTL_SEC",
 _MONTH_BUDGET_CACHE: dict[str, dict[str, Any]] = {}
 _UNKNOWN_MERCHANT_CACHE: dict[str, dict[str, Any]] = {}
 _CACHE_LOCK = Lock()
+_RULE_APPLY_JOBS_READY = False
+_RULE_APPLY_JOBS_LOCK = Lock()
+_RULE_APPLY_WORKERS: set[int] = set()
 MONTH_BUDGET_CALC_VERSION = 2
 
 # =============================================================================
@@ -1517,12 +1520,11 @@ def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
     except Exception:
         pass
 
-def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
+def _apply_rule_to_existing_for_tenant(category: str, pattern: str, flags: str, tid: int | None) -> int:
     """
     Apply rule only to transactions with empty/NULL category.
     Returns rows updated.
     """
-    tid = _require_tenant_id()
     op = _pg_regex_operator(flags)
     with with_db_cursor() as (conn, cur):
         cur.execute(
@@ -1543,12 +1545,11 @@ def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
             _refresh_widget_cache_for_tenant(tid)
         return updated
 
-def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
+def _apply_rule_override_for_tenant(category: str, pattern: str, flags: str, tid: int | None) -> int:
     """
     Force override category for all matching transactions.
     Returns rows updated.
     """
-    tid = _require_tenant_id()
     op = _pg_regex_operator(flags)
     with with_db_cursor() as (conn, cur):
         cur.execute(
@@ -1568,11 +1569,187 @@ def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
             _refresh_widget_cache_for_tenant(tid)
         return updated
 
+
+def apply_rule_to_existing(category: str, pattern: str, flags: str) -> int:
+    tid = _require_tenant_id()
+    return _apply_rule_to_existing_for_tenant(category, pattern, flags, tid)
+
+
+def _apply_rule_override(category: str, pattern: str, flags: str) -> int:
+    tid = _require_tenant_id()
+    return _apply_rule_override_for_tenant(category, pattern, flags, tid)
+
+
+def _ensure_category_rule_apply_jobs_pg() -> None:
+    global _RULE_APPLY_JOBS_READY
+    if _RULE_APPLY_JOBS_READY:
+        return
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS category_rule_apply_jobs (
+              id BIGSERIAL PRIMARY KEY,
+              tenant_id BIGINT NOT NULL DEFAULT 0,
+              rule_id BIGINT NULL,
+              mode TEXT NOT NULL,
+              category TEXT NOT NULL,
+              pattern TEXT NOT NULL,
+              flags TEXT NOT NULL DEFAULT 'i',
+              status TEXT NOT NULL DEFAULT 'queued',
+              total_applied INT NOT NULL DEFAULT 0,
+              error TEXT NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              started_at TIMESTAMPTZ NULL,
+              finished_at TIMESTAMPTZ NULL
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_category_rule_apply_jobs_tenant_created
+            ON category_rule_apply_jobs(tenant_id, created_at DESC)
+            """
+        )
+        conn.commit()
+    _RULE_APPLY_JOBS_READY = True
+
+
+def _rule_apply_job_row_to_api(row: dict[str, Any]) -> dict[str, Any]:
+    def _iso(v):
+        return v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
+
+    return {
+        "id": int(row.get("id") or 0),
+        "tenant_id": int(row.get("tenant_id") or 0),
+        "rule_id": int(row.get("rule_id") or 0) if row.get("rule_id") is not None else None,
+        "mode": str(row.get("mode") or ""),
+        "status": str(row.get("status") or ""),
+        "total_applied": int(row.get("total_applied") or 0),
+        "error": (str(row.get("error") or "").strip() or None),
+        "created_at": _iso(row.get("created_at")),
+        "started_at": _iso(row.get("started_at")),
+        "finished_at": _iso(row.get("finished_at")),
+    }
+
+
+def _spawn_rule_apply_worker(job_id: int) -> None:
+    jid = int(job_id)
+    with _RULE_APPLY_JOBS_LOCK:
+        if jid in _RULE_APPLY_WORKERS:
+            return
+        _RULE_APPLY_WORKERS.add(jid)
+    t = Thread(target=_run_rule_apply_job, args=(jid,), daemon=True, name=f"category-rule-apply-{jid}")
+    t.start()
+
+
+def _run_rule_apply_job(job_id: int) -> None:
+    try:
+        _ensure_category_rule_apply_jobs_pg()
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                UPDATE category_rule_apply_jobs
+                SET status = 'in_progress',
+                    started_at = now(),
+                    error = NULL
+                WHERE id = %s
+                  AND status IN ('queued', 'in_progress')
+                RETURNING id, tenant_id, mode, category, pattern, flags
+                """,
+                (int(job_id),),
+            )
+            row = cur.fetchone()
+            conn.commit()
+        if not row:
+            return
+
+        tid_raw = row.get("tenant_id")
+        tid = int(tid_raw) if tid_raw not in (None, "") else None
+        if tid == 0:
+            tid = None
+        mode = str(row.get("mode") or "").strip().lower()
+        category = str(row.get("category") or "")
+        pattern = str(row.get("pattern") or "")
+        flags = str(row.get("flags") or "i")
+
+        if mode == "override":
+            total_applied = _apply_rule_override_for_tenant(category, pattern, flags, tid)
+        else:
+            total_applied = _apply_rule_to_existing_for_tenant(category, pattern, flags, tid)
+
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                UPDATE category_rule_apply_jobs
+                SET status = 'completed',
+                    total_applied = %s,
+                    finished_at = now(),
+                    error = NULL
+                WHERE id = %s
+                """,
+                (int(total_applied), int(job_id)),
+            )
+            conn.commit()
+    except Exception as e:
+        with with_db_cursor() as (conn, cur):
+            cur.execute(
+                """
+                UPDATE category_rule_apply_jobs
+                SET status = 'failed',
+                    error = %s,
+                    finished_at = now()
+                WHERE id = %s
+                """,
+                (f"{type(e).__name__}: {e}", int(job_id)),
+            )
+            conn.commit()
+    finally:
+        with _RULE_APPLY_JOBS_LOCK:
+            _RULE_APPLY_WORKERS.discard(int(job_id))
+
+
+def _queue_rule_apply_job(
+    *,
+    tenant_id: int | None,
+    mode: str,
+    category: str,
+    pattern: str,
+    flags: str,
+    rule_id: int | None = None,
+) -> dict[str, Any]:
+    _ensure_category_rule_apply_jobs_pg()
+    scope_tid = _tenant_scope_key(tenant_id)
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO category_rule_apply_jobs (
+              tenant_id, rule_id, mode, category, pattern, flags, status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, 'queued')
+            RETURNING id, tenant_id, rule_id, mode, status, total_applied, error, created_at, started_at, finished_at
+            """,
+            (
+                int(scope_tid),
+                (int(rule_id) if rule_id is not None else None),
+                str(mode or "uncategorized").strip().lower(),
+                str(category or ""),
+                str(pattern or ""),
+                str(flags or "i"),
+            ),
+        )
+        row = cur.fetchone() or {}
+        conn.commit()
+
+    job = _rule_apply_job_row_to_api(row)
+    _spawn_rule_apply_worker(int(job.get("id") or 0))
+    return job
+
 # -----------------------------
 # Endpoints
 # -----------------------------
 @router.post("/category-rules")
 def create_category_rule(payload: RuleCreate):
+    tid = _require_tenant_id()
     category = (payload.category or "").strip()
     if not category:
         return {"ok": False, "error": "Category is required"}
@@ -1593,16 +1770,22 @@ def create_category_rule(payload: RuleCreate):
                 f"""
                 INSERT INTO {CATEGORY_RULES_TABLE} (category, pattern, flags, is_active)
                 VALUES (%s, %s, %s, TRUE)
+                RETURNING id
                 """,
                 (category, pattern, flags),
             )
-            applied = 0
-            if payload.apply_now:
-                conn.commit()  # commit rule insert before large update
-                applied = apply_rule_to_existing(category, pattern, flags)
-            else:
-                conn.commit()
-            return {"ok": True, "pattern": pattern, "applied": int(applied)}
+            rule_row = cur.fetchone() or {}
+            rule_id = int(rule_row.get("id") or 0) or None
+            conn.commit()  # commit rule insert before background apply
+            job = _queue_rule_apply_job(
+                tenant_id=tid,
+                mode="uncategorized",
+                category=category,
+                pattern=pattern,
+                flags=flags,
+                rule_id=rule_id,
+            )
+            return {"ok": True, "pattern": pattern, "applied": 0, "apply_job": job}
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
@@ -1860,6 +2043,7 @@ def check_all_category_rules(
 
 @router.post("/category-rules/{rule_id}")
 def update_category_rule(rule_id: int, payload: RuleUpdate):
+    tid = _require_tenant_id()
     category = (payload.category or "").strip()
     if not category:
         return {"ok": False, "error": "Category is required"}
@@ -1886,24 +2070,43 @@ def update_category_rule(rule_id: int, payload: RuleUpdate):
                 (category, int(rule_id)),
             )
 
-            applied = 0
-            if payload.reapply_existing:
-                # override category on ALL matches
-                conn.commit()  # commit rule edit first
-                applied = _apply_rule_override(category, pattern, flags)
-            else:
-                conn.commit()
-
-            # refresh match count (nice UX)
-            try:
-                match_count = _rule_match_count(pattern, flags)
-            except Exception:
-                match_count = 0
-
-            return {"ok": True, "applied": int(applied), "match_count": int(match_count)}
+            # Always override category on all matching transactions in background.
+            conn.commit()  # commit rule edit first
+            job = _queue_rule_apply_job(
+                tenant_id=tid,
+                mode="override",
+                category=category,
+                pattern=pattern,
+                flags=flags,
+                rule_id=int(rule_id),
+            )
+            return {"ok": True, "applied": 0, "match_count": 0, "apply_job": job}
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/category-rules/jobs/{job_id}")
+def get_category_rule_apply_job(job_id: int):
+    tid = _require_tenant_id()
+    _ensure_category_rule_apply_jobs_pg()
+    rows = query_db(
+        """
+        SELECT id, tenant_id, rule_id, mode, status, total_applied, error, created_at, started_at, finished_at
+        FROM category_rule_apply_jobs
+        WHERE id = %s
+          AND tenant_id = %s
+        LIMIT 1
+        """,
+        (int(job_id), int(_tenant_scope_key(tid))),
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="job_not_found")
+    row = dict(rows[0] or {})
+    job = _rule_apply_job_row_to_api(row)
+    if job.get("status") in ("queued", "in_progress"):
+        _spawn_rule_apply_worker(int(job.get("id") or 0))
+    return {"ok": True, "job": job}
 
 @router.post("/category-rules/{rule_id}/active")
 def set_rule_active(rule_id: int, payload: RuleActiveUpdate):

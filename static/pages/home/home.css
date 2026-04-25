@@ -5,8 +5,168 @@
   align-items: stretch;
 }
 
+/* Rule modal actions */
+#ruleModalBackdrop .rule-head-actions{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#ruleModalBackdrop .rule-defer-label{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  opacity: .85;
+  white-space: nowrap;
+}
+
+#ruleModalBackdrop .rule-actions{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+#ruleModalBackdrop .rule-actions__group{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#ruleModalBackdrop .rule-actions .settings-btn{
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+
+#ruleModalBackdrop .rule-actions__save{
+  min-width: 88px;
+  justify-content: center;
+}
+
+#ruleModalBackdrop .modal-title,
+#ruleModalBackdrop .modal-sub,
+#ruleModalBackdrop .modal-row label,
+#ruleModalBackdrop .tx-kv__k,
+#ruleModalBackdrop .tx-kv__v{
+  font-family: inherit;
+}
+
+#ruleModalBackdrop .modal-row label{
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+  opacity: .92;
+}
+
+#ruleModalBackdrop #ruleCategory,
+#ruleModalBackdrop #ruleKeywords{
+  width: 100%;
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  color: var(--text);
+  appearance: none;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+#ruleModalBackdrop #ruleCategory::placeholder,
+#ruleModalBackdrop #ruleKeywords::placeholder{
+  color: color-mix(in srgb, var(--text) 62%, transparent);
+  font-weight: 600;
+}
+
+#ruleModalBackdrop #ruleCategory:focus,
+#ruleModalBackdrop #ruleKeywords:focus{
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, var(--card));
+  outline-offset: 0;
+  background: color-mix(in srgb, var(--accent) 24%, var(--card));
+}
+
 /* Home mobile transactions: tighten vertical spacing and reduce card height */
 @media (max-width: 900px){
+  #ruleModalBackdrop .modal-body{
+    overflow-x: hidden;
+  }
+
+  #ruleModalBackdrop .rule-head-actions{
+    gap: 6px;
+  }
+
+  #ruleModalBackdrop .rule-defer-label{
+    font-size: 11px;
+    max-width: 180px;
+    white-space: normal;
+    line-height: 1.15;
+  }
+
+  #ruleModalBackdrop .rule-actions{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    justify-content: start;
+    width: 100%;
+  }
+
+  #ruleModalBackdrop .rule-actions__group{
+    display: contents;
+  }
+
+  #ruleModalBackdrop #ruleModeToggle{
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  #ruleModalBackdrop #ruleSkipBtn{
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  #ruleModalBackdrop #ruleViewSkippedBtn{
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  #ruleModalBackdrop #rulePrevBtn{
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  #ruleModalBackdrop #ruleSaveBtn{
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  #ruleModalBackdrop #ruleNextBtn{
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  #ruleModalBackdrop .rule-actions .settings-btn{
+    width: 100%;
+    justify-content: center;
+    min-height: 34px;
+    padding: 7px 8px;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: normal;
+    text-align: center;
+    min-width: 0;
+  }
+
+  #ruleModalBackdrop .rule-actions__save{
+    width: auto;
+    min-height: 34px;
+  }
+
   body.page-home #txList.tx-list{
     gap: 6px !important;
   }

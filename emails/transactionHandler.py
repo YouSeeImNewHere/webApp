@@ -5,12 +5,16 @@ import json
 import re
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 from typing import Optional
 
 from db import with_db_cursor
 
 KEYS_FILE = Path(__file__).resolve().parent / "withdrawalKey_test.json"
+
+# Legacy compatibility for modules that still import DB_PATH for sqlite-based receipt helpers.
+DB_PATH = os.getenv("DB_PATH", str(Path(__file__).resolve().parent.parent / "finance.db"))
 
 # Keep this default aligned with your test-mode workflows
 USE_TEST_TABLE = True

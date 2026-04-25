@@ -592,7 +592,8 @@ def _boundary_label_pattern(v: str) -> str:
     parts = [re.escape(p) for p in str(v or "").strip().split() if p]
     if not parts:
         return ""
-    return rf"(?<!\w){r'\s+'.join(parts)}(?!\w)"
+    sep = r"\s+"
+    return rf"(?<!\w){sep.join(parts)}(?!\w)"
 
 
 def _guided_amount_present(text: str, guided: dict[str, Any]) -> bool:

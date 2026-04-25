@@ -176,7 +176,13 @@
         <div class="modal-title">Create rule</div>
         <div id="ruleCounter" class="modal-sub">—</div>
       </div>
-      <button id="ruleModalClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      <div class="rule-head-actions">
+        <label class="rule-defer-label">
+          <input id="ruleDeferApply" type="checkbox" />
+          Defer apply until close
+        </label>
+        <button id="ruleModalClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
     </div>
 
     <div class="modal-body">
@@ -201,21 +207,19 @@
         <input id="ruleKeywords" type="text" placeholder="e.g. amazon, prime" />
       </div>
 
-      <label class="modal-row" style="display:flex; gap:8px; align-items:center;">
-        <input id="ruleApplyNow" type="checkbox" checked />
-        Apply to existing transactions
-      </label>
-
-      <div class="modal-actions" style="display:flex; gap:10px; justify-content:space-between; align-items:center;">
-        <div style="display:flex; gap:8px;">
-          <button id="ruleModeToggle" class="btn" type="button">Mode: Most frequent</button>
-          <button id="rulePrevBtn" class="btn" type="button">‹ Prev</button>
-          <button id="ruleNextBtn" class="btn" type="button">Next ›</button>
+      <div class="modal-actions rule-actions">
+        <div class="rule-actions__group">
+          <button id="ruleModeToggle" class="settings-btn small" type="button">Mode: Most frequent</button>
+          <button id="rulePrevBtn" class="settings-btn small" type="button">‹ Prev</button>
+          <button id="ruleNextBtn" class="settings-btn small" type="button">Next ›</button>
+          <button id="ruleSkipBtn" class="settings-btn small" type="button">Skip</button>
+          <button id="ruleViewSkippedBtn" class="settings-btn small" type="button">View skipped (0)</button>
         </div>
 
-        <button id="ruleSaveBtn" class="btn btn-primary" type="button">Save</button>
+        <button id="ruleSaveBtn" class="settings-btn primary rule-actions__save" type="button">Save</button>
       </div>
 
+      <div id="ruleSkippedPanel" class="tx-kv" style="margin-top:10px; display:none;"></div>
       <div id="ruleSaveMsg" class="mini-note" style="margin-top:10px;"></div>
     </div>
   </div>

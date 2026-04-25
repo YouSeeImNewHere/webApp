@@ -11,6 +11,7 @@ from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
 from app.core.home_snapshot_cache import bump_home_snapshot_version
 from app.core.transactions_ignore import ensure_transactions_ignore_column
+from app.core.account_totals_cache import ensure_account_totals_cache_pg
 
 router = APIRouter()
 
@@ -353,6 +354,7 @@ def bank_info_refresh():
 @router.get("/bank-totals")
 def bank_totals():
     ensure_transactions_ignore_column()
+    ensure_account_totals_cache_pg()
     tid = _require_tenant_id()
 
     def _run():
@@ -391,111 +393,18 @@ def bank_totals():
                 int(r.get("account_id") or 0): dict(r) for r in (audit_rows or [])
             }
 
-            if tid:
+            totals_rows: list[dict[str, Any]] = []
+            if acct_ids and _pg_table_exists(cur, "account_balance_totals"):
                 cur.execute(
                     """
-                    SELECT account_id, SUM(start) AS start_total
-                    FROM "startingbalance"
+                    SELECT account_id, start_total, trans_total
+                    FROM account_balance_totals
                     WHERE tenant_id = %s
-                    GROUP BY account_id
+                      AND account_id = ANY(%s)
                     """,
-                    (int(tid),),
+                    (int(_tenant_scope_key(tid)), acct_ids),
                 )
-            else:
-                cur.execute(
-                    """
-                    SELECT account_id, SUM(start) AS start_total
-                    FROM "startingbalance"
-                    GROUP BY account_id
-                    """
-                )
-            starting_rows = cur.fetchall() or []
-
-            if tid:
-                cur.execute(
-                    """
-                    WITH base AS (
-                      SELECT
-                        account_id,
-                        amount::double precision AS amount,
-                        COALESCE(
-                          NULLIF(TRIM(postedDate), 'unknown'),
-                          NULLIF(TRIM(purchaseDate), 'unknown')
-                        ) AS raw_date
-                      FROM transactions
-                      WHERE tenant_id = %s
-                    ),
-                    norm AS (
-                      SELECT
-                        account_id,
-                        amount,
-                        CASE
-                          WHEN raw_date IS NULL THEN NULL
-                          WHEN length(raw_date) = 8  THEN to_date(raw_date, 'MM/DD/YY')
-                          WHEN length(raw_date) = 10 THEN to_date(raw_date, 'MM/DD/YYYY')
-                          ELSE NULL
-                        END AS d
-                      FROM base
-                    )
-                    SELECT account_id, COALESCE(SUM(amount), 0)::double precision AS trans_total
-                    FROM norm
-                    WHERE d IS NOT NULL
-                    GROUP BY account_id
-                    """,
-                    (int(tid),),
-                )
-            else:
-                cur.execute(
-                    """
-                    WITH base AS (
-                      SELECT
-                        account_id,
-                        amount::double precision AS amount,
-                        COALESCE(
-                          NULLIF(TRIM(postedDate), 'unknown'),
-                          NULLIF(TRIM(purchaseDate), 'unknown')
-                        ) AS raw_date
-                      FROM transactions
-                    ),
-                    norm AS (
-                      SELECT
-                        account_id,
-                        amount,
-                        CASE
-                          WHEN raw_date IS NULL THEN NULL
-                          WHEN length(raw_date) = 8  THEN to_date(raw_date, 'MM/DD/YY')
-                          WHEN length(raw_date) = 10 THEN to_date(raw_date, 'MM/DD/YYYY')
-                          ELSE NULL
-                        END AS d
-                      FROM base
-                    )
-                    SELECT account_id, COALESCE(SUM(amount), 0)::double precision AS trans_total
-                    FROM norm
-                    WHERE d IS NOT NULL
-                    GROUP BY account_id
-                    """
-                )
-            tx_rows = cur.fetchall() or []
-            totals_map: Dict[int, Dict[str, float | int]] = {
-                int(r["account_id"]): {
-                    "account_id": int(r["account_id"]),
-                    "start_total": 0.0,
-                    "trans_total": float(r["trans_total"] or 0.0),
-                }
-                for r in tx_rows
-            }
-            for r in starting_rows:
-                aid = int(r["account_id"])
-                row = totals_map.get(aid)
-                if row is None:
-                    totals_map[aid] = {
-                        "account_id": aid,
-                        "start_total": float(r["start_total"] or 0.0),
-                        "trans_total": 0.0,
-                    }
-                else:
-                    row["start_total"] = float(r["start_total"] or 0.0)
-            totals_rows = list(totals_map.values())
+                totals_rows = cur.fetchall() or []
 
         return has_credit_limit, accounts, totals_rows, audit_map
 

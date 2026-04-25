@@ -48,6 +48,10 @@ def _looks_like_item_line(t: str) -> bool:
     if re.search(r"\b\d+\s*@\s*\d{1,5}([.,]\d{2})\b", u):
         return True
 
+    # price token with optional trailing tax flag (e.g., "3.99F")
+    if re.search(r"\b\d{1,5}[.,]\d{2}[A-Z]?\b", u):
+        return True
+
     # ends with a price and has some letters in the description
     if _MONEY_LINE_RE.search(t) and re.search(r"[A-Z]{2,}", u):
         return True
@@ -299,6 +303,7 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
     prev_desc_candidate: Optional[str] = None  # last plain description (for metadata lines)
 
     pending_sku_item: bool = False  # Daiso-style: SKU line has price, next line is the real description
+    pending_leading_price: Optional[float] = None  # grocery-style: "3.99F" appears right before item desc
 
     def new_item(desc: str) -> None:
         nonlocal last_item_idx
@@ -308,7 +313,8 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
     def attach_price(p: float, raw: str) -> None:
         if last_item_idx is None:
             return
-        items[last_item_idx]["price"] = p
+        if items[last_item_idx].get("price") is None:
+            items[last_item_idx]["price"] = p
         items[last_item_idx]["meta"].append(raw.strip())
 
     def attach_meta(raw: str) -> None:
@@ -316,8 +322,10 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
             return
         items[last_item_idx]["meta"].append(raw.strip())
 
-    for ln in region:
+    for idx, ln in enumerate(region):
         t = ln.strip()
+        next_raw = region[idx + 1].strip() if idx + 1 < len(region) else ""
+        next_up = next_raw.upper()
         if not t:
             continue
         if _is_separator_line(t):
@@ -332,6 +340,25 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
         # Ignore explicit tax lines inside item region (prevents "TAX 0.50" becoming an item)
         if re.match(r"^\s*TAX\b", t, re.I):
             continue
+
+        # price-before-description token, common in grocery OCR (e.g., "3.99F")
+        m_lead = re.match(r"^\s*(\d{1,5}[.,]\d{2})\s*([A-Z])?\s*$", t, re.I)
+        if m_lead:
+            val = _normalize_money_to_float(m_lead.group(1))
+            flag = (m_lead.group(2) or "").upper()
+            if val is not None and flag in {"F", "T"}:
+                # If next line is a promo marker, this price likely belongs to the
+                # current item (e.g., item line then "4.99F" then "MasterChef Spend").
+                if (
+                    last_item_idx is not None
+                    and items[last_item_idx].get("price") is None
+                    and any(k in next_up for k in ["SAVINGS", "SPEND", "COUPON", "DISCOUNT"])
+                ):
+                    items[last_item_idx]["price"] = val
+                    items[last_item_idx]["meta"].append(f"price_from_next:{val:.2f}")
+                    continue
+                pending_leading_price = val
+                continue
 
         # --- metadata line (like ** GROCERY (F) $ 6.99)
         if _is_metadata_line(t):
@@ -350,6 +377,30 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
         if _MONEY_LINE_RE.match(t):
             val = _normalize_money_to_float(t)
             if val is not None:
+                if last_item_idx is None:
+                    pending_leading_price = val
+                    continue
+                if idx == (len(region) - 1) and isinstance(items[last_item_idx].get("price"), (int, float)):
+                    # trailing lone amount at item-region tail is usually subtotal bleed-through
+                    continue
+                if idx + 1 < len(region) and re.match(r"^\s*\d{7,14}\b", next_raw):
+                    pending_leading_price = val
+                    items[last_item_idx]["meta"].append(f"next_price_hint:{t}")
+                    continue
+                if any(k in next_up for k in ["SUBTOTAL", "SUB TOTAL", "TOTAL", "TAX"]):
+                    continue
+                cur_meta = " ".join(items[last_item_idx].get("meta") or []).upper()
+                cur_has_prev_price = "PRICE_FROM_PREV:" in cur_meta
+                if cur_has_prev_price and idx + 1 < len(region):
+                    # If current item already has an F/T leading price, then a plain
+                    # money line often belongs to the next item. Keep promo amounts
+                    # off item pricing.
+                    if any(k in next_up for k in ["SAVINGS", "SPEND", "COUPON", "DISCOUNT"]):
+                        items[last_item_idx]["meta"].append(t)
+                        continue
+                    pending_leading_price = val
+                    items[last_item_idx]["meta"].append(f"next_price_hint:{t}")
+                    continue
                 attach_price(val, t)
             continue
 
@@ -359,7 +410,7 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
             if (not _is_metadata_line(t)) and (not _is_totalish(t)) and (not _is_footer_marker(t)) and (
             not _is_separator_line(t)):
                 # must NOT itself contain money / qty@price / another SKU
-                contains_money = (_extract_price_loose(t) is not None) or bool(_MONEY_LINE_RE.match(t)) or bool(
+                contains_money = bool(re.search(r"\d{1,5}[.,]\d{2}", t)) or bool(_MONEY_LINE_RE.match(t)) or bool(
                     _QTY_AT_PRICE_RE.match(t))
                 looks_like_sku = bool(re.match(r"^\s*\d{7,14}\b", t))
                 if (not contains_money) and (not looks_like_sku):
@@ -376,6 +427,20 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
         # SKU + inline price at end (DAISO-style): "4968988075990 Frosted gl 2.25"
         msku = re.match(r"^\s*(\d{7,14})\s+(.+?)\s*$", t)
         if msku:
+            desc_part = msku.group(2)
+            m_end_price = re.search(r"([$€£]?\s*\d{1,5}[.,]\d{2})\s*$", desc_part)
+            # If no explicit price token exists, do not infer price from SKU digits.
+            # Create item from SKU description and use pending leading price when available.
+            if m_end_price is None and (not _is_totalish(t)) and (not _is_footer_marker(t)):
+                cleaned_desc = _clean_item_name(desc_part)
+                if cleaned_desc:
+                    new_item(cleaned_desc)
+                    if pending_leading_price is not None and last_item_idx is not None:
+                        items[last_item_idx]["price"] = pending_leading_price
+                        items[last_item_idx]["meta"].append(f"price_from_prev:{pending_leading_price:.2f}")
+                        pending_leading_price = None
+                    pending_sku_item = True
+                    continue
             val = _extract_price_loose(t)
             if val is not None and (not _is_totalish(t)) and (not _is_footer_marker(t)):
                 desc_part = msku.group(2)
@@ -413,6 +478,10 @@ def parse_items_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
         # otherwise: treat as description, but also remember it in case the next line is "GROCERY (F)"
         prev_desc_candidate = t
         new_item(_clean_item_name(t))
+        if pending_leading_price is not None and last_item_idx is not None and items[last_item_idx].get("price") is None:
+            items[last_item_idx]["price"] = pending_leading_price
+            items[last_item_idx]["meta"].append(f"price_from_prev:{pending_leading_price:.2f}")
+            pending_leading_price = None
 
     # --- Post-pass merge for DAISO-style two-line items:
     # If we created an item from a SKU+price line, and the very next parsed "item"

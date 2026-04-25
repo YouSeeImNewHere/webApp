@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import pytesseract
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, UploadFile, HTTPException, Body
 from fastapi.responses import FileResponse, JSONResponse
 from emails.transactionHandler import DB_PATH
 from Receipts.items import (
@@ -23,6 +23,8 @@ from Receipts.items import (
 # ------------------------------------------------------------
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
+
+_PADDLE_OCR_INSTANCE = None
 
 # ------------------------------------------------------------
 # Paths / DB
@@ -86,7 +88,8 @@ def _extract_purchase_date_mmddyy(lines: List[str]) -> Optional[str]:
     Returns MM/DD/YY if found.
     Accepts 'DATE TIME 1/6/2026 ...' and also footer-only '01/10/2026 13:13 ...'
     """
-    date_re = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b")
+    # Allow OCR-concatenated time right after year (e.g. 1/6/20267:34:07PM)
+    date_re = re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})/(\d{2,4})")
 
     # Prefer lines mentioning DATE/TIME, else scan bottom-up
     preferred = []
@@ -98,15 +101,13 @@ def _extract_purchase_date_mmddyy(lines: List[str]) -> Optional[str]:
     scan = preferred + list(reversed(lines))
 
     for ln in scan:
-        m = date_re.search(ln)
-        if not m:
-            continue
-        mm = int(m.group(1))
-        dd = int(m.group(2))
-        yy_raw = m.group(3)
-        yy = int(yy_raw[-2:])
-        if 1 <= mm <= 12 and 1 <= dd <= 31:
-            return f"{mm:02d}/{dd:02d}/{yy:02d}"
+        for m in date_re.finditer(ln):
+            mm = int(m.group(1))
+            dd = int(m.group(2))
+            yy_raw = m.group(3)
+            yy = int(yy_raw[-2:])
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                return f"{mm:02d}/{dd:02d}/{yy:02d}"
     return None
 
 def _read_bgr(path: str) -> np.ndarray:
@@ -358,13 +359,33 @@ def _extract_address(lines: List[str]) -> Dict[str, Optional[str]]:
         "state": None,
         "zip": None,
         "website": None,
+        "store_name": None,
     }
     if not lines:
         return out
 
-    top = [ln.strip() for ln in lines[:20] if ln and ln.strip()]
+    top = [ln.strip() for ln in lines[:60] if ln and ln.strip()]
     if not top:
         return out
+
+    def _normalize_store_name(raw: str) -> str:
+        t = (raw or "").strip()
+        u = t.upper()
+        if u in {"QRC", "QFC"}:
+            return "QFC"
+        if "QUALITY FOOD CENTERS" in u:
+            return "QFC"
+        if "H MART" in u or "HMART" in u:
+            return "HMART"
+        if "WHOLE FOODS" in u or "WHOLEFOODS" in u:
+            return "WHOLE FOODS"
+        if "COSTCO" in u:
+            return "COSTCO"
+        if "DAISO" in u:
+            return "DAISO"
+        if "QFC" in u:
+            return "QFC"
+        return t
 
     # store name: first alpha-heavy line
     for ln in top[:5]:
@@ -372,7 +393,7 @@ def _extract_address(lines: List[str]) -> Dict[str, Optional[str]]:
         if u in ("SALES", "SALE"):
             continue
         if sum(ch.isalpha() for ch in ln) / max(1, len(ln)) >= 0.45:
-            out["store_name"] = "DAISO" if u.startswith("DAISO") else ln
+            out["store_name"] = _normalize_store_name(ln)
             break
 
     # website
@@ -382,8 +403,16 @@ def _extract_address(lines: List[str]) -> Dict[str, Optional[str]]:
             break
 
     # street line (simple heuristic)
-    street_re = re.compile(r"\b\d{2,6}\s+.+\b(AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR)\b", re.I)
-    city_state_zip_re = re.compile(r"^\s*([A-Z][A-Z ]+),\s*(WA|OR|CA|NY)\s+(\d{4,5})", re.I)
+    street_re = re.compile(
+        r"\b\d{2,6}\s+.+\b(AVE|AVENUE|ST|STREET|RD|ROAD|BLVD|DR|DRIVE|PKWY|PARKWAY|WAY|PL|PLACE|LN|LANE|HWY)\b",
+        re.I,
+    )
+    city_state_zip_re = re.compile(
+        r"^\s*([A-Za-z][A-Za-z .'-]+?)\s*,?\s*"
+        r"(WA|OR|CA|NY|TX|FL|IL|NJ|MA|PA|VA|MD|CO|AZ|NV|HI|AK)\s+"
+        r"(\d{5}(?:-\d{4})?)\s*$",
+        re.I,
+    )
 
     for i, ln in enumerate(top):
         if out["street"] is None and street_re.search(ln):
@@ -397,9 +426,35 @@ def _extract_address(lines: List[str]) -> Dict[str, Optional[str]]:
                     out["zip"] = m.group(3).strip()
             break
 
+    # Fallback street: numbered street lines without explicit suffix
+    if not out["street"]:
+        fallback_street_re = re.compile(r"^\s*\d{2,6}\s+[A-Za-z0-9 .'-]{3,}\s*$")
+        for ln in top:
+            u = ln.upper()
+            if fallback_street_re.match(ln) and not re.search(r"\d{3}[-\s]\d{3}[-\s]\d{4}", ln):
+                if "TOTAL" in u or "TAX" in u or "CASHIER" in u:
+                    continue
+                out["street"] = ln.strip()
+                break
+
+    # Fallback: scan top block for city/state/zip even if not adjacent to street.
+    if not out["city"] or not out["state"] or not out["zip"]:
+        for ln in top:
+            m = city_state_zip_re.search(ln)
+            if m:
+                out["city"] = m.group(1).title().strip()
+                out["state"] = m.group(2).upper().strip()
+                out["zip"] = m.group(3).strip()
+                break
+
     return out
 
-def _extract_merchant(lines: List[str]) -> Optional[str]:
+def _extract_merchant(lines: List[str], address: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    if isinstance(address, dict):
+        store = str(address.get("store_name") or "").strip()
+        if store:
+            return store
+
     if not lines:
         return None
 
@@ -414,12 +469,16 @@ def _extract_merchant(lines: List[str]) -> Optional[str]:
     for ln in lines[:6]:
         t = ln.strip()
         up = t.upper()
+        if up in {"QRC", "QFC"}:
+            return "QFC"
+        if "QUALITY FOOD CENTERS" in up:
+            return "QFC"
         if "PAYMENT" in up or "DATE" in up:
             continue
         if "MART" in up and alpha_ratio(t) >= 0.45:
-            # normalize common OCR like "CIMART" -> "MART"
+            # normalize common OCR like "CIMART" -> "HMART"
             if up.endswith("MART"):
-                return "MART"
+                return "HMART"
             return t
 
     # Otherwise pick the best-looking alpha-heavy short line near the top
@@ -441,6 +500,220 @@ def _extract_merchant(lines: List[str]) -> Optional[str]:
             best = t
 
     return best
+
+
+def _sanitize_item_meta(meta: List[Any]) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for m in (meta or []):
+        s = str(m or "").strip()
+        if not s:
+            continue
+        u = s.upper()
+        # Remove store department tags/noise; keep pricing correction/debug hints.
+        if "GROCERY" in u:
+            continue
+        if re.match(r"^[TF]\s*=\s*", u):
+            continue
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _money_from_text_token(text: str) -> Optional[float]:
+    m = re.search(r"\$?\s*(\d{1,5}(?:[.,]\d{2}))\s*[A-Z]?\s*$", str(text or ""), re.I)
+    if not m:
+        return None
+    return _normalize_money_to_float(m.group(1))
+
+
+def _sanitize_items_costco(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    pending_price: Optional[float] = None
+
+    price_line_re = re.compile(r"^\s*\$?\s*(\d{1,5}(?:[.,]\d{2}))\s*[A-Z]?\s*$", re.I)
+    noise_re = re.compile(r"^\s*(A4A|RSSO#|ORDER NUMBER|SEATTLE#\d+)\s*$", re.I)
+
+    def norm_name(raw: str) -> str:
+        s = str(raw or "").strip()
+        u = s.upper().replace("C0KE", "COKE")
+        # remove leading SKU digits if present
+        u = re.sub(r"^\d{6,}\s*", "", u)
+        if "SLICE" in u and "PEP" in u:
+            return "SLICE PEP"
+        if "COKE" in u:
+            return "20 OZ COKE"
+        # collapse duplicate spaces
+        return re.sub(r"\s+", " ", u).strip()
+
+    for it in (items or []):
+        raw_name = str(it.get("name") or "").strip()
+        if not raw_name:
+            continue
+        up = raw_name.upper()
+
+        pm = price_line_re.match(raw_name)
+        if pm:
+            v = _normalize_money_to_float(pm.group(1))
+            if v is not None:
+                pending_price = float(v)
+            continue
+
+        if noise_re.match(raw_name):
+            continue
+        if "TAX" in up or "TOTAL" in up or "AMOUNT" in up or "EFT/" in up:
+            continue
+
+        name = norm_name(raw_name)
+        if not name:
+            continue
+
+        price = None
+        if pending_price is not None:
+            price = float(pending_price)
+            pending_price = None
+        elif isinstance(it.get("price"), (int, float)):
+            price = float(it.get("price"))
+
+        # Keep only meaningful food-court items for this pattern.
+        if name not in {"SLICE PEP", "20 OZ COKE"} and price is None:
+            continue
+
+        out.append(
+            {
+                "name": name,
+                "price": price,
+                "meta": ([f"price_from_prev:{price:.2f}"] if price is not None else []),
+                "raw_line": raw_name,
+            }
+        )
+
+    # Deduplicate by item name while preserving order.
+    dedup: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for it in out:
+        k = str(it.get("name") or "").upper()
+        if k in seen:
+            continue
+        seen.add(k)
+        dedup.append(it)
+    return dedup
+
+
+def _sanitize_items_for_ui(items: List[Dict[str, Any]], merchant: Optional[str] = None) -> List[Dict[str, Any]]:
+    merchant_u = str(merchant or "").upper()
+    if "COSTCO" in merchant_u:
+        c = _sanitize_items_costco(items)
+        if c:
+            return c
+
+    cleaned: List[Dict[str, Any]] = []
+    drop_name_tokens = (
+        "ADVANTAGE CUSTOMER",
+        "QFC SAVINGS",
+        "MASTERCHEF SPEND",
+        "CHECKOUT BAG TAX",
+        "TOTAL NUMBER OF ITEMS",
+        "VISA CREDIT",
+        "REF#",
+        "AID:",
+        "TC:",
+        "CHANGE",
+        "BALANCE",
+    )
+    price_only_re = re.compile(r"^\s*\d{1,5}(?:[.,]\d{2})[A-Z]?\s*$")
+    state_codes = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY|DC"
+    city_state_re = re.compile(rf"^[A-Za-z .'-]+\s+(?:{state_codes})(?:\s+\d{{5}}(?:-\d{{4}})?)?$")
+
+    for it in (items or []):
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        up = name.upper()
+        price = it.get("price")
+
+        if any(tok in up for tok in drop_name_tokens):
+            continue
+        if price is None and price_only_re.match(name):
+            continue
+        if price is None and city_state_re.match(name):
+            continue
+
+        it["meta"] = _sanitize_item_meta(it.get("meta") or [])
+        cleaned.append(it)
+
+    if "WHOLE FOODS" not in merchant_u:
+        return cleaned
+
+    # Whole Foods hot bar receipts often include location/header/tare lines in item region.
+    # Keep actual item lines and map nearby money tokens/detail prices onto last real item.
+    wf_cleaned: List[Dict[str, Any]] = []
+    last_real_idx: Optional[int] = None
+    pending_price: Optional[float] = None
+
+    noise_tokens = (
+        "WEST1AKE",
+        "WESTLAKE",
+        "SEATTLE",
+        "AVE",
+        "WSL",
+        "QTY",
+        "TARE WEIGHT",
+        "PAID",
+        "VISA",
+        "SOLD ITEMS",
+        "RETURNS",
+        "AMAZON.COM",
+    )
+
+    for it in cleaned:
+        name = str(it.get("name") or "").strip()
+        up = name.upper()
+
+        price = it.get("price") if isinstance(it.get("price"), (int, float)) else None
+        if price is None:
+            price = _money_from_text_token(name)
+        if price is None:
+            for m in (it.get("meta") or []):
+                price = _money_from_text_token(str(m or ""))
+                if price is not None:
+                    break
+
+        # standalone money token like "$5.52T"
+        if re.match(r"^\s*\$?\s*\d{1,5}(?:[.,]\d{2})\s*[A-Z]?\s*$", name, re.I):
+            if price is not None:
+                pending_price = float(price)
+            continue
+
+        if "HOT BAR" in up:
+            keep = dict(it)
+            if keep.get("price") is None and pending_price is not None:
+                keep["price"] = float(pending_price)
+                keep["meta"] = (keep.get("meta") or []) + [f"price_from_prev:{pending_price:.2f}"]
+                pending_price = None
+            wf_cleaned.append(keep)
+            last_real_idx = len(wf_cleaned) - 1
+            continue
+
+        if any(tok in up for tok in noise_tokens):
+            if price is not None and last_real_idx is not None and wf_cleaned[last_real_idx].get("price") is None:
+                wf_cleaned[last_real_idx]["price"] = float(price)
+                wf_cleaned[last_real_idx]["meta"] = (wf_cleaned[last_real_idx].get("meta") or []) + [
+                    f"price_from_detail:{float(price):.2f}"
+                ]
+            continue
+
+        keep = dict(it)
+        if keep.get("price") is None and pending_price is not None:
+            keep["price"] = float(pending_price)
+            keep["meta"] = (keep.get("meta") or []) + [f"price_from_prev:{pending_price:.2f}"]
+            pending_price = None
+        wf_cleaned.append(keep)
+        last_real_idx = len(wf_cleaned) - 1
+
+    return wf_cleaned or cleaned
 
 def _extract_total(lines: List[str]) -> Optional[float]:
     # 1) Prefer explicit "AMOUNT: $x.xx"
@@ -484,6 +757,107 @@ def _extract_tax(lines: List[str]) -> Optional[float]:
 
             if m:
                 return _normalize_money_to_float(m.group(1))
+    return None
+
+
+def _money_in_line_v2(ln: str) -> Optional[float]:
+    m = re.search(r"([$€£]?\s*\d{1,5}(?:[.,]\d{2}|\s+\d{2}))", str(ln or ""))
+    if not m:
+        return None
+    return _normalize_money_to_float(m.group(1))
+
+
+def _adjacent_money_v2(lines: List[str], idx: int, window: int = 2) -> Optional[float]:
+    n = len(lines)
+    for d in range(1, window + 1):
+        j = idx + d
+        if 0 <= j < n:
+            v = _money_in_line_v2(lines[j])
+            if v is not None:
+                return v
+        j = idx - d
+        if 0 <= j < n:
+            v = _money_in_line_v2(lines[j])
+            if v is not None:
+                return v
+    return None
+
+
+def _adjacent_money_filtered_v2(lines: List[str], idx: int, window: int = 2) -> Optional[float]:
+    n = len(lines)
+    skip_words = ("CHANGE", "TAX", "ITEMS SOLD", "SUBTOTAL", "SUB TOTAL")
+    for d in range(1, window + 1):
+        for j in (idx + d, idx - d):
+            if 0 <= j < n:
+                up = str(lines[j] or "").upper()
+                if any(w in up for w in skip_words):
+                    continue
+                v = _money_in_line_v2(lines[j])
+                if v is not None:
+                    return v
+    return None
+
+
+# Override v1 extractors with stronger split-line handling.
+def _extract_total(lines: List[str]) -> Optional[float]:
+    for ln in lines[::-1]:
+        if "AMOUNT" in str(ln or "").upper():
+            v = _money_in_line_v2(ln)
+            if v is not None:
+                return v
+
+    for i in range(len(lines) - 1, -1, -1):
+        up = str(lines[i] or "").upper()
+        if "TOTAL" in up and "SUB" not in up and "T=STATE TAX" not in up:
+            if "NUMBER OF ITEMS" in up:
+                continue
+            v = _money_in_line_v2(lines[i])
+            if v is not None:
+                return v
+            v = _adjacent_money_filtered_v2(lines, i, window=2)
+            if v is not None:
+                return v
+
+    for i in range(len(lines) - 1, -1, -1):
+        up = str(lines[i] or "").upper()
+        if "BALANCE" in up:
+            v = _money_in_line_v2(lines[i])
+            if v is not None and v > 0:
+                return v
+            v = _adjacent_money_filtered_v2(lines, i, window=2)
+            if v is not None and v > 0:
+                return v
+
+    for ln in lines[-10:][::-1]:
+        v = _money_in_line_v2(ln)
+        if v is not None and v > 0:
+            return v
+    return None
+
+
+def _extract_subtotal(lines: List[str]) -> Optional[float]:
+    for i in range(len(lines) - 1, -1, -1):
+        up = str(lines[i] or "").upper()
+        if "SUBTOTAL" in up or "SUB TOTAL" in up:
+            v = _money_in_line_v2(lines[i])
+            if v is not None:
+                return v
+            v = _adjacent_money_v2(lines, i, window=2)
+            if v is not None:
+                return v
+    return None
+
+
+def _extract_tax(lines: List[str]) -> Optional[float]:
+    for i in range(len(lines) - 1, -1, -1):
+        up = str(lines[i] or "").upper()
+        if "TAX" in up and "TAX EXEMPT" not in up and "NO TAX" not in up:
+            v = _money_in_line_v2(lines[i])
+            if v is not None:
+                return v
+            v = _adjacent_money_v2(lines, i, window=1)
+            if v is not None:
+                return v
     return None
 
 
@@ -598,6 +972,170 @@ def _reconcile_item_prices(
     it["meta"] = (it.get("meta") or []) + [f"price_adjusted:{old_p}->{new_p} using total:{total}"]
     it["price"] = new_p
     return items
+
+
+def _get_paddle_ocr():
+    """
+    Lazy-load PaddleOCR so the app still works if the package is not installed.
+    """
+    global _PADDLE_OCR_INSTANCE
+    if _PADDLE_OCR_INSTANCE is not None:
+        return _PADDLE_OCR_INSTANCE
+    try:
+        from paddleocr import PaddleOCR  # type: ignore
+        _PADDLE_OCR_INSTANCE = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        return _PADDLE_OCR_INSTANCE
+    except Exception:
+        return None
+
+
+def _flatten_paddle_result(raw: Any) -> List[Any]:
+    lines: List[Any] = []
+    if not isinstance(raw, list):
+        return lines
+    for page in raw:
+        if not isinstance(page, list):
+            continue
+        for item in page:
+            if isinstance(item, list) and len(item) >= 2:
+                lines.append(item)
+    return lines
+
+
+def _sort_paddle_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def key_fn(x: Dict[str, Any]):
+        box = x.get("box") or []
+        if len(box) != 4:
+            return (10**9, 10**9)
+        ys = [float(p[1]) for p in box]
+        xs = [float(p[0]) for p in box]
+        return (sum(ys) / 4.0, min(xs))
+    return sorted(lines, key=key_fn)
+
+
+def _paddle_text_score(lines: List[str], avg_conf: float) -> float:
+    score = float(avg_conf)
+    txt = " ".join(lines).upper()
+    if _extract_total(lines) is not None:
+        score += 15.0
+    if _extract_purchase_date_mmddyy(lines) is not None:
+        score += 10.0
+    if "TOTAL" in txt:
+        score += 6.0
+    if "SUBTOTAL" in txt or "SUB TOTAL" in txt:
+        score += 4.0
+    if "TAX" in txt:
+        score += 3.0
+    items = parse_items_from_lines(lines)
+    if items:
+        score += min(12.0, float(len(items)) * 1.7)
+    return score
+
+
+def _run_paddle_once(ocr_engine: Any, img_path: str) -> Dict[str, Any]:
+    raw = ocr_engine.ocr(img_path, cls=True)
+    flat = _flatten_paddle_result(raw)
+    entries: List[Dict[str, Any]] = []
+    for row in flat:
+        try:
+            box = row[0]
+            txt = str((row[1][0] if isinstance(row[1], (list, tuple)) and row[1] else "") or "").strip()
+            conf = float(row[1][1]) if isinstance(row[1], (list, tuple)) and len(row[1]) > 1 else 0.0
+        except Exception:
+            continue
+        if not txt:
+            continue
+        entries.append({
+            "box": box,
+            "text": txt,
+            "conf": conf,
+        })
+
+    entries = _sort_paddle_lines(entries)
+    lines = [e["text"] for e in entries if e.get("text")]
+    lines = _clean_fused_lines(lines)
+    confs = [float(e.get("conf") or 0.0) for e in entries if e.get("text")]
+    avg_conf = float(sum(confs) / max(1, len(confs))) if confs else 0.0
+    score = _paddle_text_score(lines, avg_conf)
+    return {
+        "lines": lines,
+        "entries": entries,
+        "avg_conf": avg_conf,
+        "score": score,
+    }
+
+
+def _draw_paddle_overlay(orig_path: str, entries: List[Dict[str, Any]], out_path: str) -> str:
+    img = _read_bgr(orig_path)
+    for e in entries:
+        box = e.get("box") or []
+        if not isinstance(box, list) or len(box) != 4:
+            continue
+        pts = np.array([[int(p[0]), int(p[1])] for p in box], dtype=np.int32).reshape((-1, 1, 2))
+        cv2.polylines(img, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
+    _write_jpg(out_path, img)
+    return out_path
+
+
+def _try_paddle_pipeline(receipt_id: str, orig_path: str, debug_dir: str) -> Optional[Dict[str, Any]]:
+    ocr_engine = _get_paddle_ocr()
+    if ocr_engine is None:
+        return None
+
+    try:
+        # Build two quick variants and choose the better OCR result.
+        img = _read_bgr(orig_path)
+        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        g2 = clahe.apply(g)
+        clahe_path = os.path.join(debug_dir, "paddle_clahe.jpg")
+        _write_jpg(clahe_path, cv2.cvtColor(g2, cv2.COLOR_GRAY2BGR))
+
+        c1 = _run_paddle_once(ocr_engine, orig_path)
+        c2 = _run_paddle_once(ocr_engine, clahe_path)
+        cand = [c1, c2]
+        cand.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
+        best = cand[0]
+
+        lines = best.get("lines") or []
+        if not lines:
+            return None
+
+        total = _extract_total(lines)
+        subtotal = _extract_subtotal(lines)
+        tax = _extract_tax(lines)
+        date_mmddyy = _extract_purchase_date_mmddyy(lines)
+        addr = _extract_address(lines)
+        merchant = _extract_merchant(lines, addr)
+        items = parse_items_from_lines(lines)
+        items = _reconcile_item_prices(items, total=total, subtotal=subtotal, tax=tax)
+        items = _sanitize_items_for_ui(items, merchant=merchant)
+
+        overlay_path = os.path.join(debug_dir, "overlay_paddle_lines.jpg")
+        _draw_paddle_overlay(orig_path, best.get("entries") or [], overlay_path)
+        return {
+            "receipt_id": receipt_id,
+            "engine": "paddleocr",
+            "parsed": {
+                "merchant": merchant,
+                "purchase_date": date_mmddyy,
+                "purchase_date_mmddyy": date_mmddyy,
+                "total": total,
+                "address": addr,
+                "items": items,
+            },
+            "ocr_debug": {
+                "engine": "paddleocr",
+                "avg_conf": best.get("avg_conf"),
+                "score": best.get("score"),
+                "lines_count": len(lines),
+                "overlay_url": f"/receipts/{receipt_id}/debug/overlay_paddle_lines.jpg",
+            },
+            "box_lines_used_for_items": lines,
+            "items_extracted": items,
+        }
+    except Exception:
+        return None
 # ------------------------------------------------------------
 # Main pipeline
 # ------------------------------------------------------------
@@ -605,6 +1143,10 @@ def _reconcile_item_prices(
 def run_receipt_ocr(receipt_id: str, orig_path: str) -> Dict[str, Any]:
     debug_dir = os.path.join(DATA_DIR, receipt_id, "debug")
     _safe_mkdir(debug_dir)
+
+    paddle_out = _try_paddle_pipeline(receipt_id, orig_path, debug_dir)
+    if paddle_out is not None:
+        return paddle_out
 
     variants = _make_variants(orig_path, debug_dir, receipt_id)
 
@@ -659,10 +1201,12 @@ def run_receipt_ocr(receipt_id: str, orig_path: str) -> Dict[str, Any]:
     date_mmddyy = _extract_purchase_date_mmddyy(box_lines)
     addr = _extract_address(box_lines)
 
+    merchant = _extract_merchant(box_lines, addr)
     items = _reconcile_item_prices(items, total=total, subtotal=subtotal, tax=tax)
+    items = _sanitize_items_for_ui(items, merchant=merchant)
 
     parsed = {
-        "merchant": _extract_merchant(box_lines),
+        "merchant": merchant,
         # provide BOTH keys so the UI always finds it
         "purchase_date": date_mmddyy,  # existing
         "purchase_date_mmddyy": date_mmddyy,  # what receipts.js expects
@@ -692,10 +1236,11 @@ def run_receipt_ocr(receipt_id: str, orig_path: str) -> Dict[str, Any]:
 
     return {
         "receipt_id": receipt_id,
+        "engine": "tesseract",
 
         # keep UI-compatible shape
         "parsed": {
-            "merchant": _extract_merchant(box_lines),
+            "merchant": merchant,
             "purchase_date": date_mmddyy,
             "purchase_date_mmddyy": date_mmddyy,
             "total": total,

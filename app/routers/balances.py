@@ -532,6 +532,8 @@ def account_transactions_range(
         starting_balance_at_range = start_bal + (sign * before_sum)
 
         # now fetch range tx and compute running balance inside range
+        time_raw_sql = "TRIM(COALESCE(\"time\"::text, '')) AS time_raw," if has_time_col else "''::text AS time_raw,"
+        tenant_filter_sql = "AND tenant_id = %s" if tid else ""
         cur.execute(
             f"""
             WITH base AS (
@@ -545,14 +547,14 @@ def account_transactions_range(
                 COALESCE(NULLIF(TRIM(status), ''), 'posted') AS status,
                 TRIM(postedDate) AS "postedDate_raw",
                 TRIM(purchaseDate) AS "purchaseDate_raw",
-                {"TRIM(COALESCE(\"time\"::text, '')) AS time_raw," if has_time_col else "''::text AS time_raw,"}
+                {time_raw_sql}
                 COALESCE(
                   NULLIF(TRIM(postedDate), 'unknown'),
                   NULLIF(TRIM(purchaseDate), 'unknown')
                 ) AS raw_date
               FROM transactions
               WHERE account_id = %s
-                {"AND tenant_id = %s" if tid else ""}
+                {tenant_filter_sql}
             ),
             norm AS (
               SELECT

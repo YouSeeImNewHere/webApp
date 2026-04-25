@@ -52,6 +52,7 @@ from app.routers import (
     admin,
     onboarding,
     email_parser_trial,
+    receipts,
 )
 from app.routers.page_payloads import prime_widget_cache_from_db
 
@@ -265,14 +266,6 @@ def create_app() -> FastAPI:
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
-    # Optional receipts router (kept identical to prior behavior)
-    try:
-        from Receipts.receipts import router as receipts_router
-    except Exception:
-        receipts_router = None
-    if receipts_router is not None:
-        app.include_router(receipts_router)
-
     # Serve /static/*
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -327,6 +320,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)
+    app.include_router(receipts.router)
     app.include_router(auth.router)
     app.include_router(csv_upload_router)
 

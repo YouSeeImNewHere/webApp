@@ -1,5 +1,8 @@
 let currentReceiptId = null;
 let lastOcrDebug = null;
+let lastParsedDebug = null;
+let currentOcrEngine = null;
+const autoReprocessTried = new Set();
 
 async function copyText(text) {
   // Modern secure-context clipboard
@@ -90,9 +93,9 @@ async function loadReceipts() {
   }
 
   list.querySelectorAll("[data-open]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-open");
-      window.open(`/receipts/${id}/image`, "_blank");
+      await openVerify(id);
     });
   });
 
@@ -142,10 +145,28 @@ async function loadOcrDebug(receiptId) {
     const r = await api(`/receipts/${receiptId}/ocr_debug`);
     const o = r && r.ocr;
     lastOcrDebug = o;
+    currentOcrEngine = (o && o.engine) ? String(o.engine) : null;
 
     // If we don't have debug data, keep the panel blank (no hard errors).
-    if (!o || !o.variants || !o.runs) {
+    if (!o) {
       if (el("dbgMeta")) el("dbgMeta").textContent = "No OCR debug loaded.";
+      if (el("dbgText")) el("dbgText").value = "";
+      if (el("dbgFused")) el("dbgFused").value = "";
+      if (el("dbgThumbs")) el("dbgThumbs").innerHTML = "";
+      return;
+    }
+
+    // Paddle payload path (no variants/runs in debug JSON).
+    if (!o.variants || !o.runs) {
+      if (o.overlay_url && el("dbgImg")) {
+        el("dbgImg").src = o.overlay_url;
+      }
+      if (el("dbgMeta")) {
+        const conf = o.avg_conf != null ? o.avg_conf : "—";
+        const score = o.score != null ? o.score : "—";
+        const lines = o.lines_count != null ? o.lines_count : "—";
+        el("dbgMeta").textContent = `engine: ${currentOcrEngine || "unknown"} • score: ${score} • avg_conf: ${conf} • lines: ${lines}`;
+      }
       if (el("dbgText")) el("dbgText").value = "";
       if (el("dbgFused")) el("dbgFused").value = "";
       if (el("dbgThumbs")) el("dbgThumbs").innerHTML = "";
@@ -161,7 +182,7 @@ async function loadOcrDebug(receiptId) {
     if (imgUrl) el("dbgImg").src = imgUrl;
 
     // meta + text
-    el("dbgMeta").textContent = `winner: variant ${w.variant}, score ${w.score}, config: ${w.config}`;
+    el("dbgMeta").textContent = `engine: ${currentOcrEngine || "tesseract"} • winner: variant ${w.variant}, score ${w.score}, config: ${w.config}`;
     el("dbgText").value = (winnerRun && winnerRun.text) || "";
 
     // combined (fused) text (server-side heuristic)
@@ -206,12 +227,14 @@ async function loadOcrDebug(receiptId) {
     });
   } catch (e) {
     // ok to ignore
+    currentOcrEngine = null;
   }
 }
 
 
 async function openVerify(receiptId) {
   currentReceiptId = receiptId;
+  currentOcrEngine = null;
   el("modalBack").style.display = "flex";
   el("imgPrev").src = `/receipts/${receiptId}/image`;
 
@@ -230,6 +253,8 @@ async function openVerify(receiptId) {
   if (el("dbgFused")) el("dbgFused").value = "";
   if (el("dbgThumbs")) el("dbgThumbs").innerHTML = "";
   if (el("dbgImg")) el("dbgImg").src = "";
+  if (el("parsedDebugText")) el("parsedDebugText").value = "";
+  lastParsedDebug = null;
 
   // 1) Load base receipt row (may fail or be null)
   let r = null;
@@ -247,7 +272,28 @@ async function openVerify(receiptId) {
     console.warn("Failed to load /receipts/{id}/parsed", e);
   }
 
-  const parsed = (parsedWrap && parsedWrap.parsed) ? parsedWrap.parsed : (r && r.parsed_json ? r.parsed_json : {});
+  let parsed = (parsedWrap && parsedWrap.parsed) ? parsedWrap.parsed : (r && r.parsed_json ? r.parsed_json : {});
+  const missingDate = !(parsed && (parsed.purchase_date_mmddyy || parsed.purchase_date));
+  const missingTotal = !(parsed && parsed.total != null && parsed.total !== "");
+  if ((missingDate || missingTotal) && !autoReprocessTried.has(receiptId)) {
+    autoReprocessTried.add(receiptId);
+    try {
+      await api(`/receipts/${receiptId}/reprocess`, { method: "POST" });
+      try {
+        r = await api(`/receipts/${receiptId}`);
+      } catch (_) {}
+      try {
+        parsedWrap = await api(`/receipts/${receiptId}/parsed`);
+      } catch (_) {}
+      parsed = (parsedWrap && parsedWrap.parsed) ? parsedWrap.parsed : (r && r.parsed_json ? r.parsed_json : {});
+    } catch (_) {
+      // Keep original parsed payload when reprocess fails.
+    }
+  }
+  lastParsedDebug = parsed || {};
+  if (el("parsedDebugText")) {
+    el("parsedDebugText").value = JSON.stringify(lastParsedDebug, null, 2);
+  }
 
   // Address (optional)
   const addr = parsed.address || parsed.store_address || null;
@@ -288,6 +334,11 @@ async function openVerify(receiptId) {
 
   // Load OCR debug regardless of whether we have any transaction candidates
   await loadOcrDebug(receiptId);
+  if (currentOcrEngine && el("mConf")) {
+    const base = String(el("mConf").textContent || "").trim();
+    const withNoEngine = base.replace(/\s*[•â€¢]\s*engine:\s*.+$/i, "");
+    el("mConf").textContent = `${withNoEngine} • engine: ${currentOcrEngine}`;
+  }
 
   await loadCandidates(receiptId);
 }
@@ -391,6 +442,13 @@ el("copyOcrDebug").addEventListener("click", async () => {
   if (ok) alert("Copied OCR debug JSON.");
   else alert("Copy failed — your browser blocked it. Open DevTools → Network → /ocr_debug and copy response.");
 });
+  el("copyParsedDebug").addEventListener("click", async () => {
+    if (!lastParsedDebug) return alert("No parsed details loaded yet.");
+    const text = JSON.stringify(lastParsedDebug, null, 2);
+    const ok = await copyText(text);
+    if (ok) alert("Copied parsed JSON.");
+    else alert("Copy failed.");
+  });
   loadReceipts().catch(err => alert(err.message));
 }
 

@@ -10,6 +10,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv*/
 venv/
 
 # Secrets / auth / state
@@ -37,6 +38,8 @@ Thumbs.db
 # Random local stuff
 website/
 /data/
+Receipts/data/receipts/
+tmp_kwgt_edit/
 
 backup/
 *.dump
@@ -45,3 +48,5 @@ backup/
 # Logs
 *.log
 /data/
+
+Receipts/testing/

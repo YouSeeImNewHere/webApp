@@ -1924,6 +1924,11 @@ function updatePotentialToggleVisibility() {
 let unassignedQueue = [];
 let unassignedIndex = 0;
 let unassignedRawQueue = [];
+let unassignedSkippedQueue = [];
+let unassignedSkippedOpen = false;
+let pendingDeferredRules = [];
+let ruleDeferApplyEnabled = false;
+const unassignedSeenKeys = new Set();
 
 function normalizeUnassignedText(v) {
   return String(v || "").trim().toLowerCase();
@@ -1936,6 +1941,26 @@ function unassignedExactKey(tx) {
   const amount = Number(tx?.amount || 0);
   const amountKey = Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
   return `${merchant}|${amountKey}|${bank}|${card}`;
+}
+
+function unassignedSessionKey(tx) {
+  if (unassignedMode === "freq") return `freq:${unassignedExactKey(tx)}`;
+  return `recent:${String(tx?.id ?? "")}`;
+}
+
+function getSkippedKeySet() {
+  return new Set(unassignedSkippedQueue.map((tx) => unassignedSessionKey(tx)));
+}
+
+function markUnassignedSeen(tx) {
+  const key = unassignedSessionKey(tx);
+  if (key) unassignedSeenKeys.add(key);
+}
+
+function setRuleDeferApply(v) {
+  ruleDeferApplyEnabled = !!v;
+  const cb = document.getElementById("ruleDeferApply");
+  if (cb) cb.checked = ruleDeferApplyEnabled;
 }
 
 function buildUnassignedQueue(rawRows, mode) {
@@ -1960,13 +1985,71 @@ function buildUnassignedQueue(rawRows, mode) {
   return ordered;
 }
 
+function updateSkippedButtonLabel() {
+  const btn = document.getElementById("ruleViewSkippedBtn");
+  if (!btn) return;
+  btn.textContent = `View skipped (${unassignedSkippedQueue.length})`;
+}
+
+function renderSkippedPanel() {
+  const panel = document.getElementById("ruleSkippedPanel");
+  if (!panel) return;
+  panel.style.display = unassignedSkippedOpen ? "" : "none";
+  if (!unassignedSkippedOpen) return;
+
+  if (!unassignedSkippedQueue.length) {
+    panel.innerHTML = `<div class="tx-kv__k">Skipped</div><div class="tx-kv__v">No skipped transactions.</div>`;
+    return;
+  }
+
+  const items = unassignedSkippedQueue
+    .slice(0, 25)
+    .map((tx, idx) => {
+      const merchant = escapeHtml(String(tx?.merchant || "(no merchant)"));
+      const amount = money(tx?.amount || 0);
+      const date = escapeHtml(String(tx?.postedDate || tx?.purchaseDate || ""));
+      return `
+        <div class="tx-kv__k">${idx + 1}. ${merchant}</div>
+        <div class="tx-kv__v">
+          ${amount} ${date ? `• ${date}` : ""}
+          <button class="settings-btn small" type="button" data-skipped-use="${idx}" style="margin-left:8px;">Use</button>
+        </div>
+      `;
+    })
+    .join("");
+
+  panel.innerHTML = items;
+
+  panel.querySelectorAll("[data-skipped-use]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.getAttribute("data-skipped-use") || -1);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= unassignedSkippedQueue.length) return;
+      const tx = unassignedSkippedQueue.splice(idx, 1)[0];
+      if (!tx) return;
+      unassignedSeenKeys.delete(unassignedSessionKey(tx));
+      unassignedQueue.unshift(tx);
+      unassignedIndex = 0;
+      updateSkippedButtonLabel();
+      renderSkippedPanel();
+      showUnassignedAt(0);
+    });
+  });
+}
+
+function toggleSkippedPanel() {
+  unassignedSkippedOpen = !unassignedSkippedOpen;
+  renderSkippedPanel();
+}
+
 async function reloadUnassignedQueue({ keepSelection = false } = {}) {
   const prev = keepSelection ? unassignedQueue[unassignedIndex] : null;
-  const prevKey = prev ? unassignedExactKey(prev) : "";
+  const prevKey = prev ? unassignedSessionKey(prev) : "";
 
   const rows = await apiGetJson(`/unassigned?limit=25&mode=${encodeURIComponent(unassignedMode)}`);
   unassignedRawQueue = Array.isArray(rows) ? rows : [];
-  unassignedQueue = buildUnassignedQueue(unassignedRawQueue, unassignedMode);
+  const skippedKeys = getSkippedKeySet();
+  unassignedQueue = buildUnassignedQueue(unassignedRawQueue, unassignedMode)
+    .filter((tx) => !skippedKeys.has(unassignedSessionKey(tx)));
 
   if (!unassignedQueue.length) {
     unassignedIndex = 0;
@@ -1974,7 +2057,7 @@ async function reloadUnassignedQueue({ keepSelection = false } = {}) {
   }
 
   if (keepSelection && prevKey) {
-    const found = unassignedQueue.findIndex((x) => unassignedExactKey(x) === prevKey);
+    const found = unassignedQueue.findIndex((x) => unassignedSessionKey(x) === prevKey);
     if (found >= 0) {
       unassignedIndex = found;
       return true;
@@ -1991,6 +2074,107 @@ function openBackdrop(show) {
 
   el.style.display = show ? "block" : "none";
   document.body.classList.toggle("modal-open", show);
+}
+
+function setNoUnassignedState(message = "No unassigned transactions") {
+  document.getElementById("ruleTxMerchant").textContent = message;
+  const acct = document.getElementById("ruleTxAccount");
+  if (acct) acct.textContent = "";
+  document.getElementById("ruleTxAmount").textContent = "";
+  document.getElementById("ruleTxDate").textContent = "";
+  const matchesEl = document.getElementById("ruleTxMatches");
+  if (matchesEl) matchesEl.textContent = "-";
+  document.getElementById("ruleCounter").textContent = "0 / 0";
+  const prevBtn = document.getElementById("rulePrevBtn");
+  const nextBtn = document.getElementById("ruleNextBtn");
+  if (prevBtn) prevBtn.disabled = true;
+  if (nextBtn) nextBtn.disabled = true;
+}
+
+async function loadMoreUnassignedIntoQueue({ limit = 25 } = {}) {
+  const rows = await apiGetJson(`/unassigned?limit=${encodeURIComponent(limit)}&mode=${encodeURIComponent(unassignedMode)}`);
+  const built = buildUnassignedQueue(Array.isArray(rows) ? rows : [], unassignedMode);
+  const existing = new Set(unassignedQueue.map((tx) => unassignedSessionKey(tx)));
+  const skipped = getSkippedKeySet();
+  let added = 0;
+  for (const tx of built) {
+    const key = unassignedSessionKey(tx);
+    if (!key) continue;
+    if (existing.has(key)) continue;
+    if (skipped.has(key)) continue;
+    if (unassignedSeenKeys.has(key)) continue;
+    unassignedQueue.push(tx);
+    existing.add(key);
+    added += 1;
+  }
+  return added;
+}
+
+async function skipCurrentUnassigned() {
+  if (!unassignedQueue.length) return;
+  const msgEl = document.getElementById("ruleSaveMsg");
+  const current = unassignedQueue[unassignedIndex];
+  if (!current) return;
+
+  const currentKey = unassignedSessionKey(current);
+  if (!unassignedSkippedQueue.some((tx) => unassignedSessionKey(tx) === currentKey)) {
+    unassignedSkippedQueue.push(current);
+  }
+  markUnassignedSeen(current);
+  unassignedQueue.splice(unassignedIndex, 1);
+  updateSkippedButtonLabel();
+  renderSkippedPanel();
+
+  if (unassignedQueue.length) {
+    if (unassignedIndex >= unassignedQueue.length) unassignedIndex = unassignedQueue.length - 1;
+    showUnassignedAt(unassignedIndex);
+    if (msgEl) msgEl.textContent = "Transaction skipped.";
+    return;
+  }
+
+  try {
+    const added = await loadMoreUnassignedIntoQueue({ limit: 25 });
+    if (added > 0) {
+      unassignedIndex = 0;
+      showUnassignedAt(0);
+      if (msgEl) msgEl.textContent = "Loaded more unassigned transactions.";
+      return;
+    }
+    if (msgEl) msgEl.textContent = "No additional unassigned transactions right now.";
+    setNoUnassignedState();
+  } catch (err) {
+    if (msgEl) msgEl.textContent = `Failed to load more: ${err?.message || "unknown"}`;
+    setNoUnassignedState();
+  }
+}
+
+async function flushDeferredRules() {
+  const queued = pendingDeferredRules.slice();
+  pendingDeferredRules = [];
+  if (!queued.length) return;
+
+  let okCount = 0;
+  let failCount = 0;
+  for (const item of queued) {
+    try {
+      const res = await apiPostJson("/category-rules", {
+        category: item.category,
+        keywords: item.keywords,
+        apply_now: true,
+      });
+      if (res?.ok) okCount += 1;
+      else failCount += 1;
+    } catch (_) {
+      failCount += 1;
+    }
+  }
+
+  try { await loadCategoryTotalsThisMonth(); } catch (_) {}
+  try { await refreshUnassignedQueueAfterSave(); } catch (_) {}
+
+  if (failCount > 0) {
+    console.warn(`Deferred apply complete with errors: ${okCount} saved, ${failCount} failed.`);
+  }
 }
 
 
@@ -2013,15 +2197,23 @@ function fillModalFromTx(tx) {
   // reset form
   document.getElementById("ruleCategory").value = "";
   document.getElementById("ruleKeywords").value = "";
-  document.getElementById("ruleApplyNow").checked = true;
   document.getElementById("ruleSaveMsg").textContent = "";
 }
 
 async function openRuleModal() {
+  pendingDeferredRules = [];
+  unassignedSkippedQueue = [];
+  unassignedSkippedOpen = false;
+  unassignedSeenKeys.clear();
+  setRuleDeferApply(false);
+  updateSkippedButtonLabel();
+  renderSkippedPanel();
+  document.getElementById("ruleSaveMsg").textContent = "";
+
   try {
     const ok = await reloadUnassignedQueue({ keepSelection: false });
     if (!ok) {
-      return alert("No unassigned transactions ");
+      return alert("No unassigned transactions.");
     }
   } catch (err) {
     alert("Failed to load unassigned.");
@@ -2036,12 +2228,42 @@ async function openRuleModal() {
 
 function closeRuleModal() {
   openBackdrop(false);
+  const shouldFlush = pendingDeferredRules.length > 0;
+  if (!shouldFlush) return;
+  (async () => {
+    await flushDeferredRules();
+  })();
+}
+
+function _ruleJobSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForCategoryRuleApplyJob(jobId, { timeoutMs = 10 * 60 * 1000, pollMs = 1500, onTick } = {}) {
+  const started = Date.now();
+  const id = Number(jobId || 0);
+  if (!id) throw new Error("invalid_job_id");
+
+  while ((Date.now() - started) < timeoutMs) {
+    const res = await fetch(`/category-rules/jobs/${encodeURIComponent(String(id))}`, { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.detail || data?.error || `job_status_failed_${res.status}`);
+    }
+    const job = data?.job || {};
+    if (typeof onTick === "function") onTick(job);
+    const status = String(job.status || "").toLowerCase();
+    if (status === "completed") return job;
+    if (status === "failed") throw new Error(job.error || "apply_failed");
+    await _ruleJobSleep(pollMs);
+  }
+  throw new Error("job_timeout");
 }
 
 async function saveRule() {
   const category = document.getElementById("ruleCategory").value.trim();
   const keywordsRaw = document.getElementById("ruleKeywords").value;
-  const applyNow = document.getElementById("ruleApplyNow").checked;
+  const msgEl = document.getElementById("ruleSaveMsg");
 
   const keywords = keywordsRaw
     .split(",")
@@ -2051,20 +2273,72 @@ async function saveRule() {
   if (!category) return alert("Enter a category.");
   if (!keywords.length) return alert("Enter at least one keyword.");
 
-  let out;
-  try {
-    out = await apiPostJson("/category-rules", { category, keywords, apply_now: applyNow });
-  } catch (err) {
-    document.getElementById("ruleSaveMsg").textContent = "Error: " + (err?.message || "unknown");
-    return;
-  }
-  if (!out.ok) {
-    document.getElementById("ruleSaveMsg").textContent = "Error: " + (out.error || "unknown");
+  if (ruleDeferApplyEnabled) {
+    pendingDeferredRules.push({ category, keywords });
+    const queuedMsg = `Queued ${pendingDeferredRules.length} rule${pendingDeferredRules.length === 1 ? "" : "s"} for apply on close.`;
+    msgEl.textContent = queuedMsg;
+    if (unassignedQueue.length) {
+      const current = unassignedQueue[unassignedIndex];
+      if (current) markUnassignedSeen(current);
+      unassignedQueue.splice(unassignedIndex, 1);
+      if (unassignedQueue.length) {
+        if (unassignedIndex >= unassignedQueue.length) unassignedIndex = unassignedQueue.length - 1;
+        showUnassignedAt(unassignedIndex);
+      } else {
+        try {
+          const added = await loadMoreUnassignedIntoQueue({ limit: 25 });
+          if (added > 0) {
+            unassignedIndex = 0;
+            showUnassignedAt(0);
+          } else {
+            setNoUnassignedState();
+          }
+        } catch (_) {
+          setNoUnassignedState();
+        }
+      }
+    }
+    msgEl.textContent = queuedMsg;
     return;
   }
 
-  document.getElementById("ruleSaveMsg").textContent =
-    `Saved. Pattern: /${out.pattern}/. Applied to ${out.applied} tx.`;
+  let out;
+  try {
+    out = await apiPostJson("/category-rules", { category, keywords, apply_now: true });
+  } catch (err) {
+    msgEl.textContent = "Error: " + (err?.message || "unknown");
+    return;
+  }
+  if (!out.ok) {
+    msgEl.textContent = "Error: " + (out.error || "unknown");
+    return;
+  }
+
+  const jobId = Number(out?.apply_job?.id || 0);
+  if (jobId > 0) {
+    msgEl.textContent = `Saved. Pattern: /${out.pattern}/. Applying in background (job #${jobId})...`;
+    // Non-blocking: let the heavy apply run in the background.
+    (async () => {
+      try {
+        const job = await waitForCategoryRuleApplyJob(jobId, {
+          onTick: (j) => {
+            const st = String(j?.status || "").toLowerCase();
+            if (st === "in_progress") {
+              msgEl.textContent = `Saved. Pattern: /${out.pattern}/. Applying in background (job #${jobId})...`;
+            }
+          },
+        });
+        msgEl.textContent = `Saved. Pattern: /${out.pattern}/. Applied to ${Number(job?.total_applied || 0)} tx.`;
+        loadCategoryTotalsThisMonth();
+        await refreshUnassignedQueueAfterSave();
+      } catch (err) {
+        msgEl.textContent = `Saved rule, but background apply failed: ${err?.message || "unknown"}`;
+      }
+    })();
+    return;
+  }
+
+  msgEl.textContent = `Saved. Pattern: /${out.pattern}/. Applied to ${out.applied} tx.`;
 
   // Refresh sidebar counts + bank totals if you want
   loadCategoryTotalsThisMonth();
@@ -2098,10 +2372,16 @@ mountChartCard("#homeChartMount", {
 
 const closeBtn = document.getElementById("ruleModalClose");
   const saveBtn = document.getElementById("ruleSaveBtn");
+  const skipBtn = document.getElementById("ruleSkipBtn");
+  const viewSkippedBtn = document.getElementById("ruleViewSkippedBtn");
+  const deferCb = document.getElementById("ruleDeferApply");
   const backdrop = document.getElementById("ruleModalBackdrop");
 
   if (closeBtn) closeBtn.addEventListener("click", closeRuleModal);
   if (saveBtn) saveBtn.addEventListener("click", saveRule);
+  if (skipBtn) skipBtn.addEventListener("click", () => { skipCurrentUnassigned().catch(() => {}); });
+  if (viewSkippedBtn) viewSkippedBtn.addEventListener("click", toggleSkippedPanel);
+  if (deferCb) deferCb.addEventListener("change", (e) => setRuleDeferApply(Boolean(e?.target?.checked)));
 
 
     const prevBtn = document.getElementById("rulePrevBtn");
@@ -2114,17 +2394,12 @@ const closeBtn = document.getElementById("ruleModalClose");
       modeBtn.addEventListener("click", async () => {
         unassignedMode = (unassignedMode === "freq") ? "recent" : "freq";
         localStorage.setItem("unassignedMode", unassignedMode);
+        unassignedSeenKeys.clear();
         updateRuleModeToggleLabel();
         try {
           const ok = await reloadUnassignedQueue({ keepSelection: false });
           if (!ok) {
-            document.getElementById("ruleTxMerchant").textContent = "No unassigned transactions ";
-            document.getElementById("ruleTxAccount").textContent = "";
-            document.getElementById("ruleTxAmount").textContent = "";
-            document.getElementById("ruleTxDate").textContent = "";
-            const m = document.getElementById("ruleTxMatches");
-            if (m) m.textContent = "-";
-            document.getElementById("ruleCounter").textContent = "0 / 0";
+            setNoUnassignedState();
             return;
           }
           showUnassignedAt(0);
@@ -2222,21 +2497,25 @@ function updateRuleModeToggleLabel() {
 }
 
 function showUnassignedAt(index) {
-  if (!unassignedQueue.length) return;
+  if (!unassignedQueue.length) {
+    setNoUnassignedState();
+    return;
+  }
 
   // clamp
   if (index < 0) index = 0;
   if (index >= unassignedQueue.length) index = unassignedQueue.length - 1;
 
   unassignedIndex = index;
-  fillModalFromTx(unassignedQueue[unassignedIndex]);
+  const current = unassignedQueue[unassignedIndex];
+  fillModalFromTx(current);
+  markUnassignedSeen(current);
   updateRuleCounter();
 
-  // optional: disable at ends
   const prevBtn = document.getElementById("rulePrevBtn");
   const nextBtn = document.getElementById("ruleNextBtn");
   if (prevBtn) prevBtn.disabled = (unassignedIndex === 0);
-  if (nextBtn) nextBtn.disabled = (unassignedIndex === unassignedQueue.length - 1);
+  if (nextBtn) nextBtn.disabled = false;
 }
 
 function prevUnassigned() {
@@ -2245,10 +2524,45 @@ function prevUnassigned() {
   showUnassignedAt(unassignedIndex);
 }
 
-function nextUnassigned() {
-  if (!unassignedQueue.length) return;
-  unassignedIndex = Math.min(unassignedQueue.length - 1, unassignedIndex + 1);
-  showUnassignedAt(unassignedIndex);
+async function nextUnassigned() {
+  const msgEl = document.getElementById("ruleSaveMsg");
+  if (!unassignedQueue.length) {
+    try {
+      const added = await loadMoreUnassignedIntoQueue({ limit: 25 });
+      if (added > 0) {
+        unassignedIndex = 0;
+        showUnassignedAt(0);
+        if (msgEl) msgEl.textContent = "";
+      } else {
+        if (msgEl) msgEl.textContent = "No additional unassigned transactions right now.";
+        setNoUnassignedState();
+      }
+    } catch (err) {
+      if (msgEl) msgEl.textContent = `Failed to load more: ${err?.message || "unknown"}`;
+    }
+    return;
+  }
+
+  if (unassignedIndex < (unassignedQueue.length - 1)) {
+    unassignedIndex += 1;
+    showUnassignedAt(unassignedIndex);
+    if (msgEl) msgEl.textContent = "";
+    return;
+  }
+
+  try {
+    if (msgEl) msgEl.textContent = "Loading more unassigned transactions...";
+    const added = await loadMoreUnassignedIntoQueue({ limit: 25 });
+    if (added > 0) {
+      unassignedIndex += 1;
+      showUnassignedAt(unassignedIndex);
+      if (msgEl) msgEl.textContent = "";
+      return;
+    }
+    if (msgEl) msgEl.textContent = "No additional unassigned transactions right now.";
+  } catch (err) {
+    if (msgEl) msgEl.textContent = `Failed to load more: ${err?.message || "unknown"}`;
+  }
 }
 
 async function loadCategoryOptions() {
@@ -2420,24 +2734,20 @@ async function fetchUnassignedQueue() {
 
 async function refreshUnassignedQueueAfterSave() {
   const prev = unassignedQueue[unassignedIndex];
-  const prevKey = prev ? unassignedExactKey(prev) : "";
+  const prevKey = prev ? unassignedSessionKey(prev) : "";
 
   const ok = await reloadUnassignedQueue({ keepSelection: false });
 
   if (!unassignedQueue.length) {
-    // nothing left  keep modal open but show friendly state
-    document.getElementById("ruleTxMerchant").textContent = "No unassigned transactions ";
-    const acct = document.getElementById("ruleTxAccount"); if (acct) acct.textContent = "";
-    document.getElementById("ruleTxAmount").textContent = "";
-    document.getElementById("ruleTxDate").textContent = "";
-    document.getElementById("ruleCounter").textContent = "0 / 0";
+    // nothing left: keep modal open but show friendly state
+    setNoUnassignedState();
     return;
   }
 
   // try to keep user near the same grouped transaction after refresh
   let newIndex = 0;
   if (prevKey) {
-    const found = unassignedQueue.findIndex(x => unassignedExactKey(x) === prevKey);
+    const found = unassignedQueue.findIndex(x => unassignedSessionKey(x) === prevKey);
     if (found >= 0) newIndex = found;
   }
 

@@ -70,6 +70,8 @@ def ensure_performance_indexes():
     Safe to call at startup; failures are intentionally non-fatal.
     """
     statements = [
+        # Optional extension used for fast LIKE/ILIKE/regex-ish merchant matching.
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm",
         # Core join/filter paths
         "CREATE INDEX IF NOT EXISTS idx_accounts_tenant_id_id ON accounts (tenant_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_accounts_tenant_type ON accounts (tenant_id, accountType)",
@@ -81,6 +83,10 @@ def ensure_performance_indexes():
         # Fast exact/group filters commonly used by analytics and rules
         "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_category ON transactions (tenant_id, category)",
         "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_merchant ON transactions (tenant_id, merchant)",
+        # Rule engine acceleration: pattern matching on merchant text.
+        "CREATE INDEX IF NOT EXISTS idx_transactions_merchant_trgm ON transactions USING gin (merchant gin_trgm_ops)",
+        # Rule engine acceleration: quickly isolate uncategorized candidates.
+        "CREATE INDEX IF NOT EXISTS idx_transactions_tenant_uncategorized ON transactions (tenant_id, id) WHERE category IS NULL OR btrim(category) = ''",
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:
