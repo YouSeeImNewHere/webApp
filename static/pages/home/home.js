@@ -935,12 +935,14 @@ pill.innerHTML = `
     <span class="account-pill__name">${a.name}</span>
     <span class="account-pill__status-row">
       <span class="account-pill__status ${accView.cls}">${accView.label}</span>
-      <span class="account-pill__status-actions"></span>
     </span>
   </span>
   <span class="account-pill__right">
-    ${isCardBalances ? formatCardBalance(amt) : money(amt)}
-    ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
+    <span class="account-pill__balance">
+      ${isCardBalances ? formatCardBalance(amt) : money(amt)}
+      ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
+    </span>
+    <span class="account-pill__status-actions"></span>
   </span>
 `;
 
@@ -1040,12 +1042,14 @@ btn.innerHTML = `
     <span class="account-pill__name">${a.name}</span>
     <span class="account-pill__status-row">
       <span class="account-pill__status ${accView.cls}">${accView.label}</span>
-      <span class="account-pill__status-actions"></span>
     </span>
   </span>
   <span class="account-pill__right">
-    ${isCardBalances ? formatCardBalance(amt) : money(amt)}
-    ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
+    <span class="account-pill__balance">
+      ${isCardBalances ? formatCardBalance(amt) : money(amt)}
+      ${usage ? ` <span class="cc-usage">${usage}</span>` : ""}
+    </span>
+    <span class="account-pill__status-actions"></span>
   </span>
 `;
 
@@ -3373,10 +3377,6 @@ function normalizeCsvPreset(preset) {
     return Number.isInteger(n) ? n : null;
   };
   return {
-    delimiter: String(p.delimiter || "auto"),
-    has_header: !!p.has_header,
-    header_row: Math.max(1, Number(p.header_row || 1)),
-    data_start_row: Math.max(1, Number(p.data_start_row || 2)),
     purchase_col: normInt(p.purchase_col),
     posted_col: normInt(p.posted_col),
     amount_col: normInt(p.amount_col),
@@ -3458,24 +3458,12 @@ function ensureCsvUploadModal() {
         </div>
 
         <div id="csvConfigArea" style="display:none;">
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div style="display:grid; grid-template-columns:1fr; gap:10px;">
             <label style="font-size:12px; font-weight:700;">Account
               <select id="csvAccountId" style="width:100%; margin-top:4px;"></select>
             </label>
-            <label style="font-size:12px; font-weight:700;">Delimiter
-              <select id="csvDelimiter" style="width:100%; margin-top:4px;">
-                <option value="auto">Auto-detect</option>
-                <option value=",">Comma</option>
-                <option value=";">Semicolon</option>
-                <option value="	">Tab</option>
-                <option value="|">Pipe</option>
-              </select>
-            </label>
           </div>
-          <label style="font-size:12px; display:inline-flex; align-items:center; gap:8px; margin-top:8px;">
-            <input id="csvHasHeader" type="checkbox" checked />
-            File has header row
-          </label>
+          <div style="font-size:12px; opacity:.8; margin-top:8px;">Header row is detected automatically from the first row (date-like values mean no header).</div>
 
           <div style="display:flex; gap:10px; margin-top:12px; justify-content:flex-end;">
             <button id="csvPreviewBtn" class="settings-btn" type="button">Preview File</button>
@@ -3487,24 +3475,16 @@ function ensureCsvUploadModal() {
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
               <label style="font-size:12px;">Transaction date*<select id="csvMapPurchase" style="width:100%; margin-top:4px;"></select></label>
               <label style="font-size:12px;">Posted date<select id="csvMapPosted" style="width:100%; margin-top:4px;"></select></label>
-              <label style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
+              <label id="csvMapAmountWrap" style="font-size:12px;">Amount*<select id="csvMapAmount" style="width:100%; margin-top:4px;"></select></label>
               <label style="font-size:12px;">Merchant*<select id="csvMapMerchant" style="width:100%; margin-top:4px;"></select></label>
-              <label style="font-size:12px;">Debit amount<select id="csvMapDebit" style="width:100%; margin-top:4px;"></select></label>
-              <label style="font-size:12px;">Credit amount<select id="csvMapCredit" style="width:100%; margin-top:4px;"></select></label>
+              <label id="csvMapDebitWrap" style="font-size:12px;">Debit amount<select id="csvMapDebit" style="width:100%; margin-top:4px;"></select></label>
+              <label id="csvMapCreditWrap" style="font-size:12px;">Credit amount<select id="csvMapCredit" style="width:100%; margin-top:4px;"></select></label>
               <label style="font-size:12px;">Credit/Debit indicator<select id="csvMapIndicator" style="width:100%; margin-top:4px;"></select></label>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
-              <label style="font-size:12px;">Header row
-                <input id="csvHeaderRow" type="number" min="1" value="1" style="width:100%; margin-top:4px;" />
-              </label>
-              <label style="font-size:12px;">First data row
-                <input id="csvDataStartRow" type="number" min="1" value="2" style="width:100%; margin-top:4px;" />
-              </label>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
               <label style="font-size:12px;">Indicator value treated as credit
                 <input id="csvCreditIndicatorValue" type="text" value="credit" style="width:100%; margin-top:4px;" />
               </label>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px;">
               <label style="font-size:12px; display:flex; align-items:center; gap:8px; margin-top:18px;">
                 <input id="csvInvertAmount" type="checkbox" />
                 Invert all amounts
@@ -3553,10 +3533,6 @@ function ensureCsvUploadModal() {
   });
 
   const mappingInputIds = [
-    "csvDelimiter",
-    "csvHasHeader",
-    "csvHeaderRow",
-    "csvDataStartRow",
     "csvMapPurchase",
     "csvMapPosted",
     "csvMapAmount",
@@ -3570,8 +3546,25 @@ function ensureCsvUploadModal() {
   mappingInputIds.forEach((id) => {
     const el = root.querySelector(`#${id}`);
     if (!el) return;
-    const ev = (id === "csvCreditIndicatorValue" || id === "csvHeaderRow" || id === "csvDataStartRow") ? "input" : "change";
+    const ev = (id === "csvCreditIndicatorValue") ? "input" : "change";
     el.addEventListener(ev, () => {
+      if (id === "csvMapAmount") {
+        const amountMapped = csvGetSelectInt("csvMapAmount") !== null;
+        if (amountMapped) {
+          const debitEl = document.getElementById("csvMapDebit");
+          const creditEl = document.getElementById("csvMapCredit");
+          if (debitEl) debitEl.value = "-1";
+          if (creditEl) creditEl.value = "-1";
+        }
+      } else if (id === "csvMapDebit" || id === "csvMapCredit") {
+        const debitMapped = csvGetSelectInt("csvMapDebit") !== null;
+        const creditMapped = csvGetSelectInt("csvMapCredit") !== null;
+        if (debitMapped || creditMapped) {
+          const amountEl = document.getElementById("csvMapAmount");
+          if (amountEl) amountEl.value = "-1";
+        }
+      }
+      updateCsvAmountModeUI();
       CSV_MODAL_STATE.importDone = false;
       updateCsvFinalizeButtons();
     });
@@ -3634,7 +3627,6 @@ function openCsvUploadModal() {
   const mapArea = document.getElementById("csvMapArea");
   const finalizeActions = document.getElementById("csvFinalizeActions");
   const input = document.getElementById("csvFileInput");
-  const hasHeaderEl = document.getElementById("csvHasHeader");
   CSV_MODAL_STATE.file = null;
   CSV_MODAL_STATE.columns = [];
   CSV_MODAL_STATE.activePreset = null;
@@ -3644,7 +3636,6 @@ function openCsvUploadModal() {
   CSV_MODAL_STATE.accountManuallyChosen = false;
   CSV_MODAL_STATE.autoDetectedAccountId = 0;
   if (input) input.value = "";
-  if (hasHeaderEl) hasHeaderEl.checked = true;
   if (msg) msg.textContent = "";
   if (sub) sub.textContent = "Drop a CSV or Excel file, preview it, map columns, then import.";
   if (preview) preview.innerHTML = `<div style="opacity:.65; padding:6px;">No preview yet.</div>`;
@@ -3660,10 +3651,6 @@ function openCsvUploadModal() {
 
 function buildCsvPresetPayload() {
   return {
-    delimiter: document.getElementById("csvDelimiter")?.value || "auto",
-    has_header: !!document.getElementById("csvHasHeader")?.checked,
-    header_row: Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1)),
-    data_start_row: Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2)),
     purchase_col: csvGetSelectInt("csvMapPurchase"),
     posted_col: csvGetSelectInt("csvMapPosted"),
     amount_col: csvGetSelectInt("csvMapAmount"),
@@ -3677,6 +3664,14 @@ function buildCsvPresetPayload() {
   };
 }
 
+function updateCsvAmountModeUI() {
+  const amountMapped = csvGetSelectInt("csvMapAmount") !== null;
+  const debitWrap = document.getElementById("csvMapDebitWrap");
+  const creditWrap = document.getElementById("csvMapCreditWrap");
+  if (debitWrap) debitWrap.style.display = amountMapped ? "none" : "";
+  if (creditWrap) creditWrap.style.display = amountMapped ? "none" : "";
+}
+
 function applyCsvPreset(preset) {
   if (!preset || typeof preset !== "object") return;
   CSV_MODAL_STATE.activePreset = preset;
@@ -3686,11 +3681,6 @@ function applyCsvPreset(preset) {
     if (id in CSV_MAPPING_FIELD_LABELS) ensureCsvMappingOption(id, val);
     el.value = String(val);
   };
-  setIf("csvDelimiter", preset.delimiter);
-  const hasHeader = document.getElementById("csvHasHeader");
-  if (hasHeader && typeof preset.has_header === "boolean") hasHeader.checked = preset.has_header;
-  setIf("csvHeaderRow", preset.header_row);
-  setIf("csvDataStartRow", preset.data_start_row);
   setIf("csvMapPurchase", preset.purchase_col);
   setIf("csvMapPosted", preset.posted_col);
   setIf("csvMapAmount", preset.amount_col);
@@ -3701,6 +3691,7 @@ function applyCsvPreset(preset) {
   setIf("csvCreditIndicatorValue", preset.credit_indicator_value);
   const invert = document.getElementById("csvInvertAmount");
   if (invert && typeof preset.invert_amount === "boolean") invert.checked = preset.invert_amount;
+  updateCsvAmountModeUI();
   updateCsvFinalizeButtons();
 }
 
@@ -3837,10 +3828,6 @@ function csvGetSelectInt(id) {
   return Number.isInteger(n) ? n : null;
 }
 
-function csvHasHeaderEnabled() {
-  return !!document.getElementById("csvHasHeader")?.checked;
-}
-
 function guessCsvColumn(columns, candidates) {
   const terms = candidates.map(s => s.toLowerCase());
   for (const c of columns) {
@@ -3873,6 +3860,7 @@ function populateCsvMappingSelects(columns) {
     const el = document.getElementById(id);
     if (el && guess !== null) el.value = String(guess);
   });
+  updateCsvAmountModeUI();
 }
 
 function renderCsvPreview(previewRows, columns) {
@@ -3931,10 +3919,7 @@ async function refreshCsvPreview() {
   try {
     const fd = new FormData();
     fd.append("file", CSV_MODAL_STATE.file, CSV_MODAL_STATE.file.name);
-    fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
-    fd.append("has_header", csvHasHeaderEnabled() ? "true" : "false");
-    fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
-    fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
+    fd.append("delimiter", "auto");
     fd.append("max_rows", "12");
 
     const out = await apiPostForm("/csv/preview", fd);
@@ -3950,7 +3935,10 @@ async function refreshCsvPreview() {
     await loadCsvPreset();
     renderCsvPreview(previewRows, CSV_MODAL_STATE.columns);
     updateCsvFinalizeButtons();
-    if (sub) sub.textContent = `Preview loaded (${out.row_count || 0} rows).`;
+    if (sub) {
+      const hdr = (out?.has_header_detected === false) ? "no header detected" : "header detected";
+      sub.textContent = `Preview loaded (${out.row_count || 0} rows, ${hdr}).`;
+    }
   } catch (e) {
     console.error(e);
     if (sub) sub.textContent = "Preview failed";
@@ -3990,10 +3978,7 @@ function appendCsvMappingFields(fd, accountId, requireAccount = true) {
     fd.append("amount_col", String(amountCol));
   }
   fd.append("merchant_col", String(merchantCol));
-  fd.append("delimiter", document.getElementById("csvDelimiter")?.value || "auto");
-  fd.append("has_header", csvHasHeaderEnabled() ? "true" : "false");
-  fd.append("header_row", String(Math.max(1, Number(document.getElementById("csvHeaderRow")?.value || 1))));
-  fd.append("data_start_row", String(Math.max(1, Number(document.getElementById("csvDataStartRow")?.value || 2))));
+  fd.append("delimiter", "auto");
   fd.append("credit_indicator_value", String(document.getElementById("csvCreditIndicatorValue")?.value || "credit"));
   fd.append("invert_amount", document.getElementById("csvInvertAmount")?.checked ? "true" : "false");
   const posted = csvGetSelectInt("csvMapPosted");
@@ -4154,7 +4139,10 @@ function ensureCsvDryRunCompareModal() {
           <div class="tx-inspect__title">CSV Dry Run Comparison</div>
           <div id="csvDryRunCompareSub" class="tx-inspect__sub"></div>
         </div>
-        <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">x</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="csvDryRunImportBtn" class="settings-btn primary" type="button">Import</button>
+          <button class="tx-inspect__close" type="button" data-csv-dry-close aria-label="Close">x</button>
+        </div>
       </div>
       <div id="csvDryRunCompareBody" class="tx-inspect__body csv-dryrun__body"></div>
     </div>
@@ -4166,6 +4154,13 @@ function ensureCsvDryRunCompareModal() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") root.classList.add("hidden");
   });
+  const importBtn = root.querySelector("#csvDryRunImportBtn");
+  if (importBtn) {
+    importBtn.addEventListener("click", async () => {
+      root.classList.add("hidden");
+      await runCsvIngestMapped();
+    });
+  }
   return root;
 }
 

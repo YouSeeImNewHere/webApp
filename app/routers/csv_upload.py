@@ -435,6 +435,7 @@ def _latest_posted_cutoff_for_account(
     status_col: str | None,
     account_col: str | None,
     tenant_col: str | None,
+    ignore_col: str | None,
 ):
     if not account_col or not purchase_col:
         return None
@@ -442,6 +443,7 @@ def _latest_posted_cutoff_for_account(
     purchase_expr = _date_from_text_expr(purchase_col)
     status_pred = f"AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'posted'" if status_col else ""
     tenant_pred = f"AND {tenant_col} = %s" if (tenant_id and tenant_col) else ""
+    ignore_pred = f"AND COALESCE({ignore_col}, false) = false" if ignore_col else ""
     params: list[Any] = [int(account_id)]
     if tenant_pred:
         params.append(int(tenant_id))
@@ -452,6 +454,7 @@ def _latest_posted_cutoff_for_account(
         WHERE {account_col} = %s
           {status_pred}
           {tenant_pred}
+          {ignore_pred}
           AND COALESCE({posted_expr}, {purchase_expr}) IS NOT NULL
         """,
         tuple(params),
@@ -1084,6 +1087,37 @@ def _pick_col(colmap: dict[str, str], *names: str) -> str | None:
     return None
 
 
+def _has_pending_email_rows(
+    cur,
+    *,
+    account_id: int,
+    tenant_id: int | None,
+    account_col: str | None,
+    status_col: str | None,
+    source_col: str | None,
+    tenant_col: str | None,
+) -> bool:
+    if not (account_col and status_col and source_col):
+        return False
+    tenant_pred = f"AND {tenant_col} = %s" if (tenant_id and tenant_col) else ""
+    params: list[Any] = [int(account_id)]
+    if tenant_pred:
+        params.append(int(tenant_id))
+    cur.execute(
+        f"""
+        SELECT 1
+        FROM transactions
+        WHERE {account_col} = %s
+          AND LOWER(TRIM(COALESCE({status_col}, ''))) = 'pending'
+          AND LOWER(TRIM(COALESCE({source_col}, ''))) = 'email'
+          {tenant_pred}
+        LIMIT 1
+        """,
+        tuple(params),
+    )
+    return cur.fetchone() is not None
+
+
 def _make_base_id(account_id: int, purchase_mmddyy: str, amount: float) -> str:
     d = purchase_mmddyy.replace("/", "")
     return f"{int(account_id)}_{d}_{float(amount):.2f}"
@@ -1156,6 +1190,26 @@ def _csv_start_index(*, has_header: bool, header_row: int, data_start_row: int) 
     if int(header_row) == 1 and int(data_start_row) == 2:
         return 0
     return start_idx
+
+
+def _auto_has_header_row(rows: list[list[str]], header_row: int = 1) -> bool:
+    """
+    Infer whether the configured header row is truly a header.
+    Rule:
+      - if any non-empty cell in that row parses as a supported date, treat as data (no header)
+      - otherwise treat as header
+    """
+    header_idx = max(0, int(header_row) - 1)
+    if header_idx >= len(rows):
+        return True
+    probe = rows[header_idx] or []
+    for cell in probe:
+        txt = str(cell or "").strip()
+        if not txt:
+            continue
+        if _parse_date(txt) is not None:
+            return False
+    return True
 
 
 def _mapped_row_preview(row: list[str], max_len: int = 180) -> str:
@@ -1427,7 +1481,6 @@ async def ingest_csv_mapped_dry_run(
     indicator_col: str | None = Form(None),
     credit_indicator_value: str = Form("credit"),
     delimiter: str = Form("auto"),
-    has_header: str = Form("true"),
     header_row: int = Form(1),
     data_start_row: int = Form(2),
     invert_amount: str = Form("false"),
@@ -1436,7 +1489,7 @@ async def ingest_csv_mapped_dry_run(
     if not rows:
         raise HTTPException(status_code=400, detail="File is empty or has no readable rows")
 
-    has_header_b = _to_bool(has_header, default=True)
+    has_header_b = _auto_has_header_row(rows, int(header_row))
     invert_amount_b = _to_bool(invert_amount, default=False)
     start_idx = _csv_start_index(
         has_header=has_header_b,
@@ -1498,6 +1551,16 @@ async def ingest_csv_mapped_dry_run(
             source_col_name = _pick_col(colmap, "source")
             account_col_name = _pick_col(colmap, "account_id")
             tenant_col_name = _pick_col(colmap, "tenant_id")
+            ignore_col_name = _pick_col(colmap, "is_ignored")
+            has_pending_email = _has_pending_email_rows(
+                cur,
+                account_id=int(acc_id),
+                tenant_id=tid,
+                account_col=account_col_name,
+                status_col=status_col_name,
+                source_col=source_col_name,
+                tenant_col=tenant_col_name,
+            )
 
             last_posted = _latest_posted_cutoff_for_account(
                 cur,
@@ -1508,6 +1571,7 @@ async def ingest_csv_mapped_dry_run(
                 status_col=status_col_name,
                 account_col=account_col_name,
                 tenant_col=tenant_col_name,
+                ignore_col=ignore_col_name,
             )
             start_after_last_posted = (last_posted + timedelta(days=1)) if last_posted else None
             end_date = datetime.now().date() - timedelta(days=1)
@@ -1532,25 +1596,28 @@ async def ingest_csv_mapped_dry_run(
                 merchant = str(entry["merchant"])
                 purchase_dt = entry.get("purchase_date")
                 tx_id_base = _make_base_id(int(acc_id), purchase_dt.strftime("%m/%d/%y"), amount) if purchase_dt else None
-                match_id, match_kind = _pick_pending_update_target(
-                    cur,
-                    account_id=int(acc_id),
-                    amount=amount,
-                    purchase_date=purchase_dt,
-                    merchant=merchant,
-                    tenant_id=tid,
-                    id_col=tx_id_col,
-                    account_col=account_col_name,
-                    amount_col=amount_col_name,
-                    purchase_col=purchase_col_name,
-                    merchant_col=merchant_col_name,
-                    status_col=status_col_name,
-                    source_col=source_col_name,
-                    tenant_col=tenant_col_name,
-                    tx_id_base=tx_id_base,
-                    window_days=4,
-                    exclude_ids=reserved_pending_ids,
-                )
+                match_id = None
+                match_kind = None
+                if has_pending_email:
+                    match_id, match_kind = _pick_pending_update_target(
+                        cur,
+                        account_id=int(acc_id),
+                        amount=amount,
+                        purchase_date=purchase_dt,
+                        merchant=merchant,
+                        tenant_id=tid,
+                        id_col=tx_id_col,
+                        account_col=account_col_name,
+                        amount_col=amount_col_name,
+                        purchase_col=purchase_col_name,
+                        merchant_col=merchant_col_name,
+                        status_col=status_col_name,
+                        source_col=source_col_name,
+                        tenant_col=tenant_col_name,
+                        tx_id_base=tx_id_base,
+                        window_days=4,
+                        exclude_ids=reserved_pending_ids,
+                    )
                 row_out = {
                     "row_number": int(entry.get("row_number") or 0),
                     "purchaseDate": (purchase_dt.strftime("%m/%d/%y") if purchase_dt else ""),
@@ -1568,20 +1635,22 @@ async def ingest_csv_mapped_dry_run(
                 else:
                     would_insert.append(row_out)
 
-            pending_rows = _list_pending_email_rows(
-                cur,
-                account_id=int(acc_id),
-                tenant_id=tid,
-                id_col=tx_id_col,
-                account_col=account_col_name,
-                amount_col=amount_col_name,
-                purchase_col=purchase_col_name,
-                merchant_col=merchant_col_name,
-                status_col=status_col_name,
-                source_col=source_col_name,
-                tenant_col=tenant_col_name,
-                limit=500,
-            )
+            pending_rows = []
+            if has_pending_email:
+                pending_rows = _list_pending_email_rows(
+                    cur,
+                    account_id=int(acc_id),
+                    tenant_id=tid,
+                    id_col=tx_id_col,
+                    account_col=account_col_name,
+                    amount_col=amount_col_name,
+                    purchase_col=purchase_col_name,
+                    merchant_col=merchant_col_name,
+                    status_col=status_col_name,
+                    source_col=source_col_name,
+                    tenant_col=tenant_col_name,
+                    limit=500,
+                )
             conn.commit()
 
         compare = {
@@ -1613,7 +1682,6 @@ async def ingest_csv_mapped_dry_run(
 async def preview_csv(
     file: UploadFile = File(...),
     delimiter: str = Form("auto"),
-    has_header: str = Form("true"),
     header_row: int = Form(1),
     data_start_row: int = Form(2),
     max_rows: int = Form(12),
@@ -1622,7 +1690,7 @@ async def preview_csv(
     if not rows:
         raise HTTPException(status_code=400, detail="File is empty or has no readable rows")
 
-    has_header_b = _to_bool(has_header, default=True)
+    has_header_b = _auto_has_header_row(rows, int(header_row))
     header_idx = max(0, int(header_row) - 1)
     start_idx = _csv_start_index(
         has_header=has_header_b,
@@ -1650,6 +1718,7 @@ async def preview_csv(
     return {
         "ok": True,
         "delimiter": used_delim,
+        "has_header_detected": bool(has_header_b),
         "row_count": len(rows),
         "column_count": width,
         "columns": columns,
@@ -1671,7 +1740,6 @@ async def ingest_csv_mapped(
     indicator_col: str | None = Form(None),
     credit_indicator_value: str = Form("credit"),
     delimiter: str = Form("auto"),
-    has_header: str = Form("true"),
     header_row: int = Form(1),
     data_start_row: int = Form(2),
     invert_amount: str = Form("false"),
@@ -1680,7 +1748,7 @@ async def ingest_csv_mapped(
     if not rows:
         raise HTTPException(status_code=400, detail="File is empty or has no readable rows")
 
-    has_header_b = _to_bool(has_header, default=True)
+    has_header_b = _auto_has_header_row(rows, int(header_row))
     invert_amount_b = _to_bool(invert_amount, default=False)
     start_idx = _csv_start_index(
         has_header=has_header_b,
@@ -1745,6 +1813,16 @@ async def ingest_csv_mapped(
         account_col_name = _pick_col(colmap, "account_id")
         category_col_name = _pick_col(colmap, "category")
         tenant_col_name = _pick_col(colmap, "tenant_id")
+        ignore_col_name = _pick_col(colmap, "is_ignored")
+        has_pending_email = _has_pending_email_rows(
+            cur,
+            account_id=int(account_id),
+            tenant_id=tid,
+            account_col=account_col_name,
+            status_col=status_col_name,
+            source_col=source_col_name,
+            tenant_col=tenant_col_name,
+        )
 
         required_db = [tx_id_col, posted_col_name, purchase_col_name, amount_col_name, merchant_col_name, account_col_name]
         if any(x is None for x in required_db):
@@ -1759,6 +1837,7 @@ async def ingest_csv_mapped(
             status_col=status_col_name,
             account_col=account_col_name,
             tenant_col=tenant_col_name,
+            ignore_col=ignore_col_name,
         )
         start_after_last_posted = (last_posted + timedelta(days=1)) if last_posted else None
         end_date = datetime.now().date() - timedelta(days=1)
@@ -1777,24 +1856,26 @@ async def ingest_csv_mapped(
             merchant = str(entry["merchant"])
             category = str(entry.get("category") or "")
 
-            pending_match_id, _match_kind = _pick_pending_update_target(
-                cur,
-                account_id=int(account_id),
-                amount=amount,
-                purchase_date=entry.get("purchase_date"),
-                merchant=merchant,
-                tenant_id=tid,
-                id_col=tx_id_col,
-                account_col=account_col_name,
-                amount_col=amount_col_name,
-                purchase_col=purchase_col_name,
-                merchant_col=merchant_col_name,
-                status_col=status_col_name,
-                source_col=source_col_name,
-                tenant_col=tenant_col_name,
-                tx_id_base=_make_base_id(int(account_id), purchase_mmddyy, amount),
-                window_days=4,
-            )
+            pending_match_id = None
+            if has_pending_email:
+                pending_match_id, _match_kind = _pick_pending_update_target(
+                    cur,
+                    account_id=int(account_id),
+                    amount=amount,
+                    purchase_date=entry.get("purchase_date"),
+                    merchant=merchant,
+                    tenant_id=tid,
+                    id_col=tx_id_col,
+                    account_col=account_col_name,
+                    amount_col=amount_col_name,
+                    purchase_col=purchase_col_name,
+                    merchant_col=merchant_col_name,
+                    status_col=status_col_name,
+                    source_col=source_col_name,
+                    tenant_col=tenant_col_name,
+                    tx_id_base=_make_base_id(int(account_id), purchase_mmddyy, amount),
+                    window_days=4,
+                )
             if pending_match_id:
                 set_parts: list[str] = []
                 set_vals: list[Any] = []
@@ -1863,37 +1944,38 @@ async def ingest_csv_mapped(
                 if len(errors) < 25:
                     errors.append({"row_number": row_no, "error": str(e)})
 
-        reconciled = _reconcile_existing_pending_duplicates(
-            cur,
-            account_id=int(account_id),
-            tenant_id=tid,
-            id_col=tx_id_col,
-            account_col=account_col_name,
-            amount_col=amount_col_name,
-            purchase_col=purchase_col_name,
-            merchant_col=merchant_col_name,
-            status_col=status_col_name,
-            source_col=source_col_name,
-            tenant_col=tenant_col_name,
-            limit=600,
-            window_days=2,
-        )
-        stale_deleted = _delete_stale_pending_without_csv_match(
-            cur,
-            account_id=int(account_id),
-            tenant_id=tid,
-            id_col=tx_id_col,
-            account_col=account_col_name,
-            amount_col=amount_col_name,
-            purchase_col=purchase_col_name,
-            merchant_col=merchant_col_name,
-            status_col=status_col_name,
-            source_col=source_col_name,
-            tenant_col=tenant_col_name,
-            stale_days=4,
-            limit=3000,
-            window_days=4,
-        )
+        if has_pending_email:
+            reconciled = _reconcile_existing_pending_duplicates(
+                cur,
+                account_id=int(account_id),
+                tenant_id=tid,
+                id_col=tx_id_col,
+                account_col=account_col_name,
+                amount_col=amount_col_name,
+                purchase_col=purchase_col_name,
+                merchant_col=merchant_col_name,
+                status_col=status_col_name,
+                source_col=source_col_name,
+                tenant_col=tenant_col_name,
+                limit=600,
+                window_days=2,
+            )
+            stale_deleted = _delete_stale_pending_without_csv_match(
+                cur,
+                account_id=int(account_id),
+                tenant_id=tid,
+                id_col=tx_id_col,
+                account_col=account_col_name,
+                amount_col=amount_col_name,
+                purchase_col=purchase_col_name,
+                merchant_col=merchant_col_name,
+                status_col=status_col_name,
+                source_col=source_col_name,
+                tenant_col=tenant_col_name,
+                stale_days=4,
+                limit=3000,
+                window_days=4,
+            )
         auto_categorized = _apply_category_rules_after_csv_import(
             cur,
             account_id=int(account_id),

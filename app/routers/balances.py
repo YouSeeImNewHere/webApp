@@ -379,7 +379,6 @@ def account_series(account_id: int, start: str, end: str):
             SELECT posteddate, purchasedate, amount
             FROM transactions
             WHERE account_id = %s
-              AND COALESCE(is_ignored, false) = false
               {"AND tenant_id = %s" if tid else ""}
             """,
             ((int(account_id), int(tid)) if tid else (int(account_id),)),
@@ -508,7 +507,6 @@ def account_transactions_range(
                 amount::double precision AS amount
               FROM transactions
               WHERE account_id = %s
-                AND COALESCE(is_ignored, false) = false
                 {"AND tenant_id = %s" if tid else ""}
             ),
             norm AS (
@@ -602,7 +600,6 @@ def account_transactions_range(
                 SUM(
                   CASE
                     WHEN LOWER(COALESCE(status, 'posted')) = 'pending' THEN 0
-                    WHEN COALESCE(is_ignored, false) = true THEN 0
                     ELSE amount
                   END
                 ) OVER (ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_sum

@@ -13,7 +13,7 @@ import requests, json, hashlib
 
 # Legacy handler import kept for backward compatibility of helper symbols in this module.
 from .email_handlers import *
-from .transactionHandler import insert_transaction, makeKey
+from .transactionHandler import insert_transaction, makeKey, normalize_date_mmddyy
 from db import with_db_cursor, query_db, open_pool, close_pool
 
 from datetime import datetime, timedelta, timezone
@@ -780,7 +780,8 @@ def tx_fingerprint(account_id: int, amount, purchase_date: str, purchase_time: s
     """
     a = int(account_id) if account_id is not None else 0
     amt = _norm_amount_for_key(amount)
-    d = (purchase_date or "").strip().lower()
+    normalized_date = normalize_date_mmddyy(purchase_date, default_to_today=False)
+    d = (normalized_date or str(purchase_date or "").strip()).lower()
     t = (purchase_time or "").strip().lower()
     base = f"{a}|{amt}|{d}|{t}"
     return hashlib.sha1(base.encode("utf-8", "ignore")).hexdigest()[:24]
@@ -1203,15 +1204,7 @@ def _to_regex_flags_py(flag_str: str) -> int:
 
 
 def _normalize_date_mmddyy(v: str) -> str:
-    s = (v or "").strip()
-    if not s:
-        return ""
-    for fmt in ("%m/%d/%y", "%m/%d/%Y", "%b %d, %Y", "%B %d, %Y"):
-        try:
-            return datetime.strptime(s, fmt).strftime("%m/%d/%y")
-        except Exception:
-            continue
-    return s
+    return normalize_date_mmddyy(v, default_to_today=False)
 
 
 def _normalize_amount(v: str):
@@ -1692,7 +1685,11 @@ def process_wizard_email(
             dbg(f"Wizard rule {rule.get('draft_id')} matched but amount missing/unparseable; trying next parser")
             continue
 
-        date_mmddyy = _normalize_date_mmddyy(date_raw) or datetime.now().strftime("%m/%d/%y")
+        date_mmddyy = (
+            _normalize_date_mmddyy(date_raw)
+            or _normalize_date_mmddyy(header_date)
+            or datetime.now().strftime("%m/%d/%y")
+        )
         time_local = _normalize_time(time_raw, header_date, date_mmddyy)
         merchant = _clean_merchant(merchant_raw)
         slot = str(rule.get("parser_slot") or "primary").lower()

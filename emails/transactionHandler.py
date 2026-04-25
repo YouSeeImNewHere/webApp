@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,8 @@ KEYS_FILE = Path(__file__).resolve().parent / "withdrawalKey_test.json"
 
 # Keep this default aligned with your test-mode workflows
 USE_TEST_TABLE = True
+
+_ALLOWED_TX_TABLES = {"transactions", "transactions_test"}
 
 
 def add_key(cost, date, time, msg_id_str: str, account_id: int, seq: int = 0):
@@ -85,17 +88,59 @@ def checkKey(mail, key: str):
         delete_key(key)
 
 
+def normalize_date_mmddyy(value, *, default_to_today: bool = True) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return datetime.now().strftime("%m/%d/%y") if default_to_today else ""
+
+    for fmt in (
+        "%m/%d/%y",
+        "%m/%d/%Y",
+        "%m-%d-%y",
+        "%m-%d-%Y",
+        "%m.%d.%y",
+        "%m.%d.%Y",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y.%m.%d",
+        "%d-%b-%Y",
+        "%d %b %Y",
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%a, %b %d, %Y",
+        "%a %b %d, %Y",
+        "%a, %d %b %Y",
+    ):
+        try:
+            return datetime.strptime(s, fmt).strftime("%m/%d/%y")
+        except Exception:
+            continue
+
+    try:
+        return parsedate_to_datetime(s).strftime("%m/%d/%y")
+    except Exception:
+        pass
+
+    if default_to_today:
+        return datetime.now().strftime("%m/%d/%y")
+    return ""
+
+
 def makeKey(cost, date, account_id: int, seq: int = 0):
-    date = str(date).replace("/", "")
+    normalized_date = normalize_date_mmddyy(date, default_to_today=True)
+    date_token = normalized_date.replace("/", "")
 
     s = str(cost).strip()
     if not s or s.lower() == "unknown":
         # still unique-ish: account + date + "unknown" + seq
-        return f"{account_id}_{date}_unknown_{seq}"
+        return f"{account_id}_{date_token}_unknown_{seq}"
 
     # normalize amount but KEEP sign
-    amt = float(s.replace("$", "").replace(",", ""))
-    return f"{account_id}_{date}_{amt:.2f}_{seq}"
+    try:
+        amt = float(s.replace("$", "").replace(",", ""))
+        return f"{account_id}_{date_token}_{amt:.2f}_{seq}"
+    except Exception:
+        return f"{account_id}_{date_token}_unknown_{seq}"
 
 
 def _parse_mmddyy(d: str):
@@ -213,25 +258,178 @@ def assign_category(cur, merchant: str) -> str:
 
 
 def _normalize_purchase_date_mmddyy(value) -> str:
+    return normalize_date_mmddyy(value, default_to_today=True)
+
+
+def _normalize_amount_token(value) -> str:
     s = str(value or "").strip()
-    if not s:
-        return datetime.now().strftime("%m/%d/%y")
-    for fmt in (
-        "%m/%d/%y",
-        "%m/%d/%Y",
-        "%m-%d-%y",
-        "%m-%d-%Y",
-        "%b %d, %Y",
-        "%B %d, %Y",
-        "%a, %b %d, %Y",
-        "%a %b %d, %Y",
-        "%Y-%m-%d",
-    ):
-        try:
-            return datetime.strptime(s, fmt).strftime("%m/%d/%y")
-        except Exception:
-            continue
-    return datetime.now().strftime("%m/%d/%y")
+    if not s or s.lower() == "unknown":
+        return "unknown"
+    try:
+        return f"{float(s.replace('$', '').replace(',', '')):.2f}"
+    except Exception:
+        return "unknown"
+
+
+def _extract_seq_from_key(tx_id: str) -> int:
+    s = str(tx_id or "").strip()
+    m = re.search(r"_(\d+)$", s)
+    if not m:
+        return 0
+    try:
+        return int(m.group(1))
+    except Exception:
+        return 0
+
+
+def _extract_amount_token_from_key(tx_id: str) -> str:
+    s = str(tx_id or "").strip()
+    m = re.match(r"^\d+_\d{6}_([^_]+)_\d+$", s)
+    if not m:
+        return "unknown"
+    token = str(m.group(1) or "").strip()
+    if re.match(r"^-?\d+(?:\.\d{2})$", token) or token == "unknown":
+        return token
+    return "unknown"
+
+
+def _is_normalized_email_key(tx_id: str, account_id: int, amount, purchase_date: str) -> bool:
+    s = str(tx_id or "").strip()
+    m = re.match(r"^(\d+)_(\d{6})_(-?\d+\.\d{2}|unknown)_(\d+)$", s)
+    if not m:
+        return False
+    if int(m.group(1)) != int(account_id):
+        return False
+    date_token = normalize_date_mmddyy(purchase_date, default_to_today=False).replace("/", "")
+    if not date_token:
+        return False
+    if m.group(2) != date_token:
+        return False
+    if amount is None:
+        return True
+    return m.group(3) == _normalize_amount_token(amount)
+
+
+def repair_email_transaction_keys(
+    *,
+    table: str = "transactions",
+    dry_run: bool = True,
+    limit: int | None = None,
+):
+    target_table = str(table or "").strip()
+    if target_table not in _ALLOWED_TX_TABLES:
+        raise ValueError(f"Unsupported table: {target_table}")
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = %s
+            """,
+            (target_table,),
+        )
+        columns = {str((r or {}).get("column_name") or "").strip().lower() for r in (cur.fetchall() or [])}
+        has_tenant_id = "tenant_id" in columns
+
+        params = []
+        tenant_expr = "tenant_id" if has_tenant_id else "NULL::integer AS tenant_id"
+        sql = f"""
+            SELECT id, account_id, amount, purchasedate, {tenant_expr}
+            FROM {target_table}
+            WHERE lower(coalesce(source, '')) = 'email'
+            ORDER BY id
+        """
+        if isinstance(limit, int) and limit > 0:
+            sql += " LIMIT %s"
+            params.append(int(limit))
+
+        cur.execute(sql, tuple(params))
+        rows = cur.fetchall() or []
+        cur.execute(f"SELECT id FROM {target_table}")
+        existing_ids = {str((r or {}).get("id") or "") for r in (cur.fetchall() or [])}
+        updates: list[tuple[str, str, str, int | None]] = []
+        tenants_touched: set[int] = set()
+
+        for row in rows:
+            old_id = str(row.get("id") or "").strip()
+            if not old_id:
+                continue
+            account_id = int(row.get("account_id") or 0)
+            if account_id <= 0:
+                continue
+
+            normalized_date = normalize_date_mmddyy(row.get("purchasedate"), default_to_today=False)
+            if not normalized_date:
+                continue
+
+            already_ok = _is_normalized_email_key(
+                tx_id=old_id,
+                account_id=account_id,
+                amount=row.get("amount"),
+                purchase_date=normalized_date,
+            )
+            purchase_date_changed = str(row.get("purchasedate") or "").strip() != normalized_date
+            if already_ok and not purchase_date_changed:
+                continue
+
+            seq = _extract_seq_from_key(old_id)
+            amount_for_key = row.get("amount")
+            if amount_for_key is None:
+                amount_for_key = _extract_amount_token_from_key(old_id)
+            new_id = makeKey(amount_for_key, normalized_date, account_id=account_id, seq=seq)
+            while new_id != old_id and new_id in existing_ids:
+                seq += 1
+                new_id = makeKey(amount_for_key, normalized_date, account_id=account_id, seq=seq)
+
+            updates.append((old_id, new_id, normalized_date, row.get("tenant_id")))
+            existing_ids.discard(old_id)
+            existing_ids.add(new_id)
+            try:
+                tenant_raw = row.get("tenant_id")
+                if tenant_raw is not None:
+                    tenants_touched.add(int(tenant_raw))
+            except Exception:
+                pass
+
+        if dry_run:
+            return {
+                "table": target_table,
+                "dry_run": True,
+                "total_email_rows": len(rows),
+                "rows_to_fix": len(updates),
+                "sample": [{"old_id": o, "new_id": n, "purchasedate": d} for (o, n, d, _) in updates[:25]],
+            }
+
+        fixed = 0
+        for old_id, new_id, normalized_date, _tenant_id in updates:
+            cur.execute(
+                f"""
+                UPDATE {target_table}
+                SET id = %s, purchasedate = %s
+                WHERE id = %s
+                """,
+                (new_id, normalized_date, old_id),
+            )
+            fixed += int(cur.rowcount or 0)
+
+        conn.commit()
+
+    try:
+        from app.routers.page_payloads import touch_widget_cache_for_tenant
+
+        for tid in sorted(tenants_touched):
+            touch_widget_cache_for_tenant(tid)
+    except Exception:
+        pass
+
+    return {
+        "table": target_table,
+        "dry_run": False,
+        "total_email_rows": len(rows),
+        "rows_to_fix": len(updates),
+        "rows_fixed": fixed,
+    }
 
 
 def insert_transaction(

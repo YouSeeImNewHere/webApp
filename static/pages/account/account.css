@@ -356,4 +356,28 @@ body.page-account .tx-row.is-audit-row:focus-within::before{
     grid-column: 1 / -1 !important;
     width: 100%;
   }
+
+  /* iOS Safari/PWA draws date inputs with a segmented/centered native style
+     unless we normalize appearance on the account chart controls. */
+  body.page-account .chart-dates-inline--header label{
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    min-width: 0;
+  }
+
+  body.page-account .chart-dates-inline--header input[type="date"]{
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    min-height: 40px;
+    border-radius: 12px;
+    text-align: left;
+    padding: 0 10px !important;
+    box-sizing: border-box;
+  }
+
+  body.page-account .chart-dates-inline--header input[type="date"]::-webkit-date-and-time-value{
+    text-align: left;
+  }
 }

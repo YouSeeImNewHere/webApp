@@ -16,7 +16,9 @@
   // 2) Title: prefer body[data-page-title], else document.title, else fallback
   const titleEl = host.querySelector("#topBarTitle");
   const bodyTitle = document.body?.dataset?.pageTitle;
-  if (titleEl) titleEl.textContent = bodyTitle || document.title || "Page";
+  if (titleEl && !titleEl.querySelector("select, input, button, [data-title-managed='1']")) {
+    titleEl.textContent = bodyTitle || document.title || "Page";
+  }
 
   // Keep title centered between Settings and Notifications on mobile.
   const centerTitleBetweenIcons = () => {

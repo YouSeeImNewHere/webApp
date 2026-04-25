@@ -127,7 +127,8 @@ function moneyCreditTotalDisplay(v) {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return money(0);
   if (n < 0) return `CR ${money(Math.abs(n))}`;
-  return money(n);
+  if (n > 0) return money(Math.abs(n));
+  return money(0);
 }
 
 function moneyForRunningBalance(v) {
@@ -216,7 +217,7 @@ async function initAccountSwitcher(currentAccountId){
   }
 }
 
-function waitForTopBarTitle(timeoutMs = 2500){
+function waitForTopBarTitle(timeoutMs = 10000){
   return new Promise((resolve) => {
     const started = Date.now();
     const tick = () => {
@@ -278,11 +279,11 @@ async function loadAccountHeader(accountId){
   const res = await fetch(`/account/${accountId}`);
   const a = await res.json();
   latestAccountHeader = a;
-  currentAccountType = String(a?.accountType || "");
+  currentAccountType = String(a?.accountType || a?.accounttype || "");
 
   // Keep breakdown label contextual while chart title is removed on account page.
   const breakLabel = document.getElementById(ACCOUNT_CHART_IDS.breakLabel);
-  if (breakLabel) breakLabel.textContent = a.accountType || "Balance";
+  if (breakLabel) breakLabel.textContent = a?.accountType || a?.accounttype || "Balance";
   return a;
 }
 

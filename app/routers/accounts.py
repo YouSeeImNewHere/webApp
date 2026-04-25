@@ -424,7 +424,6 @@ def bank_totals():
                         ) AS raw_date
                       FROM transactions
                       WHERE tenant_id = %s
-                        AND COALESCE(is_ignored, false) = false
                     ),
                     norm AS (
                       SELECT
@@ -457,7 +456,6 @@ def bank_totals():
                           NULLIF(TRIM(purchaseDate), 'unknown')
                         ) AS raw_date
                       FROM transactions
-                      WHERE COALESCE(is_ignored, false) = false
                     ),
                     norm AS (
                       SELECT

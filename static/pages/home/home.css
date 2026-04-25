@@ -170,7 +170,7 @@
 .account-pill--main{
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   justify-content: initial;
 }
 
@@ -199,9 +199,7 @@
 }
 
 .account-pill__status-row{
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
   min-width: 0;
 }
 
@@ -210,6 +208,8 @@
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .account-pill__status.is-fresh{ color: #2e7d32; }
@@ -217,11 +217,20 @@
 .account-pill__status.is-stale{ color: #b3261e; }
 
 .account-pill__right{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  align-self: center;
+  align-self: start;
   justify-self: end;
   text-align: right;
+}
+
+.account-pill__balance{
+  display: inline-block;
+  font-weight: 800;
 }
 
 .account-status-btn{
@@ -249,9 +258,17 @@
 }
 
 @media (max-width: 900px){
-  .account-pill__status-row{
-    flex-wrap: wrap;
-    row-gap: 4px;
+  .account-pill--main{
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 10px;
+  }
+
+  .account-pill__right{
+    gap: 5px;
+  }
+
+  .account-pill__status-actions{
+    max-width: 140px;
   }
 }
 
