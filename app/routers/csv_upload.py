@@ -61,6 +61,43 @@ def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
         pass
 
 
+def _ensure_starting_balance_row_for_account(
+    cur,
+    *,
+    account_id: int,
+    tenant_id: int | None,
+) -> None:
+    """
+    Best-effort backfill: ensure every account has a startingbalance row.
+    Newer account flows already seed this, but legacy accounts may not.
+    """
+    try:
+        cur.execute(
+            """
+            SELECT institution
+            FROM accounts
+            WHERE id = %s
+              AND (%s IS NULL OR tenant_id = %s)
+            LIMIT 1
+            """,
+            (int(account_id), (int(tenant_id) if tenant_id else None), (int(tenant_id) if tenant_id else None)),
+        )
+        row = dict(cur.fetchone() or {})
+        if not row:
+            return
+        institution = str(row.get("institution") or "").strip()
+        cur.execute(
+            """
+            INSERT INTO startingbalance (account_id, bank, start, date, tenant_id)
+            VALUES (%s, %s, %s, CURRENT_DATE, %s)
+            ON CONFLICT (account_id) DO NOTHING
+            """,
+            (int(account_id), institution, 0.0, (int(tenant_id) if tenant_id else None)),
+        )
+    except Exception:
+        return
+
+
 def _pg_regex_operator(flags: str | None) -> str:
     f = (flags or "").lower()
     return "~*" if "i" in f else "~"
@@ -1800,6 +1837,11 @@ async def ingest_csv_mapped(
     with with_db_cursor() as (conn, cur):
         if not _account_exists_for_scope(cur, int(account_id), tid):
             raise HTTPException(status_code=404, detail="Account not found for current workspace")
+        _ensure_starting_balance_row_for_account(
+            cur,
+            account_id=int(account_id),
+            tenant_id=tid,
+        )
 
         colmap = _transactions_column_lookup(cur)
         tx_id_col = _pick_col(colmap, "id")

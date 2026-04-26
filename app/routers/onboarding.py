@@ -432,25 +432,27 @@ def onboarding_create_account(body: OnboardingAccountCreate):
                 (tid, new_id),
             )
 
-        if body.starting_balance is not None:
-            cur.execute(
-                """
-                INSERT INTO startingbalance (account_id, bank, start, date, tenant_id)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (account_id) DO UPDATE SET
-                  bank = EXCLUDED.bank,
-                  start = EXCLUDED.start,
-                  date = EXCLUDED.date,
-                  tenant_id = EXCLUDED.tenant_id
-                """,
-                (
-                    new_id,
-                    institution,
-                    float(body.starting_balance),
-                    start_date,
-                    tid,
-                ),
-            )
+        # Always seed a starting balance row for new accounts so downstream CSV
+        # import/account math can assume it exists. Default is 0.00.
+        starting_balance_value = float(body.starting_balance) if body.starting_balance is not None else 0.0
+        cur.execute(
+            """
+            INSERT INTO startingbalance (account_id, bank, start, date, tenant_id)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (account_id) DO UPDATE SET
+              bank = EXCLUDED.bank,
+              start = EXCLUDED.start,
+              date = EXCLUDED.date,
+              tenant_id = EXCLUDED.tenant_id
+            """,
+            (
+                new_id,
+                institution,
+                starting_balance_value,
+                start_date,
+                tid,
+            ),
+        )
 
         # Store APY for checking/savings/investment accounts in interest_rates.
         if apy_val is not None and accounttype in {"checking", "savings", "investment"}:
@@ -643,6 +645,22 @@ def onboarding_update_account(account_id: int, body: OnboardingAccountCreate):
                     account_id_i,
                     institution,
                     float(body.starting_balance),
+                    start_date,
+                    tid,
+                ),
+            )
+        else:
+            # Backfill legacy accounts that may not have an explicit starting row.
+            cur.execute(
+                """
+                INSERT INTO startingbalance (account_id, bank, start, date, tenant_id)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (account_id) DO NOTHING
+                """,
+                (
+                    account_id_i,
+                    institution,
+                    0.0,
                     start_date,
                     tid,
                 ),
