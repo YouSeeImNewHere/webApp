@@ -1146,6 +1146,8 @@ def _gmail_get_or_create_label_id(access_token: str, label_name: str) -> str | N
 
 
 def _gmail_mark_processed(access_token: str, message_id: str, processed_label_id: str | None) -> None:
+    # With readonly OAuth scope, processed_label_id is intentionally None
+    # and this becomes a no-op.
     if not access_token or not message_id or not processed_label_id:
         return
     try:
@@ -1915,9 +1917,8 @@ def run_manual_wizard_parse(
     if not access_token:
         raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
 
+    # Read-only mode: do not create/apply Gmail labels.
     processed_label_id = None
-    if not include_processed:
-        processed_label_id = _gmail_get_or_create_label_id(access_token, "ProcessedNew")
 
     message_ids = _gmail_api_list_ids(
         access_token,
@@ -2034,9 +2035,8 @@ def run(include_processed: bool = False, rules_user_email: str | None = None):
         access_token, err, _ = _refresh_google_access_token_if_needed(rules_owner)
         if not access_token:
             raise RuntimeError(f"gmail_oauth_not_connected:{err or 'unknown'}")
+        # Read-only mode: do not create/apply Gmail labels.
         processed_label_id = None
-        if not include_processed:
-            processed_label_id = _gmail_get_or_create_label_id(access_token, "ProcessedNew")
 
         all_ids = get_recent_gmail_ids(
             access_token,

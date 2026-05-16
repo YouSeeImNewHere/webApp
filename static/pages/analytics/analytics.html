@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script> window.BUILD_ID = "analytics-20260427f"; </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <title>Analytics</title>
+  <link rel="stylesheet" href="/static/styles/tokens.css?v=analytics-20260427f">
+  <link rel="stylesheet" href="/static/styles/theme.css?v=analytics-20260427f">
+  <link rel="stylesheet" href="/static/css/base.css?v=analytics-20260427f">
+  <link rel="stylesheet" href="/static/styles/utilities.css?v=analytics-20260427f">
+  <link rel="stylesheet" href="/static/css/mobile.css?v=analytics-20260427f">
+  <link rel="stylesheet" href="/static/pages/analytics/analytics.css?v=analytics-20260427f">
+  <script src="/static/shared/theme.js?v=analytics-20260427f"></script>
+  <script src="/static/shared/globalLoading.js?v=analytics-20260427f"></script>
+</head>
+<body class="analytics-page" data-page-title="Analytics">
+  <div class="analytics-wrap">
+    <section class="analytics-hero">
+      <div class="analytics-hero__month" id="heroMonth">Monthly Report</div>
+      <div class="analytics-hero__net" id="heroNet">$0.00</div>
+      <div class="analytics-hero__chips" id="heroChips"></div>
+    </section>
+
+    <section class="analytics-toolbar no-print">
+      <div class="analytics-toolbar__left">
+        <label for="reportMonth">Month</label>
+        <input id="reportMonth" type="month" />
+        <button id="reportRefreshBtn" type="button" class="settings-btn primary">Load Report</button>
+      </div>
+      <button id="reportDownloadPdfBtn" type="button" class="settings-btn">Download PDF</button>
+    </section>
+
+    <div id="reportStatus" class="settings-muted" role="status" aria-live="polite"></div>
+
+    <section class="analytics-card"><h2>Month Summary</h2><div id="summaryGrid" class="analytics-metric-grid"></div></section>
+    <section class="analytics-card"><h2>Category Breakdown</h2><div id="categoryBreakdown"></div></section>
+    <section class="analytics-card"><h2>Savings Accounts</h2><div id="savingsSummary"></div></section>
+    <section class="analytics-card"><h2>Liquid Accounts</h2><div id="liquidSummary"></div></section>
+    <section class="analytics-card"><h2>Debt Accounts</h2><div id="debtSummary"></div></section>
+    <section class="analytics-card"><h2>Biggest Transactions</h2><div id="biggestTransactions"></div></section>
+    <section class="analytics-card"><h2>Recurring & Subscriptions</h2><div id="recurringHits"></div></section>
+    <section class="analytics-card"><h2>Budget Performance</h2><div id="budgetPerformance"></div></section>
+    <section class="analytics-card"><h2>Changes vs Previous Month</h2><div id="changesVsPrev"></div></section>
+  </div>
+
+  <div id="sharedChrome"></div>
+
+  <script src="/static/shared/format.js?v=analytics-20260427f"></script>
+  <script src="/static/shared/api.js?v=analytics-20260427f"></script>
+  <script>
+    (function () {
+      function esc(v){ return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
+      function money(v){ var n = Number(v || 0); return n.toLocaleString("en-US",{style:"currency",currency:"USD"}); }
+      function moneyCR(v){ var n=Number(v||0); if(n<0) return money(Math.abs(n))+" CR"; return money(n); }
+      function setStatus(msg, err){ var el=document.getElementById("reportStatus"); if(!el) return; el.textContent=String(msg||""); el.style.color=err?"#b42318":""; }
+      function thisMonthValue(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+      function fmtMonth(yyyyMm){ var m=/^(\d{4})-(\d{2})$/.exec(String(yyyyMm||"")); if(!m) return String(yyyyMm||"Monthly Report"); var d=new Date(Number(m[1]), Number(m[2])-1,1); return d.toLocaleString("en-US",{month:"long",year:"numeric"}); }
+
+      function renderHero(month, s, c){
+        var m=document.getElementById("heroMonth"), n=document.getElementById("heroNet"), ch=document.getElementById("heroChips");
+        if(m) m.textContent=fmtMonth(month);
+        if(n) n.textContent="Net "+money((s&&s.net)||0);
+        if(ch){
+          var ip=Number(c&&c.income_change_pct||0), sp=Number(c&&c.spending_change_pct||0);
+          ch.innerHTML='<span class="hero-chip">Income '+esc(money((s&&s.income)||0))+'</span><span class="hero-chip">Spending '+esc(money((s&&s.spending)||0))+'</span><span class="hero-chip '+(ip>=0?'up':'down')+'">'+(ip>=0?'Income up ':'Income down ')+esc((ip>0?'+':'')+ip.toFixed(1)+'%')+'</span><span class="hero-chip '+(sp<=0?'up':'down')+'">'+(sp<=0?'Spending down ':'Spending up ')+esc((sp>0?'+':'')+sp.toFixed(1)+'%')+'</span>';
+        }
+      }
+
+      function renderSummary(s){
+        var h=document.getElementById("summaryGrid"); if(!h) return;
+        h.innerHTML=[["Income",s&&s.income,"is-income"],["Spending",s&&s.spending,"is-spending"],["Net",s&&s.net,"is-net"],["Starting Balance",s&&s.starting_balance,"is-starting"],["Ending Balance",s&&s.ending_balance,"is-ending"]].map(function(r){ return '<div class="metric '+r[2]+'"><div class="label">'+esc(r[0])+'</div><div class="value">'+esc(money(r[1]))+'</div></div>'; }).join("");
+      }
+
+      function renderCategory(rows, limitsByCat){
+        var h=document.getElementById("categoryBreakdown"); if(!h) return;
+        if(!rows||!rows.length){ h.innerHTML='<div class="analytics-empty">No category spending in this month.</div>'; return; }
+        var max=0; rows.forEach(function(r){ max=Math.max(max,Number(r&&r.amount||0)); });
+        h.innerHTML='<div class="analytics-empty" style="margin-bottom:6px;">Limit source: Category limit first, then Group limit fallback.</div><table class="analytics-table"><thead><tr><th>Category</th><th>Share</th><th class="align-right">Spent</th><th class="align-right">Limit</th><th>Source</th><th class="align-right">Over/Under</th></tr></thead><tbody>'+rows.map(function(r){ var a=Number(r&&r.amount||0), w=max>0?Math.max(5,Math.round((a/max)*100)):0; var key=String((r&&r.category)||"").trim().toLowerCase(); var meta=(limitsByCat&&limitsByCat[key])?limitsByCat[key]:null; var lim=meta?Number(meta.limit||0):null; var source=meta?String(meta.source||""):""; var diff=null; if(meta){ if(meta.source_type==="group"){ diff=Number(meta.group_remaining); } else { diff=(lim==null)?null:(lim-a); } } var diffLabel=(diff==null)?"-":(diff>=0?("Under "+money(diff)):("Over "+money(Math.abs(diff)))); return '<tr><td>'+esc(r&&r.category||"Uncategorized")+'</td><td class="bar-cell"><div class="bar-wrap"><div class="bar-fill" style="width:'+w+'%"></div></div></td><td class="align-right mono">'+esc(money(a))+'</td><td class="align-right mono">'+esc(lim==null?"-":money(lim))+'</td><td>'+esc(source||"-")+'</td><td class="align-right mono">'+esc(diffLabel)+'</td></tr>'; }).join("")+'</tbody></table>';
+      }
+
+      function renderAccountTable(hostId, rows, emptyText){
+        var h=document.getElementById(hostId); if(!h) return;
+        if(!rows||!rows.length){ h.innerHTML='<div class="analytics-empty">'+esc(emptyText)+'</div>'; return; }
+        h.innerHTML='<table class="analytics-table"><thead><tr><th>Account</th><th class="align-right">Start</th><th class="align-right">End</th><th class="align-right">Change</th></tr></thead><tbody>'+rows.map(function(r){ return '<tr><td>'+esc(((r&&r.bank)||"")+" "+((r&&r.name)||""))+'</td><td class="align-right mono">'+esc(moneyCR(Number(r&&r.start_balance||0)))+'</td><td class="align-right mono">'+esc(moneyCR(Number(r&&r.end_balance||0)))+'</td><td class="align-right mono">'+esc(moneyCR(Number(r&&r.change||0)))+'</td></tr>'; }).join("")+'</tbody></table>';
+      }
+
+      function renderTx(rows){
+        var h=document.getElementById("biggestTransactions"); if(!h) return;
+        function tbl(list){ if(!list||!list.length) return '<div class="analytics-empty">none</div>'; return '<table class="analytics-table"><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="align-right">Amount</th></tr></thead><tbody>'+list.map(function(r){ return '<tr><td>'+esc(r&&r.date||"")+'</td><td>'+esc(r&&r.merchant||"")+'</td><td>'+esc(r&&r.category||"")+'</td><td class="align-right mono">'+esc(money(Number(r&&r.amount||0)))+'</td></tr>'; }).join("")+'</tbody></table>'; }
+        h.innerHTML='<div style="font-weight:600; margin-bottom:4px;">Top Outflows</div>'+tbl(rows&&rows.outflows)+'<div style="font-weight:600; margin:10px 0 4px;">Top Inflows</div>'+tbl(rows&&rows.inflows);
+      }
+
+      function renderSimple(hostId, rows, cols, empty){
+        var h=document.getElementById(hostId); if(!h) return;
+        if(!rows||!rows.length){ h.innerHTML='<div class="analytics-empty">'+esc(empty||"No data.")+'</div>'; return; }
+        h.innerHTML='<table class="analytics-table"><thead><tr>'+cols.map(function(c){ return '<th>'+esc(c.label)+'</th>'; }).join("")+'</tr></thead><tbody>'+rows.map(function(r){ return '<tr>'+cols.map(function(c){ var v=r[c.key]; if(c.type==="money") v=money(Number(v||0)); if(c.type==="num") v=Number(v||0); return '<td class="'+esc(c.cls||"")+'">'+esc(v==null?"":v)+'</td>'; }).join("")+'</tr>'; }).join("")+'</tbody></table>';
+      }
+
+      function renderChanges(ch){
+        var h=document.getElementById("changesVsPrev"); if(!h) return;
+        var ip=Number(ch&&ch.income_change_pct||0), sp=Number(ch&&ch.spending_change_pct||0);
+        h.innerHTML='<table class="analytics-table"><thead><tr><th>Metric</th><th class="align-right">Prev Month</th><th class="align-right">Change</th><th class="align-right">% Change</th></tr></thead><tbody><tr><td>Income</td><td class="align-right mono">'+esc(money(Number(ch&&ch.income_prev_month||0)))+'</td><td class="align-right mono">'+esc(money(Number(ch&&ch.income_change_abs||0)))+'</td><td class="align-right mono"><span class="pill '+(ip>=0?'up':'down')+'">'+esc((ip>0?'+':'')+ip.toFixed(1)+'%')+'</span></td></tr><tr><td>Spending</td><td class="align-right mono">'+esc(money(Number(ch&&ch.spending_prev_month||0)))+'</td><td class="align-right mono">'+esc(money(Number(ch&&ch.spending_change_abs||0)))+'</td><td class="align-right mono"><span class="pill '+(sp<=0?'up':'down')+'">'+esc((sp>0?'+':'')+sp.toFixed(1)+'%')+'</span></td></tr></tbody></table>';
+      }
+
+      async function loadReport(){
+        var mEl=document.getElementById("reportMonth"), month=String((mEl&&mEl.value)||"").trim()||thisMonthValue();
+        setStatus("Loading report...");
+        try{
+          var res=await fetch("/reports/monthly?month="+encodeURIComponent(month),{cache:"no-store",credentials:"same-origin"});
+          if(!res.ok) throw new Error("HTTP "+res.status);
+          var out=await res.json();
+          var limitsByCat={};
+          try{
+            var ym=/^(\d{4})-(\d{2})$/.exec(String((out&&out.month)||month));
+            if(ym){
+              var y=Number(ym[1]), m=Number(ym[2]);
+              var bRes=await fetch("/budget/categories?year="+encodeURIComponent(ym[1])+"&month="+encodeURIComponent(Number(ym[2])),{cache:"no-store",credentials:"same-origin"});
+              if(bRes.ok){
+                var bOut=await bRes.json();
+                var items=(bOut&&bOut.items)||[];
+                for(var i=0;i<items.length;i+=1){
+                  var it=items[i]||{};
+                  var k=String(it.category||"").trim().toLowerCase();
+                  if(!k) continue;
+                  var limVal=(it.cap!==null && it.cap!==undefined)?Number(it.cap||0):Number(it.allocated||0);
+                  if(limVal>0) limitsByCat[k]={ limit: limVal, source: "Category", source_type: "category" };
+                }
+              }
+              var gRes=await fetch("/page/budget?year="+encodeURIComponent(y)+"&month="+encodeURIComponent(m),{cache:"no-store",credentials:"same-origin"});
+              if(gRes.ok){
+                var gOut=await gRes.json();
+                var groups=(gOut&&gOut.groups)||[];
+                for(var gi=0;gi<groups.length;gi+=1){
+                  var g=groups[gi]||{};
+                  var gName=String(g.name||"Group");
+                  var gAlloc=Number(g.allocated||0);
+                  if(!(gAlloc>0)) continue;
+                  var cats=g.categories||[];
+                  for(var ci=0;ci<cats.length;ci+=1){
+                    var ck=String(cats[ci]||"").trim().toLowerCase();
+                    if(!ck) continue;
+                    if(!limitsByCat[ck]){
+                      limitsByCat[ck]={ limit: gAlloc, source: "Group: "+gName, source_type: "group", group_spent: Number(g.spent||0), group_remaining: Number(g.remaining||0) };
+                    }
+                  }
+                }
+              }
+            }
+          }catch(_){}
+          var accounts=(out&&out.account_summary)||[];
+          var savings=accounts.filter(function(r){ return String(r&&r.account_type||"").toLowerCase()==="savings"; });
+          var liquid=accounts.filter(function(r){ var t=String(r&&r.account_type||"").toLowerCase(); return t==="checking" || t==="debit" || t==="cash"; });
+          var debt=accounts.filter(function(r){ return String(r&&r.account_type||"").toLowerCase()==="credit"; });
+
+          renderHero((out&&out.month)||month,(out&&out.summary)||{},(out&&out.changes_vs_previous_month)||{});
+          renderSummary((out&&out.summary)||{});
+          renderCategory((out&&out.category_breakdown)||[], limitsByCat);
+          renderAccountTable("savingsSummary", savings, "No savings accounts found.");
+          renderAccountTable("liquidSummary", liquid, "No liquid accounts found.");
+          renderAccountTable("debtSummary", debt, "No debt accounts found.");
+          renderTx((out&&out.biggest_transactions)||{});
+          renderSimple("recurringHits",(out&&out.recurring_subscriptions)||[],[{key:"merchant",label:"Merchant"},{key:"category",label:"Category"},{key:"hits",label:"Hits",type:"num",cls:"align-right mono"},{key:"total",label:"Total",type:"money",cls:"align-right mono"}],"No recurring/subscription hits detected this month.");
+          renderSimple("budgetPerformance",[((out&&out.budget_performance)||{})],[{key:"planned_allocations",label:"Planned Allocations",type:"money",cls:"align-right mono"},{key:"actual_spent_on_allocated",label:"Actual on Allocated",type:"money",cls:"align-right mono"},{key:"remaining_allocated",label:"Remaining Allocated",type:"money",cls:"align-right mono"},{key:"free_spend_so_far",label:"Free Spend So Far",type:"money",cls:"align-right mono"}],"No budget data.");
+          renderChanges((out&&out.changes_vs_previous_month)||{});
+          setStatus("Loaded "+((out&&out.month)||month)+" report.");
+        } catch(e){
+          console.error(e);
+          setStatus("Failed to load report.", true);
+        }
+      }
+
+      window.__analyticsFallbackLoad = loadReport;
+      var monthEl=document.getElementById("reportMonth");
+      if(monthEl && !monthEl.value) monthEl.value=thisMonthValue();
+
+      var refreshBtn=document.getElementById("reportRefreshBtn");
+      if(refreshBtn) refreshBtn.addEventListener("click", loadReport);
+      var pdfBtn=document.getElementById("reportDownloadPdfBtn");
+      if(pdfBtn) pdfBtn.addEventListener("click", function(){ window.print(); });
+
+      setStatus("Ready.");
+      loadReport();
+    })();
+  </script>
+  <script src="/static/shared/shared.js?v=analytics-20260427f" defer></script>
+</body>
+</html>

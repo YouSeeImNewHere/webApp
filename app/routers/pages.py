@@ -189,6 +189,12 @@ def admin_page(request: Request):
 def account_page():
     return FileResponse("static/pages/account/account.html")
 
+
+@router.get("/analytics")
+def analytics_page():
+    return FileResponse("static/pages/analytics/analytics.html")
+
+
 @router.get("/transaction/{tx_id}")
 def transaction_detail(tx_id: str):
     """Return *all* columns for a single transaction, plus account metadata (Postgres)."""

@@ -52,6 +52,7 @@ from app.routers import (
     admin,
     onboarding,
     email_parser_trial,
+    reports,
 )
 
 
@@ -328,6 +329,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)
+    app.include_router(reports.router)
     if _env_enabled("ENABLE_RECEIPTS_ROUTES", "1"):
         from app.routers import receipts
 

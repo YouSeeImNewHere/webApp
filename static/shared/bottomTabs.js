@@ -20,6 +20,7 @@
   if (path === "/") active = "home";
   else if (path.includes("spending.html")) active = "spending";
   else if (path.includes("all-transactions.html")) active = "all";
+  else if (path === "/analytics" || path.includes("/pages/analytics/analytics.html")) active = "analytics";
   else if (path.includes("pages/recurring/recurring.html") || path.includes("recurring.html")) active = "recurring";
   // NOTE: Settings is NOT a bottom tab anymore → no active tab on /settings
 

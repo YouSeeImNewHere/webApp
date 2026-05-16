@@ -995,7 +995,6 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         "email",
         "profile",
         "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/gmail.modify",
     ]
     params = {
         "client_id": GOOGLE_CLIENT_ID,
@@ -1003,6 +1002,8 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         "response_type": "code",
         "scope": " ".join(scopes),
         "access_type": "offline",
+        # Force Google to issue a fresh refresh_token on reconnect flows.
+        "prompt": "consent",
         "include_granted_scopes": "true",
         "state": state,
     }
@@ -1069,9 +1070,21 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
         google_email = None
         google_sub = None
 
+    existing_row = _get_google_tokens(google_email=google_email) if google_email else None
+    effective_refresh_token = td.get("refresh_token") or ((existing_row or {}).get("refresh_token") or None)
+    if not effective_refresh_token:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "missing_refresh_token_after_oauth",
+                "detail": "Reconnect with Google consent to grant offline access.",
+            },
+            status_code=502,
+        )
+
     _save_google_tokens(
         access_token=access_token,
-        refresh_token=td.get("refresh_token"),
+        refresh_token=effective_refresh_token,
         token_type=td.get("token_type") or "Bearer",
         scope=td.get("scope"),
         expires_at=expires_at,
@@ -1189,12 +1202,15 @@ def gmail_watch_renew(request: Request):
                 }
             )
 
-    return {
+    payload = {
         "ok": failed == 0,
         "renewed": int(renewed),
         "failed": int(failed),
         "results": results,
     }
+    if failed > 0:
+        return JSONResponse(payload, status_code=500)
+    return payload
 
 
 @router.get("/gmail/push/state")
