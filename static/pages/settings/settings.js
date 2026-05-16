@@ -549,7 +549,7 @@ function bindEmailParserBackfill() {
     daysEl.value = String(days);
     const includeProcessed = !!includeEl.checked;
     btn.disabled = true;
-    statusEl.textContent = "Running parser backfill...";
+    statusEl.textContent = "Starting parser backfill...";
     logEl.style.display = "none";
     logEl.textContent = "";
     if (rowsEl) {
@@ -557,19 +557,57 @@ function bindEmailParserBackfill() {
       rowsEl.style.display = "none";
     }
     try {
-      const res = await fetch("/settings/email-parser/run", {
+      const startRes = await fetch("/settings/email-parser/run/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({ days, include_processed: includeProcessed, max_emails: 5000 }),
       });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out?.ok) {
-        const detail = out?.detail || `HTTP ${res.status}`;
-        const normalized = normalizeBackfillError(detail, res.status);
+      const startOut = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startOut?.ok || !startOut?.job_id) {
+        const detail = startOut?.detail || `HTTP ${startRes.status}`;
+        const normalized = normalizeBackfillError(detail, startRes.status);
         const err = new Error(String(normalized.userMessage));
         err.oauthRequired = !!normalized.oauthRequired;
         throw err;
+      }
+      const jobId = String(startOut.job_id || "").trim();
+      let out = null;
+      while (true) {
+        await new Promise((r) => window.setTimeout(r, 900));
+        const pollRes = await fetch(`/settings/email-parser/run/status?job_id=${encodeURIComponent(jobId)}`, {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const pollOut = await pollRes.json().catch(() => ({}));
+        if (!pollRes.ok || !pollOut?.ok) {
+          const detail = pollOut?.detail || `HTTP ${pollRes.status}`;
+          const normalized = normalizeBackfillError(detail, pollRes.status);
+          const err = new Error(String(normalized.userMessage));
+          err.oauthRequired = !!normalized.oauthRequired;
+          throw err;
+        }
+        const p = pollOut?.progress || {};
+        const fetched = Number(p.fetched || 0);
+        const scanned = Number(p.scanned || 0);
+        const matched = Number(p.matched || 0);
+        statusEl.textContent = `Running parser backfill... Scanned ${scanned}${fetched > 0 ? `/${fetched}` : ""} emails, transaction emails ${matched}.`;
+        const st = String(pollOut?.status || "");
+        if (st === "done") {
+          out = pollOut?.result || {};
+          break;
+        }
+        if (st === "failed") {
+          const errInfo = pollOut?.error || {};
+          const normalized = normalizeBackfillError(errInfo?.detail || "Backfill failed", Number(errInfo?.status_code || 500));
+          const err = new Error(String(normalized.userMessage));
+          err.oauthRequired = !!normalized.oauthRequired;
+          throw err;
+        }
+      }
+      if (!out?.ok) {
+        throw new Error("Backfill finished without result payload.");
       }
       statusEl.textContent = "Backfill complete.";
       logEl.textContent = formatBackfillLog(out);

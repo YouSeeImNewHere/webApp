@@ -466,7 +466,7 @@ def spending_unbudgeted_safe_range(start: str, end: str):
             {
                 "date": dcur.isoformat(),
                 "unbudgeted_spend": round(float(unbudgeted_by_day.get(dcur, 0.0) or 0.0), 2),
-                "daily_safe_to_spend": round(float(safe or 0.0), 2),
+                "daily_safe_to_spend": round(max(0.0, float(safe or 0.0)), 2),
             }
         )
         dcur += timedelta(days=1)
@@ -610,7 +610,7 @@ def spending_unbudgeted_day(day: str):
         "day": d.isoformat(),
         "totals": {
             "unbudgeted_spend": round(float(unbudgeted_total), 2),
-            "daily_safe_to_spend": round(float(daily_safe), 2),
+            "daily_safe_to_spend": round(max(0.0, float(daily_safe)), 2),
         },
         "purchases": purchases,
     }

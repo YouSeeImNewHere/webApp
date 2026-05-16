@@ -1875,6 +1875,7 @@ def run_manual_wizard_parse(
     max_emails: int = 2000,
     rules_user_email: str | None = None,
     tenant_id: int | None = None,
+    progress_cb=None,
 ) -> dict:
     """
     Manual parse runner for Settings page.
@@ -1927,6 +1928,7 @@ def run_manual_wizard_parse(
         limit=max_emails,
     )
     summary["fetched"] = len(message_ids)
+    scanned = 0
     for mid in message_ids:
         msg = _gmail_api_get_message(access_token, mid)
         h = _gmail_headers_map(msg)
@@ -1976,6 +1978,21 @@ def run_manual_wizard_parse(
         if row["notified"]:
             summary["notified"] += 1
         rows.append(row)
+        scanned += 1
+        if callable(progress_cb):
+            try:
+                progress_cb(
+                    {
+                        "fetched": int(summary["fetched"]),
+                        "scanned": int(scanned),
+                        "matched": int(summary["matched"]),
+                        "inserted": int(summary["inserted"]),
+                        "notified": int(summary["notified"]),
+                        "skipped": int(summary["skipped"]),
+                    }
+                )
+            except Exception:
+                pass
 
     return {"ok": True, "summary": summary, "rows": rows}
 

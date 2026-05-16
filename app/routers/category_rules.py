@@ -1018,8 +1018,10 @@ def _month_budget_home(
         "extra_saved_applied": round(extra_saved_applied, 2),
 
         # Backward compatibility (what widget + UI already expects)
-        # This is now TODAY'S allowance
-        "daily_limit": round(today_limit, 2),
+        # UI-facing daily limit is floored at 0.
+        "daily_limit": round(max(0.0, today_limit), 2),
+        # Raw signed value for analytics/overspend logic.
+        "daily_limit_raw": round(today_limit, 2),
         "days_left": int(days_left),
 
         # NEW weekend-weighted budgeting fields

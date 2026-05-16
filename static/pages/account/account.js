@@ -103,6 +103,17 @@ async function markAccountBalanceVerifiedOnDate(accountIdValue, verifiedDateIso)
   return out;
 }
 
+function promptVerifiedDate(defaultIso) {
+  const raw = window.prompt("Verification date (YYYY-MM-DD)", String(defaultIso || ""));
+  if (raw == null) return null;
+  const v = String(raw || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    alert("Use YYYY-MM-DD.");
+    return null;
+  }
+  return v;
+}
+
 function parseNum(x) {
   if (x == null) return null;
   const s = String(x).trim();
@@ -886,6 +897,42 @@ function initAccountAddTransaction(currentAccountId) {
   });
 }
 
+function initAccountAuditVerifiedActions(currentAccountId) {
+  const auditBtn = document.getElementById("accountAuditBtn");
+  const verifiedBtn = document.getElementById("accountVerifiedBtn");
+
+  if (auditBtn) {
+    auditBtn.textContent = AUDIT_MODE ? "Exit Audit" : "Audit";
+    auditBtn.addEventListener("click", () => {
+      const nextUrl = AUDIT_MODE
+        ? `/account?account_id=${encodeURIComponent(String(currentAccountId))}`
+        : `/account?account_id=${encodeURIComponent(String(currentAccountId))}&audit=1`;
+      window.location.href = nextUrl;
+    });
+  }
+
+  if (verifiedBtn) {
+    verifiedBtn.addEventListener("click", async () => {
+      const def = addDaysIso(isoLocal(new Date()), -1);
+      const selectedDate = promptVerifiedDate(def);
+      if (!selectedDate) return;
+      const old = verifiedBtn.textContent;
+      verifiedBtn.disabled = true;
+      verifiedBtn.textContent = "Saving...";
+      try {
+        await markAccountBalanceVerifiedOnDate(currentAccountId, selectedDate);
+        await loadAccountHeader(currentAccountId, { forceRefresh: true });
+        verifiedBtn.textContent = "Verified";
+      } catch (err) {
+        alert(err?.message || "Failed to mark verified.");
+        verifiedBtn.textContent = old;
+      } finally {
+        verifiedBtn.disabled = false;
+      }
+    });
+  }
+}
+
 function setActiveQuickButton(container, btn){
   container.querySelectorAll(".month-btn").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
@@ -961,6 +1008,7 @@ initChartControls(ACCOUNT_CHART_IDS, async () => {
     exportBtn.addEventListener("click", downloadAccountCsv);
   }
   initAccountAddTransaction(accountId);
+  initAccountAuditVerifiedActions(accountId);
 
   if (!AUDIT_MODE) {
     const updateBtn = document.getElementById(ACCOUNT_CHART_IDS.update);

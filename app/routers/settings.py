@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
+from uuid import uuid4
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Request
@@ -20,6 +23,8 @@ from app.core.auth import get_connected_google_email
 router = APIRouter()
 _LOG = logging.getLogger("uvicorn.error")
 _ANDROID_KWGT_TEMPLATE_PATH = Path("static/downloads/android/finance-widget-template.kwgt")
+_BACKFILL_JOBS_LOCK = threading.Lock()
+_BACKFILL_JOBS: Dict[str, Dict[str, Any]] = {}
 
 # =============================================================================
 # Settings (Postgres) — ported from settings.py
@@ -60,6 +65,63 @@ class EmailParserBackfillIn(BaseModel):
     days: int = 1
     include_processed: bool = True
     max_emails: int = 2000
+
+
+def _backfill_owner_scope(request: Request) -> tuple[int, str]:
+    tenant_id, session_email = _require_approved_session_user(request)
+    oauth_email = get_connected_google_email(session_email)
+    if oauth_email and oauth_email != session_email:
+        raise HTTPException(
+            status_code=409,
+            detail=f"gmail_oauth_account_mismatch:connected={oauth_email}:session={session_email}",
+        )
+    return int(tenant_id), str(session_email)
+
+
+def _create_backfill_job(*, tenant_id: int, session_email: str) -> str:
+    job_id = f"bfill_{uuid4().hex}"
+    now_ts = float(time.time())
+    with _BACKFILL_JOBS_LOCK:
+        _BACKFILL_JOBS[job_id] = {
+            "job_id": job_id,
+            "tenant_id": int(tenant_id),
+            "session_email": str(session_email).strip().lower(),
+            "status": "running",
+            "created_at": now_ts,
+            "updated_at": now_ts,
+            "progress": {
+                "fetched": 0,
+                "scanned": 0,
+                "matched": 0,
+                "inserted": 0,
+                "notified": 0,
+                "skipped": 0,
+            },
+            "result": None,
+            "error": None,
+        }
+    return job_id
+
+
+def _update_backfill_job(job_id: str, **patch) -> None:
+    with _BACKFILL_JOBS_LOCK:
+        job = _BACKFILL_JOBS.get(str(job_id))
+        if not job:
+            return
+        for k, v in patch.items():
+            job[k] = v
+        job["updated_at"] = float(time.time())
+
+
+def _get_backfill_job_for_request(job_id: str, request: Request) -> Dict[str, Any]:
+    tenant_id, session_email = _backfill_owner_scope(request)
+    with _BACKFILL_JOBS_LOCK:
+        job = dict(_BACKFILL_JOBS.get(str(job_id)) or {})
+    if not job:
+        raise HTTPException(status_code=404, detail="backfill_job_not_found")
+    if int(job.get("tenant_id") or 0) != int(tenant_id) or str(job.get("session_email") or "") != str(session_email):
+        raise HTTPException(status_code=404, detail="backfill_job_not_found")
+    return job
 
 class NotificationPrefsIn(BaseModel):
     disable_all: Optional[bool] = None
@@ -715,13 +777,7 @@ def get_cache_versions(request: Request):
 
 @router.post("/settings/email-parser/run")
 def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
-    tenant_id, session_email = _require_approved_session_user(request)
-    oauth_email = get_connected_google_email(session_email)
-    if oauth_email and oauth_email != session_email:
-        raise HTTPException(
-            status_code=409,
-            detail=f"gmail_oauth_account_mismatch:connected={oauth_email}:session={session_email}",
-        )
+    tenant_id, session_email = _backfill_owner_scope(request)
     days = max(1, min(int(body.days or 1), 60))
     include_processed = bool(body.include_processed)
     max_emails = max(1, min(int(body.max_emails or 2000), 10000))
@@ -746,6 +802,67 @@ def run_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
         raise HTTPException(status_code=500, detail=f"email_parser_backfill_failed:RuntimeError:{msg}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"email_parser_backfill_failed:{type(e).__name__}:{e}")
+
+
+@router.post("/settings/email-parser/run/start")
+def start_email_parser_backfill(body: EmailParserBackfillIn, request: Request):
+    tenant_id, session_email = _backfill_owner_scope(request)
+    days = max(1, min(int(body.days or 1), 60))
+    include_processed = bool(body.include_processed)
+    max_emails = max(1, min(int(body.max_emails or 2000), 10000))
+    job_id = _create_backfill_job(tenant_id=int(tenant_id), session_email=session_email)
+
+    def _runner():
+        try:
+            from emails import emailFetch
+
+            def _on_progress(progress: Dict[str, Any]) -> None:
+                _update_backfill_job(job_id, progress=dict(progress or {}))
+
+            result = emailFetch.run_manual_wizard_parse(
+                lookback_days=days,
+                include_processed=include_processed,
+                max_emails=max_emails,
+                rules_user_email=session_email,
+                tenant_id=int(tenant_id),
+                progress_cb=_on_progress,
+            )
+            _update_backfill_job(job_id, status="done", result=result, error=None)
+        except RuntimeError as e:
+            msg = str(e or "").strip()
+            if msg.startswith("gmail_oauth_not_connected:"):
+                _update_backfill_job(job_id, status="failed", error={"detail": msg, "status_code": 401})
+            elif msg.startswith("gmail_oauth_account_mismatch:"):
+                _update_backfill_job(job_id, status="failed", error={"detail": msg, "status_code": 409})
+            else:
+                _update_backfill_job(
+                    job_id,
+                    status="failed",
+                    error={"detail": f"email_parser_backfill_failed:RuntimeError:{msg}", "status_code": 500},
+                )
+        except Exception as e:
+            _update_backfill_job(
+                job_id,
+                status="failed",
+                error={"detail": f"email_parser_backfill_failed:{type(e).__name__}:{e}", "status_code": 500},
+            )
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    return {"ok": True, "job_id": job_id}
+
+
+@router.get("/settings/email-parser/run/status")
+def get_email_parser_backfill_status(job_id: str, request: Request):
+    job = _get_backfill_job_for_request(job_id, request)
+    return {
+        "ok": True,
+        "job_id": str(job.get("job_id") or ""),
+        "status": str(job.get("status") or "unknown"),
+        "progress": dict(job.get("progress") or {}),
+        "result": job.get("result"),
+        "error": job.get("error"),
+    }
 
 
 @router.get("/settings/view-flags")
