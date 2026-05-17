@@ -706,11 +706,29 @@
     return { ok: true, mode: hasAnyPair ? "pair" : "single", amountCol, debitCol, creditCol };
   }
 
+  function normalizeCsvAmountMappingSelection() {
+    const amountEl = document.getElementById("csvMapAmount");
+    const debitEl = document.getElementById("csvMapDebit");
+    const creditEl = document.getElementById("csvMapCredit");
+    if (!amountEl || !debitEl || !creditEl) return;
+
+    const amountCol = csvGetSelectInt("csvMapAmount");
+    const debitCol = csvGetSelectInt("csvMapDebit");
+    const creditCol = csvGetSelectInt("csvMapCredit");
+    const hasAnyPair = (debitCol !== null || creditCol !== null);
+    if (amountCol !== null && hasAnyPair) {
+      // Amount mode wins when both are present (common with stale preset guesses).
+      debitEl.value = "-1";
+      creditEl.value = "-1";
+    }
+  }
+
   function updateCsvAmountModeUi() {
     const hintEl = document.getElementById("csvAmountModeHint");
     const indicatorEl = document.getElementById("csvMapIndicator");
     const creditValueEl = document.getElementById("csvCreditIndicatorValue");
     if (!hintEl) return;
+    normalizeCsvAmountMappingSelection();
     const check = validateCsvAmountMapping();
     const usingPair = check.ok && check.mode === "pair";
     if (indicatorEl) indicatorEl.disabled = !!usingPair;
