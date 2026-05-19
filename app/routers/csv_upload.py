@@ -50,6 +50,8 @@ TIP_MAX_ABS = 50.0
 TIP_PCT_SMALL = 0.75
 TIP_PCT_MED = 0.50
 TIP_PCT_LARGE = 0.35
+VENDING_PREAUTH_MAX_ABS = 15.0
+VENDING_PREAUTH_PCT_CAP = 0.90
 
 
 def _refresh_widget_cache_for_tenant(tid: int | None) -> None:
@@ -735,6 +737,66 @@ def _find_tip_adjust_pending_email_match(
     return best_id or None
 
 
+def _looks_like_vending_merchant(name: str) -> bool:
+    s = _clean_spaces(name or "").lower()
+    if not s:
+        return False
+    tokens = (
+        "vending",
+        "micro market",
+        "micromarket",
+        "snack",
+        "soda",
+        "kiosk",
+    )
+    return any(tok in s for tok in tokens)
+
+
+def _find_vending_preauth_pending_email_match(
+    candidates: list[dict[str, Any]],
+    *,
+    csv_amount: float,
+    csv_merchant: str,
+) -> str | None:
+    try:
+        csv_amt_f = float(csv_amount)
+    except Exception:
+        return None
+    csv_clean = _clean_spaces(csv_merchant or "")
+    best_id = None
+    best_diff = None
+
+    for c in candidates:
+        try:
+            db_amt_f = float(c.get("amount") or 0.0)
+        except Exception:
+            continue
+        if (db_amt_f >= 0) != (csv_amt_f >= 0):
+            continue
+        # Vending preauth: pending email amount is often higher than final posted CSV amount.
+        if csv_amt_f > db_amt_f:
+            continue
+        diff = abs(db_amt_f - csv_amt_f)
+        if diff <= 0:
+            continue
+        if diff > VENDING_PREAUTH_MAX_ABS:
+            continue
+        base = abs(db_amt_f)
+        if base > 0 and diff > (base * VENDING_PREAUTH_PCT_CAP):
+            continue
+
+        db_merch = _clean_spaces(str(c.get("merchant") or ""))
+        if not (_looks_like_vending_merchant(csv_clean) or _looks_like_vending_merchant(db_merch)):
+            continue
+        if not _merchants_similar(db_merch, csv_clean):
+            continue
+
+        if best_id is None or diff < float(best_diff):
+            best_id = str(c.get("id") or "")
+            best_diff = diff
+    return best_id or None
+
+
 def _pick_pending_update_target(
     cur,
     *,
@@ -814,6 +876,12 @@ def _pick_pending_update_target(
         csv_amount=amount,
         csv_merchant=merchant,
     )
+    if not tip_id:
+        tip_id = _find_vending_preauth_pending_email_match(
+            candidates,
+            csv_amount=amount,
+            csv_merchant=merchant,
+        )
     if tip_id:
         return tip_id, "tip_adjust"
     return None, None

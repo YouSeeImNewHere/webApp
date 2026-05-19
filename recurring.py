@@ -161,10 +161,18 @@ _INCOME_CATEGORY_LABELS = {
     "direct_deposit",
 }
 _INCOME_MERCHANT_MARKERS = ("salary", "payroll", "dfas", "direct deposit", "mil pay")
+_RECURRING_ALLOWED_CATEGORIES = {"bills", "parking", "uncategorized"}
 
 
 def _norm_label(s: Optional[str]) -> str:
     return re.sub(r"\s+", " ", str(s or "").strip().lower())
+
+
+def _is_allowed_recurring_category(raw_category: Optional[str]) -> bool:
+    cat = _norm_label(raw_category)
+    if not cat:
+        return True
+    return cat in _RECURRING_ALLOWED_CATEGORIES
 
 
 def _is_income_pattern(
@@ -356,6 +364,8 @@ def get_recurring(min_occ: int = 3, include_stale: bool = False, tenant_id: int 
         merchant_norm = alias_map.get(merchant_norm, merchant_norm)
 
         category = (r.get("category") or "").upper().strip()
+        if not _is_allowed_recurring_category(r.get("category")):
+            continue
 
         if merchant_norm in ignored_merchants:
             continue
@@ -594,6 +604,8 @@ def get_ignored_merchants_preview(min_occ: int = 3, include_stale: bool = False,
         merchant_raw = r.get("merchant") or ""
         merchant_norm = _norm_merchant(merchant_raw)
         category = (r.get("category") or "").upper().strip()
+        if not _is_allowed_recurring_category(r.get("category")):
+            continue
 
         # Only show merchants currently ignored
         if merchant_norm not in ignored_merchants:

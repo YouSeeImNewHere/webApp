@@ -478,7 +478,21 @@ async function maybeTriggerCreditUsageNotifs(creditAccounts) {
   // Positive balances are effectively a credit (overpaid/refund) -> 0 used.
   const usedFromBal = (bal) => Math.max(0, -Number(bal || 0));
 
-  const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const todayKey = isoDayLocal();
+  const thresholdBucket = (pct) => {
+    const p = Number(pct || 0);
+    let best = 0;
+    for (const t of CREDIT_USAGE_THRESHOLDS) {
+      if (p >= t) best = t;
+    }
+    return best;
+  };
+  const readLastBucket = (key) => {
+    try { return Number(localStorage.getItem(key) || 0) || 0; } catch { return 0; }
+  };
+  const writeLastBucket = (key, val) => {
+    try { localStorage.setItem(key, String(Number(val || 0) || 0)); } catch {}
+  };
 
   // ----- Per-card thresholds -----
   for (const a of creditAccounts) {
@@ -486,20 +500,22 @@ async function maybeTriggerCreditUsageNotifs(creditAccounts) {
     if (!(limit > 0)) continue; // includes Unlimited->0
 
     const used = usedFromBal(a.total);
-
     const pct = (used / limit) * 100;
+    const bucket = thresholdBucket(pct);
+    const stateKey = `notif:credit_usage:card:${String(a.id)}`;
+    const lastBucket = readLastBucket(stateKey);
 
-    for (const t of CREDIT_USAGE_THRESHOLDS) {
-      if (pct < t) continue;
-
+    // Notify only when crossing upward to a higher configured threshold.
+    if (bucket > 0 && bucket > lastBucket) {
       await pushNotif({
         kind: "credit_usage",
-        dedupe_key: `cc:${a.id}:${t}:${todayKey}`, // once per day per threshold
-        subject: `Credit usage: ${a.name} hit ${t}%`,
+        dedupe_key: `cc:${a.id}:${bucket}:${todayKey}`,
+        subject: `Credit usage: ${a.name} hit ${bucket}%`,
         sender: "Credit Monitor",
         body: `${a.name}: ${pct.toFixed(1)}% used (${money(used)} of ${money(limit)}).`,
       });
     }
+    writeLastBucket(stateKey, bucket);
   }
 
   // ----- Total thresholds -----
@@ -511,17 +527,19 @@ async function maybeTriggerCreditUsageNotifs(creditAccounts) {
 
   const totalPct = (totalUsed / totalLimit) * 100;
 
-  for (const t of CREDIT_USAGE_THRESHOLDS) {
-    if (totalPct < t) continue;
-
+  const totalBucket = thresholdBucket(totalPct);
+  const totalKey = "notif:credit_usage:total";
+  const lastTotalBucket = readLastBucket(totalKey);
+  if (totalBucket > 0 && totalBucket > lastTotalBucket) {
     await pushNotif({
       kind: "credit_usage_total",
-      dedupe_key: `cc:TOTAL:${t}:${todayKey}`,
-      subject: `Total credit usage hit ${t}%`,
+      dedupe_key: `cc:TOTAL:${totalBucket}:${todayKey}`,
+      subject: `Total credit usage hit ${totalBucket}%`,
       sender: "Credit Monitor",
       body: `Total: ${totalPct.toFixed(1)}% used (${money(totalUsed)} of ${money(totalLimit)}).`,
     });
   }
+  writeLastBucket(totalKey, totalBucket);
 }
 
 function computeCreditSummary(accounts) {
