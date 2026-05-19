@@ -2181,6 +2181,8 @@ async function flushDeferredRules() {
 
   let okCount = 0;
   let failCount = 0;
+  const failedItems = [];
+  const jobIds = [];
   for (const item of queued) {
     try {
       const res = await apiPostJson("/category-rules", {
@@ -2188,8 +2190,24 @@ async function flushDeferredRules() {
         keywords: item.keywords,
         apply_now: true,
       });
-      if (res?.ok) okCount += 1;
-      else failCount += 1;
+      if (res?.ok) {
+        okCount += 1;
+        const jid = Number(res?.apply_job?.id || 0);
+        if (jid > 0) jobIds.push(jid);
+      } else {
+        failCount += 1;
+        failedItems.push(item);
+      }
+    } catch (_) {
+      failCount += 1;
+      failedItems.push(item);
+    }
+  }
+
+  // Wait for backend apply jobs so uncategorized queue reflects completed updates.
+  for (const jid of jobIds) {
+    try {
+      await waitForCategoryRuleApplyJob(jid);
     } catch (_) {
       failCount += 1;
     }
@@ -2198,9 +2216,15 @@ async function flushDeferredRules() {
   try { await loadCategoryTotalsThisMonth(); } catch (_) {}
   try { await refreshUnassignedQueueAfterSave(); } catch (_) {}
 
+  // Keep failed saves queued so the user can retry.
+  if (failedItems.length) {
+    pendingDeferredRules = failedItems;
+  }
+
   if (failCount > 0) {
     console.warn(`Deferred apply complete with errors: ${okCount} saved, ${failCount} failed.`);
   }
+  return { okCount, failCount };
 }
 
 
@@ -2252,13 +2276,31 @@ async function openRuleModal() {
   showUnassignedAt(0);
 }
 
-function closeRuleModal() {
-  openBackdrop(false);
+async function closeRuleModal() {
+  if (hasRuleDraftReady()) {
+    await saveRule();
+  }
   const shouldFlush = pendingDeferredRules.length > 0;
-  if (!shouldFlush) return;
-  (async () => {
-    await flushDeferredRules();
-  })();
+  if (!shouldFlush) {
+    openBackdrop(false);
+    return;
+  }
+  const msgEl = document.getElementById("ruleSaveMsg");
+  if (msgEl) msgEl.textContent = `Saving ${pendingDeferredRules.length} deferred rule(s)...`;
+  try {
+    const out = await flushDeferredRules();
+    const okCount = Number(out?.okCount || 0);
+    const failCount = Number(out?.failCount || 0);
+    if (failCount > 0) {
+      if (msgEl) msgEl.textContent = `Saved ${okCount}, failed ${failCount}. Keep modal open to retry.`;
+      return;
+    }
+    if (msgEl) msgEl.textContent = `Saved ${okCount} deferred rule(s).`;
+  } catch (_) {
+    if (msgEl) msgEl.textContent = "Failed to save deferred rules. Keep modal open to retry.";
+    return;
+  }
+  openBackdrop(false);
 }
 
 function _ruleJobSleep(ms) {
@@ -2373,6 +2415,13 @@ async function saveRule() {
 
 }
 
+function hasRuleDraftReady() {
+  const category = String(document.getElementById("ruleCategory")?.value || "").trim();
+  const keywordsRaw = String(document.getElementById("ruleKeywords")?.value || "");
+  const keywords = keywordsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  return Boolean(category) && keywords.length > 0;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 const btn = document.getElementById("goBudgetBtn");
   if (btn) btn.addEventListener("click", () => (window.location.href = "/budget"));
@@ -2397,14 +2446,12 @@ mountChartCard("#homeChartMount", {
 });
 
 const closeBtn = document.getElementById("ruleModalClose");
-  const saveBtn = document.getElementById("ruleSaveBtn");
   const skipBtn = document.getElementById("ruleSkipBtn");
   const viewSkippedBtn = document.getElementById("ruleViewSkippedBtn");
   const deferCb = document.getElementById("ruleDeferApply");
   const backdrop = document.getElementById("ruleModalBackdrop");
 
   if (closeBtn) closeBtn.addEventListener("click", closeRuleModal);
-  if (saveBtn) saveBtn.addEventListener("click", saveRule);
   if (skipBtn) skipBtn.addEventListener("click", () => { skipCurrentUnassigned().catch(() => {}); });
   if (viewSkippedBtn) viewSkippedBtn.addEventListener("click", toggleSkippedPanel);
   if (deferCb) deferCb.addEventListener("change", (e) => setRuleDeferApply(Boolean(e?.target?.checked)));
@@ -2552,6 +2599,10 @@ function prevUnassigned() {
 
 async function nextUnassigned() {
   const msgEl = document.getElementById("ruleSaveMsg");
+  if (hasRuleDraftReady()) {
+    await saveRule();
+    return;
+  }
   if (!unassignedQueue.length) {
     try {
       const added = await loadMoreUnassignedIntoQueue({ limit: 25 });

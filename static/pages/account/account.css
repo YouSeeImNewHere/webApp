@@ -31,8 +31,8 @@ body.page-account .account-title-switcher__select{
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    width: calc(100% - 170px);
-    max-width: calc(100% - 170px);
+    width: calc(100% - 120px) !important;
+    max-width: calc(100% - 120px) !important;
     margin: 0;
   }
 
@@ -58,6 +58,10 @@ body.page-account .account-tx-actions{
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+body.page-account .account-tx-download-btn{
+  margin-left: auto;
 }
 
 body.page-account .account-tx-add-btn{
@@ -305,8 +309,9 @@ body.page-account .tx-row.is-audit-row:focus-within::before{
 
 @media (max-width: 900px){
   body.page-account .account-tx-header{
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
   body.page-account .account-tx-actions{

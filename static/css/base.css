@@ -1811,7 +1811,7 @@ body.page-recurring .occ-ico:hover{ background: rgba(0,0,0,0.05); }
   top:0;
   right:0;
   width:min(520px, 92vw);
-  height:100vh;
+  height:100dvh;
   background:#fff;
   z-index:901;
   display:flex;
@@ -4412,8 +4412,6 @@ body.bank-panel-open{
 /* Hard stop: no sideways scroll when bank panel is open */
 body.bank-panel-open{
   overflow-x: hidden !important;
-  position: fixed;         /* locks the viewport */
-  width: 100%;
 }
 
 /* Ensure the panel itself never exceeds the viewport */

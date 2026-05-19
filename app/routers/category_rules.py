@@ -50,6 +50,7 @@ _RULE_APPLY_JOBS_READY = False
 _RULE_APPLY_JOBS_LOCK = Lock()
 _RULE_APPLY_WORKERS: set[int] = set()
 MONTH_BUDGET_CALC_VERSION = 2
+_CATEGORY_RULES_HAS_TENANT_ID: bool | None = None
 
 # =============================================================================
 # Category Rules (Postgres) — ported from category_rules.py
@@ -1616,6 +1617,28 @@ def _ensure_category_rule_apply_jobs_pg() -> None:
     _RULE_APPLY_JOBS_READY = True
 
 
+def _category_rules_has_tenant_id(cur) -> bool:
+    global _CATEGORY_RULES_HAS_TENANT_ID
+    if _CATEGORY_RULES_HAS_TENANT_ID is not None:
+        return bool(_CATEGORY_RULES_HAS_TENANT_ID)
+    try:
+        cur.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = %s
+              AND column_name = 'tenant_id'
+            LIMIT 1
+            """,
+            (str(CATEGORY_RULES_TABLE),),
+        )
+        _CATEGORY_RULES_HAS_TENANT_ID = bool(cur.fetchone())
+    except Exception:
+        _CATEGORY_RULES_HAS_TENANT_ID = False
+    return bool(_CATEGORY_RULES_HAS_TENANT_ID)
+
+
 def _rule_apply_job_row_to_api(row: dict[str, Any]) -> dict[str, Any]:
     def _iso(v):
         return v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
@@ -1768,14 +1791,24 @@ def create_category_rule(payload: RuleCreate):
 
     with with_db_cursor() as (conn, cur):
         try:
-            cur.execute(
-                f"""
-                INSERT INTO {CATEGORY_RULES_TABLE} (category, pattern, flags, is_active)
-                VALUES (%s, %s, %s, TRUE)
-                RETURNING id
-                """,
-                (category, pattern, flags),
-            )
+            if _category_rules_has_tenant_id(cur):
+                cur.execute(
+                    f"""
+                    INSERT INTO {CATEGORY_RULES_TABLE} (tenant_id, category, pattern, flags, is_active)
+                    VALUES (%s, %s, %s, %s, TRUE)
+                    RETURNING id
+                    """,
+                    (int(_tenant_scope_key(tid)), category, pattern, flags),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    INSERT INTO {CATEGORY_RULES_TABLE} (category, pattern, flags, is_active)
+                    VALUES (%s, %s, %s, TRUE)
+                    RETURNING id
+                    """,
+                    (category, pattern, flags),
+                )
             rule_row = cur.fetchone() or {}
             rule_id = int(rule_row.get("id") or 0) or None
             conn.commit()  # commit rule insert before background apply
@@ -2509,3 +2542,7 @@ def _require_tenant_id() -> int | None:
     if not tid:
         raise HTTPException(status_code=403, detail="tenant_required")
     return int(tid)
+
+
+def _tenant_scope_key(tid: int | None) -> int:
+    return int(tid or 0)
