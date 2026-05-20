@@ -36,6 +36,7 @@ let showPotentialGrowth = false;
 let endBeforePotential = null;
 const CREDIT_UTILIZATION_CAP = 0.30; // 30% real utilization == 100% displayed
 let HOME_BOOT_COMPLETE = false;
+let HOME_DATA_LOADED = false;
 
 // =============================
 // UI Layout (server-persisted)
@@ -582,6 +583,52 @@ function sortAccountsByOrder(accounts, orderList) {
   });
 }
 
+function renderHomeLoadingScaffold() {
+  const bankTotals = document.getElementById("bankTotals");
+  if (bankTotals && !bankTotals.dataset.loaded) {
+    bankTotals.innerHTML = `
+      <div class="bank-card"><div class="bank-card__head">Loading accounts...</div><div class="bank-card__meta">Checking</div></div>
+      <div class="bank-card"><div class="bank-card__head">Loading accounts...</div><div class="bank-card__meta">Card Balances</div></div>
+      <div class="bank-card"><div class="bank-card__head">Loading accounts...</div><div class="bank-card__meta">Savings</div></div>
+    `;
+  }
+
+  const catList = document.getElementById("categoryTotalsList");
+  if (catList && !catList.dataset.loaded) {
+    catList.innerHTML = `
+      <li>Loading categories...</li>
+      <li>Loading categories...</li>
+      <li>Loading categories...</li>
+    `;
+  }
+
+  const txList = document.getElementById("txList");
+  if (txList && !txList.dataset.loaded) {
+    txList.innerHTML = `
+      <div class="tx-row"><div class="tx-main"><div class="tx-merchant">Loading transactions...</div></div><div class="tx-amt">-</div></div>
+      <div class="tx-row"><div class="tx-main"><div class="tx-merchant">Loading transactions...</div></div><div class="tx-amt">-</div></div>
+      <div class="tx-row"><div class="tx-main"><div class="tx-merchant">Loading transactions...</div></div><div class="tx-amt">-</div></div>
+    `;
+  }
+}
+
+function renderHomeDataUnavailableFallback() {
+  const bankTotals = document.getElementById("bankTotals");
+  if (bankTotals && !bankTotals.dataset.loaded) {
+    bankTotals.innerHTML = `<div style="opacity:.75;">Could not load accounts right now. Pull to refresh or try again.</div>`;
+  }
+
+  const catList = document.getElementById("categoryTotalsList");
+  if (catList && !catList.dataset.loaded) {
+    catList.innerHTML = `<li>Could not load spending data.</li>`;
+  }
+
+  const txList = document.getElementById("txList");
+  if (txList && !txList.dataset.loaded) {
+    txList.innerHTML = `<div class="tx-row"><div class="tx-main"><div class="tx-merchant">Could not load transactions.</div></div></div>`;
+  }
+}
+
 async function loadBankTotals(dataOverride = null) {
   let data = dataOverride;
   if (!data) {
@@ -596,6 +643,7 @@ async function loadBankTotals(dataOverride = null) {
   const container = document.getElementById("bankTotals");
   if (!container) return;
   container.innerHTML = "";
+  container.dataset.loaded = "1";
 
   const map = {
     checking: { title: "Checking", payload: data.checking },
@@ -876,7 +924,7 @@ async function loadHomePayload() {
     }
   };
 
-  const cachedPayload = apiPeekCachedJson(homePayloadUrl);
+  const cachedPayload = apiPeekCachedJson(homePayloadUrl, { allowStale: true });
   if (cachedPayload && typeof cachedPayload === "object") {
     await applyHomePayload(cachedPayload);
 
@@ -1119,6 +1167,7 @@ btn.innerHTML = `
 }
 
 async function bootHome() {
+  renderHomeLoadingScaffold();
   try {
     UI_LAYOUT = await window.LayoutStore.load("home", getDefaultUILayout());
     applyHomeSectionOrder();
@@ -1156,6 +1205,7 @@ async function bootHome() {
     for (const r of results) {
       if (r.status === "rejected") console.warn("Home task failed:", r.reason);
     }
+    HOME_DATA_LOADED = !!(pageHomePayload && typeof pageHomePayload === "object");
     if (document.getElementById("mbSafe")) {
       refreshMonthBudgetCard(false, pageHomePayload);
     }
@@ -1196,6 +1246,7 @@ async function bootHome() {
       });
     }
   }
+  if (!HOME_DATA_LOADED) renderHomeDataUnavailableFallback();
   HOME_BOOT_COMPLETE = true;
 }
 
@@ -1877,6 +1928,7 @@ async function loadCategoryTotalsThisMonth(payloadOverride = null, unknownPayloa
   if (!ul) return;
 
   ul.innerHTML = "";
+  ul.dataset.loaded = "1";
 
   // monthly money categories
   if (!data.length) {
@@ -2683,6 +2735,7 @@ function renderTxList(data){
   if (!list) return;
 
   list.innerHTML = "";
+  list.dataset.loaded = "1";
   const fragment = document.createDocumentFragment();
 
   const rows = Array.isArray(data) ? data : [];
