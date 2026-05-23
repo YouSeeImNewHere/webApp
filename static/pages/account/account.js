@@ -11,6 +11,7 @@ let latestAccountRows = [];
 let pendingBalanceMultiplier = -1;
 let latestAccountHeader = null;
 let currentAccountType = "";
+let ACCOUNT_DATA_LOADED = false;
 
 
 const ACCOUNT_CHART_IDS = {
@@ -251,6 +252,40 @@ function escHtml(s){
     .replace(/'/g, "&#39;");
 }
 
+function postClientSignal(source, message) {
+  try {
+    const payload = {
+      source: String(source || "account_client"),
+      message: String(message || ""),
+      page_url: String(window.location.href || "").slice(0, 1000),
+      route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+      status_code: 0,
+    };
+    if (navigator?.sendBeacon) {
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      navigator.sendBeacon("/admin/error-notifications/client", blob);
+      return;
+    }
+    fetch("/admin/error-notifications/client", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+function renderAccountLoadingScaffold() {
+  const list = document.getElementById("txList");
+  if (!list || list.dataset.loaded === "1") return;
+  list.innerHTML = `
+    <div class="tx-row"><div class="tx-main"><div class="tx-merchant">Loading transactions...</div></div><div class="tx-right"><div class="tx-amt">-</div></div></div>
+    <div class="tx-row"><div class="tx-main"><div class="tx-merchant">Loading transactions...</div></div><div class="tx-right"><div class="tx-amt">-</div></div></div>
+    <div class="tx-row"><div class="tx-main"><div class="tx-merchant">Loading transactions...</div></div><div class="tx-right"><div class="tx-amt">-</div></div></div>
+  `;
+}
+
 function parseAnyDateToMs(x) {
   if (!x) return 0;
   const s = String(x);
@@ -459,6 +494,7 @@ async function loadAccountTransactions(accountId, opts = {}){
     );
   } catch (err) {
     console.error("account-transactions-range failed:", err);
+    postClientSignal("account_transactions_load_failed", String(err?.message || err || "load failed"));
     list.innerHTML = `<div style="padding:10px;">Failed to load.</div>`;
     return;
   }
@@ -468,9 +504,11 @@ async function loadAccountTransactions(accountId, opts = {}){
   pendingBalanceMultiplier = Number.isFinite(mult) ? mult : -1;
 
   list.innerHTML = "";
+  list.dataset.loaded = "1";
 
   if (!Array.isArray(data) || data.length === 0) {
     list.innerHTML = `<div style="padding:10px;">No transactions found in this range.</div>`;
+    ACCOUNT_DATA_LOADED = true;
     return;
   }
 
@@ -677,6 +715,7 @@ if (!AUDIT_MODE && pending.length) {
   });
 
   if (typeof window.attachTxInspect === "function") window.attachTxInspect(list);
+  ACCOUNT_DATA_LOADED = true;
 }
 
 function normalizeCsvField(v) {
@@ -939,6 +978,7 @@ function setActiveQuickButton(container, btn){
 }
 
 window.addEventListener("load", async () => {
+  renderAccountLoadingScaffold();
   accountId = Number(qs("account_id"));
   if (!accountId) return alert("Missing account_id");
   hideAuditSuppressedSections();

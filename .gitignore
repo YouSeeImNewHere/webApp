@@ -50,3 +50,10 @@ backup/
 /data/
 
 Receipts/testing/
+
+# QA artifacts
+tmp_mobile_layout/
+
+# Node / Playwright local tooling
+node_modules/
+npm-debug.log*

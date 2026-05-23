@@ -475,6 +475,24 @@ export async function apiFetch(url, options = {}) {
     }
     return res;
   } catch (err) {
+    const timeoutLike = err && (err.name === "AbortError" || /aborted|timeout/i.test(String(err.message || "")));
+    if (timeoutLike && !opts.skipClientErrorReport) {
+      const method = String(opts.method || "GET").toUpperCase();
+      const urlStr = String(url || "");
+      sendClientErrorReport(
+        {
+          source: "api_timeout",
+          message: `Timeout ${method} ${urlStr}`.slice(0, 1000),
+          page_url: String(window.location.href || "").slice(0, 1000),
+          route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+          request_url: urlStr.slice(0, 1000),
+          request_method: method,
+          status_code: 0,
+          user_agent: String(navigator?.userAgent || "").slice(0, 500),
+        },
+        `api_timeout:${method}:${urlStr}`,
+      );
+    }
     if (!opts.skipClientErrorReport) {
       const method = String(opts.method || "GET").toUpperCase();
       const urlStr = String(url || "");

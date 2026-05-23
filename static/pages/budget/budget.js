@@ -31,6 +31,7 @@ function buildSpentMap(items) {
 
 
 let spentPieChart = null;
+let BUDGET_DATA_LOADED = false;
 
 function destroySpentPie() {
   if (spentPieChart) {
@@ -449,6 +450,7 @@ function renderSpentPie(items, spentMap) {
   function renderGroups(d) {
   const host = $("groupRows");
   host.innerHTML = "";
+  host.dataset.loaded = "1";
 
   const groups = d.groups || [];
   if (!groups.length) {
@@ -466,6 +468,56 @@ function renderSpentPie(items, spentMap) {
   });
 
   for (const g of sortedGroups) host.appendChild(groupRowEl(g));
+}
+
+function postClientSignal(source, message) {
+  try {
+    const payload = {
+      source: String(source || "budget_client"),
+      message: String(message || ""),
+      page_url: String(window.location.href || "").slice(0, 1000),
+      route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+      status_code: 0,
+    };
+    if (navigator?.sendBeacon) {
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      navigator.sendBeacon("/admin/error-notifications/client", blob);
+      return;
+    }
+    fetch("/admin/error-notifications/client", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+function renderBudgetLoadingScaffold() {
+  const groupRows = $("groupRows");
+  const spentRows = $("spentRows");
+  const fundsRows = $("fundsRows");
+  if (groupRows && !groupRows.dataset.loaded) {
+    groupRows.innerHTML = `<div class="budget-muted">Loading groups...</div>`;
+  }
+  if (spentRows && !spentRows.dataset.loaded) {
+    spentRows.innerHTML = `<div class="budget-muted">Loading categories...</div>`;
+  }
+  if (fundsRows && !fundsRows.dataset.loaded) {
+    fundsRows.innerHTML = `<div class="budget-muted">Loading funds...</div>`;
+  }
+}
+
+function renderBudgetDataUnavailableFallback() {
+  if (BUDGET_DATA_LOADED) return;
+  const groupRows = $("groupRows");
+  const spentRows = $("spentRows");
+  const fundsRows = $("fundsRows");
+  if (groupRows && !groupRows.dataset.loaded) groupRows.innerHTML = `<div class="budget-muted">Could not load groups.</div>`;
+  if (spentRows && !spentRows.dataset.loaded) spentRows.innerHTML = `<div class="budget-muted">Could not load categories.</div>`;
+  if (fundsRows && !fundsRows.dataset.loaded) fundsRows.innerHTML = `<div class="budget-muted">Could not load funds.</div>`;
+  postClientSignal("budget_empty_render", "Budget fallback rendered due to missing payload.");
 }
 
 
@@ -653,6 +705,7 @@ function renderFunds(d) {
   if (!host || !empty) return;
 
   host.innerHTML = "";
+  host.dataset.loaded = "1";
   const funds = (d.funds || []).filter((x) => x && x.is_active !== false);
 
   if (!funds.length) {
@@ -667,6 +720,7 @@ function renderFunds(d) {
 function renderSpent(d) {
   const host = $("spentRows");
   host.innerHTML = "";
+  host.dataset.loaded = "1";
 
   const items = d.spent_categories || [];
   if (!items.length) {
@@ -757,6 +811,7 @@ renderSpentPie(items, spentMap);
 bindSpentRowClick();
 bindSafeRowClick();
     await renderTrendPanel();
+    BUDGET_DATA_LOADED = true;
 
   }
 
@@ -1619,6 +1674,7 @@ async function openSpentBreakdown() {
 }
 
   window.addEventListener("DOMContentLoaded", async () => {
+    renderBudgetLoadingScaffold();
     initMonth();
 
     const prevBtn = $("prevMonthBtn");
@@ -1751,6 +1807,8 @@ try {
           }
         } catch (e) {
           console.error(e);
+          postClientSignal("budget_page_load_failed", String(e?.message || e || "budget load failed"));
+          renderBudgetDataUnavailableFallback();
           alert("Budget page failed to load: " + e.message);
         }
 

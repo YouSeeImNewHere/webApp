@@ -612,6 +612,30 @@ function renderHomeLoadingScaffold() {
   }
 }
 
+function postClientSignal(source, message) {
+  try {
+    const payload = {
+      source: String(source || "home_client"),
+      message: String(message || ""),
+      page_url: String(window.location.href || "").slice(0, 1000),
+      route: `${window.location.pathname || "/"}${window.location.search || ""}`,
+      status_code: 0,
+    };
+    if (navigator?.sendBeacon) {
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      navigator.sendBeacon("/admin/error-notifications/client", blob);
+      return;
+    }
+    fetch("/admin/error-notifications/client", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (_) {}
+}
+
 function renderHomeDataUnavailableFallback() {
   const bankTotals = document.getElementById("bankTotals");
   if (bankTotals && !bankTotals.dataset.loaded) {
@@ -627,6 +651,7 @@ function renderHomeDataUnavailableFallback() {
   if (txList && !txList.dataset.loaded) {
     txList.innerHTML = `<div class="tx-row"><div class="tx-main"><div class="tx-merchant">Could not load transactions.</div></div></div>`;
   }
+  postClientSignal("home_empty_render", "Home fallback rendered due to missing payload.");
 }
 
 async function loadBankTotals(dataOverride = null) {

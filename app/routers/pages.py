@@ -192,7 +192,11 @@ def account_page():
 
 @router.get("/analytics")
 def analytics_page():
-    return FileResponse("static/pages/analytics/analytics.html")
+    resp = FileResponse("static/pages/analytics/analytics.html")
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @router.get("/transaction/{tx_id}")
