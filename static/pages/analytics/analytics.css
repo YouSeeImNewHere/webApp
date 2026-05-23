@@ -189,22 +189,28 @@
   .analytics-wrap {
     padding: 10px 10px 120px;
     gap: 10px;
+    max-width: 100%;
+    overflow-x: clip;
   }
 
   .analytics-card {
     padding: 10px;
     border-radius: 12px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .analytics-card > div {
     min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .analytics-table {
-    display: block;
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
   }
 
   .analytics-table th,
@@ -214,6 +220,29 @@
 
   .bar-cell {
     min-width: 140px;
+  }
+
+  .analytics-toolbar {
+    align-items: stretch;
+  }
+
+  .analytics-toolbar__left {
+    width: 100%;
+  }
+
+  .analytics-toolbar__left label {
+    width: 100%;
+  }
+
+  .analytics-toolbar input[type="month"] {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  #reportRefreshBtn,
+  #reportDownloadPdfBtn {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 
