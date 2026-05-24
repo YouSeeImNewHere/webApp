@@ -75,6 +75,7 @@ PUBLIC_EXACT = {
     "/login",
     "/favicon.ico",
     "/health",
+    "/garmin/info",
     "/gmail/push",
     "/gmail/oauth/start",
     "/gmail/oauth/callback",
