@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Query
 
-from app.core.tenancy import current_tenant_id
+from app.core.tenancy import current_tenant_id, set_current_tenant_id, reset_current_tenant_id
 from app.core.redis_cache import get_redis
+from app.core.time import today_local
+from app.routers.analytics import spending_unbudgeted_safe_range
 from app.routers.page_payloads import (
     _build_widget_payload_for_tenant_version,
     _widget_redis_get_payload,
@@ -77,8 +80,29 @@ def garmin_info(
 
     today = (payload.get("today") or {})
     credit = (payload.get("credit") or {})
-    weekly_safe = payload.get("weekly_safe") or []
-    weekly_spend = payload.get("weekly_spend") or []
+    # Weekly trend payload for watch chart (7d), computed only when returning changed payload.
+    weekly_safe = []
+    weekly_spend = []
+    token = set_current_tenant_id(int(tid) if tid else None)
+    try:
+        end_d = today_local()
+        start_d = end_d - timedelta(days=6)
+        trend = spending_unbudgeted_safe_range(start=start_d.isoformat(), end=end_d.isoformat()) or {}
+        series = trend.get("series") or []
+        for p in series:
+            weekly_safe.append(round(float((p or {}).get("daily_safe_to_spend") or 0.0), 2))
+            weekly_spend.append(round(float((p or {}).get("unbudgeted_spend") or 0.0), 2))
+    except Exception:
+        weekly_safe = []
+        weekly_spend = []
+    finally:
+        reset_current_tenant_id(token)
+
+    # Never return blank chart data to the watch. Keep 7 points.
+    if len(weekly_safe) == 0 or len(weekly_spend) == 0:
+        fallback_safe = round(float(today.get("daily_limit") or today.get("baseline") or 0.0), 2)
+        weekly_safe = [fallback_safe, fallback_safe, fallback_safe, fallback_safe, fallback_safe, fallback_safe, fallback_safe]
+        weekly_spend = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     return {
         "status": "OK",
