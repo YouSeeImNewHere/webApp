@@ -10,6 +10,7 @@ from app.core.tenancy import current_tenant_id, set_current_tenant_id, reset_cur
 from app.core.redis_cache import get_redis
 from app.core.time import today_local
 from app.routers.analytics import spending_unbudgeted_safe_range
+from app.routers.accounts import bank_totals
 from app.routers.page_payloads import (
     _build_widget_payload_for_tenant_version,
     _widget_redis_get_payload,
@@ -17,6 +18,7 @@ from app.routers.page_payloads import (
     _widget_version_for_tenant_cached,
     refresh_widget_cache_for_tenant,
 )
+from db import query_db
 
 router = APIRouter()
 
@@ -100,6 +102,7 @@ def garmin_info(
     weekly_safe = []
     weekly_spend = []
     weekly_dates = []
+    account_rows = []
     token = set_current_tenant_id(int(tid) if tid else None)
     try:
         end_d = today_local()
@@ -113,6 +116,79 @@ def garmin_info(
     except Exception:
         weekly_safe = []
         weekly_spend = []
+    finally:
+        reset_current_tenant_id(token)
+
+    # Checking/Savings accounts with approximate month growth.
+    token = set_current_tenant_id(int(tid) if tid else None)
+    try:
+        bt = bank_totals() or {}
+        raw_accounts = []
+        raw_accounts.extend(((bt.get("checking") or {}).get("accounts") or []))
+        raw_accounts.extend(((bt.get("savings") or {}).get("accounts") or []))
+
+        today = today_local()
+        month_start = today.replace(day=1)
+        month_end_excl = today + timedelta(days=1)
+        tx_rows = query_db(
+            """
+            WITH base AS (
+              SELECT
+                t.account_id,
+                t.amount::double precision AS amount,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'),
+                         NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+                LOWER(a.accountType) AS account_type
+              FROM transactions t
+              JOIN accounts a ON a.id = t.account_id
+              WHERE LOWER(a.accountType) IN ('checking','savings')
+                AND COALESCE(t.is_ignored, false) = false
+                AND t.tenant_id = %s
+                AND a.tenant_id = %s
+            ),
+            norm AS (
+              SELECT
+                account_id,
+                amount,
+                CASE
+                  WHEN raw_date IS NULL THEN NULL
+                  WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                  WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                  ELSE NULL
+                END AS d
+              FROM base
+            )
+            SELECT account_id, COALESCE(SUM(amount),0)::double precision AS amt
+            FROM norm
+            WHERE d IS NOT NULL
+              AND d >= %s
+              AND d < %s
+            GROUP BY account_id
+            """,
+            (int(tid or 0), int(tid or 0), month_start, month_end_excl),
+        ) or []
+        month_amt_by_id = {int(r.get("account_id") or 0): float(r.get("amt") or 0.0) for r in tx_rows}
+
+        for a in raw_accounts:
+            aid = int(a.get("id") or 0)
+            total_now = float(a.get("total") or 0.0)
+            # For checking/savings balance math: balance = start - trans, so month delta ~= -month_tx.
+            month_delta = -float(month_amt_by_id.get(aid, 0.0))
+            month_start_bal = total_now - month_delta
+            if abs(month_start_bal) < 1e-6:
+                growth_pct = 0.0
+            else:
+                growth_pct = (month_delta / month_start_bal) * 100.0
+            account_rows.append(
+                {
+                    "name": str(a.get("name") or "Account"),
+                    "total": round(total_now, 2),
+                    "growth_pct": round(growth_pct, 1),
+                }
+            )
+        account_rows.sort(key=lambda x: abs(float(x.get("total") or 0.0)), reverse=True)
+    except Exception:
+        account_rows = []
     finally:
         reset_current_tenant_id(token)
 
@@ -143,6 +219,7 @@ def garmin_info(
         "days_left": int(payload.get("days_left") or 0),
         "as_of": str(payload.get("as_of") or ""),
         "tenant_id": int(tid or 0),
+        "accounts": account_rows,
         "weekly_safe": weekly_safe,
         "weekly_spend": weekly_spend,
         "weekly_dates": weekly_dates,
