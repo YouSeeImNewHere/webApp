@@ -127,9 +127,9 @@ def garmin_info(
         raw_accounts.extend(((bt.get("checking") or {}).get("accounts") or []))
         raw_accounts.extend(((bt.get("savings") or {}).get("accounts") or []))
 
-        today = today_local()
-        month_start = today.replace(day=1)
-        month_end_excl = today + timedelta(days=1)
+        today_d = today_local()
+        month_start = today_d.replace(day=1)
+        month_end_excl = today_d + timedelta(days=1)
         tx_rows = query_db(
             """
             WITH base AS (
