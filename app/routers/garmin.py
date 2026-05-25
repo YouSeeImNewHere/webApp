@@ -80,9 +80,23 @@ def garmin_info(
 
     today = (payload.get("today") or {})
     credit = (payload.get("credit") or {})
+    credit_accounts = (credit.get("accounts") or [])
+    credit_cards = []
+    for a in credit_accounts:
+        if not isinstance(a, dict):
+            continue
+        credit_cards.append(
+            {
+                "name": str(a.get("name") or "Card"),
+                "used": round(float(a.get("used") or 0.0), 2),
+                "cap": round(float(a.get("cap") or 0.0), 2),
+                "pct": int(a.get("pct") or 0),
+            }
+        )
     # Weekly trend payload for watch chart (7d), computed only when returning changed payload.
     weekly_safe = []
     weekly_spend = []
+    weekly_dates = []
     token = set_current_tenant_id(int(tid) if tid else None)
     try:
         end_d = today_local()
@@ -92,6 +106,7 @@ def garmin_info(
         for p in series:
             weekly_safe.append(round(float((p or {}).get("daily_safe_to_spend") or 0.0), 2))
             weekly_spend.append(round(float((p or {}).get("unbudgeted_spend") or 0.0), 2))
+            weekly_dates.append(str((p or {}).get("date") or ""))
     except Exception:
         weekly_safe = []
         weekly_spend = []
@@ -103,6 +118,12 @@ def garmin_info(
         fallback_safe = round(float(today.get("daily_limit") or today.get("baseline") or 0.0), 2)
         weekly_safe = [fallback_safe, fallback_safe, fallback_safe, fallback_safe, fallback_safe, fallback_safe, fallback_safe]
         weekly_spend = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        end_d = today_local()
+        weekly_dates = []
+        i = 6
+        while i >= 0:
+            weekly_dates.append((end_d - timedelta(days=i)).isoformat())
+            i -= 1
 
     return {
         "status": "OK",
@@ -114,9 +135,11 @@ def garmin_info(
         "credit_pct": int(credit.get("pct") or 0),
         "credit_used": round(float(credit.get("used") or 0.0), 2),
         "credit_cap": round(float(credit.get("cap") or 0.0), 2),
+        "credit_cards": credit_cards,
         "days_left": int(payload.get("days_left") or 0),
         "as_of": str(payload.get("as_of") or ""),
         "tenant_id": int(tid or 0),
         "weekly_safe": weekly_safe,
         "weekly_spend": weekly_spend,
+        "weekly_dates": weekly_dates,
     }

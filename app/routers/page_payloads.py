@@ -195,6 +195,22 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
         bal = float(a.get("total") or 0)
         used_sum += max(0.0, -bal)
 
+    card_rows = []
+    for a in credit_accounts:
+        name = str(a.get("name") or "Card")
+        lim = float(a.get("credit_limit") or 0.0)
+        bal = float(a.get("total") or 0.0)
+        used = max(0.0, -bal)
+        pct = int(round((used / lim) * 100)) if lim > 0 else 0
+        card_rows.append(
+            {
+                "name": name,
+                "used": round(used, 2),
+                "cap": round(lim, 2),
+                "pct": int(max(0, pct)),
+            }
+        )
+
     cap_limit = limit_sum * CREDIT_UTILIZATION_CAP
     available = max(0.0, cap_limit - used_sum)
     pct_used = int(round((used_sum / cap_limit) * 100)) if cap_limit > 0 else 0
@@ -206,6 +222,7 @@ def _build_widget_payload_for_tenant_version(tid: Optional[int], current_version
             "pct": pct_used,
             "available": round(available, 2),
             "limit_sum": round(limit_sum, 2),
+            "accounts": card_rows,
         },
         "notifications_unread": int(unread_val),
         "safe_to_spend": mb["safe_to_spend"],
