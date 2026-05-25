@@ -103,6 +103,8 @@ def garmin_info(
     weekly_spend = []
     weekly_dates = []
     account_rows = []
+    accounts_growth_pct = 0.0
+    accounts_growth_delta = 0.0
     token = set_current_tenant_id(int(tid) if tid else None)
     try:
         end_d = today_local()
@@ -124,8 +126,10 @@ def garmin_info(
     try:
         bt = bank_totals() or {}
         raw_accounts = []
-        raw_accounts.extend(((bt.get("checking") or {}).get("accounts") or []))
-        raw_accounts.extend(((bt.get("savings") or {}).get("accounts") or []))
+        for a in (((bt.get("checking") or {}).get("accounts") or [])):
+            raw_accounts.append((a, "checking"))
+        for a in (((bt.get("savings") or {}).get("accounts") or [])):
+            raw_accounts.append((a, "savings"))
 
         today_d = today_local()
         month_start = today_d.replace(day=1)
@@ -169,12 +173,18 @@ def garmin_info(
         ) or []
         month_amt_by_id = {int(r.get("account_id") or 0): float(r.get("amt") or 0.0) for r in tx_rows}
 
-        for a in raw_accounts:
+        total_month_delta = 0.0
+        total_month_start = 0.0
+        for pair in raw_accounts:
+            a = pair[0]
+            acc_type = pair[1]
             aid = int(a.get("id") or 0)
             total_now = float(a.get("total") or 0.0)
             # For checking/savings balance math: balance = start - trans, so month delta ~= -month_tx.
             month_delta = -float(month_amt_by_id.get(aid, 0.0))
             month_start_bal = total_now - month_delta
+            total_month_delta += month_delta
+            total_month_start += month_start_bal
             if abs(month_start_bal) < 1e-6:
                 growth_pct = 0.0
             else:
@@ -182,13 +192,21 @@ def garmin_info(
             account_rows.append(
                 {
                     "name": str(a.get("name") or "Account"),
+                    "type": str(acc_type),
                     "total": round(total_now, 2),
                     "growth_pct": round(growth_pct, 1),
                 }
             )
         account_rows.sort(key=lambda x: abs(float(x.get("total") or 0.0)), reverse=True)
+        if abs(total_month_start) < 1e-6:
+            accounts_growth_pct = 0.0
+        else:
+            accounts_growth_pct = (total_month_delta / total_month_start) * 100.0
+        accounts_growth_delta = total_month_delta
     except Exception:
         account_rows = []
+        accounts_growth_pct = 0.0
+        accounts_growth_delta = 0.0
     finally:
         reset_current_tenant_id(token)
 
@@ -220,6 +238,8 @@ def garmin_info(
         "as_of": str(payload.get("as_of") or ""),
         "tenant_id": int(tid or 0),
         "accounts": account_rows,
+        "accounts_growth_pct": round(float(accounts_growth_pct or 0.0), 1),
+        "accounts_growth_delta": round(float(accounts_growth_delta or 0.0), 2),
         "weekly_safe": weekly_safe,
         "weekly_spend": weekly_spend,
         "weekly_dates": weekly_dates,
