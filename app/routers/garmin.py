@@ -80,14 +80,17 @@ def garmin_info(
 
     today = (payload.get("today") or {})
     credit = (payload.get("credit") or {})
+    month = (payload.get("month") or {})
     credit_accounts = (credit.get("accounts") or [])
     credit_cards = []
     for a in credit_accounts:
         if not isinstance(a, dict):
             continue
+        raw_name = str(a.get("name") or "Card")
+        name = "".join(ch if ord(ch) < 128 else "-" for ch in raw_name)
         credit_cards.append(
             {
-                "name": str(a.get("name") or "Card"),
+                "name": name,
                 "used": round(float(a.get("used") or 0.0), 2),
                 "cap": round(float(a.get("cap") or 0.0), 2),
                 "pct": int(a.get("pct") or 0),
@@ -130,6 +133,7 @@ def garmin_info(
         "changed": True,
         "widget_version": int(current_version),
         "safe_to_spend": round(float(payload.get("safe_to_spend") or 0.0), 2),
+        "month_goal": round(float(month.get("free_spend_goal") or 0.0), 2),
         "daily_limit": round(float(today.get("daily_limit") or today.get("baseline") or 0.0), 2),
         "remaining_today": round(float(today.get("remaining_today") or 0.0), 2),
         "credit_pct": int(credit.get("pct") or 0),
