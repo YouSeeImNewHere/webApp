@@ -68,11 +68,16 @@ _LOGIN_RATE_LIMIT_BLOCK_SEC = 10 * 60
 _PUSH_OIDC_CACHE_LOCK = threading.Lock()
 _PUSH_OIDC_CACHE: dict[str, float] = {}
 _PUSH_OIDC_CACHE_TTL_SEC = 5 * 60
+_MOBILE_API_TOKEN_PREFIX = "mq1"
+_MOBILE_API_TOKEN_TTL_SEC = 30 * 24 * 60 * 60
+_MOBILE_OAUTH_STATE_PREFIX = "mo1"
+_MOBILE_OAUTH_STATE_TTL_SEC = 15 * 60
 
 # Public endpoints (no login required)
 PUBLIC_EXACT = {
     "/__ping",
     "/login",
+    "/mobile/auth/start",
     "/favicon.ico",
     "/health",
     "/garmin/info",
@@ -693,6 +698,125 @@ def _extract_bearer_token(request: Request) -> str:
     return ""
 
 
+def _b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(raw: str) -> bytes:
+    s = str(raw or "").strip()
+    if not s:
+        return b""
+    pad = "=" * ((4 - (len(s) % 4)) % 4)
+    return base64.urlsafe_b64decode((s + pad).encode("ascii"))
+
+
+def _mobile_api_token_secret() -> bytes:
+    secret = (SESSION_SECRET or WIDGET_SECRET or "").strip()
+    if not secret:
+        raise RuntimeError("SESSION_SECRET is required for mobile auth")
+    return secret.encode("utf-8")
+
+
+def _mobile_oauth_state_secret() -> bytes:
+    secret = (SESSION_SECRET or WIDGET_SECRET or "").strip()
+    if not secret:
+        raise RuntimeError("SESSION_SECRET is required for mobile auth")
+    return secret.encode("utf-8")
+
+
+def _mint_mobile_api_token(*, tenant_id: int, google_email: str) -> str:
+    payload = {
+        "tid": int(tenant_id),
+        "email": _normalize_email(google_email),
+        "exp": int(time.time()) + int(_MOBILE_API_TOKEN_TTL_SEC),
+        "iat": int(time.time()),
+        "ver": 1,
+    }
+    payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    payload_b64 = _b64url_encode(payload_json)
+    sig = hmac.new(_mobile_api_token_secret(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+    return f"{_MOBILE_API_TOKEN_PREFIX}.{payload_b64}.{_b64url_encode(sig)}"
+
+
+def _mint_mobile_oauth_state() -> str:
+    payload = {
+        "mode": "mobile",
+        "ts": int(time.time()),
+        "nonce": secrets.token_urlsafe(18),
+    }
+    payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    payload_b64 = _b64url_encode(payload_json)
+    sig = hmac.new(_mobile_oauth_state_secret(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+    return f"{_MOBILE_OAUTH_STATE_PREFIX}.{payload_b64}.{_b64url_encode(sig)}"
+
+
+def _verify_mobile_api_token(token: str) -> dict[str, object] | None:
+    raw = str(token or "").strip()
+    if not raw:
+        return None
+    parts = raw.split(".")
+    if len(parts) != 3:
+        return None
+    prefix, payload_b64, sig_b64 = parts
+    if prefix != _MOBILE_API_TOKEN_PREFIX:
+        return None
+    try:
+        expected_sig = hmac.new(_mobile_api_token_secret(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+        provided_sig = _b64url_decode(sig_b64)
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            return None
+        payload_raw = _b64url_decode(payload_b64)
+        payload = json.loads(payload_raw.decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        exp = int(payload.get("exp") or 0)
+        if exp <= int(time.time()):
+            return None
+        tid = int(payload.get("tid") or 0)
+        email = _normalize_email(payload.get("email"))
+        if tid <= 0 or not email:
+            return None
+        return {"tenant_id": tid, "email": email, "exp": exp}
+    except Exception:
+        return None
+
+
+def _verify_mobile_oauth_state(state: str) -> dict[str, object] | None:
+    raw = str(state or "").strip()
+    if not raw:
+        return None
+    parts = raw.split(".")
+    if len(parts) != 3:
+        return None
+    prefix, payload_b64, sig_b64 = parts
+    if prefix != _MOBILE_OAUTH_STATE_PREFIX:
+        return None
+    try:
+        expected_sig = hmac.new(_mobile_oauth_state_secret(), payload_b64.encode("ascii"), hashlib.sha256).digest()
+        provided_sig = _b64url_decode(sig_b64)
+        if not hmac.compare_digest(expected_sig, provided_sig):
+            return None
+        payload_raw = _b64url_decode(payload_b64)
+        payload = json.loads(payload_raw.decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("mode") != "mobile":
+            return None
+        ts = int(payload.get("ts") or 0)
+        if ts <= 0 or (time.time() - ts) > _MOBILE_OAUTH_STATE_TTL_SEC:
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def _mobile_auth_callback_url(request: Request) -> str:
+    callback = str(request.query_params.get("callback") or "").strip()
+    if callback and "://" not in callback:
+        callback = ""
+    return callback or "quailcash://auth"
+
+
 def _oidc_cache_has(token: str) -> bool:
     if not token:
         return False
@@ -987,9 +1111,14 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
     except RuntimeError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
-    state = secrets.token_urlsafe(24)
-    request.session["google_oauth_state"] = state
-    request.session["google_oauth_next"] = _sanitize_next_url(next, default="/settings")
+    mobile_callback = str(request.query_params.get("callback") or "").strip()
+    is_mobile = mobile_callback.startswith("quailcash://")
+    if is_mobile:
+        state = _mint_mobile_oauth_state()
+    else:
+        state = secrets.token_urlsafe(24)
+        request.session["google_oauth_state"] = state
+        request.session["google_oauth_next"] = _sanitize_next_url(next, default="/settings")
 
     scopes = [
         "openid",
@@ -1022,9 +1151,16 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
     if not code:
         return JSONResponse({"ok": False, "error": "missing_code"}, status_code=400)
 
+    mobile_oauth = False
     expected_state = request.session.get("google_oauth_state")
-    if not expected_state or expected_state != state:
-        return JSONResponse({"ok": False, "error": "invalid_oauth_state"}, status_code=400)
+    if expected_state and expected_state == state:
+        mobile_oauth = False
+    else:
+        mobile_payload = _verify_mobile_oauth_state(state or "")
+        if mobile_payload:
+            mobile_oauth = True
+        else:
+            return JSONResponse({"ok": False, "error": "invalid_oauth_state"}, status_code=400)
 
     try:
         _require_google_env()
@@ -1107,6 +1243,14 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
     request.session["authed"] = True
     request.session["app_password_ok"] = True
     request.session["google_email"] = google_email
+    if mobile_oauth:
+        tid = _tenant_id_for_email(google_email)
+        if not tid:
+            return JSONResponse({"ok": False, "error": "tenant_not_found"}, status_code=403)
+        token = _mint_mobile_api_token(tenant_id=int(tid), google_email=google_email)
+        redirect_url = f"{_mobile_auth_callback_url(request)}?{urlencode({'token': token, 'email': google_email, 'tenant_id': int(tid)})}"
+        return RedirectResponse(url=redirect_url, status_code=302)
+
     next_url = _sanitize_next_url(request.session.get("google_oauth_next"), default="/settings")
     return RedirectResponse(url=next_url, status_code=302)
 
@@ -1400,6 +1544,15 @@ class RequireLoginMiddleware(BaseHTTPMiddleware):
             request.state.google_email = ""
 
         try:
+            mobile_subject = _verify_mobile_api_token(_extract_bearer_token(request))
+            if mobile_subject:
+                resolved_tid = int(mobile_subject["tenant_id"])
+                set_current_tenant_id(resolved_tid)
+                request.state.tenant_id = resolved_tid
+                request.state.google_email = _normalize_email(mobile_subject.get("email"))
+                request.state.mobile_authed = True
+                return await call_next(request)
+
             # Widget endpoints: OAuth-bound widget token auth.
             if path.startswith("/widget/"):
                 widget_token = _extract_widget_token(request)
@@ -1637,6 +1790,35 @@ async def login(request: Request):
 
     # Otherwise JSON (fetch)
     return {"ok": True, "next": _sanitize_next_url(next_url, default="/")}
+
+
+@router.get("/mobile/auth/start")
+def mobile_auth_start(request: Request):
+    """
+    Native app bootstrap:
+    - if the browser session is already authed, mint a bearer token and redirect
+      back to the app callback scheme.
+    - otherwise, kick into the existing Gmail login flow.
+    """
+    callback = _mobile_auth_callback_url(request)
+    if not _is_authed(request):
+        next_url = f"/mobile/auth/start?callback={callback}"
+        return RedirectResponse(
+            url=f"/gmail/oauth/start?{urlencode({'next': _sanitize_next_url(next_url, default='/'), 'callback': callback})}",
+            status_code=302,
+        )
+
+    google_email = _normalize_email(request.session.get("google_email"))
+    if not google_email:
+        return JSONResponse({"ok": False, "error": "google_email_required"}, status_code=401)
+
+    tid = _tenant_id_for_email(google_email)
+    if not tid:
+        return JSONResponse({"ok": False, "error": "tenant_not_found"}, status_code=403)
+
+    token = _mint_mobile_api_token(tenant_id=int(tid), google_email=google_email)
+    redirect_url = f"{callback}?{urlencode({'token': token, 'email': google_email, 'tenant_id': int(tid)})}"
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.get("/__whoami")
