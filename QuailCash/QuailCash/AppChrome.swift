@@ -197,8 +197,10 @@ struct AppChromeFrame<Content: View>: View {
 
 struct AppPageScroll<Content: View>: View {
     let content: Content
+    let contentPadding: CGFloat
 
-    init(@ViewBuilder content: () -> Content) {
+    init(contentPadding: CGFloat = 12, @ViewBuilder content: () -> Content) {
+        self.contentPadding = contentPadding
         self.content = content()
     }
 
@@ -207,7 +209,7 @@ struct AppPageScroll<Content: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 content
             }
-            .padding(16)
+            .padding(contentPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

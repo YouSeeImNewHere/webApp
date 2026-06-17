@@ -57,3 +57,10 @@ tmp_mobile_layout/
 # Node / Playwright local tooling
 node_modules/
 npm-debug.log*
+
+# Xcode local state for QuailCash
+QuailCash/.DS_Store
+QuailCash/**/*.xcuserdatad/
+QuailCash/**/*.xcuserdata/
+QuailCash/**/project.xcworkspace/xcuserdata/
+DerivedData/

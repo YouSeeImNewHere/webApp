@@ -55,6 +55,11 @@
          <EnvironmentVariable
             key = "QUAIL_API_BASE_URL"
             value = "https://webapp-pe3q.onrender.com"
+            isEnabled = "NO">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "QUAIL_API_BASE_URL"
+            value = "http://127.0.0.1:8000"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

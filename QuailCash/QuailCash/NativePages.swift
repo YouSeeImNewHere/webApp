@@ -32,7 +32,7 @@ struct NativePageView: View {
             case .notifications:
                 NotificationsPageView()
             case .budget:
-                BudgetPageView()
+                NativeBudgetPageView()
             case .analytics:
                 NativeAnalyticsPageView()
             case .recurring:
@@ -48,7 +48,8 @@ struct NativePageView: View {
             case .category(let name):
                 CategoryPageView(category: name)
             case .account(let account, let audit):
-                AccountPageView(account: account, auditMode: audit)
+                NativeAccountPageView(account: account, auditMode: audit)
+                    .id("account-\(account.id)-\(audit ? 1 : 0)")
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -1233,8 +1234,8 @@ func nativeMoneyValue(_ value: Double) -> String {
 func nativeFormatAccountBalance(_ value: Double) -> String {
     let amount = abs(value)
     let raw = nativeMoneyValue(amount)
-    if value < 0 { return raw }
     if value > 0 { return "CR \(raw)" }
+    if value < 0 { return raw }
     return nativeMoneyValue(0)
 }
 

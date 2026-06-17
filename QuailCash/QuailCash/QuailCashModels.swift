@@ -220,6 +220,26 @@ struct BankInfoCreditCardPayload: Decodable, Identifiable, Hashable {
     }
 }
 
+struct AccountInfoPayload: Decodable, Identifiable, Hashable {
+    let id: Int
+    let institution: String?
+    let name: String
+    let accountType: String?
+    let lastCsvUploadAt: String?
+    let lastManualVerifiedAt: String?
+    let auditUpdatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case institution
+        case name
+        case accountType = "accounttype"
+        case lastCsvUploadAt = "last_csv_upload_at"
+        case lastManualVerifiedAt = "last_manual_verified_at"
+        case auditUpdatedAt = "audit_updated_at"
+    }
+}
+
 struct BankInfoBenefitPayload: Decodable, Hashable {
     let categories: [String]?
     let cashbackPercent: Double?
@@ -233,6 +253,7 @@ struct BankInfoBenefitPayload: Decodable, Hashable {
 struct TransactionItem: Decodable, Identifiable, Hashable {
     let id: String
     let accountID: Int?
+    let effectiveDate: String?
     let postedDate: String?
     let date: String?
     let merchant: String
@@ -245,10 +266,15 @@ struct TransactionItem: Decodable, Identifiable, Hashable {
     let category: String?
     let dateISO: String?
     let roundupCents: Int?
+    let balanceAfter: Double?
+    let transferPeer: String?
+    let transferPeerID: String?
+    let transferDir: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case accountID = "account_id"
+        case effectiveDate = "effectiveDate"
         case postedDate
         case date
         case merchant
@@ -261,12 +287,17 @@ struct TransactionItem: Decodable, Identifiable, Hashable {
         case category
         case dateISO
         case roundupCents = "roundup_cents"
+        case balanceAfter = "balance_after"
+        case transferPeer = "transfer_peer"
+        case transferPeerID = "transfer_peer_id"
+        case transferDir = "transfer_dir"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try Self.decodeStringFlexible(container, forKey: .id)
         accountID = try? Self.decodeOptionalIntFlexible(container, forKey: .accountID)
+        effectiveDate = try container.decodeIfPresent(String.self, forKey: .effectiveDate)
         postedDate = try container.decodeIfPresent(String.self, forKey: .postedDate)
         date = try container.decodeIfPresent(String.self, forKey: .date)
         merchant = try container.decodeIfPresent(String.self, forKey: .merchant) ?? ""
@@ -279,6 +310,10 @@ struct TransactionItem: Decodable, Identifiable, Hashable {
         category = try container.decodeIfPresent(String.self, forKey: .category)
         dateISO = try container.decodeIfPresent(String.self, forKey: .dateISO)
         roundupCents = try container.decodeIfPresent(Int.self, forKey: .roundupCents)
+        balanceAfter = try container.decodeIfPresent(Double.self, forKey: .balanceAfter)
+        transferPeer = try container.decodeIfPresent(String.self, forKey: .transferPeer)
+        transferPeerID = try Self.decodeOptionalStringFlexible(container, forKey: .transferPeerID)
+        transferDir = try container.decodeIfPresent(String.self, forKey: .transferDir)
     }
 
     static func decodeStringFlexible<K: CodingKey>(_ container: KeyedDecodingContainer<K>, forKey key: K) throws -> String {
@@ -316,6 +351,19 @@ struct TransactionItem: Decodable, Identifiable, Hashable {
         }
         if let value = try? container.decodeIfPresent(String.self, forKey: key), let parsed = Int(value) {
             return parsed
+        }
+        return nil
+    }
+
+    static func decodeOptionalStringFlexible<K: CodingKey>(_ container: KeyedDecodingContainer<K>, forKey key: K) throws -> String? {
+        if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value.rounded() == value ? String(Int(value)) : String(value)
         }
         return nil
     }
@@ -378,6 +426,70 @@ struct TransactionDetailPayload: Decodable, Identifiable, Hashable {
     }
 }
 
+struct AccountTransactionsRangePayload: Decodable {
+    let accountID: Int
+    let start: String
+    let end: String
+    let pendingBalanceMultiplier: Int?
+    let startingBalance: Double?
+    let endingBalance: Double?
+    let transactions: [TransactionItem]
+
+    enum CodingKeys: String, CodingKey {
+        case accountID = "account_id"
+        case start
+        case end
+        case pendingBalanceMultiplier = "pending_balance_multiplier"
+        case startingBalance = "starting_balance"
+        case endingBalance = "ending_balance"
+        case transactions
+    }
+}
+
+struct UpcomingEventPayload: Decodable, Hashable, Identifiable {
+    let id: String
+    let date: String
+    let merchant: String?
+    let amount: Double?
+    let type: String?
+    let cadence: String?
+    let category: String?
+    let accountID: Int?
+    let payTarget: String?
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case merchant
+        case amount
+        case type
+        case cadence
+        case category
+        case accountID = "account_id"
+        case payTarget = "pay_target"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
+        merchant = try container.decodeIfPresent(String.self, forKey: .merchant)
+        amount = try container.decodeIfPresent(Double.self, forKey: .amount)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        cadence = try container.decodeIfPresent(String.self, forKey: .cadence)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        accountID = try? container.decodeIfPresent(Int.self, forKey: .accountID)
+        payTarget = try container.decodeIfPresent(String.self, forKey: .payTarget)
+        id = [
+            date,
+            merchant ?? "",
+            String(amount ?? 0),
+            type ?? "",
+            cadence ?? "",
+            String(accountID ?? -1),
+            payTarget ?? ""
+        ].joined(separator: "|")
+    }
+}
+
 struct MonthBudgetPayload: Decodable {
     let safeToSpend: Double?
     let dailyLimit: Double?
@@ -391,6 +503,11 @@ struct MonthBudgetPayload: Decodable {
     let incomeBasisTotal: Double?
     let incomeBasisMonth: MonthBudgetIncomeBasisMonth?
     let incomeBasisPaychecks: [MonthBudgetIncomePaycheck]?
+    let allocationsTotal: Double?
+    let budgetedSpentTotal: Double?
+    let billsTotal: Double?
+    let freeSpendGoal: Double?
+    let spentFree: Double?
 
     enum CodingKeys: String, CodingKey {
         case safeToSpend = "safe_to_spend"
@@ -405,7 +522,96 @@ struct MonthBudgetPayload: Decodable {
         case incomeBasisTotal = "income_basis_total"
         case incomeBasisMonth = "income_basis_month"
         case incomeBasisPaychecks = "income_basis_paychecks"
+        case allocationsTotal = "allocations_total"
+        case budgetedSpentTotal = "budgeted_spent_total"
+        case billsTotal = "bills_total"
+        case freeSpendGoal = "free_spend_goal"
+        case spentFree = "spent_free"
     }
+}
+
+struct PageBudgetPayload: Decodable {
+    let ok: Bool?
+    let month: MonthBudgetPayload?
+    let groups: [BudgetGroupPayload]
+    let funds: [SinkingFundPayload]
+    let spentCategories: [BudgetSpentCategoryPayload]
+    let savingsGoalConfig: SavingsGoalConfigPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case month
+        case groups
+        case funds
+        case spentCategories = "spent_categories"
+        case savingsGoalConfig = "savings_goal_cfg"
+    }
+}
+
+struct BudgetGroupPayload: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let allocated: Double?
+    let cap: Double?
+    let categories: [String]
+    let spent: Double?
+    let remaining: Double?
+    let overCap: Bool?
+    let readOnly: Bool?
+    let syntheticKind: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case allocated
+        case cap
+        case categories
+        case spent
+        case remaining
+        case overCap = "over_cap"
+        case readOnly = "read_only"
+        case syntheticKind = "synthetic_kind"
+    }
+}
+
+struct SinkingFundPayload: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let targetAmount: Double?
+    let targetDate: String?
+    let cadence: String?
+    let contribAmount: Double?
+    let reservedBalance: Double?
+    let neededPerDay: Double?
+    let isActive: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case targetAmount = "target_amount"
+        case targetDate = "target_date"
+        case cadence
+        case contribAmount = "contrib_amount"
+        case reservedBalance = "reserved_balance"
+        case neededPerDay = "needed_per_day"
+        case isActive = "is_active"
+    }
+}
+
+struct BudgetSpentCategoryPayload: Decodable, Hashable, Identifiable {
+    let category: String
+    let spent: Double
+    var id: String { category }
+}
+
+struct SavingsGoalConfigPayload: Decodable, Hashable {
+    let mode: String
+    let value: Double
+}
+
+struct RoundUpSettingsPayload: Decodable, Hashable {
+    let enabled: Bool
+    let category: String?
 }
 
 struct MonthBudgetIncomeBasisMonth: Decodable, Hashable {

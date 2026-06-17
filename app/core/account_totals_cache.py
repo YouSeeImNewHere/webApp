@@ -24,6 +24,16 @@ def ensure_account_totals_cache_pg() -> None:
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS home_snapshot_state (
+              tenant_id BIGINT PRIMARY KEY,
+              version BIGINT NOT NULL DEFAULT 0,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS account_balance_totals (
               tenant_id INT NOT NULL DEFAULT 0,
               account_id INT NOT NULL,
@@ -64,21 +74,43 @@ def ensure_account_totals_cache_pg() -> None:
 
         cur.execute(
             """
+            CREATE OR REPLACE FUNCTION _bump_home_snapshot_state(
+              p_tenant_id BIGINT
+            ) RETURNS VOID AS $$
+            BEGIN
+              INSERT INTO home_snapshot_state (tenant_id, version, updated_at)
+              VALUES (COALESCE(p_tenant_id, 0), 1, now())
+              ON CONFLICT (tenant_id)
+              DO UPDATE SET
+                version = home_snapshot_state.version + 1,
+                updated_at = now();
+            END;
+            $$ LANGUAGE plpgsql;
+            """
+        )
+
+        cur.execute(
+            """
             CREATE OR REPLACE FUNCTION trg_account_totals_startingbalance()
             RETURNS TRIGGER AS $$
             BEGIN
               IF TG_OP = 'INSERT' THEN
                 PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, NEW.start::double precision, 0::double precision);
+                PERFORM _bump_home_snapshot_state(COALESCE(NEW.tenant_id, 0)::bigint);
                 RETURN NEW;
               ELSIF TG_OP = 'DELETE' THEN
                 PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, -(OLD.start::double precision), 0::double precision);
+                PERFORM _bump_home_snapshot_state(COALESCE(OLD.tenant_id, 0)::bigint);
                 RETURN OLD;
               ELSIF TG_OP = 'UPDATE' THEN
                 IF COALESCE(NEW.tenant_id, 0) = COALESCE(OLD.tenant_id, 0) AND NEW.account_id = OLD.account_id THEN
                   PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, (NEW.start::double precision - OLD.start::double precision), 0::double precision);
+                  PERFORM _bump_home_snapshot_state(COALESCE(NEW.tenant_id, 0)::bigint);
                 ELSE
                   PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, -(OLD.start::double precision), 0::double precision);
                   PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, NEW.start::double precision, 0::double precision);
+                  PERFORM _bump_home_snapshot_state(COALESCE(OLD.tenant_id, 0)::bigint);
+                  PERFORM _bump_home_snapshot_state(COALESCE(NEW.tenant_id, 0)::bigint);
                 END IF;
                 RETURN NEW;
               END IF;
@@ -92,19 +124,41 @@ def ensure_account_totals_cache_pg() -> None:
             """
             CREATE OR REPLACE FUNCTION trg_account_totals_transactions()
             RETURNS TRIGGER AS $$
+            DECLARE
+              old_counts DOUBLE PRECISION := 0::double precision;
+              new_counts DOUBLE PRECISION := 0::double precision;
             BEGIN
+              IF TG_OP IN ('DELETE', 'UPDATE') THEN
+                IF COALESCE(NULLIF(BTRIM(COALESCE(OLD.posteddate, '')), 'unknown'), NULLIF(BTRIM(COALESCE(OLD.purchasedate, '')), 'unknown')) IS NOT NULL
+                   AND LENGTH(COALESCE(NULLIF(BTRIM(COALESCE(OLD.posteddate, '')), 'unknown'), NULLIF(BTRIM(COALESCE(OLD.purchasedate, '')), 'unknown'))) IN (8, 10) THEN
+                  old_counts := OLD.amount::double precision;
+                END IF;
+              END IF;
+
+              IF TG_OP IN ('INSERT', 'UPDATE') THEN
+                IF COALESCE(NULLIF(BTRIM(COALESCE(NEW.posteddate, '')), 'unknown'), NULLIF(BTRIM(COALESCE(NEW.purchasedate, '')), 'unknown')) IS NOT NULL
+                   AND LENGTH(COALESCE(NULLIF(BTRIM(COALESCE(NEW.posteddate, '')), 'unknown'), NULLIF(BTRIM(COALESCE(NEW.purchasedate, '')), 'unknown'))) IN (8, 10) THEN
+                  new_counts := NEW.amount::double precision;
+                END IF;
+              END IF;
+
               IF TG_OP = 'INSERT' THEN
-                PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, NEW.amount::double precision);
+                PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, new_counts);
+                PERFORM _bump_home_snapshot_state(COALESCE(NEW.tenant_id, 0)::bigint);
                 RETURN NEW;
               ELSIF TG_OP = 'DELETE' THEN
-                PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, 0::double precision, -(OLD.amount::double precision));
+                PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, 0::double precision, -old_counts);
+                PERFORM _bump_home_snapshot_state(COALESCE(OLD.tenant_id, 0)::bigint);
                 RETURN OLD;
               ELSIF TG_OP = 'UPDATE' THEN
                 IF COALESCE(NEW.tenant_id, 0) = COALESCE(OLD.tenant_id, 0) AND NEW.account_id = OLD.account_id THEN
-                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, (NEW.amount::double precision - OLD.amount::double precision));
+                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, (new_counts - old_counts));
+                  PERFORM _bump_home_snapshot_state(COALESCE(NEW.tenant_id, 0)::bigint);
                 ELSE
-                  PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, 0::double precision, -(OLD.amount::double precision));
-                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, NEW.amount::double precision);
+                  PERFORM _account_totals_upsert_delta(COALESCE(OLD.tenant_id, 0)::int, OLD.account_id::int, 0::double precision, -old_counts);
+                  PERFORM _account_totals_upsert_delta(COALESCE(NEW.tenant_id, 0)::int, NEW.account_id::int, 0::double precision, new_counts);
+                  PERFORM _bump_home_snapshot_state(COALESCE(OLD.tenant_id, 0)::bigint);
+                  PERFORM _bump_home_snapshot_state(COALESCE(NEW.tenant_id, 0)::bigint);
                 END IF;
                 RETURN NEW;
               END IF;
@@ -155,7 +209,17 @@ def ensure_account_totals_cache_pg() -> None:
               SELECT COALESCE(tenant_id, 0)::int AS tenant_id,
                      account_id::int AS account_id,
                      0::double precision AS start_total,
-                     COALESCE(SUM(amount), 0)::double precision AS trans_total
+                     COALESCE(
+                       SUM(
+                         CASE
+                           WHEN COALESCE(NULLIF(BTRIM(COALESCE(posteddate, '')), 'unknown'), NULLIF(BTRIM(COALESCE(purchasedate, '')), 'unknown')) IS NOT NULL
+                            AND LENGTH(COALESCE(NULLIF(BTRIM(COALESCE(posteddate, '')), 'unknown'), NULLIF(BTRIM(COALESCE(purchasedate, '')), 'unknown'))) IN (8, 10)
+                           THEN amount
+                           ELSE 0
+                         END
+                       ),
+                       0
+                     )::double precision AS trans_total
               FROM transactions
               GROUP BY COALESCE(tenant_id, 0), account_id
             ) src
@@ -164,6 +228,18 @@ def ensure_account_totals_cache_pg() -> None:
             DO UPDATE SET
               start_total = EXCLUDED.start_total,
               trans_total = EXCLUDED.trans_total,
+              updated_at = now()
+            """
+        )
+
+        cur.execute(
+            """
+            INSERT INTO home_snapshot_state (tenant_id, version, updated_at)
+            SELECT DISTINCT tenant_id, 1, now()
+            FROM account_balance_totals
+            ON CONFLICT (tenant_id)
+            DO UPDATE SET
+              version = home_snapshot_state.version + 1,
               updated_at = now()
             """
         )

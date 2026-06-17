@@ -14,7 +14,7 @@ enum QuailCashAPIError: LocalizedError {
         case .badResponse:
             return "The server returned an unexpected response."
         case .decodingFailed:
-            return "Could not read the home payload."
+            return "Could not read the server response."
         case .transport(let error):
             return error.localizedDescription
         }
@@ -169,6 +169,87 @@ final class QuailCashAPI {
         }
     }
 
+    func fetchAccountInfo(accountID: Int) async throws -> AccountInfoPayload {
+        let request = makeRequest(url: AppConfig.url(path: "/account/\(accountID)"))
+        print("[QuailCash] QuailCashAPI.fetchAccountInfo url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuailCashAPIError.badResponse
+        }
+        print("[QuailCash] QuailCashAPI.fetchAccountInfo status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw QuailCashAPIError.unauthorized
+            }
+            throw QuailCashAPIError.badResponse
+        }
+        do {
+            return try JSONDecoder.quailCash.decode(AccountInfoPayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.accountInfoDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func fetchAccountSeries(accountID: Int, start: String, end: String) async throws -> [ChartSeriesPoint] {
+        let request = makeRequest(url: AppConfig.url(path: "/account-series", queryItems: [
+            URLQueryItem(name: "account_id", value: String(accountID)),
+            URLQueryItem(name: "start", value: start),
+            URLQueryItem(name: "end", value: end),
+        ]))
+        print("[QuailCash] QuailCashAPI.fetchAccountSeries url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuailCashAPIError.badResponse
+        }
+        print("[QuailCash] QuailCashAPI.fetchAccountSeries status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw QuailCashAPIError.unauthorized
+            }
+            throw QuailCashAPIError.badResponse
+        }
+        do {
+            return try JSONDecoder.quailCash.decode([ChartSeriesPoint].self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.accountSeriesDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func fetchAccountTransactionsRange(accountID: Int, start: String, end: String, limit: Int = 500) async throws -> AccountTransactionsRangePayload {
+        let request = makeRequest(url: AppConfig.url(path: "/account-transactions-range", queryItems: [
+            URLQueryItem(name: "account_id", value: String(accountID)),
+            URLQueryItem(name: "start", value: start),
+            URLQueryItem(name: "end", value: end),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]))
+        print("[QuailCash] QuailCashAPI.fetchAccountTransactionsRange url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuailCashAPIError.badResponse
+        }
+        print("[QuailCash] QuailCashAPI.fetchAccountTransactionsRange status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw QuailCashAPIError.unauthorized
+            }
+            throw QuailCashAPIError.badResponse
+        }
+        do {
+            return try JSONDecoder.quailCash.decode(AccountTransactionsRangePayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.accountTransactionsRangeDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
     func fetchNotifications(limit: Int = 100) async throws -> [NotificationItemPayload] {
         let request = makeRequest(url: AppConfig.url(path: "/notifications", queryItems: [
             URLQueryItem(name: "limit", value: String(limit))
@@ -195,6 +276,64 @@ final class QuailCashAPI {
             }
             throw QuailCashAPIError.decodingFailed
         }
+    }
+
+    func fetchUpcomingWindow(daysAhead: Int = 30, accountID: Int? = nil) async throws -> [UpcomingEventPayload] {
+        let payload: [String: Any] = [
+            "days_ahead": max(1, min(daysAhead, 120)),
+            "min_occ": 3,
+            "include_stale": false,
+            "account_id": accountID as Any,
+            "profile": NSNull(),
+        ]
+        let request = makeRequest(url: AppConfig.url(path: "/page/home/upcoming"), method: "POST", jsonBody: payload)
+        print("[QuailCash] QuailCashAPI.fetchUpcomingWindow url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuailCashAPIError.badResponse
+        }
+        print("[QuailCash] QuailCashAPI.fetchUpcomingWindow status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw QuailCashAPIError.unauthorized
+            }
+            throw QuailCashAPIError.badResponse
+        }
+        do {
+            struct Wrapper: Decodable { let events: [UpcomingEventPayload] }
+            let payload = try JSONDecoder.quailCash.decode(Wrapper.self, from: data)
+            return payload.events.filter { !$0.date.isEmpty }
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.upcomingDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func createTransaction(accountID: Int, amount: Double, merchant: String, status: String, date: String) async throws -> Bool {
+        let body: [String: Any] = [
+            "account_id": accountID,
+            "amount": amount,
+            "merchant": merchant,
+            "status": status,
+            "date": date,
+            "source": "Manual",
+        ]
+        let request = makeRequest(url: AppConfig.url(path: "/transaction"), method: "POST", jsonBody: body)
+        print("[QuailCash] QuailCashAPI.createTransaction url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuailCashAPIError.badResponse
+        }
+        print("[QuailCash] QuailCashAPI.createTransaction status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw QuailCashAPIError.unauthorized
+            }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
     }
 
     func fetchCategoryTransactions(category: String, start: String, end: String, limit: Int = 100) async throws -> [TransactionItem] {
@@ -393,7 +532,14 @@ final class QuailCashAPI {
     }
 
     func fetchMonthBudget() async throws -> MonthBudgetPayload {
-        let request = makeRequest(url: AppConfig.url(path: "/month-budget"))
+        return try await fetchMonthBudget(year: nil, month: nil)
+    }
+
+    func fetchMonthBudget(year: Int?, month: Int?) async throws -> MonthBudgetPayload {
+        var items: [URLQueryItem] = []
+        if let year { items.append(URLQueryItem(name: "year", value: String(year))) }
+        if let month { items.append(URLQueryItem(name: "month", value: String(month))) }
+        let request = makeRequest(url: AppConfig.url(path: "/month-budget", queryItems: items))
         print("[QuailCash] QuailCashAPI.fetchMonthBudget url=\(request.url?.absoluteString ?? "nil")")
         let (data, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse else {
@@ -414,6 +560,192 @@ final class QuailCashAPI {
             }
             throw QuailCashAPIError.decodingFailed
         }
+    }
+
+    func fetchPageBudget(year: Int, month: Int, recalc: Bool = false) async throws -> PageBudgetPayload {
+        var items = [
+            URLQueryItem(name: "year", value: String(year)),
+            URLQueryItem(name: "month", value: String(month)),
+        ]
+        if recalc {
+            items.append(URLQueryItem(name: "recalc", value: "1"))
+        }
+        let request = makeRequest(url: AppConfig.url(path: "/page/budget", queryItems: items))
+        print("[QuailCash] QuailCashAPI.fetchPageBudget url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuailCashAPIError.badResponse
+        }
+        print("[QuailCash] QuailCashAPI.fetchPageBudget status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        do {
+            return try JSONDecoder.quailCash.decode(PageBudgetPayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.pageBudgetDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func fetchRoundUpSettings() async throws -> RoundUpSettingsPayload {
+        let request = makeRequest(url: AppConfig.url(path: "/settings/round-ups"))
+        print("[QuailCash] QuailCashAPI.fetchRoundUpSettings url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.fetchRoundUpSettings status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        do {
+            return try JSONDecoder.quailCash.decode(RoundUpSettingsPayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.roundupsDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func saveRoundUpSettings(enabled: Bool) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/settings/round-ups"), method: "POST", jsonBody: [
+            "enabled": enabled
+        ])
+        print("[QuailCash] QuailCashAPI.saveRoundUpSettings url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.saveRoundUpSettings status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func saveSavingsGoal(mode: String, value: Double) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/settings/savings-goal"), method: "POST", jsonBody: [
+            "mode": mode,
+            "value": value
+        ])
+        print("[QuailCash] QuailCashAPI.saveSavingsGoal url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.saveSavingsGoal status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func upsertBudgetGroup(year: Int, month: Int, name: String, allocated: Double, cap: Double?, categories: [String]) async throws -> Bool {
+        var body: [String: Any] = [
+            "year": year,
+            "month": month,
+            "name": name,
+            "allocated": allocated,
+            "categories": categories
+        ]
+        body["cap"] = cap as Any
+        let request = makeRequest(url: AppConfig.url(path: "/budget/groups"), method: "POST", jsonBody: body)
+        print("[QuailCash] QuailCashAPI.upsertBudgetGroup url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.upsertBudgetGroup status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func deleteBudgetGroup(year: Int, month: Int, name: String) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/budget/groups", queryItems: [
+            URLQueryItem(name: "year", value: String(year)),
+            URLQueryItem(name: "month", value: String(month)),
+            URLQueryItem(name: "name", value: name),
+        ]), method: "DELETE")
+        print("[QuailCash] QuailCashAPI.deleteBudgetGroup url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.deleteBudgetGroup status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func createFund(name: String, targetAmount: Double, targetDate: String?, cadence: String, contribAmount: Double) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/funds"), method: "POST", jsonBody: [
+            "name": name,
+            "target_amount": targetAmount,
+            "target_date": targetDate as Any,
+            "cadence": cadence,
+            "contrib_amount": contribAmount
+        ])
+        print("[QuailCash] QuailCashAPI.createFund url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.createFund status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func updateFund(id: Int, name: String, targetAmount: Double, targetDate: String?, cadence: String, contribAmount: Double, isActive: Bool = true) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/funds/\(id)"), method: "PATCH", jsonBody: [
+            "name": name,
+            "target_amount": targetAmount,
+            "target_date": targetDate as Any,
+            "cadence": cadence,
+            "contrib_amount": contribAmount,
+            "is_active": isActive
+        ])
+        print("[QuailCash] QuailCashAPI.updateFund url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.updateFund status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func adjustFund(id: Int, amount: Double, note: String) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/funds/\(id)/adjust"), method: "POST", jsonBody: [
+            "amount": amount,
+            "note": note
+        ])
+        print("[QuailCash] QuailCashAPI.adjustFund url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.adjustFund status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
+    }
+
+    func deleteFund(id: Int) async throws -> Bool {
+        let request = makeRequest(url: AppConfig.url(path: "/funds/\(id)"), method: "DELETE")
+        print("[QuailCash] QuailCashAPI.deleteFund url=\(request.url?.absoluteString ?? "nil")")
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        print("[QuailCash] QuailCashAPI.deleteFund status=\(http.statusCode) bytes=\(data.count)")
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return true
     }
 
     func fetchDayLimit(recalc: Bool = false) async throws -> DayLimitPayload {

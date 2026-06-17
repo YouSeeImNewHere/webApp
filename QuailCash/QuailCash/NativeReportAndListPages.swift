@@ -231,8 +231,8 @@ private func nativeMenuLabel(_ text: String) -> some View {
 }
 
 private func nativeTransactionAmountColor(_ value: Double) -> Color {
-    if value < 0 { return .red }
-    if value > 0 { return .green }
+    if value >= 0 { return .red }
+    if value < 0 { return .green }
     return .primary
 }
 
@@ -812,12 +812,10 @@ private struct NativeBankInfoCard: Decodable {
 struct NativeAllTransactionsPageView: View {
     @StateObject private var model = NativeAllTransactionsViewModel()
     @State private var selectedTransaction: TransactionItem?
-    @State private var inspectDetail: TransactionDetailPayload?
-    @State private var showInspect = false
 
     var body: some View {
-        PageShell(title: "All", subtitle: "") {
-            ZStack {
+        ZStack {
+            PageShell(title: "All", subtitle: "") {
                 VStack(alignment: .leading, spacing: 12) {
                     filterCard
                     if model.addPanelOpen { addTransactionCard }
@@ -829,21 +827,19 @@ struct NativeAllTransactionsPageView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-
-                if let tx = selectedTransaction {
-                    NativeTransactionInspectView(
-                        transaction: tx,
-                        detail: inspectDetail,
-                        onDismiss: {
-                            selectedTransaction = nil
-                            inspectDetail = nil
-                            showInspect = false
-                        },
-                        onRefresh: {
-                            Task { await model.loadPage(force: true, replace: true) }
-                        }
-                    )
-                }
+            }
+            if let tx = selectedTransaction {
+                SharedTransactionInspectPopupView(
+                    transaction: tx,
+                    onDismiss: {
+                        selectedTransaction = nil
+                    },
+                    onRefresh: {
+                        Task { await model.loadPage(force: true, replace: true) }
+                    }
+                )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 18)
             }
         }
         .task {
@@ -942,11 +938,7 @@ struct NativeAllTransactionsPageView: View {
         VStack(spacing: 10) {
             ForEach(model.transactions) { tx in
                 NativeTransactionRow(transaction: tx) {
-                    Task {
-                        selectedTransaction = tx
-                        showInspect = true
-                        inspectDetail = try? await QuailCashAPI.shared.fetchTransactionDetail(txId: tx.id)
-                    }
+                    selectedTransaction = tx
                 }
             }
         }

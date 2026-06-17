@@ -17,7 +17,7 @@ struct HomeView: View {
             onTrailingTap: { navigate(.notifications) },
             onSelectTab: selectTab
         ) {
-            AppPageScroll {
+            AppPageScroll(contentPadding: 12) {
                     chartSection
 
                     if let home = model.home {
@@ -38,6 +38,7 @@ struct HomeView: View {
                         bankTotalsCard(home: home,
                                        onImport: { navigate(.csvImport) },
                                        onBankInfo: { navigate(.bankInfo) },
+                                       onOpenAccount: { account in navigate(.account(account, audit: false)) },
                                        onVerifyAccount: { account in activePopup = .verifyAccount(account) },
                                        onAuditAccount: { account in navigate(.account(account, audit: true)) })
                         recentTransactions(home: home) { tx in
@@ -248,6 +249,7 @@ struct HomeView: View {
         home: HomePayload,
         onImport: @escaping () -> Void,
         onBankInfo: @escaping () -> Void,
+        onOpenAccount: @escaping (BankAccountPayload) -> Void,
         onVerifyAccount: @escaping (BankAccountPayload) -> Void,
         onAuditAccount: @escaping (BankAccountPayload) -> Void
     ) -> some View {
@@ -255,6 +257,7 @@ struct HomeView: View {
             bankTotals: home.bankTotals,
             onImport: onImport,
             onBankInfo: onBankInfo,
+            onOpenAccount: onOpenAccount,
             onVerifyAccount: onVerifyAccount,
             onAuditAccount: onAuditAccount
         )
@@ -1382,6 +1385,10 @@ final class HomeViewModel: ObservableObject {
             extraSaved = nil
             home = try await api.fetchHome(txLimit: 15)
             extraSaved = try? await api.fetchExtraSaved()
+            if let credit = home?.bankTotals.credit {
+                let accounts = credit.accounts.map { "\($0.id):\($0.total)" }.joined(separator: ", ")
+                print("[QuailCash] HomeViewModel.creditTotals total=\(credit.total) accounts=[\(accounts)]")
+            }
             statusText = "Loaded real data."
             print("[QuailCash] HomeViewModel.reload() success")
         } catch QuailCashAPIError.unauthorized {
@@ -1434,6 +1441,7 @@ private struct BankTotalsAccordionCard: View {
     let bankTotals: BankTotalsPayload
     let onImport: () -> Void
     let onBankInfo: () -> Void
+    let onOpenAccount: (BankAccountPayload) -> Void
     let onVerifyAccount: (BankAccountPayload) -> Void
     let onAuditAccount: (BankAccountPayload) -> Void
     @State private var isExpanded = true
@@ -1538,6 +1546,7 @@ private struct BankTotalsAccordionCard: View {
                                 AccountRow(
                                     account: account,
                                     groupKey: title.lowercased(),
+                                    onOpen: { onOpenAccount(account) },
                                     onVerify: { onVerifyAccount(account) },
                                     onAudit: { onAuditAccount(account) }
                                 )
@@ -1581,6 +1590,7 @@ private struct BankTotalsAccordionCard: View {
 private struct AccountRow: View {
     let account: BankAccountPayload
     let groupKey: String
+    let onOpen: () -> Void
     let onVerify: () -> Void
     let onAudit: () -> Void
 
@@ -1588,19 +1598,19 @@ private struct AccountRow: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.name)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 if let csv = account.lastCsvUploadAt, !csv.isEmpty {
-                    Text("CSV: \(csv)")
+                    Text("CSV: \(relativeTimestampText(csv))")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 if let verified = account.lastManualVerifiedAt, !verified.isEmpty {
-                    Text("Verified: \(verified)")
+                    Text("Verified: \(relativeTimestampText(verified))")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1625,6 +1635,8 @@ private struct AccountRow: View {
         .padding(.horizontal, 12)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture(perform: onOpen)
     }
 
     private var balanceText: String {
@@ -1632,6 +1644,28 @@ private struct AccountRow: View {
             return formatAccountBalance(account.total)
         }
         return moneyValue(abs(account.total))
+    }
+
+    private func relativeTimestampText(_ raw: String) -> String {
+        guard let date = parseAccountTimestamp(raw) else { return raw }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func parseAccountTimestamp(_ raw: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) {
+            return date
+        }
+        if let date = ISO8601DateFormatter().date(from: raw) {
+            return date
+        }
+        let fallback = DateFormatter()
+        fallback.locale = Locale(identifier: "en_US_POSIX")
+        fallback.dateFormat = "yyyy-MM-dd"
+        return fallback.date(from: raw)
     }
 }
 
@@ -1745,7 +1779,7 @@ private struct HomePopupOverlay: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 18)
             case .transaction(let tx):
-                TransactionInspectPopupView(transaction: tx, onDismiss: onDismiss, onRefresh: onRefresh)
+                SharedTransactionInspectPopupView(transaction: tx, onDismiss: onDismiss, onRefresh: onRefresh)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 18)
             case .verifyAccount(let account):
@@ -2835,8 +2869,8 @@ private func moneyValue(_ value: Double) -> String {
 private func formatAccountBalance(_ value: Double) -> String {
     let amount = abs(value)
     let raw = moneyValue(amount)
-    if value < 0 { return raw }
     if value > 0 { return "CR \(raw)" }
+    if value < 0 { return raw }
     return moneyValue(0)
 }
 
