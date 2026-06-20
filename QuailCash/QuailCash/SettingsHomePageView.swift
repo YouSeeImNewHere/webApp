@@ -28,6 +28,7 @@ struct SettingsHomePageView: View {
     ]
     private let settingsActionButtonWidth: CGFloat = 160
     private let settingsActionButtonHeight: CGFloat = 42
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
 
     var body: some View {
         AppChromeFrame(
@@ -58,267 +59,149 @@ struct SettingsHomePageView: View {
                             HStack(alignment: .bottom, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Color scheme")
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
                                     Picker("Color scheme", selection: $themeSelection) {
                                         ForEach(themes, id: \.0) { theme in
                                             Text(theme.1).tag(theme.0)
                                         }
                                     }
                                     .pickerStyle(.menu)
-                                    .tint(.black)
-                                    .frame(maxWidth: 150, alignment: .leading)
+                                    .tint(palette.secondaryButtonText)
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 40)
+                                    .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
                                 }
                                 Spacer(minLength: 0)
                             }
-
-                            Text("Tip: System follows your device theme.")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
+                            settingsMuted("Tip: System follows your device theme.")
                         }
                     }
 
                     settingsSection(title: "Google Gmail") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("OAuth connection")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text(model.googleStatusText)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Button {
+                        settingsSplitRow(
+                            title: "OAuth connection",
+                            subtitle: model.googleStatusText,
+                            primaryAction: {
                                 showGoogleAuth = true
-                            } label: {
-                                settingsPrimaryButton(model.googleStatusText.hasPrefix("Connected") ? "Reconnect Google" : "Connect Google")
-                            }
-                            .buttonStyle(.plain)
-                        }
+                            },
+                            primaryLabel: model.googleStatusText.hasPrefix("Connected") ? "Connect Google" : "Connect Google"
+                        )
                     }
 
                     settingsSection(title: "Notifications") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Smart notifications")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text("Spending power, overspending protection, and savings nudges.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Button {
-                                navigator.show(.notifications)
-                            } label: {
-                                settingsPrimaryButton("Open Page")
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        settingsSplitRow(
+                            title: "Smart notifications",
+                            subtitle: "Spending power, overspending protection, and savings nudges.",
+                            primaryAction: { navigator.show(.notificationSettings) },
+                            primaryLabel: "Open Page"
+                        )
                     }
 
                     settingsSection(title: "Home Page Layout") {
-                        VStack(alignment: .leading, spacing: 0) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Customize home layout")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text("Drag cards and sections around, then press Done.")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
                                 Button {
                                     activeSheet = .homeLayout
                                 } label: {
-                                    settingsPrimaryButton("Customize Home Layout")
+                                    settingsPrimaryButton("Customize Home Layout", width: 164)
                                 }
                                 .buttonStyle(.plain)
-                            }
-
-                            Divider().opacity(0.18)
-
-                            VStack(alignment: .leading, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Reset layout")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text("Return to the default page arrangement.")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
                                 Button {
                                     homeLayoutCustomized = false
                                     model.layoutStatus = "Layout reset to default."
                                 } label: {
-                                    settingsSecondaryButton("Reset")
+                                    settingsSecondaryButton("Reset layout to default", width: 164)
                                 }
                                 .buttonStyle(.plain)
                             }
-
+                            settingsMuted("Tip: tap Customize Home Layout, drag cards/sections around, then press Done.")
                             if !model.layoutStatus.isEmpty {
-                                Divider().opacity(0.18)
-                                Text(model.layoutStatus)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 10)
+                                settingsMuted(model.layoutStatus)
                             }
-
                             Divider().opacity(0.18)
-
-                            VStack(alignment: .leading, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Cache refresh")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text("Force rebuild and push latest home and widget values into cache now.")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Button {
-                                    Task { await model.refreshCache() }
-                                } label: {
-                                    settingsSecondaryButton(model.isRefreshingCache ? "Refreshing..." : "Cache Refresh")
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(model.isRefreshingCache)
-                            }
-
-                            Text(model.cacheVersionsText)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 8)
+                            settingsSplitRow(
+                                title: "Cache refresh",
+                                subtitle: "Force rebuild and push latest home and widget values into cache now.",
+                                primaryAction: { Task { await model.refreshCache() } },
+                                primaryLabel: model.isRefreshingCache ? "Refreshing..." : "Cache Refresh",
+                                primaryDisabled: model.isRefreshingCache
+                            )
+                            settingsMuted(model.cacheVersionsText)
                         }
                     }
 
                     settingsSection(title: "Widgets") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Widget setup")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text("Open iPhone widget setup.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Button {
-                                activeSheet = .widgetSetup(.ios)
-                            } label: {
-                                settingsPrimaryButton("Open Page")
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        settingsSplitRow(
+                            title: "Widget setup",
+                            subtitle: "Open iPhone widget setup.",
+                            primaryAction: { activeSheet = .widgetSetup(.ios) },
+                            primaryLabel: "Open Page"
+                        )
                     }
 
                     settingsSection(title: "Initial Setup") {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 12) {
                             setupProgressView
-
-                            setupActionRow(
-                                title: "Setup wizard",
-                                subtitle: "Open the onboarding wizard anytime.",
-                                buttonTitle: "Open Wizard",
-                                action: { activeSheet = .initialSetup }
-                            )
-
                             Divider().opacity(0.18)
-
-                            setupActionRow(
-                                title: "Parser wizard",
-                                subtitle: "Create and maintain live parser rules.",
-                                buttonTitle: "Open Wizard",
-                                action: { activeSheet = .parserWizard }
-                            )
-
+                            settingsSplitRow(title: "Setup wizard", subtitle: "Open the onboarding wizard anytime.", primaryDestination: .setupWizard, primaryLabel: "Open Wizard")
                             Divider().opacity(0.18)
-
-                            setupActionRow(
-                                title: "External apps",
-                                subtitle: "Install required mobile apps for widgets and push notifications.",
-                                buttonTitle: "Open Page",
-                                action: { activeSheet = .externalApps }
-                            )
-
+                            settingsSplitRow(title: "Parser wizard", subtitle: "Create and maintain live parser rules.", primaryDestination: .parserWizard, primaryLabel: "Open Wizard")
+                            Divider().opacity(0.18)
+                            settingsSplitRow(title: "External apps", subtitle: "Install required mobile apps for widgets and push notifications.", primaryAction: { activeSheet = .externalApps }, primaryLabel: "Open Page")
+                            Divider().opacity(0.18)
                             backfillPanel
-
                             Divider().opacity(0.18)
-
-                            setupActionRow(
-                                title: "Income wizard",
-                                subtitle: "Set up LES, salary, or hourly income settings on a dedicated page.",
-                                buttonTitle: "Open Page",
-                                action: { activeSheet = .incomeWizard }
-                            )
-
-                            Text(model.setupProgressSubtext)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
+                            settingsSplitRow(title: "Income wizard", subtitle: "Set up LES, salary, or hourly income settings on a dedicated page.", primaryDestination: .incomeWizard, primaryLabel: "Open Page")
+                            settingsMuted(model.setupProgressSubtext)
                         }
                     }
 
                     settingsSection(title: "Rules") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Category regex rules")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text("View matches, test regex, re-apply, disable, or delete rules.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            NavigationLink(value: AppRoute.ruleBuilder) {
-                                settingsPrimaryButton("Open Page")
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        settingsSplitRow(
+                            title: "Category regex rules",
+                            subtitle: "View matches, test regex, re-apply, disable, or delete rules.",
+                            primaryDestination: .ruleBuilder,
+                            primaryLabel: "Open Page"
+                        )
                     }
 
-                    if model.isOwner {
-                        settingsSection(title: "Admin") {
-                            VStack(alignment: .leading, spacing: 0) {
-                                VStack(alignment: .leading, spacing: 10) {
+                    settingsSection(title: "Admin") {
+                        VStack(alignment: .leading, spacing: 0) {
+                            settingsSplitRow(
+                                title: "View mode",
+                                subtitle: model.viewModeText,
+                                primaryAction: {
+                                    model.nonAdminPreview.toggle()
+                                    model.viewModeText = model.nonAdminPreview ? "Previewing as non-admin." : "Admin view."
+                                },
+                                primaryLabel: model.nonAdminPreview ? "Return to Admin View" : "Preview as Non-Admin"
+                            )
+
+                            if !model.nonAdminPreview {
+                                Divider().opacity(0.18)
+                                settingsSplitRow(
+                                    title: "Owner admin console",
+                                    subtitle: "Tenant management, pending user approvals, and tenant data purge.",
+                                    primaryAction: { activeSheet = .adminConsole },
+                                    primaryLabel: "Open Admin Console"
+                                )
+                                Divider().opacity(0.18)
+                                HStack(alignment: .center, spacing: 12) {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("View mode")
-                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        Text(model.viewModeText)
-                                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                                            .foregroundStyle(.secondary)
+                                        Text("Widget setup links")
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        settingsMuted("Open platform-specific widget setup pages directly.")
                                     }
-                                    Button {
-                                        model.nonAdminPreview.toggle()
-                                        model.viewModeText = model.nonAdminPreview ? "Previewing as non-admin." : "Admin view."
-                                    } label: {
-                                        settingsSecondaryButton(model.nonAdminPreview ? "Return to Admin View" : "Preview as Non-Admin")
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                if !model.nonAdminPreview {
-                                    Divider().opacity(0.18)
-
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Owner admin console")
-                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                            Text("Tenant management, pending user approvals, and tenant data purge.")
-                                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Button {
-                                            activeSheet = .adminConsole
-                                        } label: {
-                                            settingsPrimaryButton("Open Admin Console")
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-
-                                    Divider().opacity(0.18)
-
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Widget setup links")
-                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                            Text("Open platform-specific widget setup pages directly.")
-                                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Button { activeSheet = .widgetSetup(.ios) } label: { settingsSecondaryButton("iOS Widgets") }
-                                            Button { activeSheet = .widgetSetup(.android) } label: { settingsSecondaryButton("Android Widgets") }
-                                        }
+                                    Spacer(minLength: 12)
+                                    HStack(spacing: 8) {
+                                        Button { activeSheet = .widgetSetup(.ios) } label: { settingsPrimaryButton("iOS Widgets", width: 120) }
+                                            .buttonStyle(.plain)
+                                        Button { activeSheet = .widgetSetup(.android) } label: { settingsPrimaryButton("Android Widgets", width: 120) }
+                                            .buttonStyle(.plain)
                                     }
                                 }
+                                .padding(.vertical, 12)
                             }
                         }
                     }
@@ -356,25 +239,19 @@ struct SettingsHomePageView: View {
                 InitialSetupSheet(
                     onConnectGoogle: { showGoogleAuth = true },
                     onOpenNotifications: { navigator.show(.notifications) },
-                    onOpenBankInfo: { activeSheet = .bankInfo },
-                    onOpenCsvImport: { activeSheet = .csvImport },
-                    onOpenIncomeWizard: { activeSheet = .incomeWizard },
-                    onOpenParserWizard: { activeSheet = .parserWizard },
+                    onOpenBankInfo: { navigator.show(.bankInfo) },
+                    onOpenCsvImport: { navigator.show(.csvImport) },
+                    onOpenIncomeWizard: { navigator.show(.incomeWizard) },
+                    onOpenParserWizard: { navigator.show(.parserWizard) },
                     onOpenExternalApps: { activeSheet = .externalApps }
                 )
             case .parserWizard:
-                ParserWizardSheet(backfillDaysText: $backfillDaysText,
-                                  includeProcessed: $backfillIncludeProcessed,
-                                  status: $backfillStatus,
-                                  logText: $backfillLog,
-                                  rows: $backfillRows)
+                ParserWizardSheet()
             case .externalApps:
                 ExternalAppsSheet(
                     onOpenIosWidgets: { activeSheet = .widgetSetup(.ios) },
                     onOpenAndroidWidgets: { activeSheet = .widgetSetup(.android) }
                 )
-            case .incomeWizard:
-                IncomeWizardSheet()
             case .adminConsole:
                 AdminConsoleSheet(
                     nonAdminPreview: $model.nonAdminPreview,
@@ -506,7 +383,7 @@ struct SettingsHomePageView: View {
 
     private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
+            Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
@@ -518,8 +395,62 @@ struct SettingsHomePageView: View {
         content()
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private func settingsMuted(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+    }
+
+    private func settingsSplitRow(
+        title: String,
+        subtitle: String,
+        primaryAction: (() -> Void)? = nil,
+        primaryDestination: AppRoute? = nil,
+        primaryLabel: String
+    ) -> some View {
+        settingsSplitRow(
+            title: title,
+            subtitle: subtitle,
+            primaryAction: primaryAction,
+            primaryDestination: primaryDestination,
+            primaryLabel: primaryLabel,
+            primaryDisabled: false
+        )
+    }
+
+    private func settingsSplitRow(
+        title: String,
+        subtitle: String,
+        primaryAction: (() -> Void)? = nil,
+        primaryDestination: AppRoute? = nil,
+        primaryLabel: String,
+        primaryDisabled: Bool
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                settingsMuted(subtitle)
+            }
+            Spacer(minLength: 12)
+            if let destination = primaryDestination {
+                NavigationLink(value: destination) {
+                    settingsPrimaryButton(primaryLabel, width: settingsActionButtonWidth)
+                }
+                .buttonStyle(.plain)
+            } else if let primaryAction {
+                Button(action: primaryAction) {
+                    settingsPrimaryButton(primaryLabel, width: settingsActionButtonWidth)
+                }
+                .buttonStyle(.plain)
+                .disabled(primaryDisabled)
+            }
+        }
+        .padding(.vertical, 12)
     }
 
     private func settingsPrimaryButton(_ title: String, width: CGFloat? = nil) -> some View {
@@ -528,8 +459,8 @@ struct SettingsHomePageView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.78)
             .frame(width: width ?? settingsActionButtonWidth, height: settingsActionButtonHeight)
-            .foregroundStyle(.white)
-            .background(Color.black, in: Capsule(style: .continuous))
+            .foregroundStyle(palette.primaryButtonText)
+            .background(palette.primaryButton, in: Capsule(style: .continuous))
     }
 
     private func settingsSecondaryButton(_ title: String, width: CGFloat? = nil) -> some View {
@@ -538,9 +469,9 @@ struct SettingsHomePageView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.78)
             .frame(width: width ?? settingsActionButtonWidth, height: settingsActionButtonHeight)
-            .foregroundStyle(.primary)
-            .background(Color.white, in: Capsule(style: .continuous))
-            .overlay(Capsule(style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+            .foregroundStyle(palette.secondaryButtonText)
+            .background(palette.secondaryButton, in: Capsule(style: .continuous))
+            .overlay(Capsule(style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func runBackfillParse() async {
@@ -599,6 +530,41 @@ struct SettingsHomePageView: View {
                 subject: item.subject ?? "(no subject)",
                 preview: item.bodyExcerpt ?? ""
             )
+        }
+    }
+}
+
+struct InitialSetupPageView: View {
+    @EnvironmentObject private var navigator: AppNavigator
+
+    var body: some View {
+        PageShell(title: "Setup Wizard", subtitle: "Complete this once per tenant workspace.") {
+            InitialSetupContentView(
+                showCloseButton: false,
+                onConnectGoogle: { navigator.show(.settings) },
+                onOpenNotifications: { navigator.show(.notifications) },
+                onOpenBankInfo: { navigator.show(.bankInfo) },
+                onOpenCsvImport: { navigator.show(.csvImport) },
+                onOpenIncomeWizard: { navigator.show(.incomeWizard) },
+                onOpenParserWizard: { navigator.show(.parserWizard) },
+                onOpenExternalApps: { navigator.show(.settings) }
+            )
+        }
+    }
+}
+
+struct ParserWizardPageView: View {
+    var body: some View {
+        PageShell(title: "Parser Wizard", subtitle: "Manual backfill parse") {
+            ParserWizardContentView(showCloseButton: false)
+        }
+    }
+}
+
+struct IncomeWizardPageView: View {
+    var body: some View {
+        PageShell(title: "Income Wizard", subtitle: "LES profile, paycheck matching, and daily weights") {
+            IncomeWizardContentView(showCloseButton: false)
         }
     }
 }
@@ -700,7 +666,6 @@ private enum SettingsSheet: Hashable, Identifiable {
     case initialSetup
     case parserWizard
     case externalApps
-    case incomeWizard
     case adminConsole
     case bankInfo
     case csvImport
@@ -713,7 +678,6 @@ private enum SettingsSheet: Hashable, Identifiable {
         case .initialSetup: return "initialSetup"
         case .parserWizard: return "parserWizard"
         case .externalApps: return "externalApps"
-        case .incomeWizard: return "incomeWizard"
         case .adminConsole: return "adminConsole"
         case .bankInfo: return "bankInfo"
         case .csvImport: return "csvImport"
@@ -769,6 +733,7 @@ private struct HomeLayoutSheet: View {
 }
 
 private struct SettingsSheetShell<Content: View>: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let title: String
     let subtitle: String
     let content: Content
@@ -780,6 +745,7 @@ private struct SettingsSheetShell<Content: View>: View {
     }
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -796,10 +762,7 @@ private struct SettingsSheetShell<Content: View>: View {
         }
         .background(
             LinearGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.98, blue: 0.99),
-                    Color(red: 0.94, green: 0.95, blue: 0.97)
-                ],
+                colors: [palette.backgroundTop, palette.backgroundBottom],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -1139,7 +1102,6 @@ private struct WidgetSetupSheet: View {
 }
 
 private struct InitialSetupSheet: View {
-    @Environment(\.dismiss) private var dismiss
     let onConnectGoogle: () -> Void
     let onOpenNotifications: () -> Void
     let onOpenBankInfo: () -> Void
@@ -1148,222 +1110,1835 @@ private struct InitialSetupSheet: View {
     let onOpenParserWizard: () -> Void
     let onOpenExternalApps: () -> Void
 
-    @State private var setup: SettingsInitialSetupPayload?
+    var body: some View {
+        SettingsSheetShell(title: "Workspace Setup Wizard", subtitle: "Complete this once per tenant workspace.") {
+            InitialSetupContentView(
+                showCloseButton: true,
+                onConnectGoogle: onConnectGoogle,
+                onOpenNotifications: onOpenNotifications,
+                onOpenBankInfo: onOpenBankInfo,
+                onOpenCsvImport: onOpenCsvImport,
+                onOpenIncomeWizard: onOpenIncomeWizard,
+                onOpenParserWizard: onOpenParserWizard,
+                onOpenExternalApps: onOpenExternalApps
+            )
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct InitialSetupContentView: View {
+    @Environment(\.dismiss) private var dismiss
+    let showCloseButton: Bool
+    let onConnectGoogle: () -> Void
+    let onOpenNotifications: () -> Void
+    let onOpenBankInfo: () -> Void
+    let onOpenCsvImport: () -> Void
+    let onOpenIncomeWizard: () -> Void
+    let onOpenParserWizard: () -> Void
+    let onOpenExternalApps: () -> Void
+
+    @State private var onboarding: SettingsOnboardingStatusPayload?
     @State private var statusText = "Loading..."
+    @State private var addResultText = ""
+    @State private var pushoverUserKey = ""
+    @State private var pushoverStatusText = ""
+    @State private var editingAccountID: Int?
+    @State private var institution = ""
+    @State private var accountName = ""
+    @State private var accountType = "checking"
+    @State private var startingDateISO = isoDateString(Date())
+    @State private var startingBalanceText = ""
+    @State private var creditLimitText = ""
+    @State private var apyPercentText = ""
+    @State private var interestPostDayText = ""
+    @State private var receivesEmails = true
+    @State private var isPaycheckAccount = false
+    @State private var benefitRows: [SettingsBenefitDraft] = [SettingsBenefitDraft()]
 
     var body: some View {
-        SettingsSheetShell(title: "Setup Wizard", subtitle: "Onboarding checklist and setup shortcuts") {
-            VStack(alignment: .leading, spacing: 12) {
-                if let setup {
-                    setupProgressView(setup)
+        VStack(alignment: .leading, spacing: 14) {
+            setupHeaderCard
+            existingAccountsCard
+            stepOneAccountCard
+            stepTwoImportCard
+            stepThreeNotificationsCard
+            stepFourParserCard
 
-                    Button { onOpenCsvImport() } label: { settingsSheetPrimaryButton("CSV Import") }
-                        .buttonStyle(.plain)
-                    Button { onOpenBankInfo() } label: { settingsSheetPrimaryButton("Bank Info") }
-                        .buttonStyle(.plain)
-                    Button { onOpenIncomeWizard() } label: { settingsSheetPrimaryButton("Income Wizard") }
-                        .buttonStyle(.plain)
-                    Button { onConnectGoogle() } label: { settingsSheetSecondaryButton("Reconnect Google") }
-                        .buttonStyle(.plain)
-
-                    if let counts = setup.counts {
-                        Text("CSV mapping: \(counts.accountsWithCsvMapping ?? 0)/\(counts.accountsTotal ?? 0) | Email parser: \(counts.accountsWithParser ?? 0)/\(counts.accountsExpectEmail ?? 0)")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text(statusText)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-
-                Button { onOpenExternalApps() } label: { settingsSheetSecondaryButton("External Apps") }
+            if showCloseButton {
+                Button { dismiss() } label: { settingsSheetSecondaryButton("Close") }
                     .buttonStyle(.plain)
-
-                Button {
-                    dismiss()
-                } label: {
-                    settingsSheetSecondaryButton("Close")
-                }
-                .buttonStyle(.plain)
             }
         }
         .task { await load() }
-        .presentationDetents([.medium, .large])
     }
 
     private func load() async {
         do {
-            setup = try await SettingsAPI.fetch("/settings/initial-setup-status", as: SettingsInitialSetupPayload.self)
+            onboarding = try await SettingsAPI.fetch("/onboarding/status", as: SettingsOnboardingStatusPayload.self)
+            let notificationPayload = try? await SettingsAPI.fetch("/settings/notifications", as: SettingsNotificationSettingsPayload.self)
+            pushoverUserKey = notificationPayload?.pushoverUserKey ?? ""
             statusText = ""
+            resetFormIfNeeded()
         } catch {
             statusText = "Could not load setup completion status."
         }
     }
 
-    private func setupProgressView(_ setup: SettingsInitialSetupPayload) -> some View {
-        let pct = max(0, min(100, setup.percent ?? 0))
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("\(pct)% complete")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.08))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .fill(LinearGradient(colors: [Color.green, Color.mint], startPoint: .leading, endPoint: .trailing))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, max(0, 1 - CGFloat(pct) / 100.0) * 0)
-            )
-            .frame(height: 10)
+    private var setupHeaderCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let onboarding {
+                Text(progressSummary)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 999, style: .continuous)
+                            .fill(Color.black.opacity(0.08))
+                        RoundedRectangle(cornerRadius: 999, style: .continuous)
+                            .fill(LinearGradient(colors: [Color.green, Color.mint], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * CGFloat(progressPercent) / 100.0)
+                    }
+                }
+                .frame(height: 10)
+
+                if let counts = onboarding.counts {
+                    Text("Accounts: \(counts.accounts) | Starting Balances: \(counts.startingBalances) | Transactions: \(counts.transactions)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text(statusText)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                Task { await load() }
+            } label: {
+                settingsSheetSecondaryButton("Refresh Status")
+            }
+            .buttonStyle(.plain)
         }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private var existingAccountsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DisclosureGroup {
+                if let accounts = onboarding?.accounts, !accounts.isEmpty {
+                    VStack(spacing: 10) {
+                        ForEach(accounts) { account in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("\(account.institution) - \(account.name)")
+                                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        Text("(\(account.accountType))")
+                                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                        if let setup = account.setup {
+                                            Text(setup.complete ? "Complete" : "Missing: \(setup.missing.joined(separator: ", "))")
+                                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Text("Receives emails: \(account.receivesEmails ? "Yes" : "No") | Paycheck account: \(account.isPaycheckAccount ? "Yes" : "No")")
+                                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Button("Edit") { startEdit(account) }
+                                        .buttonStyle(.plain)
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                    .padding(.top, 8)
+                } else {
+                    Text("No accounts yet.")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                }
+            } label: {
+                HStack {
+                    Text("Existing accounts")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                    Spacer()
+                    Text("\(onboarding?.accounts.count ?? 0)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.08), in: Capsule(style: .continuous))
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private var stepOneAccountCard: some View {
+        setupStepCard(title: "Step 1: Add Account") {
+            VStack(alignment: .leading, spacing: 10) {
+                settingsTextField("Institution (e.g. Navy Federal)", text: $institution)
+                settingsTextField("Account Name (e.g. Active Duty Checking)", text: $accountName)
+
+                Picker("Account Type", selection: $accountType) {
+                    Text("checking").tag("checking")
+                    Text("savings").tag("savings")
+                    Text("credit").tag("credit")
+                    Text("investment").tag("investment")
+                }
+                .pickerStyle(.menu)
+                .tint(.black)
+                .padding(.horizontal, 10)
+                .frame(height: 44)
+                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                if onboarding?.canSetStartingBalance == true {
+                    HStack(spacing: 8) {
+                        DatePicker("", selection: Binding(get: {
+                            isoDateStringToDate(startingDateISO)
+                        }, set: { startingDateISO = isoDateString($0) }), displayedComponents: .date)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 10)
+                            .frame(height: 44)
+                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        settingsTextField("Starting Balance", text: $startingBalanceText, keyboard: .decimalPad)
+                    }
+                }
+
+                if accountType == "credit" {
+                    settingsTextField("Credit Limit", text: $creditLimitText, keyboard: .decimalPad)
+                }
+
+                if accountType == "checking" || accountType == "savings" || accountType == "investment" {
+                    HStack(spacing: 8) {
+                        settingsTextField("APY %", text: $apyPercentText, keyboard: .decimalPad)
+                        settingsTextField("Interest Post Day", text: $interestPostDayText, keyboard: .numberPad)
+                    }
+                }
+
+                Toggle("Receives email transaction alerts", isOn: $receivesEmails)
+                    .tint(.black)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+
+                Toggle("Paycheck deposit account", isOn: $isPaycheckAccount)
+                    .tint(.black)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+
+                if accountType == "credit" {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Credit Card Benefits (optional)")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        ForEach($benefitRows) { $row in
+                            HStack(spacing: 8) {
+                                settingsTextField("Category", text: $row.category)
+                                settingsTextField("Cashback %", text: $row.percentText, keyboard: .decimalPad)
+                                Button {
+                                    if benefitRows.count > 1 {
+                                        benefitRows.removeAll { $0.id == row.id }
+                                    } else {
+                                        row = SettingsBenefitDraft()
+                                    }
+                                } label: {
+                                    Text("Remove")
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .frame(width: 72, height: 44)
+                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Button {
+                            benefitRows.append(SettingsBenefitDraft())
+                        } label: {
+                            settingsSheetSecondaryButton("Add Benefit Row")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Button(editingAccountID == nil ? "Add Account" : "Save Account Changes") {
+                    Task { await saveAccount() }
+                }
+                .buttonStyle(.plain)
+                .modifier(SettingsPrimaryActionModifier())
+
+                if editingAccountID != nil {
+                    Button("Cancel Edit") {
+                        resetForm()
+                        addResultText = "Edit cancelled."
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(SettingsSecondaryActionModifier())
+
+                    Button("Delete Account + Transactions") {
+                        Task { await deleteEditingAccount() }
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(SettingsSecondaryActionModifier())
+                }
+
+                if !addResultText.isEmpty {
+                    Text(addResultText)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var stepTwoImportCard: some View {
+        setupStepCard(title: "Step 2: Import CSV Data") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Drop a CSV or Excel file, preview it, map columns, then import.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                Button("Open Importer") { onOpenCsvImport() }
+                    .buttonStyle(.plain)
+                    .modifier(SettingsPrimaryActionModifier())
+
+                Button("Open Bank Info") { onOpenBankInfo() }
+                    .buttonStyle(.plain)
+                    .modifier(SettingsSecondaryActionModifier())
+
+                Button("Income Wizard") { onOpenIncomeWizard() }
+                    .buttonStyle(.plain)
+                    .modifier(SettingsSecondaryActionModifier())
+            }
+        }
+    }
+
+    private var stepThreeNotificationsCard: some View {
+        setupStepCard(title: "Step 3: Notifications (Optional)") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Enter your personal Pushover user key. This key is saved to your user only.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                settingsTextField("Pushover User Key", text: $pushoverUserKey)
+
+                Button("Save Pushover Key") {
+                    Task { await savePushoverUserKey() }
+                }
+                .buttonStyle(.plain)
+                .modifier(SettingsPrimaryActionModifier())
+
+                Button("Send Test Notification") {
+                    Task { await sendPushoverTest() }
+                }
+                .buttonStyle(.plain)
+                .modifier(SettingsSecondaryActionModifier())
+
+                Button("Open Notifications Page") {
+                    onOpenNotifications()
+                }
+                .buttonStyle(.plain)
+                .modifier(SettingsSecondaryActionModifier())
+
+                if !pushoverStatusText.isEmpty {
+                    Text(pushoverStatusText)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var stepFourParserCard: some View {
+        setupStepCard(title: "Step 4: Parser Wizard") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Finish parser setup for accounts that receive email alerts.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Button("Open Parser Wizard") {
+                    onOpenParserWizard()
+                }
+                .buttonStyle(.plain)
+                .modifier(SettingsPrimaryActionModifier())
+
+                Button("External Apps") {
+                    onOpenExternalApps()
+                }
+                .buttonStyle(.plain)
+                .modifier(SettingsSecondaryActionModifier())
+            }
+        }
+    }
+
+    private var progressPercent: Int {
+        let steps = onboarding?.steps
+        let flags = [
+            steps?.accountsAdded == true,
+            steps?.startingBalancesAdded == true,
+            steps?.transactionsImported == true,
+            steps?.pushoverUserKeySet == true
+        ]
+        let done = flags.filter { $0 }.count
+        return Int(round((Double(done) / 4.0) * 100.0))
+    }
+
+    private var progressSummary: String {
+        "\(progressPercent)% complete"
+    }
+
+    private func setupStepCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            content()
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func settingsTextField(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        TextField(placeholder, text: text)
+            .keyboardType(keyboard)
+            .padding(.horizontal, 10)
+            .frame(height: 44)
+            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func resetFormIfNeeded() {
+        if editingAccountID == nil && institution.isEmpty && accountName.isEmpty {
+            resetForm()
+        }
+    }
+
+    private func resetForm() {
+        editingAccountID = nil
+        institution = ""
+        accountName = ""
+        accountType = "checking"
+        startingDateISO = isoDateString(Date())
+        startingBalanceText = ""
+        creditLimitText = ""
+        apyPercentText = ""
+        interestPostDayText = ""
+        receivesEmails = true
+        isPaycheckAccount = false
+        benefitRows = [SettingsBenefitDraft()]
+    }
+
+    private func startEdit(_ account: SettingsOnboardingAccountPayload) {
+        editingAccountID = account.id
+        institution = account.institution
+        accountName = account.name
+        accountType = account.accountType
+        creditLimitText = account.creditLimit.map { formatCompactDecimal($0) } ?? ""
+        interestPostDayText = account.interestPostDay.map(String.init) ?? ""
+        receivesEmails = account.receivesEmails
+        isPaycheckAccount = account.isPaycheckAccount
+        benefitRows = account.cardBenefits.isEmpty
+            ? [SettingsBenefitDraft()]
+            : account.cardBenefits.map { SettingsBenefitDraft(category: $0.benefitType, percentText: formatCompactDecimal($0.cashbackPercent)) }
+        addResultText = "Editing account #\(account.id)."
+    }
+
+    private func saveAccount() async {
+        addResultText = ""
+        let body = buildAccountRequestBody()
+        do {
+            if let editingAccountID {
+                let out = try await SettingsAPI.fetch("/onboarding/accounts/\(editingAccountID)", method: "PUT", jsonBody: body, as: SettingsOnboardingAccountMutationPayload.self)
+                addResultText = "Updated account id \(out.accountID)."
+            } else {
+                let out = try await SettingsAPI.fetch("/onboarding/accounts", method: "POST", jsonBody: body, as: SettingsOnboardingAccountMutationPayload.self)
+                addResultText = "Added account id \(out.accountID)."
+            }
+            resetForm()
+            await load()
+        } catch {
+            addResultText = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteEditingAccount() async {
+        guard let editingAccountID else { return }
+        do {
+            let out = try await SettingsAPI.fetch("/onboarding/accounts/\(editingAccountID)", method: "DELETE", as: SettingsOnboardingAccountDeletePayload.self)
+            addResultText = "Deleted account id \(out.accountID). Removed \(out.deletedTransactions) transactions."
+            resetForm()
+            await load()
+        } catch {
+            addResultText = "Delete failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func savePushoverUserKey() async {
+        do {
+            let out = try await SettingsAPI.fetch("/onboarding/pushover-key", method: "POST", jsonBody: [
+                "user_key": pushoverUserKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            ], as: SettingsOnboardingPushoverKeyPayload.self)
+            pushoverStatusText = out.userKeySet ? "Pushover user key saved." : "Pushover user key cleared."
+            await load()
+        } catch {
+            pushoverStatusText = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func sendPushoverTest() async {
+        do {
+            _ = try await SettingsAPI.fetch("/onboarding/pushover-test", method: "POST", jsonBody: [
+                "user_key": pushoverUserKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            ], as: SettingsOnboardingPushoverTestPayload.self)
+            pushoverStatusText = "Test notification sent."
+        } catch {
+            pushoverStatusText = "Test failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func buildAccountRequestBody() -> [String: Any] {
+        let benefits = accountType == "credit" ? benefitRows.compactMap { row -> [String: Any]? in
+            let name = row.category.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            return [
+                "benefit_type": name,
+                "cashback_percent": Double(row.percentText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            ]
+        } : []
+
+        var body: [String: Any] = [
+            "institution": institution.trimmingCharacters(in: .whitespacesAndNewlines),
+            "name": accountName.trimmingCharacters(in: .whitespacesAndNewlines),
+            "accounttype": accountType,
+            "receives_emails": receivesEmails,
+            "is_paycheck_account": isPaycheckAccount,
+            "card_benefits": benefits
+        ]
+        if onboarding?.canSetStartingBalance == true {
+            body["starting_date"] = startingDateISO
+            if let start = Double(startingBalanceText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                body["starting_balance"] = start
+            }
+        }
+        if let limit = Double(creditLimitText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            body["credit_limit"] = limit
+        }
+        if let apy = Double(apyPercentText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            body["apy_percent"] = apy
+        }
+        if let day = Int(interestPostDayText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            body["interest_post_day"] = day
+        }
+        return body
     }
 
 }
 
 private struct ParserWizardSheet: View {
+    var body: some View {
+        SettingsSheetShell(title: "Parser Wizard", subtitle: "Build parser configs per account/email scope.") {
+            ParserWizardContentView(showCloseButton: true)
+        }
+        .presentationDetents([.large])
+    }
+}
+
+private struct ParserWizardContentView: View {
     @Environment(\.dismiss) private var dismiss
-    @Binding var backfillDaysText: String
-    @Binding var includeProcessed: Bool
-    @Binding var status: String
-    @Binding var logText: String
-    @Binding var rows: [SettingsBackfillRow]
+    let showCloseButton: Bool
+    @StateObject private var model = EmailParserWizardViewModel()
+    @State private var scopeExpanded = true
+    @State private var samplesExpanded = true
+    @State private var ruleExpanded = true
+    @State private var resultsExpanded = true
 
     var body: some View {
-        SettingsSheetShell(title: "Parser Wizard", subtitle: "Manual backfill parse") {
+        ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Re-scan previous emails and insert missing transactions.")
+                Text("Build parser configs per account/email scope using parser slots (Parser 1, Parser 2, Parser 3...).")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 10) {
-                    Text("Lookback days")
+                if !model.statusText.isEmpty {
+                    Text(model.statusText)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    TextField("7", text: $backfillDaysText)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 56, height: 26)
-                        .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Spacer()
-                    Button {
-                        Task { await runBackfill() }
-                    } label: {
-                        settingsSheetSecondaryButton("Run")
-                    }
-                    .buttonStyle(.plain)
+                        .foregroundStyle(model.statusIsError ? .red : .secondary)
                 }
 
-                Toggle("Include already processed", isOn: $includeProcessed)
-                    .tint(.black)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-
-                if !status.isEmpty {
-                    Text(status)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-
-                if !logText.isEmpty {
-                    Text(logText)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .lineLimit(14)
-                        .textSelection(.enabled)
-                        .padding(10)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-
-                if !rows.isEmpty {
-                    VStack(spacing: 8) {
-                        ForEach(rows) { row in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(row.title)
-                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    Spacer()
-                                    Text(row.statusText)
-                                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
+                parserStepCard("Step 1: Scope", isExpanded: $scopeExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            parserField("Account") {
+                                Picker("Account", selection: $model.accountID) {
+                                    Text("Select account").tag(0)
+                                    ForEach(model.accounts) { account in
+                                        Text(account.displayLabel).tag(account.id)
+                                    }
                                 }
-                                Text(row.subject)
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                if let preview = row.preview {
-                                    Text(preview)
-                                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                        .lineLimit(4)
+                                .pickerStyle(.menu)
+                            }
+                            if model.accountSettings.count > 1 {
+                                parserField("Subject setting") {
+                                    Picker("Subject setting", selection: $model.selectedDraftID) {
+                                        Text("Select parser").tag(0)
+                                        ForEach(model.accountSettings) { setting in
+                                            Text(setting.subjectSettingLabel).tag(setting.draftID)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .onChange(of: model.selectedDraftID) { _, newValue in
+                                        model.applySelectedDraft(id: newValue)
+                                    }
                                 }
                             }
-                            .padding(12)
-                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+
+                        HStack(spacing: 10) {
+                            parserField("Sender contains") {
+                                TextField("alerts@bank.com", text: $model.senderQuery)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
+                            parserField("Subject contains") {
+                                TextField("Transaction Alert", text: $model.subjectQuery)
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            parserField("Lookback days") {
+                                TextField("30", text: $model.lookbackDaysText)
+                                    .keyboardType(.numberPad)
+                            }
+                            parserField("Max samples") {
+                                TextField("10", text: $model.sampleLimitText)
+                                    .keyboardType(.numberPad)
+                            }
+                        }
+
+                        Toggle("Try HTML body when Merchant/Date/Amount are blank", isOn: $model.tryHTMLOnMissing)
+                            .tint(.black)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+
+                        Button {
+                            Task { await model.loadSamples() }
+                        } label: {
+                            settingsSheetPrimaryButton(model.isLoadingSamples ? "Loading..." : "Load Samples")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.isLoadingSamples)
+                    }
+                }
+
+                parserStepCard("Step 2: Candidate Samples", isExpanded: $samplesExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(model.samplesMetaText)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        if model.samples.isEmpty {
+                            parserEmptyState("No samples loaded yet.")
+                        } else {
+                            ForEach(model.samples) { sample in
+                                parserSampleRow(
+                                    sample: sample,
+                                    isSelected: model.selectedSampleIDs.contains(sample.sampleID),
+                                    isPrimary: model.primarySampleID == sample.sampleID,
+                                    previewRow: model.previewRow(for: sample.sampleID),
+                                    onToggleSelected: { model.toggleSample(sample.sampleID) },
+                                    onMakePrimary: { model.primarySampleID = sample.sampleID }
+                                )
+                            }
                         }
                     }
                 }
 
-                Button { dismiss() } label: { settingsSheetSecondaryButton("Close") }
-                    .buttonStyle(.plain)
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
+                parserStepCard("Step 3: Parser Rule", isExpanded: $ruleExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            parserField("Parser mode") {
+                                Picker("Parser mode", selection: $model.parserMode) {
+                                    Text("Guided (No Regex)").tag("guided")
+                                    Text("Advanced (Regex)").tag("advanced")
+                                }
+                                .pickerStyle(.menu)
+                            }
+                            parserField("Parser slot") {
+                                Picker("Parser slot", selection: $model.parserSlot) {
+                                    ForEach(1...5, id: \.self) { idx in
+                                        Text("Parser \(idx)").tag("parser_\(idx)")
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            }
+                        }
 
-    private func runBackfill() async {
-        let days = max(1, min(99, Int(backfillDaysText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 7))
-        status = "Starting parser backfill..."
-        logText = ""
-        rows = []
-        do {
-            let startOut = try await SettingsAPI.fetch("/settings/email-parser/run/start", method: "POST", jsonBody: [
-                "days": days,
-                "include_processed": includeProcessed,
-                "max_emails": 5000,
-            ], as: SettingsBackfillStartPayload.self)
-            guard let jobID = startOut.jobID else { throw NSError(domain: "backfill", code: 0) }
-            while true {
-                try await Task.sleep(nanoseconds: 900_000_000)
-                let poll = try await SettingsAPI.fetch("/settings/email-parser/run/status?job_id=\(jobID)", as: SettingsBackfillStatusPayload.self)
-                if poll.status == "done" {
-                    let result = poll.result
-                    status = "Backfill complete."
-                    logText = formatBackfillLog(result)
-                    rows = formatBackfillRows(result)
-                    break
-                } else if poll.status == "failed" {
-                    status = "Backfill failed."
-                    break
-                } else {
-                    status = "Running parser backfill..."
+                        Toggle("Invert amount before DB insert/update", isOn: $model.invertAmountSign)
+                            .tint(.black)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+
+                        if model.subjectQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            parserField("Subject contains (used when Step 1 subject is blank)") {
+                                TextField("Transaction Notification", text: $model.subjectFallback)
+                            }
+                        }
+
+                        if model.parserMode == "guided" {
+                            VStack(spacing: 8) {
+                                parserGuidedRow(title: "Amount", order: $model.guidedAmountOrder, label: $model.guidedAmountLabel, endMode: $model.guidedAmountEnd, endText: $model.guidedAmountEndText)
+                                parserGuidedRow(title: "Merchant", order: $model.guidedMerchantOrder, label: $model.guidedMerchantLabel, endMode: $model.guidedMerchantEnd, endText: $model.guidedMerchantEndText)
+                                parserGuidedRow(title: "Date", order: $model.guidedDateOrder, label: $model.guidedDateLabel, endMode: $model.guidedDateEnd, endText: $model.guidedDateEndText)
+                                parserGuidedRow(title: "Time", order: $model.guidedTimeOrder, label: $model.guidedTimeLabel, endMode: $model.guidedTimeEnd, endText: $model.guidedTimeEndText)
+                            }
+
+                            HStack(spacing: 10) {
+                                parserField("Account number before (optional)") {
+                                    TextField("", text: $model.guidedAccountBefore)
+                                }
+                                parserField("Account number exact sequence (optional)") {
+                                    TextField("", text: $model.guidedAccountExact)
+                                }
+                            }
+                        } else {
+                            parserField("Regex flags") {
+                                TextField("i", text: $model.regexFlags)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
+                            parserField("Body regex") {
+                                TextEditor(text: $model.bodyRegex)
+                                    .frame(minHeight: 120)
+                            }
+                            HStack(spacing: 10) {
+                                parserField("Amount group") { TextField("1", text: $model.amountGroup).keyboardType(.numberPad) }
+                                parserField("Merchant group") { TextField("2", text: $model.merchantGroup).keyboardType(.numberPad) }
+                                parserField("Date group") { TextField("3", text: $model.dateGroup).keyboardType(.numberPad) }
+                                parserField("Time group") { TextField("0", text: $model.timeGroup).keyboardType(.numberPad) }
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            Button {
+                                Task { await model.runPreview() }
+                            } label: {
+                                settingsSheetPrimaryButton(model.isRunningPreview ? "Running..." : "Run Dry-Run Preview")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.isRunningPreview)
+
+                            Button {
+                                Task { await model.runParserTest() }
+                            } label: {
+                                settingsSheetSecondaryButton(model.isRunningParserTest ? "Running..." : "Test All Saved Parsers")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.isRunningParserTest)
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Live capture preview")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                            Text(model.liveCaptureStatusText)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(model.liveCaptureMatched ? .secondary : .secondary)
+                            if let capture = model.liveCapture {
+                                parserLiveCaptureGrid(capture)
+                            }
+                            if !model.liveCaptureBody.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    Text(model.liveCaptureBody)
+                                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                }
+                                .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                            }
+                            Button {
+                                Task { await model.refreshLiveCapture() }
+                            } label: {
+                                settingsSheetSecondaryButton(model.isRefreshingLiveCapture ? "Refreshing..." : "Refresh Capture Preview")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.isRefreshingLiveCapture)
+                        }
+                    }
+                }
+
+                parserStepCard("Step 4: Preview Results", isExpanded: $resultsExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(model.previewSummaryText)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+
+                        if model.previewRows.isEmpty {
+                            parserEmptyState("No preview run yet.")
+                        } else {
+                            ForEach(model.previewRows) { row in
+                                parserResultRow(row)
+                            }
+                        }
+
+                        Text("Parser test report")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+
+                        Text(model.testSummaryText)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+
+                        if model.testRows.isEmpty {
+                            parserEmptyState("No parser test run yet.")
+                        } else {
+                            ForEach(model.testRows) { row in
+                                parserTestRow(row)
+                            }
+                        }
+
+                        Text("Correlation preview")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+
+                        HStack(spacing: 10) {
+                            parserField("Primary parser") {
+                                Picker("Primary parser", selection: $model.correlationPrimaryDraftID) {
+                                    Text("Select parser").tag(0)
+                                    ForEach(model.accountSettings) { setting in
+                                        Text(setting.subjectSettingLabel).tag(setting.draftID)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            }
+                            parserField("Secondary parser") {
+                                Picker("Secondary parser", selection: $model.correlationSecondaryDraftID) {
+                                    Text("Select parser").tag(0)
+                                    ForEach(model.accountSettings) { setting in
+                                        Text(setting.subjectSettingLabel).tag(setting.draftID)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            }
+                        }
+
+                        Button {
+                            Task { await model.runCorrelationPreview() }
+                        } label: {
+                            settingsSheetSecondaryButton(model.isRunningCorrelationPreview ? "Running..." : "Run Correlation Preview")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.isRunningCorrelationPreview)
+
+                        Text(model.correlationSummaryText)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+
+                        if model.correlationRows.isEmpty {
+                            parserEmptyState("No correlation preview run yet.")
+                        } else {
+                            ForEach(model.correlationRows) { row in
+                                parserCorrelationRow(row)
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            Button {
+                                Task { await model.saveDraft() }
+                            } label: {
+                                settingsSheetPrimaryButton(model.isSavingDraft ? "Saving..." : "Save Parser")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.isSavingDraft)
+
+                            Button {
+                                Task { await model.deleteCurrentParser() }
+                            } label: {
+                                settingsSheetSecondaryButton(model.isDeletingDraft ? "Deleting..." : "Delete This Parser")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.isDeletingDraft)
+                        }
+                    }
+                }
+
+                if showCloseButton {
+                    Button { dismiss() } label: { settingsSheetSecondaryButton("Close") }
+                        .buttonStyle(.plain)
                 }
             }
+            .padding(.bottom, 10)
+        }
+        .task {
+            await model.loadAccounts()
+        }
+        .onChange(of: model.accountID) { _, _ in
+            Task { await model.loadAccountSettings() }
+        }
+        .onChange(of: model.primarySampleID) { _, _ in
+            Task { await model.refreshLiveCapture() }
+        }
+    }
+}
+
+@MainActor
+private final class EmailParserWizardViewModel: ObservableObject {
+    @Published var statusText = ""
+    @Published var statusIsError = false
+    @Published var accounts: [ParserWizardAccount] = []
+    @Published var accountID: Int = 0
+    @Published var accountSettings: [ParserWizardSetting] = []
+    @Published var selectedDraftID: Int = 0
+    @Published var senderQuery = ""
+    @Published var subjectQuery = ""
+    @Published var subjectFallback = ""
+    @Published var lookbackDaysText = "30"
+    @Published var sampleLimitText = "10"
+    @Published var tryHTMLOnMissing = false
+    @Published var samples: [ParserWizardSample] = []
+    @Published var selectedSampleIDs: Set<String> = []
+    @Published var primarySampleID: String = ""
+    @Published var parserMode = "guided"
+    @Published var parserSlot = "parser_1"
+    @Published var invertAmountSign = false
+    @Published var regexFlags = "i"
+    @Published var bodyRegex = ""
+    @Published var amountGroup = "1"
+    @Published var merchantGroup = "2"
+    @Published var dateGroup = "3"
+    @Published var timeGroup = "0"
+    @Published var guidedAmountOrder = "3"
+    @Published var guidedAmountLabel = ""
+    @Published var guidedAmountEnd = "auto"
+    @Published var guidedAmountEndText = ""
+    @Published var guidedMerchantOrder = "2"
+    @Published var guidedMerchantLabel = ""
+    @Published var guidedMerchantEnd = "auto"
+    @Published var guidedMerchantEndText = ""
+    @Published var guidedDateOrder = "1"
+    @Published var guidedDateLabel = ""
+    @Published var guidedDateEnd = "auto"
+    @Published var guidedDateEndText = ""
+    @Published var guidedTimeOrder = "0"
+    @Published var guidedTimeLabel = ""
+    @Published var guidedTimeEnd = "auto"
+    @Published var guidedTimeEndText = ""
+    @Published var guidedAccountBefore = ""
+    @Published var guidedAccountExact = ""
+    @Published var previewRows: [ParserWizardPreviewRow] = []
+    @Published var testSummary: ParserWizardTestSummary?
+    @Published var testRows: [ParserWizardTestRow] = []
+    @Published var liveCapture: ParserWizardExtracted?
+    @Published var liveCaptureStatusText = "Select a candidate in Step 2 to preview captures."
+    @Published var liveCaptureBody = ""
+    @Published var liveCaptureMatched = false
+    @Published var isRefreshingLiveCapture = false
+    @Published var correlationPrimaryDraftID: Int = 0
+    @Published var correlationSecondaryDraftID: Int = 0
+    @Published var correlationSummary: ParserWizardCorrelationSummary?
+    @Published var correlationRows: [ParserWizardCorrelationRow] = []
+    @Published var isRunningCorrelationPreview = false
+    @Published var isLoadingSamples = false
+    @Published var isRunningPreview = false
+    @Published var isRunningParserTest = false
+    @Published var isSavingDraft = false
+    @Published var isDeletingDraft = false
+
+    var samplesMetaText: String {
+        if samples.isEmpty { return "No samples loaded yet." }
+        return "\(samples.count) samples loaded. \(selectedSampleIDs.count) selected for preview."
+    }
+
+    var previewSummaryText: String {
+        guard !previewRows.isEmpty else { return "No preview run yet." }
+        let matched = previewRows.filter(\.matched).count
+        return "Matched \(matched)/\(previewRows.count) samples."
+    }
+
+    var testSummaryText: String {
+        guard let testSummary else { return "No parser test run yet." }
+        return "Emails \(testSummary.emails) | parsers \(testSummary.parsers) | matches \(testSummary.matches) | inserted \(testSummary.inserted) | notifications \(testSummary.notifications)"
+    }
+
+    var correlationSummaryText: String {
+        guard let correlationSummary else { return "No correlation preview run yet." }
+        return "Pending \(correlationSummary.pending) | Resolved \(correlationSummary.resolved) | Immediate notify \(correlationSummary.notifyImmediate) | Skipped notified \(correlationSummary.skipAlreadyNotified)"
+    }
+
+    func previewRow(for sampleID: String) -> ParserWizardPreviewRow? {
+        previewRows.first(where: { $0.sampleID == sampleID })
+    }
+
+    func loadAccounts() async {
+        do {
+            let out = try await SettingsAPI.fetch("/email-parser/trial/accounts", as: ParserWizardAccountsPayload.self)
+            accounts = out.accounts
+            setStatus("Connected to parser endpoints.", isError: false)
+            if accountID == 0, let first = accounts.first {
+                accountID = first.id
+                await loadAccountSettings()
+            }
         } catch {
-            status = "Backfill failed."
+            accounts = []
+            setStatus("Could not load parser accounts.", isError: true)
         }
     }
 
-    private func formatBackfillLog(_ out: SettingsBackfillResultPayload?) -> String {
-        guard let out else { return "" }
-        let summary = out.summary
-        let head = [
-            "lookback_days=\(summary?.lookbackDays ?? 0)",
-            "fetched=\(summary?.fetched ?? 0)",
-            "matched=\(summary?.matched ?? 0)",
-            "inserted=\(summary?.inserted ?? 0)",
-            "notified=\(summary?.notified ?? 0)",
-            "skipped=\(summary?.skipped ?? 0)",
-        ].joined(separator: " | ")
-        return head
+    func loadAccountSettings() async {
+        guard accountID > 0 else {
+            accountSettings = []
+            return
+        }
+        do {
+            let out = try await SettingsAPI.fetch("/email-parser/trial/account-settings/\(accountID)", as: ParserWizardSettingsPayload.self)
+            accountSettings = out.settings.sorted { $0.parserSlot < $1.parserSlot }
+            if let parser1 = accountSettings.first(where: { $0.parserSlot == "parser_1" }) {
+                correlationPrimaryDraftID = parser1.draftID
+            }
+            if let parser2 = accountSettings.first(where: { $0.parserSlot == "parser_2" }) {
+                correlationSecondaryDraftID = parser2.draftID
+            }
+            if accountSettings.count == 1, let first = accountSettings.first {
+                applySetting(first)
+                selectedDraftID = first.draftID
+            } else {
+                selectedDraftID = 0
+            }
+        } catch {
+            accountSettings = []
+            resetDraftFields()
+        }
     }
 
-    private func formatBackfillRows(_ out: SettingsBackfillResultPayload?) -> [SettingsBackfillRow] {
-        guard let rowsOut = out?.rows else { return [] }
-        return rowsOut.enumerated().map { index, item in
-            SettingsBackfillRow(
-                id: "\(index)-\(item.subject ?? "")",
-                title: (item.matched ?? false) ? "MATCH" : "SKIP",
-                statusText: "inserted=\(item.inserted == true) notified=\(item.notified == true)",
-                subject: item.subject ?? "(no subject)",
-                preview: item.bodyExcerpt ?? ""
+    func applySelectedDraft(id: Int) {
+        guard let draft = accountSettings.first(where: { $0.draftID == id }) else { return }
+        applySetting(draft)
+    }
+
+    func toggleSample(_ sampleID: String) {
+        if selectedSampleIDs.contains(sampleID) {
+            selectedSampleIDs.remove(sampleID)
+        } else {
+            selectedSampleIDs.insert(sampleID)
+        }
+    }
+
+    func loadSamples() async {
+        guard accountID > 0 else {
+            setStatus("Select an account first.", isError: true)
+            return
+        }
+        guard !senderQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            setStatus("Enter a sender filter.", isError: true)
+            return
+        }
+        isLoadingSamples = true
+        defer { isLoadingSamples = false }
+        do {
+            let out = try await SettingsAPI.fetch(
+                "/email-parser/trial/samples",
+                method: "POST",
+                jsonBody: [
+                    "account_id": accountID,
+                    "sender_query": senderQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "subject_query": subjectQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "try_html_on_missing_fields": tryHTMLOnMissing,
+                    "lookback_days": max(1, min(365, Int(lookbackDaysText) ?? 30)),
+                    "limit": max(5, min(200, Int(sampleLimitText) ?? 10)),
+                ],
+                timeout: 90,
+                as: ParserWizardSamplesPayload.self
             )
+            samples = out.items
+            selectedSampleIDs = Set(samples.map(\.sampleID))
+            primarySampleID = samples.first?.sampleID ?? ""
+            previewRows = []
+            correlationRows = []
+            correlationSummary = nil
+            await refreshLiveCapture()
+            setStatus("Loaded \(samples.count) samples.", isError: false)
+        } catch {
+            setStatus("Could not load samples.", isError: true)
         }
     }
+
+    func runPreview() async {
+        guard !selectedSampleIDs.isEmpty else {
+            setStatus("Select at least one sample.", isError: true)
+            return
+        }
+        isRunningPreview = true
+        defer { isRunningPreview = false }
+        do {
+            let out = try await SettingsAPI.fetch(
+                "/email-parser/trial/preview",
+                method: "POST",
+                jsonBody: draftPayload(sampleIDs: Array(selectedSampleIDs)),
+                timeout: 90,
+                as: ParserWizardPreviewPayload.self
+            )
+            previewRows = out.rows
+            await refreshLiveCapture()
+            setStatus("Preview complete.", isError: false)
+        } catch {
+            setStatus("Preview failed.", isError: true)
+        }
+    }
+
+    func refreshLiveCapture() async {
+        guard let primarySampleID = currentPrimarySampleID else {
+            liveCapture = nil
+            liveCaptureBody = ""
+            liveCaptureMatched = false
+            liveCaptureStatusText = "Select a candidate in Step 2 to preview captures."
+            return
+        }
+        guard let sample = samples.first(where: { $0.sampleID == primarySampleID }) else { return }
+        isRefreshingLiveCapture = true
+        defer { isRefreshingLiveCapture = false }
+        liveCaptureBody = String(sample.body.prefix(12000))
+        do {
+            let out = try await SettingsAPI.fetch(
+                "/email-parser/trial/preview",
+                method: "POST",
+                jsonBody: draftPayload(sampleIDs: [primarySampleID]),
+                timeout: 90,
+                as: ParserWizardPreviewPayload.self
+            )
+            if let row = out.rows.first, row.matched {
+                liveCapture = row.extracted
+                liveCaptureMatched = true
+                liveCaptureStatusText = sample.body.count > 12000 ? "Matched (body preview truncated)." : "Matched live preview."
+            } else {
+                let row = out.rows.first
+                liveCapture = nil
+                liveCaptureMatched = false
+                liveCaptureStatusText = row?.error ?? "No match"
+            }
+        } catch {
+            liveCapture = nil
+            liveCaptureMatched = false
+            liveCaptureStatusText = "Fill rule fields to preview captures."
+        }
+    }
+
+    func runParserTest() async {
+        isRunningParserTest = true
+        defer { isRunningParserTest = false }
+        do {
+            let out = try await SettingsAPI.fetch(
+                "/email-parser/trial/test-run",
+                method: "POST",
+                jsonBody: [
+                    "sender_query": "",
+                    "subject_query": "",
+                    "try_html_on_missing_fields": tryHTMLOnMissing,
+                    "lookback_days": 7,
+                    "limit": 500,
+                ],
+                timeout: 120,
+                as: ParserWizardTestPayload.self
+            )
+            testSummary = out.summary
+            testRows = out.rows
+            setStatus("Parser test complete.", isError: false)
+        } catch {
+            setStatus("Parser test failed.", isError: true)
+        }
+    }
+
+    func saveDraft() async {
+        guard accountID > 0 else {
+            setStatus("Select an account.", isError: true)
+            return
+        }
+        isSavingDraft = true
+        defer { isSavingDraft = false }
+        do {
+            _ = try await SettingsAPI.fetch(
+                "/email-parser/trial/save",
+                method: "POST",
+                jsonBody: draftPayload(sampleIDs: Array(selectedSampleIDs)),
+                timeout: 90,
+                as: ParserWizardMutationPayload.self
+            )
+            await loadAccountSettings()
+            setStatus("Parser saved.", isError: false)
+        } catch {
+            setStatus("Save failed.", isError: true)
+        }
+    }
+
+    func deleteCurrentParser() async {
+        guard accountID > 0 else {
+            setStatus("Select an account first.", isError: true)
+            return
+        }
+        isDeletingDraft = true
+        defer { isDeletingDraft = false }
+        do {
+            _ = try await SettingsAPI.fetch(
+                "/email-parser/trial/draft/delete-one",
+                method: "POST",
+                jsonBody: [
+                    "account_id": accountID,
+                    "parser_slot": parserSlot,
+                ],
+                as: ParserWizardDeletePayload.self
+            )
+            await loadAccountSettings()
+            previewRows = []
+            setStatus("Parser deleted.", isError: false)
+        } catch {
+            setStatus("Delete parser failed.", isError: true)
+        }
+    }
+
+    func runCorrelationPreview() async {
+        guard accountID > 0 else {
+            setStatus("Select an account first.", isError: true)
+            return
+        }
+        guard correlationPrimaryDraftID > 0, correlationSecondaryDraftID > 0 else {
+            setStatus("Select both Parser 1 and Parser 2.", isError: true)
+            return
+        }
+        guard !selectedSampleIDs.isEmpty else {
+            setStatus("Select at least one sample.", isError: true)
+            return
+        }
+        isRunningCorrelationPreview = true
+        defer { isRunningCorrelationPreview = false }
+        do {
+            let out = try await SettingsAPI.fetch(
+                "/email-parser/trial/correlation-preview",
+                method: "POST",
+                jsonBody: [
+                    "account_id": accountID,
+                    "primary_draft_id": correlationPrimaryDraftID,
+                    "secondary_draft_id": correlationSecondaryDraftID,
+                    "sample_ids": Array(selectedSampleIDs),
+                ],
+                timeout: 120,
+                as: ParserWizardCorrelationPayload.self
+            )
+            correlationSummary = out.summary
+            correlationRows = out.rows
+            setStatus("Correlation preview complete.", isError: false)
+        } catch {
+            setStatus("Correlation preview failed.", isError: true)
+        }
+    }
+
+    private func setStatus(_ text: String, isError: Bool) {
+        statusText = text
+        statusIsError = isError
+    }
+
+    private var currentPrimarySampleID: String? {
+        let trimmed = primarySampleID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func applySetting(_ setting: ParserWizardSetting) {
+        senderQuery = setting.senderPattern
+        subjectQuery = setting.subjectContains
+        subjectFallback = setting.subjectContains
+        parserMode = setting.parserMode.isEmpty ? "guided" : setting.parserMode
+        parserSlot = setting.parserSlot
+        invertAmountSign = setting.invertAmountSign
+        bodyRegex = setting.bodyRegex
+        regexFlags = setting.flags.isEmpty ? "i" : setting.flags
+        amountGroup = "\(setting.fieldMap.amountGroup)"
+        merchantGroup = "\(setting.fieldMap.merchantGroup)"
+        dateGroup = "\(setting.fieldMap.dateGroup)"
+        timeGroup = "\(setting.fieldMap.timeGroup)"
+        guidedAmountLabel = setting.guided.amountLabel
+        guidedMerchantLabel = setting.guided.merchantLabel
+        guidedDateLabel = setting.guided.dateLabel
+        guidedTimeLabel = setting.guided.timeLabel
+        guidedAmountOrder = "\(setting.guided.amountOrder)"
+        guidedMerchantOrder = "\(setting.guided.merchantOrder)"
+        guidedDateOrder = "\(setting.guided.dateOrder)"
+        guidedTimeOrder = "\(setting.guided.timeOrder)"
+        guidedAmountEnd = setting.guided.amountEnd
+        guidedMerchantEnd = setting.guided.merchantEnd
+        guidedDateEnd = setting.guided.dateEnd
+        guidedTimeEnd = setting.guided.timeEnd
+        guidedAmountEndText = setting.guided.amountEndText
+        guidedMerchantEndText = setting.guided.merchantEndText
+        guidedDateEndText = setting.guided.dateEndText
+        guidedTimeEndText = setting.guided.timeEndText
+        guidedAccountBefore = setting.guided.accountBefore
+        guidedAccountExact = setting.guided.accountExact
+    }
+
+    private func resetDraftFields() {
+        selectedDraftID = 0
+        parserMode = "guided"
+        parserSlot = "parser_1"
+        invertAmountSign = false
+        bodyRegex = ""
+        regexFlags = "i"
+        amountGroup = "1"
+        merchantGroup = "2"
+        dateGroup = "3"
+        timeGroup = "0"
+    }
+
+    private func draftPayload(sampleIDs: [String]) -> [String: Any] {
+        let selectedAccount = accounts.first(where: { $0.id == accountID })
+        let accountLabel = "\(selectedAccount?.institution ?? "Account") \(selectedAccount?.name ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        let subjectValue = subjectQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? subjectFallback.trimmingCharacters(in: .whitespacesAndNewlines)
+            : subjectQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = "\(accountLabel) \(subjectValue.isEmpty ? "Email Rule" : subjectValue)".trimmingCharacters(in: .whitespacesAndNewlines)
+        return [
+            "name": name,
+            "parser_mode": parserMode,
+            "parsing_method": "guided_blocks",
+            "parser_slot": parserSlot,
+            "invert_amount_sign": invertAmountSign,
+            "override_on_primary": false,
+            "backup_assume_unknown": false,
+            "pending_ttl_minutes": 30,
+            "account_id": accountID,
+            "sender_pattern": senderQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+            "subject_contains": subjectValue,
+            "body_regex": parserMode == "advanced" ? bodyRegex : "",
+            "flags": regexFlags.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "i" : regexFlags.trimmingCharacters(in: .whitespacesAndNewlines),
+            "field_map": [
+                "amount_group": Int(amountGroup) ?? 1,
+                "merchant_group": Int(merchantGroup) ?? 2,
+                "date_group": Int(dateGroup) ?? 3,
+                "time_group": Int(timeGroup) ?? 0,
+            ],
+            "guided": [
+                "amount_label": guidedAmountLabel.trimmingCharacters(in: .whitespacesAndNewlines),
+                "merchant_label": guidedMerchantLabel.trimmingCharacters(in: .whitespacesAndNewlines),
+                "date_label": guidedDateLabel.trimmingCharacters(in: .whitespacesAndNewlines),
+                "time_label": guidedTimeLabel.trimmingCharacters(in: .whitespacesAndNewlines),
+                "amount_order": Int(guidedAmountOrder) ?? 0,
+                "merchant_order": Int(guidedMerchantOrder) ?? 0,
+                "date_order": Int(guidedDateOrder) ?? 0,
+                "time_order": Int(guidedTimeOrder) ?? 0,
+                "amount_end": guidedAmountEnd,
+                "merchant_end": guidedMerchantEnd,
+                "date_end": guidedDateEnd,
+                "time_end": guidedTimeEnd,
+                "amount_end_text": guidedAmountEndText.trimmingCharacters(in: .whitespacesAndNewlines),
+                "merchant_end_text": guidedMerchantEndText.trimmingCharacters(in: .whitespacesAndNewlines),
+                "date_end_text": guidedDateEndText.trimmingCharacters(in: .whitespacesAndNewlines),
+                "time_end_text": guidedTimeEndText.trimmingCharacters(in: .whitespacesAndNewlines),
+                "account_before": guidedAccountBefore.trimmingCharacters(in: .whitespacesAndNewlines),
+                "account_exact": guidedAccountExact.trimmingCharacters(in: .whitespacesAndNewlines),
+            ],
+            "sample_ids": sampleIDs,
+        ]
+    }
+}
+
+private struct ParserWizardAccountsPayload: Decodable {
+    let accounts: [ParserWizardAccount]
+}
+
+private struct ParserWizardAccount: Decodable, Identifiable {
+    let id: Int
+    let institution: String?
+    let name: String?
+    let hasParserSetting: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, institution, name
+        case hasParserSetting = "has_parser_setting"
+    }
+
+    var displayLabel: String {
+        let marker = hasParserSetting == true ? "Configured" : "Needs setup"
+        return "\(institution ?? "Unknown") - \(name ?? "Account") [\(marker)]"
+    }
+}
+
+private struct ParserWizardSettingsPayload: Decodable {
+    let settings: [ParserWizardSetting]
+}
+
+private struct ParserWizardSetting: Decodable, Identifiable {
+    let draftID: Int
+    let name: String
+    let subjectContains: String
+    let senderPattern: String
+    let parserMode: String
+    let parserSlot: String
+    let invertAmountSign: Bool
+    let bodyRegex: String
+    let flags: String
+    let fieldMap: ParserWizardFieldMap
+    let guided: ParserWizardGuided
+
+    enum CodingKeys: String, CodingKey {
+        case draftID = "draft_id"
+        case name
+        case subjectContains = "subject_contains"
+        case senderPattern = "sender_pattern"
+        case parserMode = "parser_mode"
+        case parserSlot = "parser_slot"
+        case invertAmountSign = "invert_amount_sign"
+        case bodyRegex = "body_regex"
+        case flags
+        case fieldMap = "field_map"
+        case guided
+    }
+
+    var id: Int { draftID }
+
+    var subjectSettingLabel: String {
+        let slotNumber = parserSlot.replacingOccurrences(of: "parser_", with: "")
+        return "[Parser \(slotNumber)]"
+    }
+}
+
+private struct ParserWizardFieldMap: Decodable {
+    let amountGroup: Int
+    let merchantGroup: Int
+    let dateGroup: Int
+    let timeGroup: Int
+
+    enum CodingKeys: String, CodingKey {
+        case amountGroup = "amount_group"
+        case merchantGroup = "merchant_group"
+        case dateGroup = "date_group"
+        case timeGroup = "time_group"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        amountGroup = (try? container.decode(Int.self, forKey: .amountGroup)) ?? 1
+        merchantGroup = (try? container.decode(Int.self, forKey: .merchantGroup)) ?? 2
+        dateGroup = (try? container.decode(Int.self, forKey: .dateGroup)) ?? 3
+        timeGroup = (try? container.decode(Int.self, forKey: .timeGroup)) ?? 0
+    }
+}
+
+private struct ParserWizardGuided: Decodable {
+    let amountLabel: String
+    let merchantLabel: String
+    let dateLabel: String
+    let timeLabel: String
+    let amountOrder: Int
+    let merchantOrder: Int
+    let dateOrder: Int
+    let timeOrder: Int
+    let amountEnd: String
+    let merchantEnd: String
+    let dateEnd: String
+    let timeEnd: String
+    let amountEndText: String
+    let merchantEndText: String
+    let dateEndText: String
+    let timeEndText: String
+    let accountBefore: String
+    let accountExact: String
+
+    enum CodingKeys: String, CodingKey {
+        case amountLabel = "amount_label"
+        case merchantLabel = "merchant_label"
+        case dateLabel = "date_label"
+        case timeLabel = "time_label"
+        case amountOrder = "amount_order"
+        case merchantOrder = "merchant_order"
+        case dateOrder = "date_order"
+        case timeOrder = "time_order"
+        case amountEnd = "amount_end"
+        case merchantEnd = "merchant_end"
+        case dateEnd = "date_end"
+        case timeEnd = "time_end"
+        case amountEndText = "amount_end_text"
+        case merchantEndText = "merchant_end_text"
+        case dateEndText = "date_end_text"
+        case timeEndText = "time_end_text"
+        case accountBefore = "account_before"
+        case accountExact = "account_exact"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        amountLabel = (try? c.decode(String.self, forKey: .amountLabel)) ?? ""
+        merchantLabel = (try? c.decode(String.self, forKey: .merchantLabel)) ?? ""
+        dateLabel = (try? c.decode(String.self, forKey: .dateLabel)) ?? ""
+        timeLabel = (try? c.decode(String.self, forKey: .timeLabel)) ?? ""
+        amountOrder = (try? c.decode(Int.self, forKey: .amountOrder)) ?? 3
+        merchantOrder = (try? c.decode(Int.self, forKey: .merchantOrder)) ?? 2
+        dateOrder = (try? c.decode(Int.self, forKey: .dateOrder)) ?? 1
+        timeOrder = (try? c.decode(Int.self, forKey: .timeOrder)) ?? 0
+        amountEnd = (try? c.decode(String.self, forKey: .amountEnd)) ?? "auto"
+        merchantEnd = (try? c.decode(String.self, forKey: .merchantEnd)) ?? "auto"
+        dateEnd = (try? c.decode(String.self, forKey: .dateEnd)) ?? "auto"
+        timeEnd = (try? c.decode(String.self, forKey: .timeEnd)) ?? "auto"
+        amountEndText = (try? c.decode(String.self, forKey: .amountEndText)) ?? ""
+        merchantEndText = (try? c.decode(String.self, forKey: .merchantEndText)) ?? ""
+        dateEndText = (try? c.decode(String.self, forKey: .dateEndText)) ?? ""
+        timeEndText = (try? c.decode(String.self, forKey: .timeEndText)) ?? ""
+        accountBefore = (try? c.decode(String.self, forKey: .accountBefore)) ?? ""
+        accountExact = (try? c.decode(String.self, forKey: .accountExact)) ?? ""
+    }
+}
+
+private struct ParserWizardSamplesPayload: Decodable {
+    let items: [ParserWizardSample]
+}
+
+private struct ParserWizardSample: Decodable, Identifiable {
+    let sampleID: String
+    let sender: String
+    let subject: String
+    let receivedAt: String
+    let snippet: String
+    let body: String
+
+    enum CodingKeys: String, CodingKey {
+        case sampleID = "sample_id"
+        case sender, subject, snippet, body
+        case receivedAt = "received_at"
+    }
+
+    var id: String { sampleID }
+}
+
+private struct ParserWizardPreviewPayload: Decodable {
+    let rows: [ParserWizardPreviewRow]
+}
+
+private struct ParserWizardPreviewRow: Decodable, Identifiable {
+    let sampleID: String
+    let matched: Bool
+    let extracted: ParserWizardExtracted?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sampleID = "sample_id"
+        case matched, extracted, error
+    }
+
+    var id: String { sampleID }
+}
+
+private struct ParserWizardExtracted: Decodable {
+    let amount: String?
+    let merchant: String?
+    let date: String?
+    let time: String?
+}
+
+private struct ParserWizardTestPayload: Decodable {
+    let summary: ParserWizardTestSummary?
+    let rows: [ParserWizardTestRow]
+}
+
+private struct ParserWizardTestSummary: Decodable {
+    let emails: Int
+    let parsers: Int
+    let matches: Int
+    let inserted: Int
+    let notifications: Int
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: DynamicCodingKey.self)
+        emails = (try? c.decode(Int.self, forKey: DynamicCodingKey("emails"))) ?? 0
+        parsers = (try? c.decode(Int.self, forKey: DynamicCodingKey("parsers"))) ?? 0
+        matches = (try? c.decode(Int.self, forKey: DynamicCodingKey("matches"))) ?? 0
+        inserted = (try? c.decode(Int.self, forKey: DynamicCodingKey("inserted"))) ?? 0
+        notifications = (try? c.decode(Int.self, forKey: DynamicCodingKey("notifications"))) ?? 0
+    }
+}
+
+private struct ParserWizardTestRow: Decodable, Identifiable {
+    let id: String
+    let subject: String
+    let sender: String
+    let inserted: Bool
+    let notified: Bool
+    let skipReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case subject, sender, inserted, notified
+        case skipReason = "skip_reason"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        subject = (try? c.decode(String.self, forKey: .subject)) ?? "(no subject)"
+        sender = (try? c.decode(String.self, forKey: .sender)) ?? ""
+        inserted = (try? c.decode(Bool.self, forKey: .inserted)) ?? false
+        notified = (try? c.decode(Bool.self, forKey: .notified)) ?? false
+        skipReason = try? c.decode(String.self, forKey: .skipReason)
+        id = "\(subject)|\(sender)"
+    }
+}
+
+private struct ParserWizardMutationPayload: Decodable {
+    let ok: Bool?
+}
+
+private struct ParserWizardDeletePayload: Decodable {
+    let deleted: Int?
+}
+
+private struct ParserWizardCorrelationPayload: Decodable {
+    let summary: ParserWizardCorrelationSummary?
+    let rows: [ParserWizardCorrelationRow]
+}
+
+private struct ParserWizardCorrelationSummary: Decodable {
+    let pending: Int
+    let resolved: Int
+    let notifyImmediate: Int
+    let skipAlreadyNotified: Int
+
+    enum CodingKeys: String, CodingKey {
+        case pending, resolved
+        case notifyImmediate = "notify_immediate"
+        case skipAlreadyNotified = "skip_already_notified"
+    }
+}
+
+private struct ParserWizardCorrelationRow: Decodable, Identifiable {
+    let subject: String
+    let sender: String
+    let matchedRule: String?
+    let action: String?
+    let txAction: String?
+    let notify: Bool
+    let extracted: ParserWizardExtracted?
+
+    enum CodingKeys: String, CodingKey {
+        case subject, sender, action, notify, extracted
+        case matchedRule = "matched_rule"
+        case txAction = "tx_action"
+    }
+
+    var id: String { "\(subject)|\(sender)|\(matchedRule ?? "")" }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+    init(_ string: String) { self.stringValue = string; self.intValue = nil }
+    init?(stringValue: String) { self.stringValue = stringValue; self.intValue = nil }
+    init?(intValue: Int) { self.stringValue = "\(intValue)"; self.intValue = intValue }
+}
+
+private func parserStepCard<Content: View>(_ title: String, isExpanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+        DisclosureGroup(isExpanded: isExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                content()
+            }
+            .padding(.top, 8)
+        } label: {
+            Text(title)
+                .font(.system(size: 16, weight: .black, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+    }
+    .padding(14)
+    .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+}
+
+private func parserField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+        Text(title)
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+        content()
+            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+}
+
+private func parserGuidedRow(title: String, order: Binding<String>, label: Binding<String>, endMode: Binding<String>, endText: Binding<String>) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+        Text(title)
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+        HStack(spacing: 8) {
+            parserField("Order") { TextField("0", text: order).keyboardType(.numberPad) }
+            parserField("Text before") { TextField("", text: label) }
+            parserField("Ends at") {
+                Picker("Ends at", selection: endMode) {
+                    Text("Auto").tag("auto")
+                    Text("Comma").tag("comma")
+                    Text("Period").tag("period")
+                    Text("New line").tag("newline")
+                    Text("Sentence end").tag("sentence_end")
+                    Text("Text").tag("text")
+                }
+                .pickerStyle(.menu)
+            }
+        }
+        if endMode.wrappedValue == "text" {
+            parserField("End text") { TextField("End at this text", text: endText) }
+        }
+    }
+    .padding(10)
+    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+}
+
+private func parserSampleRow(sample: ParserWizardSample, isSelected: Bool, isPrimary: Bool, previewRow: ParserWizardPreviewRow?, onToggleSelected: @escaping () -> Void, onMakePrimary: @escaping () -> Void) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
+            Toggle("", isOn: Binding(get: { isSelected }, set: { _ in onToggleSelected() }))
+                .labelsHidden()
+                .tint(.black)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(sample.subject.isEmpty ? "(no subject)" : sample.subject)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                Text(sample.sender)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text(sample.receivedAt)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button(isPrimary ? "Primary" : "Make Primary", action: onMakePrimary)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+        }
+        Text(sample.snippet.isEmpty ? sample.body : sample.snippet)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .lineLimit(4)
+        if let previewRow {
+            Text(previewRow.matched ? "Passed preview rules" : (previewRow.error ?? "Did not match preview rules"))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(previewRow.matched ? .green : .secondary)
+        }
+    }
+    .padding(12)
+    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+}
+
+private func parserResultRow(_ row: ParserWizardPreviewRow) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        HStack {
+            Text(row.sampleID)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+            Spacer()
+            Text(row.matched ? "Matched" : "No match")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(row.matched ? .green : .secondary)
+        }
+        if let extracted = row.extracted {
+            Text("amount=\(extracted.amount ?? "") | merchant=\(extracted.merchant ?? "") | date=\(extracted.date ?? "") | time=\(extracted.time ?? "")")
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .textSelection(.enabled)
+        } else if let error = row.error {
+            Text(error)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+    }
+    .padding(12)
+    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+}
+
+private func parserTestRow(_ row: ParserWizardTestRow) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        HStack {
+            Text(row.subject)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+            Spacer()
+            Text("inserted=\(row.inserted ? "true" : "false") notified=\(row.notified ? "true" : "false")")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        if !row.sender.isEmpty {
+            Text(row.sender)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        if let skipReason = row.skipReason, !skipReason.isEmpty {
+            Text(skipReason)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+        }
+    }
+    .padding(12)
+    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+}
+
+private func parserLiveCaptureGrid(_ extracted: ParserWizardExtracted) -> some View {
+    let items = [
+        ("Amount", extracted.amount ?? ""),
+        ("Merchant", extracted.merchant ?? ""),
+        ("Date", extracted.date ?? ""),
+        ("Time", extracted.time ?? ""),
+    ]
+    return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+        ForEach(items, id: \.0) { item in
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.0)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text(item.1)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+        }
+    }
+}
+
+private func parserCorrelationRow(_ row: ParserWizardCorrelationRow) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        HStack {
+            Text(row.subject.isEmpty ? "(no subject)" : row.subject)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+            Spacer()
+            Text(row.notify ? "Notify" : "No Notify")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(row.notify ? .green : .secondary)
+        }
+        if !row.sender.isEmpty {
+            Text(row.sender)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        Text("\(row.matchedRule ?? "none") | \(row.action ?? "") | \(row.txAction ?? "")")
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+        if let extracted = row.extracted {
+            Text("amount=\(extracted.amount ?? "") merchant=\(extracted.merchant ?? "") date=\(extracted.date ?? "") time=\(extracted.time ?? "")")
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .textSelection(.enabled)
+        }
+    }
+    .padding(12)
+    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+}
+
+private func parserEmptyState(_ text: String) -> some View {
+    Text(text)
+        .font(.system(size: 12, weight: .medium, design: .rounded))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
 }
 
 private struct ExternalAppsSheet: View {
@@ -1397,85 +2972,275 @@ private struct ExternalAppsSheet: View {
     }
 }
 
-private struct IncomeWizardSheet: View {
+private struct IncomeWizardContentView: View {
+    @AppStorage("quail.incomeWizard.type") private var incomeType: String = "les"
     @Environment(\.dismiss) private var dismiss
-    @State private var weekdayPoints: String = "1"
-    @State private var weekendPoints: String = "2"
-    @State private var keywordsText: String = ""
-    @State private var statusText: String = ""
+    let showCloseButton: Bool
+
+    @State private var profile = LESProfile()
+    @State private var weekdayPoints = "1"
+    @State private var weekendPoints = "2"
+    @State private var keywordsText = ""
+    @State private var statusText = "Loading..."
+    @State private var previewText = ""
+    @State private var isSavingProfile = false
+    @State private var isSavingWeights = false
+    @State private var isSavingMatchers = false
 
     var body: some View {
-        SettingsSheetShell(title: "Income Wizard", subtitle: "Paycheck matching and daily spending weights") {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Daily spending weights")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    HStack(spacing: 10) {
-                        labelField(title: "Weekday", text: $weekdayPoints)
-                        labelField(title: "Weekend", text: $weekendPoints)
-                    }
-                    Button {
-                        Task { await saveDailyWeights() }
-                    } label: {
-                        settingsSheetPrimaryButton("Save Weights")
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Divider().opacity(0.18)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Paycheck matching")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    TextEditor(text: $keywordsText)
-                        .frame(minHeight: 120)
-                        .padding(8)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    Button {
-                        Task { await savePaycheckMatchers() }
-                    } label: {
-                        settingsSheetSecondaryButton("Save Keywords")
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if !statusText.isEmpty {
-                    Text(statusText)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-
+        VStack(alignment: .leading, spacing: 12) {
+            incomeTypeCard
+            incomeProfileCard
+            paycheckMatchersCard
+            dailyWeightsCard
+            if !statusText.isEmpty {
+                Text(statusText)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            if showCloseButton {
                 Button { dismiss() } label: { settingsSheetSecondaryButton("Close") }
                     .buttonStyle(.plain)
             }
         }
         .task { await load() }
-        .presentationDetents([.medium, .large])
+    }
+
+    private var incomeTypeCard: some View {
+        settingsLikeCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Income Type")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                HStack(spacing: 8) {
+                    incomeTypeButton("LES", value: "les")
+                    incomeTypeButton("Salary", value: "salary")
+                    incomeTypeButton("Hourly", value: "hourly")
+                }
+            }
+        }
+    }
+
+    private var incomeProfileCard: some View {
+        settingsLikeCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Income Profile")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                if incomeType == "les" {
+                    lesProfileForm
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Text(incomeType == "salary" ? "Salary Form" : "Hourly Form")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text("In progress")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.08), in: Capsule(style: .continuous))
+                        }
+                        Text(incomeType == "salary" ? "Salary wizard fields are scaffolded and will be enabled in a follow-up update." : "Hourly wizard fields are scaffolded and will be enabled in a follow-up update.")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var lesProfileForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                settingsInlineField("Paygrade", text: Binding(
+                    get: { profile.paygrade },
+                    set: { profile.paygrade = $0 }
+                ))
+                settingsDateField("Service start", text: Binding(
+                    get: { profile.serviceStart },
+                    set: { profile.serviceStart = $0 }
+                ))
+            }
+            HStack(spacing: 8) {
+                settingsBoolMenu("Dependents", value: Binding(
+                    get: { profile.hasDependents },
+                    set: { profile.hasDependents = $0 }
+                ))
+                settingsInlineField("BAH override", text: optionalMoneyBinding(for: \.bahOverride), keyboard: .decimalPad)
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("BAS", text: moneyBinding(for: \.bas), keyboard: .decimalPad)
+                settingsInlineField("TSP rate", text: moneyBinding(for: \.tspRate), keyboard: .decimalPad)
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Mid-month fraction", text: moneyBinding(for: \.midMonthFraction), keyboard: .decimalPad)
+                settingsBoolMenu("FICA include special pays", value: Binding(
+                    get: { profile.ficaIncludeSpecialPays },
+                    set: { profile.ficaIncludeSpecialPays = $0 }
+                ))
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Submarine pay", text: moneyBinding(for: \.submarinePay), keyboard: .decimalPad)
+                settingsInlineField("Career sea pay", text: moneyBinding(for: \.careerSeaPay), keyboard: .decimalPad)
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Special duty pay", text: moneyBinding(for: \.specDutyPay), keyboard: .decimalPad)
+                settingsInlineField("Extra withholding", text: moneyBinding(for: \.extraWithholding), keyboard: .decimalPad)
+            }
+            HStack(spacing: 8) {
+                settingsBoolMenu("Meal deduction enabled", value: Binding(
+                    get: { profile.mealDeductionEnabled },
+                    set: { profile.mealDeductionEnabled = $0 }
+                ))
+                settingsDateField("Meal deduction start", text: Binding(
+                    get: { profile.mealDeductionStart ?? "" },
+                    set: { profile.mealDeductionStart = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                ))
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Meal rate", text: moneyBinding(for: \.mealRate), keyboard: .decimalPad)
+                settingsInlineField("Meal end day", text: intBinding(for: \.mealEndDay), keyboard: .numberPad)
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Allotments total", text: moneyBinding(for: \.allotmentsTotal), keyboard: .decimalPad)
+                settingsInlineField("Collections total", text: moneyBinding(for: \.midMonthCollectionsTotal), keyboard: .decimalPad)
+            }
+            HStack(spacing: 8) {
+                settingsMenuField("Filing status", selection: Binding(
+                    get: { profile.filingStatus },
+                    set: { profile.filingStatus = $0 }
+                ), options: [("S", "Single"), ("MFJ", "Married jointly"), ("HOH", "Head of household")])
+                settingsBoolMenu("Step 2: multiple jobs", value: Binding(
+                    get: { profile.step2MultipleJobs },
+                    set: { profile.step2MultipleJobs = $0 }
+                ))
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Dependents under 17", text: intBinding(for: \.depUnder17), keyboard: .numberPad)
+                settingsInlineField("Other dependents", text: intBinding(for: \.otherDep), keyboard: .numberPad)
+            }
+            HStack(spacing: 8) {
+                settingsInlineField("Other income", text: moneyBinding(for: \.otherIncomeAnnual), keyboard: .decimalPad)
+                settingsInlineField("Other deductions", text: moneyBinding(for: \.otherDeductionsAnnual), keyboard: .decimalPad)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    Task { await saveLESProfile() }
+                } label: {
+                    settingsSheetPrimaryButton(isSavingProfile ? "Saving..." : "Save")
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingProfile)
+
+                Button {
+                    profile = LESProfile()
+                    Task { await saveLESProfile() }
+                } label: {
+                    settingsSheetSecondaryButton("Reset to defaults")
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingProfile)
+            }
+        }
+    }
+
+    private var paycheckMatchersCard: some View {
+        settingsLikeCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Paycheck Matching")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                Text("Set merchant keywords used to identify paycheck deposits from last month.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $keywordsText)
+                    .frame(minHeight: 130)
+                    .padding(8)
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Button {
+                    Task { await savePaycheckMatchers() }
+                } label: {
+                    settingsSheetPrimaryButton(isSavingMatchers ? "Saving..." : "Save")
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingMatchers)
+            }
+        }
+    }
+
+    private var dailyWeightsCard: some View {
+        settingsLikeCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Daily Spending Weights")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                Text("Set how many points each day type uses when splitting your remaining budget.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    settingsInlineField("Weekday points", text: $weekdayPoints, keyboard: .numberPad)
+                    settingsInlineField("Weekend points", text: $weekendPoints, keyboard: .numberPad)
+                }
+                Button {
+                    Task { await saveDailyWeights() }
+                } label: {
+                    settingsSheetPrimaryButton(isSavingWeights ? "Saving..." : "Save")
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingWeights)
+                if !previewText.isEmpty {
+                    Text(previewText)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private func load() async {
+        statusText = "Loading..."
         do {
-            let weights = try await SettingsAPI.fetch("/settings/daily-weights", as: SettingsDailyWeightsPayload.self)
-            weekdayPoints = String(Int(max(1, round(weights.weekdayPoints ?? 1))))
-            weekendPoints = String(Int(max(1, round(weights.weekendPoints ?? 2))))
-        } catch { }
+            let loadedProfile = try await QuailCashAPI.shared.fetchLESProfile()
+            let loadedWeights = try await SettingsAPI.fetch("/settings/daily-weights", as: SettingsDailyWeightsPayload.self)
+            let loadedMatchers = try await SettingsAPI.fetch("/settings/paycheck-matchers", as: SettingsPaycheckMatchersPayload.self)
+            let loadedBudget = try await QuailCashAPI.shared.fetchMonthBudget()
 
-        do {
-            let out = try await SettingsAPI.fetch("/settings/paycheck-matchers", as: SettingsPaycheckMatchersPayload.self)
-            keywordsText = out.keywords.joined(separator: "\n")
+            profile = loadedProfile.profile
+            weekdayPoints = String(Int(max(1, round(loadedWeights.weekdayPoints ?? 1))))
+            weekendPoints = String(Int(max(1, round(loadedWeights.weekendPoints ?? 2))))
+            keywordsText = loadedMatchers.keywords.joined(separator: "\n")
+            previewText = makeDailyWeightsPreview(from: loadedBudget)
+            statusText = ""
         } catch {
             keywordsText = "dfas\npayroll\nsalary\ndirect deposit\nmil pay"
+            statusText = "Could not load income settings."
+        }
+    }
+
+    private func saveLESProfile() async {
+        guard !isSavingProfile else { return }
+        isSavingProfile = true
+        defer { isSavingProfile = false }
+        do {
+            profile = try await QuailCashAPI.shared.saveLESProfile(profile).profile
+            statusText = "LES profile saved."
+        } catch {
+            statusText = "Failed to save LES profile."
         }
     }
 
     private func saveDailyWeights() async {
+        guard !isSavingWeights else { return }
+        isSavingWeights = true
+        defer { isSavingWeights = false }
         let weekday = max(1, min(10, Int(weekdayPoints) ?? 1))
         let weekend = max(1, min(10, Int(weekendPoints) ?? 2))
+        weekdayPoints = String(weekday)
+        weekendPoints = String(weekend)
         do {
             _ = try await SettingsAPI.fetch("/settings/daily-weights", method: "POST", jsonBody: [
                 "weekday_points": weekday,
                 "weekend_points": weekend,
             ], as: SettingsDailyWeightsPayload.self)
+            _ = try? await QuailCashAPI.shared.fetchData(path: "/day-limit", queryItems: [URLQueryItem(name: "recalc", value: "1")])
+            let monthBudget = try await QuailCashAPI.shared.fetchMonthBudget()
+            previewText = makeDailyWeightsPreview(from: monthBudget)
             statusText = "Daily weights saved."
         } catch {
             statusText = "Failed to save daily weights."
@@ -1483,29 +3248,146 @@ private struct IncomeWizardSheet: View {
     }
 
     private func savePaycheckMatchers() async {
-        let keywords = keywordsText
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        guard !isSavingMatchers else { return }
+        isSavingMatchers = true
+        defer { isSavingMatchers = false }
+        let keywords = normalizedKeywords(from: keywordsText)
         do {
-            _ = try await SettingsAPI.fetch("/settings/paycheck-matchers", method: "POST", jsonBody: ["keywords": keywords], as: SettingsPaycheckMatchersPayload.self)
+            let out = try await SettingsAPI.fetch("/settings/paycheck-matchers", method: "POST", jsonBody: ["keywords": keywords], as: SettingsPaycheckMatchersPayload.self)
+            keywordsText = out.keywords.joined(separator: "\n")
             statusText = "Paycheck matchers saved."
         } catch {
             statusText = "Failed to save paycheck matchers."
         }
     }
 
-    private func labelField(title: String, text: Binding<String>) -> some View {
+    private func makeDailyWeightsPreview(from payload: MonthBudgetPayload) -> String {
+        let weekdayDays = max(0, payload.weekdayDaysLeft ?? 0)
+        let weekendDays = max(0, payload.weekendDaysLeft ?? 0)
+        let safe = payload.safeToSpend ?? 0
+        let weekdayPointsValue = max(1, Int(weekdayPoints) ?? 1)
+        let weekendPointsValue = max(1, Int(weekendPoints) ?? 2)
+        let totalPoints = (weekdayDays * weekdayPointsValue) + (weekendDays * weekendPointsValue)
+        let pointValue = totalPoints > 0 ? (safe / Double(totalPoints)) : 0
+        let weekdayLimit = pointValue * Double(weekdayPointsValue)
+        let weekendLimit = pointValue * Double(weekendPointsValue)
+        let today = Calendar.current.component(.weekday, from: Date())
+        let isWeekendToday = today == 1 || today == 7
+        let todayLimit = isWeekendToday ? weekendLimit : weekdayLimit
+        return """
+        Safe to spend: \(nativeMoneyValue(safe))
+        Days left: \(weekdayDays) weekday, \(weekendDays) weekend
+        Weekday limit: \(nativeMoneyValue(weekdayLimit))
+        Weekend limit: \(nativeMoneyValue(weekendLimit))
+        Today (\(isWeekendToday ? "weekend" : "weekday")) limit: \(nativeMoneyValue(todayLimit))
+        """
+    }
+
+    private func normalizedKeywords(from raw: String) -> [String] {
+        var seen: Set<String> = []
+        var out: [String] = []
+        for line in raw.split(whereSeparator: \.isNewline) {
+            let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !normalized.isEmpty else { continue }
+            let capped = String(normalized.prefix(64))
+            guard !seen.contains(capped) else { continue }
+            seen.insert(capped)
+            out.append(capped)
+            if out.count >= 20 { break }
+        }
+        return out
+    }
+
+    private func incomeTypeButton(_ title: String, value: String) -> some View {
+        Button {
+            incomeType = value
+        } label: {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .foregroundStyle(incomeType == value ? Color.white : Color.primary)
+                .background((incomeType == value ? Color.black : Color.black.opacity(0.05)), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(incomeType == value ? 0 : 0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settingsLikeCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func settingsInlineField(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
             TextField(title, text: text)
-                .keyboardType(.numberPad)
-                .frame(maxWidth: .infinity)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .padding(.horizontal, 10)
-                .padding(.vertical, 10)
+                .frame(height: 42)
                 .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsDateField(_ title: String, text: Binding<String>) -> some View {
+        settingsInlineField(title, text: text)
+    }
+
+    private func settingsBoolMenu(_ title: String, value: Binding<Bool>) -> some View {
+        settingsMenuField(title, selection: Binding(
+            get: { value.wrappedValue ? "true" : "false" },
+            set: { value.wrappedValue = ($0 == "true") }
+        ), options: [("true", "Yes"), ("false", "No")])
+    }
+
+    private func settingsMenuField(_ title: String, selection: Binding<String>, options: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+            Picker(title, selection: selection) {
+                ForEach(options, id: \.0) { option in
+                    Text(option.1).tag(option.0)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal, 10)
+            .frame(height: 42)
+            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func moneyBinding(for keyPath: WritableKeyPath<LESProfile, Double>) -> Binding<String> {
+        Binding(
+            get: { formatCompactDecimal(profile[keyPath: keyPath]) },
+            set: { profile[keyPath: keyPath] = Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0 }
+        )
+    }
+
+    private func optionalMoneyBinding(for keyPath: WritableKeyPath<LESProfile, Double?>) -> Binding<String> {
+        Binding(
+            get: {
+                guard let value = profile[keyPath: keyPath] else { return "" }
+                return formatCompactDecimal(value)
+            },
+            set: {
+                let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                profile[keyPath: keyPath] = trimmed.isEmpty ? nil : Double(trimmed)
+            }
+        )
+    }
+
+    private func intBinding(for keyPath: WritableKeyPath<LESProfile, Int>) -> Binding<String> {
+        Binding(
+            get: { String(profile[keyPath: keyPath]) },
+            set: { profile[keyPath: keyPath] = Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0 }
+        )
     }
 }
 
@@ -1650,12 +3532,12 @@ private struct SettingsBackfillResultRowPayload: Decodable {
 }
 
 private enum SettingsAPI {
-    static func request(path: String, method: String = "GET", jsonBody: [String: Any]? = nil) -> URLRequest {
+    static func request(path: String, method: String = "GET", jsonBody: [String: Any]? = nil, timeout: TimeInterval = 30) -> URLRequest {
         let url = AppConfig.url(path: path)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = AuthStore.token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -1667,8 +3549,8 @@ private enum SettingsAPI {
         return request
     }
 
-    static func fetch<T: Decodable>(_ path: String, method: String = "GET", jsonBody: [String: Any]? = nil, as type: T.Type) async throws -> T {
-        let request = request(path: path, method: method, jsonBody: jsonBody)
+    static func fetch<T: Decodable>(_ path: String, method: String = "GET", jsonBody: [String: Any]? = nil, timeout: TimeInterval = 30, as type: T.Type) async throws -> T {
+        let request = request(path: path, method: method, jsonBody: jsonBody, timeout: timeout)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw NSError(domain: "QuailCashSettings", code: (response as? HTTPURLResponse)?.statusCode ?? -1)
@@ -1679,20 +3561,220 @@ private enum SettingsAPI {
 }
 
 private func settingsSheetPrimaryButton(_ title: String) -> some View {
-    Text(title)
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .foregroundStyle(.white)
-        .background(Color.black, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    SettingsSheetPrimaryButtonView(title: title)
 }
 
 private func settingsSheetSecondaryButton(_ title: String) -> some View {
-    Text(title)
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .foregroundStyle(.primary)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+    SettingsSheetSecondaryButtonView(title: title)
+}
+
+private struct SettingsPrimaryActionModifier: ViewModifier {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+
+    func body(content: Content) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        content
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .foregroundStyle(palette.primaryButtonText)
+            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct SettingsSecondaryActionModifier: ViewModifier {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+
+    func body(content: Content) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        content
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(palette.secondaryButtonText)
+            .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+}
+
+private struct SettingsSheetPrimaryButtonView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    let title: String
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(palette.primaryButtonText)
+            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct SettingsSheetSecondaryButtonView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    let title: String
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(palette.secondaryButtonText)
+            .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+}
+
+private struct SettingsBenefitDraft: Identifiable {
+    let id = UUID()
+    var category: String = ""
+    var percentText: String = ""
+}
+
+private func isoDateString(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: date)
+}
+
+private func isoDateStringToDate(_ iso: String) -> Date {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.date(from: iso) ?? Date()
+}
+
+private func formatCompactDecimal(_ value: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.numberStyle = .decimal
+    formatter.minimumFractionDigits = 0
+    formatter.maximumFractionDigits = 3
+    return formatter.string(from: NSNumber(value: value)) ?? String(value)
+}
+
+private struct SettingsOnboardingStatusPayload: Decodable {
+    let canSetStartingBalance: Bool
+    let wizardCompleted: Bool
+    let steps: SettingsOnboardingStepsPayload?
+    let counts: SettingsOnboardingCountsPayload?
+    let accounts: [SettingsOnboardingAccountPayload]
+
+    enum CodingKeys: String, CodingKey {
+        case canSetStartingBalance = "can_set_starting_balance"
+        case wizardCompleted = "wizard_completed"
+        case steps
+        case counts
+        case accounts
+    }
+}
+
+private struct SettingsOnboardingStepsPayload: Decodable {
+    let accountsAdded: Bool
+    let startingBalancesAdded: Bool
+    let transactionsImported: Bool
+    let pushoverUserKeySet: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case accountsAdded = "accounts_added"
+        case startingBalancesAdded = "starting_balances_added"
+        case transactionsImported = "transactions_imported"
+        case pushoverUserKeySet = "pushover_user_key_set"
+    }
+}
+
+private struct SettingsOnboardingCountsPayload: Decodable {
+    let accounts: Int
+    let startingBalances: Int
+    let transactions: Int
+
+    enum CodingKeys: String, CodingKey {
+        case accounts
+        case startingBalances = "starting_balances"
+        case transactions
+    }
+}
+
+private struct SettingsOnboardingAccountPayload: Decodable, Identifiable {
+    let id: Int
+    let institution: String
+    let name: String
+    let accountType: String
+    let interestPostDay: Int?
+    let creditLimit: Double?
+    let receivesEmails: Bool
+    let isPaycheckAccount: Bool
+    let cardBenefits: [SettingsOnboardingBenefitPayload]
+    let setup: SettingsOnboardingAccountSetupPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case institution
+        case name
+        case accountType = "accounttype"
+        case interestPostDay = "interest_post_day"
+        case creditLimit = "credit_limit"
+        case receivesEmails = "receives_emails"
+        case isPaycheckAccount = "is_paycheck_account"
+        case cardBenefits = "card_benefits"
+        case setup
+    }
+}
+
+private struct SettingsOnboardingBenefitPayload: Decodable {
+    let benefitType: String
+    let cashbackPercent: Double
+
+    enum CodingKeys: String, CodingKey {
+        case benefitType = "benefit_type"
+        case cashbackPercent = "cashback_percent"
+    }
+}
+
+private struct SettingsOnboardingAccountSetupPayload: Decodable {
+    let complete: Bool
+    let missing: [String]
+}
+
+private struct SettingsOnboardingAccountMutationPayload: Decodable {
+    let ok: Bool?
+    let accountID: Int
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case accountID = "account_id"
+    }
+}
+
+private struct SettingsOnboardingAccountDeletePayload: Decodable {
+    let ok: Bool?
+    let accountID: Int
+    let deletedTransactions: Int
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case accountID = "account_id"
+        case deletedTransactions = "deleted_transactions"
+    }
+}
+
+private struct SettingsOnboardingPushoverKeyPayload: Decodable {
+    let ok: Bool?
+    let userKeySet: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case userKeySet = "user_key_set"
+    }
+}
+
+private struct SettingsOnboardingPushoverTestPayload: Decodable {
+    let ok: Bool?
+    let sent: Bool?
 }
 
 private func copyToClipboard(_ text: String) {

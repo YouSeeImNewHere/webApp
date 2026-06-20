@@ -73,7 +73,7 @@ final class AppNavigator: ObservableObject {
             return .analytics
         case .recurring:
             return .recurring
-        case .settings, .notificationSettings, .notifications, .bankInfo, .csvImport, .ruleBuilder, .category, .account:
+        case .settings, .setupWizard, .parserWizard, .incomeWizard, .notificationSettings, .notifications, .bankInfo, .csvImport, .ruleBuilder, .category, .account:
             return .home
         }
     }

@@ -34,6 +34,7 @@ enum BottomTab: String, CaseIterable, Identifiable {
 struct AppTopBar: View {
     let title: String
     let badgeValue: Int?
+    let palette: QuailThemePalette
     let onLeadingTap: () -> Void
     let onTrailingTap: () -> Void
 
@@ -42,10 +43,10 @@ struct AppTopBar: View {
             Button(action: onLeadingTap) {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.chromeIconForeground)
                     .frame(width: 36, height: 36)
-                    .background(.white, in: Circle())
-                    .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.chromeIconBackground, in: Circle())
+                    .overlay(Circle().stroke(palette.border, lineWidth: 1))
             }
             .accessibilityLabel("Settings")
 
@@ -53,7 +54,7 @@ struct AppTopBar: View {
 
             Text(title)
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+                .foregroundStyle(palette.chromeIconForeground)
 
             Spacer(minLength: 8)
 
@@ -61,10 +62,10 @@ struct AppTopBar: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(palette.chromeIconForeground)
                         .frame(width: 36, height: 36)
-                        .background(.white, in: Circle())
-                        .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.chromeIconBackground, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
 
                     if let badgeValue, badgeValue > 0 {
                         Text(badgeValue > 9 ? "9+" : "\(badgeValue)")
@@ -81,10 +82,10 @@ struct AppTopBar: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.white)
+        .background(palette.barBackground)
         .overlay(
             Rectangle()
-                .fill(Color.black.opacity(0.12))
+                .fill(palette.barDivider)
                 .frame(height: 1),
             alignment: .bottom
         )
@@ -93,6 +94,7 @@ struct AppTopBar: View {
 
 struct AppBottomBar: View {
     let selectedTab: BottomTab?
+    let palette: QuailThemePalette
     let onSelectTab: (BottomTab) -> Void
 
     var body: some View {
@@ -109,14 +111,14 @@ struct AppBottomBar: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+                    .foregroundStyle(selectedTab == tab ? palette.chromeIconForeground : palette.chromeIconForeground.opacity(0.72))
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(selectedTab == tab ? .white : .clear)
+                            .fill(selectedTab == tab ? palette.selectedTabFill : .clear)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(.black.opacity(selectedTab == tab ? 0.08 : 0.00), lineWidth: 1)
+                            .stroke(selectedTab == tab ? palette.border : .clear, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -125,10 +127,10 @@ struct AppBottomBar: View {
         .padding(.horizontal, 8)
         .padding(.top, 6)
         .padding(.bottom, 2)
-        .background(.white)
+        .background(palette.barBackground)
         .overlay(
             Rectangle()
-                .fill(Color.black.opacity(0.12))
+                .fill(palette.barDivider)
                 .frame(height: 1),
             alignment: .top
         )
@@ -137,6 +139,7 @@ struct AppBottomBar: View {
 
 struct AppChromeFrame<Content: View>: View {
     @EnvironmentObject private var navigator: AppNavigator
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let title: String
     let badgeValue: Int?
     let selectedTab: BottomTab?
@@ -164,12 +167,10 @@ struct AppChromeFrame<Content: View>: View {
     }
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ZStack {
             LinearGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.98, blue: 0.99),
-                    Color(red: 0.94, green: 0.95, blue: 0.97)
-                ],
+                colors: [palette.backgroundTop, palette.backgroundBottom],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -182,6 +183,7 @@ struct AppChromeFrame<Content: View>: View {
             AppTopBar(
                 title: title,
                 badgeValue: badgeValue ?? navigator.unreadCount,
+                palette: palette,
                 onLeadingTap: onLeadingTap,
                 onTrailingTap: onTrailingTap
             )
@@ -189,6 +191,7 @@ struct AppChromeFrame<Content: View>: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             AppBottomBar(
                 selectedTab: selectedTab,
+                palette: palette,
                 onSelectTab: onSelectTab
             )
         }

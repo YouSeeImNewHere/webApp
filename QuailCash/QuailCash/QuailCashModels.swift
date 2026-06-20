@@ -549,6 +549,123 @@ struct CategoryRuleApplyJobPayload: Decodable, Hashable {
     }
 }
 
+struct CategoryRuleListPayload: Decodable {
+    let rows: [CategoryRuleListRow]
+    let limit: Int?
+    let offset: Int?
+    let hasMore: Bool
+    let total: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case rows
+        case limit
+        case offset
+        case hasMore = "has_more"
+        case total
+    }
+}
+
+struct CategoryRuleListRow: Decodable, Identifiable, Hashable {
+    let id: Int
+    let pattern: String
+    let flags: String?
+    let category: String
+    let isActive: Bool
+    let matchCount: Int?
+    let regexError: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case pattern
+        case flags
+        case category
+        case isActive = "is_active"
+        case matchCount = "match_count"
+        case regexError = "regex_error"
+    }
+}
+
+struct CategoryRulesCheckAllPayload: Decodable {
+    let ok: Bool?
+    let checkedAt: String?
+    let ruleCount: Int?
+    let totalMatchesAllRules: Int?
+    let totalUncategorizedMatchesAllRules: Int?
+    let totalApplied: Int?
+    let rows: [CategoryRuleCheckRow]
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case checkedAt = "checked_at"
+        case ruleCount = "rule_count"
+        case totalMatchesAllRules = "total_matches_all_rules"
+        case totalUncategorizedMatchesAllRules = "total_uncategorized_matches_all_rules"
+        case totalApplied = "total_applied"
+        case rows
+    }
+}
+
+struct CategoryRuleCheckRow: Decodable, Identifiable, Hashable {
+    let id: Int
+    let category: String
+    let pattern: String
+    let flags: String?
+    let isActive: Bool
+    let matches: Int?
+    let totalMatches: Int?
+    let uncategorizedMatches: Int?
+    let applied: Int?
+    let samples: [CategoryRuleSamplePayload]
+    let regexError: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case category
+        case pattern
+        case flags
+        case isActive = "is_active"
+        case matches
+        case totalMatches = "total_matches"
+        case uncategorizedMatches = "uncategorized_matches"
+        case applied
+        case samples
+        case regexError = "regex_error"
+    }
+}
+
+struct CategoryRuleSamplePayload: Decodable, Hashable, Identifiable {
+    let id: Int
+    let merchant: String
+    let category: String?
+}
+
+struct CategoryRuleUpdateResponse: Decodable {
+    let ok: Bool
+    let applied: Int?
+    let matchCount: Int?
+    let applyJob: CategoryRuleApplyJobPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case applied
+        case matchCount = "match_count"
+        case applyJob = "apply_job"
+    }
+}
+
+struct CategoryRuleTestPayload: Decodable {
+    let ok: Bool?
+    let tested: [CategoryRuleTestRow]
+    let error: String?
+}
+
+struct CategoryRuleTestRow: Decodable, Hashable, Identifiable {
+    var id: String { merchant + ":\(count)" }
+    let merchant: String
+    let count: Int
+    let matched: Bool
+}
+
 struct CsvPreviewColumnPayload: Decodable, Hashable, Identifiable {
     let index: Int
     let label: String
@@ -586,6 +703,38 @@ struct CsvPreviewPayload: Decodable {
         case columns
         case previewRows = "preview_rows"
     }
+}
+
+struct CsvMappingPresetPayload: Decodable, Hashable {
+    let purchaseCol: Int?
+    let postedCol: Int?
+    let amountCol: Int?
+    let debitCol: Int?
+    let creditCol: Int?
+    let merchantCol: Int?
+    let indicatorCol: Int?
+    let creditIndicatorValue: String?
+    let invertAmount: Bool
+    let headerSignature: String?
+
+    enum CodingKeys: String, CodingKey {
+        case purchaseCol = "purchase_col"
+        case postedCol = "posted_col"
+        case amountCol = "amount_col"
+        case debitCol = "debit_col"
+        case creditCol = "credit_col"
+        case merchantCol = "merchant_col"
+        case indicatorCol = "indicator_col"
+        case creditIndicatorValue = "credit_indicator_value"
+        case invertAmount = "invert_amount"
+        case headerSignature = "header_signature"
+    }
+}
+
+struct CsvMappingPresetResponsePayload: Decodable {
+    let ok: Bool
+    let found: Bool
+    let preset: CsvMappingPresetPayload?
 }
 
 struct CsvImportSummaryPayload: Decodable, Hashable {
@@ -663,6 +812,8 @@ struct MonthBudgetPayload: Decodable {
     let safeToSpend: Double?
     let dailyLimit: Double?
     let daysLeft: Int?
+    let weekdayDaysLeft: Int?
+    let weekendDaysLeft: Int?
     let asOf: String?
     let expectedIncome: Double?
     let baseIncome: Double?
@@ -682,6 +833,8 @@ struct MonthBudgetPayload: Decodable {
         case safeToSpend = "safe_to_spend"
         case dailyLimit = "daily_limit"
         case daysLeft = "days_left"
+        case weekdayDaysLeft = "weekday_days_left"
+        case weekendDaysLeft = "weekend_days_left"
         case asOf = "as_of"
         case expectedIncome = "expected_income"
         case baseIncome = "base_income"
@@ -1063,6 +1216,91 @@ struct SettingsDailyWeightsPayload: Decodable {
     enum CodingKeys: String, CodingKey {
         case weekdayPoints = "weekday_points"
         case weekendPoints = "weekend_points"
+    }
+}
+
+struct LESProfilePayload: Decodable {
+    let key: String?
+    let profile: LESProfile
+}
+
+struct LESProfile: Codable, Hashable {
+    var paygrade: String = "E-5"
+    var serviceStart: String = "2020-01-01"
+    var hasDependents: Bool = true
+    var bas: Double = 460.25
+    var bahOverride: Double?
+    var submarinePay: Double = 0
+    var careerSeaPay: Double = 0
+    var specDutyPay: Double = 0
+    var filingStatus: String = "S"
+    var step2MultipleJobs: Bool = false
+    var depUnder17: Int = 0
+    var otherDep: Int = 0
+    var otherIncomeAnnual: Double = 0
+    var otherDeductionsAnnual: Double = 0
+    var extraWithholding: Double = 0
+    var tspRate: Double = 0
+    var ficaIncludeSpecialPays: Bool = false
+    var mealRate: Double = 13.30
+    var mealEndDay: Int = 31
+    var mealDeductionEnabled: Bool = false
+    var mealDeductionStart: String?
+    var midMonthFraction: Double = 0.50
+    var allotmentsTotal: Double = 0
+    var midMonthCollectionsTotal: Double = 0
+
+    enum CodingKeys: String, CodingKey {
+        case paygrade
+        case serviceStart = "service_start"
+        case hasDependents = "has_dependents"
+        case bas
+        case bahOverride = "bah_override"
+        case submarinePay = "submarine_pay"
+        case careerSeaPay = "career_sea_pay"
+        case specDutyPay = "spec_duty_pay"
+        case filingStatus = "filing_status"
+        case step2MultipleJobs = "step2_multiple_jobs"
+        case depUnder17 = "dep_under17"
+        case otherDep = "other_dep"
+        case otherIncomeAnnual = "other_income_annual"
+        case otherDeductionsAnnual = "other_deductions_annual"
+        case extraWithholding = "extra_withholding"
+        case tspRate = "tsp_rate"
+        case ficaIncludeSpecialPays = "fica_include_special_pays"
+        case mealRate = "meal_rate"
+        case mealEndDay = "meal_end_day"
+        case mealDeductionEnabled = "meal_deduction_enabled"
+        case mealDeductionStart = "meal_deduction_start"
+        case midMonthFraction = "mid_month_fraction"
+        case allotmentsTotal = "allotments_total"
+        case midMonthCollectionsTotal = "mid_month_collections_total"
+    }
+}
+
+struct LESPaychecksPayload: Decodable {
+    let events: [LESPaycheckEvent]
+}
+
+struct LESPaycheckEvent: Decodable, Hashable {
+    let date: String
+    let payTarget: String?
+    let cadence: String?
+    let merchant: String?
+    let amount: Double?
+    let type: String?
+    let accountID: Int?
+    let spillover: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case payTarget = "pay_target"
+        case cadence
+        case merchant
+        case amount
+        case type
+        case accountID = "account_id"
+        case spillover
     }
 }
 

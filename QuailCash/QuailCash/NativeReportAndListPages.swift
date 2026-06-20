@@ -155,6 +155,24 @@ private struct NativeChipButtonStyle: ButtonStyle {
     }
 }
 
+private struct NativeCompactButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.black.opacity(configuration.isPressed ? 0.06 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.black.opacity(0.08), lineWidth: 1)
+            )
+    }
+}
+
 private struct NativePopupChrome<Content: View>: View {
     let title: String
     let subtitle: String
@@ -238,6 +256,32 @@ private func nativeTransactionAmountColor(_ value: Double) -> Color {
 
 // MARK: - Analytics
 
+private func nativeDecodeFlexibleDouble<K: CodingKey>(_ container: KeyedDecodingContainer<K>, key: K) -> Double? {
+    if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+        return value
+    }
+    if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+        return Double(value)
+    }
+    if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+        return Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    return nil
+}
+
+private func nativeDecodeFlexibleInt<K: CodingKey>(_ container: KeyedDecodingContainer<K>, key: K) -> Int? {
+    if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+        return value
+    }
+    if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+        return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+        return Int(value)
+    }
+    return nil
+}
+
 private struct NativeAnalyticsReport: Decodable {
     let ok: Bool?
     let month: String?
@@ -279,11 +323,30 @@ private struct NativeAnalyticsSummary: Decodable {
         case startingBalance = "starting_balance"
         case endingBalance = "ending_balance"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        income = nativeDecodeFlexibleDouble(container, key: .income)
+        spending = nativeDecodeFlexibleDouble(container, key: .spending)
+        net = nativeDecodeFlexibleDouble(container, key: .net)
+        startingBalance = nativeDecodeFlexibleDouble(container, key: .startingBalance)
+        endingBalance = nativeDecodeFlexibleDouble(container, key: .endingBalance)
+    }
 }
 
 private struct NativeAnalyticsCategory: Decodable, Hashable {
     let category: String?
     let amount: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case category, amount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        amount = nativeDecodeFlexibleDouble(container, key: .amount)
+    }
 }
 
 private struct NativeAnalyticsAccount: Decodable, Hashable {
@@ -300,6 +363,16 @@ private struct NativeAnalyticsAccount: Decodable, Hashable {
         case startBalance = "start_balance"
         case endBalance = "end_balance"
         case change
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bank = try container.decodeIfPresent(String.self, forKey: .bank)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        accountType = try container.decodeIfPresent(String.self, forKey: .accountType)
+        startBalance = nativeDecodeFlexibleDouble(container, key: .startBalance)
+        endBalance = nativeDecodeFlexibleDouble(container, key: .endBalance)
+        change = nativeDecodeFlexibleDouble(container, key: .change)
     }
 }
 
@@ -326,6 +399,19 @@ private struct NativeAnalyticsTransaction: Decodable, Hashable, Identifiable {
     let category: String?
     let amount: Double?
     let account: String?
+
+    enum CodingKeys: String, CodingKey {
+        case date, merchant, category, amount, account
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decodeIfPresent(String.self, forKey: .date)
+        merchant = try container.decodeIfPresent(String.self, forKey: .merchant)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        amount = nativeDecodeFlexibleDouble(container, key: .amount)
+        account = try container.decodeIfPresent(String.self, forKey: .account)
+    }
 }
 
 private struct NativeAnalyticsRecurringSubscription: Decodable, Hashable {
@@ -333,6 +419,18 @@ private struct NativeAnalyticsRecurringSubscription: Decodable, Hashable {
     let category: String?
     let hits: Int?
     let total: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case merchant, category, hits, total
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        merchant = try container.decodeIfPresent(String.self, forKey: .merchant)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        hits = nativeDecodeFlexibleInt(container, key: .hits)
+        total = nativeDecodeFlexibleDouble(container, key: .total)
+    }
 }
 
 private struct NativeAnalyticsBudgetPerformance: Decodable {
@@ -346,6 +444,14 @@ private struct NativeAnalyticsBudgetPerformance: Decodable {
         case actualSpentOnAllocated = "actual_spent_on_allocated"
         case remainingAllocated = "remaining_allocated"
         case freeSpendSoFar = "free_spend_so_far"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        plannedAllocations = nativeDecodeFlexibleDouble(container, key: .plannedAllocations)
+        actualSpentOnAllocated = nativeDecodeFlexibleDouble(container, key: .actualSpentOnAllocated)
+        remainingAllocated = nativeDecodeFlexibleDouble(container, key: .remainingAllocated)
+        freeSpendSoFar = nativeDecodeFlexibleDouble(container, key: .freeSpendSoFar)
     }
 }
 
@@ -364,6 +470,16 @@ private struct NativeAnalyticsChanges: Decodable {
         case spendingChangePct = "spending_change_pct"
         case incomeChangeAbs = "income_change_abs"
         case spendingChangeAbs = "spending_change_abs"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        incomePrevMonth = nativeDecodeFlexibleDouble(container, key: .incomePrevMonth)
+        spendingPrevMonth = nativeDecodeFlexibleDouble(container, key: .spendingPrevMonth)
+        incomeChangePct = nativeDecodeFlexibleDouble(container, key: .incomeChangePct)
+        spendingChangePct = nativeDecodeFlexibleDouble(container, key: .spendingChangePct)
+        incomeChangeAbs = nativeDecodeFlexibleDouble(container, key: .incomeChangeAbs)
+        spendingChangeAbs = nativeDecodeFlexibleDouble(container, key: .spendingChangeAbs)
     }
 }
 
@@ -1074,40 +1190,56 @@ private struct NativeTransactionRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(alignment: .center, spacing: 10) {
-                NativeIconBadge(category: transaction.category)
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text((transaction.merchant.isEmpty ? "Unknown merchant" : transaction.merchant).uppercased())
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Text(nativeShortTransactionDate(transaction.dateISO ?? transaction.postedDate ?? transaction.date ?? transaction.effectiveDate))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.06))
+                            .frame(width: 38, height: 38)
+                        Text(transactionInitial)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .frame(width: 46, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(transaction.merchant.isEmpty ? "Unknown merchant" : transaction.merchant)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text([transaction.bank, transaction.card].compactMap { $0 }.joined(separator: " • "))
+                        .textCase(.uppercase)
+                    Text(transactionSubtitle)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if let category = transaction.category, !category.isEmpty {
-                        Text(category)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 Spacer(minLength: 10)
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(nativeMoneyValue(transaction.amount))
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(nativeTransactionAmountColor(transaction.amount))
-                    if let rc = transaction.roundupCents, rc > 0 {
-                        Text("¢ \(rc)")
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Text(nativeMoneyValue(transaction.amount))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(nativeTransactionAmountColor(transaction.amount))
             }
-            .padding(12)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    private var transactionSubtitle: String {
+        let left = [transaction.bank, transaction.card].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return left.isEmpty ? (transaction.category ?? "") : left.joined(separator: " • ")
+    }
+
+    private var transactionInitial: String {
+        let raw = transaction.merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = raw.first else { return "?" }
+        return String(first).uppercased()
     }
 }
 
@@ -1293,13 +1425,14 @@ private struct NativeRecurringCalendarEvent: Decodable, Hashable {
     let merchant: String?
     let merchantDisplay: String?
     let category: String?
+    let type: String?
     let amount: Double?
     let cadence: String?
     let accountID: Int?
     let kind: String?
 
     enum CodingKeys: String, CodingKey {
-        case date, merchant, category, amount, cadence, kind
+        case date, merchant, category, type, amount, cadence, kind
         case merchantDisplay = "merchant_display"
         case accountID = "account_id"
     }
@@ -1383,19 +1516,23 @@ private final class NativeRecurringViewModel: ObservableObject {
     @Published var mergeCandidates: [NativeRecurringPattern] = []
     @Published var showMergeModal = false
     @Published var mergeMessage = ""
+    @Published var hasLESProfile = false
+    @Published var lesStatusText = ""
 
     func reloadAll() { Task { await loadAll() } }
 
     func loadAll() async {
         isLoading = true
         statusText = "Loading..."
+        let year = Calendar.current.component(.year, from: month)
+        let monthNumber = Calendar.current.component(.month, from: month)
         async let recurringData = QuailCashAPI.shared.fetchData(path: "/recurring", queryItems: [
             URLQueryItem(name: "min_occ", value: minOccurrences),
             URLQueryItem(name: "include_stale", value: includeStale ? "true" : "false"),
         ])
         async let calendarData = QuailCashAPI.shared.fetchData(path: "/recurring/calendar", queryItems: [
-            URLQueryItem(name: "year", value: String(Calendar.current.component(.year, from: month))),
-            URLQueryItem(name: "month", value: String(Calendar.current.component(.month, from: month))),
+            URLQueryItem(name: "year", value: String(year)),
+            URLQueryItem(name: "month", value: String(monthNumber)),
             URLQueryItem(name: "min_occ", value: minOccurrences),
             URLQueryItem(name: "include_stale", value: includeStale ? "true" : "false"),
         ])
@@ -1403,7 +1540,9 @@ private final class NativeRecurringViewModel: ObservableObject {
             let rec = try await recurringData
             let cal = try await calendarData
             groups = try JSONDecoder.quailCash.decode([NativeRecurringGroup].self, from: rec)
-            calendar = try JSONDecoder.quailCash.decode(NativeRecurringCalendarPayload.self, from: cal)
+            var decodedCalendar = try JSONDecoder.quailCash.decode(NativeRecurringCalendarPayload.self, from: cal)
+            await mergePaycheckEvents(into: &decodedCalendar, year: year, month: monthNumber)
+            calendar = decodedCalendar
             statusText = "Loaded recurring data."
         } catch {
             statusText = error.localizedDescription
@@ -1486,9 +1625,56 @@ private final class NativeRecurringViewModel: ObservableObject {
             mergeMessage = error.localizedDescription
         }
     }
+
+    private func mergePaycheckEvents(into calendar: inout NativeRecurringCalendarPayload, year: Int, month: Int) async {
+        do {
+            let profilePayload = try await QuailCashAPI.shared.fetchLESProfile()
+            let profile = profilePayload.profile
+            let paygrade = profile.paygrade.trimmingCharacters(in: .whitespacesAndNewlines)
+            hasLESProfile = !paygrade.isEmpty
+            if paygrade.isEmpty {
+                lesStatusText = "Add your LES profile to include paychecks."
+                return
+            }
+
+            let paychecks = try await QuailCashAPI.shared.fetchLESPaychecks(year: year, month: month, profile: profile)
+            let mapped = paychecks.events.map {
+                NativeRecurringCalendarEvent(
+                    date: $0.date,
+                    merchant: $0.merchant,
+                    merchantDisplay: nil,
+                    category: "Income",
+                    type: $0.type,
+                    amount: $0.amount,
+                    cadence: $0.cadence,
+                    accountID: $0.accountID,
+                    kind: "income"
+                )
+            }
+            let mergedEvents = (calendar.events + mapped).sorted {
+                if $0.date == $1.date {
+                    return ($0.merchant ?? "") < ($1.merchant ?? "")
+                }
+                return $0.date < $1.date
+            }
+            calendar = NativeRecurringCalendarPayload(
+                ok: calendar.ok,
+                year: calendar.year,
+                month: calendar.month,
+                start: calendar.start,
+                end: calendar.end,
+                events: mergedEvents
+            )
+            lesStatusText = mapped.isEmpty ? "No paycheck events for this month." : "Including \(mapped.count) paycheck event\(mapped.count == 1 ? "" : "s")."
+        } catch {
+            hasLESProfile = false
+            lesStatusText = "Could not load paycheck profile."
+        }
+    }
 }
 
 struct NativeRecurringPageView: View {
+    @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var model = NativeRecurringViewModel()
 
     var body: some View {
@@ -1586,13 +1772,19 @@ struct NativeRecurringPageView: View {
                     TextField("", text: $model.minOccurrences)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
-                    Button("Refresh") { model.reloadAll() }.buttonStyle(NativeSecondaryButtonStyle())
+                    Button("Refresh") { model.reloadAll() }.buttonStyle(NativeCompactButtonStyle())
+                    Button("Income Wizard") { navigator.show(.incomeWizard) }.buttonStyle(NativeCompactButtonStyle())
                     Button("Review ignored") {
                         Task {
                             await model.loadIgnored()
                             model.showIgnoredModal = true
                         }
-                    }.buttonStyle(NativeSecondaryButtonStyle())
+                    }.buttonStyle(NativeCompactButtonStyle())
+                }
+                if !model.lesStatusText.isEmpty {
+                    Text(model.lesStatusText)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -1641,8 +1833,8 @@ struct NativeRecurringPageView: View {
         guard let events = model.calendar?.events else { return 0 }
         var total = 0.0
         for event in events {
-            let kind = (event.kind ?? "").lowercased()
-            let isIncome = event.cadence == "paycheck" || kind == "income"
+            let type = (event.type ?? "").lowercased()
+            let isIncome = event.cadence == "paycheck" || type == "income"
             if !isIncome {
                 total += max(0, event.amount ?? 0)
             }
@@ -1654,8 +1846,8 @@ struct NativeRecurringPageView: View {
         guard let events = model.calendar?.events else { return 0 }
         var total = 0.0
         for event in events {
-            let kind = (event.kind ?? "").lowercased()
-            let isIncome = event.cadence == "paycheck" || kind == "income"
+            let type = (event.type ?? "").lowercased()
+            let isIncome = event.cadence == "paycheck" || type == "income"
             if isIncome {
                 total += abs(event.amount ?? 0)
             }
@@ -1677,7 +1869,7 @@ struct NativeRecurringPageView: View {
             if !cell.events.isEmpty {
                 HStack(spacing: 2) {
                     ForEach(cell.events.prefix(3), id: \.self) { event in
-                        NativeIconBadge(category: event.category)
+                        NativeIconBadge(category: event.category ?? event.type)
                             .frame(width: 18, height: 18)
                     }
                 }
@@ -1715,9 +1907,9 @@ private struct NativeRecurringGroupCard: View {
                     .buttonStyle(NativeChipButtonStyle())
                     Spacer()
                     Button("Merge") { onMerge(group.merchant ?? "", group.patterns ?? []) }
-                        .buttonStyle(NativeSecondaryButtonStyle())
+                        .buttonStyle(NativeCompactButtonStyle())
                     Button("Ignore") { onIgnoreMerchant(group.merchant ?? "") }
-                        .buttonStyle(NativeSecondaryButtonStyle())
+                        .buttonStyle(NativeCompactButtonStyle())
                 }
                 if expanded {
                     ForEach(group.patterns ?? [], id: \.id) { pattern in
@@ -1749,7 +1941,7 @@ private struct NativeRecurringPatternRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Button("Ignore") { onIgnore() }
-                    .buttonStyle(NativeSecondaryButtonStyle())
+                    .buttonStyle(NativeCompactButtonStyle())
                 Text(nativeMoneyValue(pattern.amount ?? 0))
                     .font(.system(size: 13, weight: .bold, design: .rounded))
             }
@@ -1778,7 +1970,7 @@ private struct NativeRecurringDayModal: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text((event.merchantDisplay ?? event.merchant ?? "Unknown").uppercased()).font(.system(size: 13, weight: .semibold, design: .rounded))
-                                Text([event.category, event.cadence].compactMap { $0 }.joined(separator: " • "))
+                                Text([event.category ?? event.type, event.cadence].compactMap { $0 }.joined(separator: " • "))
                                     .font(.system(size: 11, weight: .medium, design: .rounded))
                                     .foregroundStyle(.secondary)
                             }

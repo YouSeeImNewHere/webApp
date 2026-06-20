@@ -7,6 +7,7 @@ private struct NativeAccountTopBar: View {
     let selectedTab: BottomTab
     let accountLabel: String
     let accountOptions: [NativeAccountSwitchOption]
+    let palette: QuailThemePalette
     let onLeadingTap: () -> Void
     let onTrailingTap: () -> Void
     let onSelectTab: (BottomTab) -> Void
@@ -17,10 +18,10 @@ private struct NativeAccountTopBar: View {
             Button(action: onLeadingTap) {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.chromeIconForeground)
                     .frame(width: 36, height: 36)
-                    .background(.white, in: Circle())
-                    .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.chromeIconBackground, in: Circle())
+                    .overlay(Circle().stroke(palette.border, lineWidth: 1))
             }
             .accessibilityLabel("Settings")
 
@@ -38,18 +39,18 @@ private struct NativeAccountTopBar: View {
                 HStack(spacing: 8) {
                     Text(accountLabel)
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(palette.chromeIconForeground)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.chromeIconForeground.opacity(0.72))
                 }
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .frame(height: 38)
-                .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
             }
             .frame(maxWidth: .infinity)
             .frame(minWidth: 228)
@@ -60,10 +61,10 @@ private struct NativeAccountTopBar: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(palette.chromeIconForeground)
                         .frame(width: 36, height: 36)
-                        .background(.white, in: Circle())
-                        .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.chromeIconBackground, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
 
                     if let badgeValue, badgeValue > 0 {
                         Text(badgeValue > 9 ? "9+" : "\(badgeValue)")
@@ -80,10 +81,10 @@ private struct NativeAccountTopBar: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.white)
+        .background(palette.barBackground)
         .overlay(
             Rectangle()
-                .fill(Color.black.opacity(0.12))
+                .fill(palette.barDivider)
                 .frame(height: 1),
             alignment: .bottom
         )
@@ -92,6 +93,7 @@ private struct NativeAccountTopBar: View {
 
 private struct NativeAccountChromeFrame<Content: View>: View {
     @EnvironmentObject private var navigator: AppNavigator
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let badgeValue: Int?
     let selectedTab: BottomTab
     let accountLabel: String
@@ -125,12 +127,10 @@ private struct NativeAccountChromeFrame<Content: View>: View {
     }
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ZStack {
             LinearGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.98, blue: 0.99),
-                    Color(red: 0.94, green: 0.95, blue: 0.97)
-                ],
+                colors: [palette.backgroundTop, palette.backgroundBottom],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -144,6 +144,7 @@ private struct NativeAccountChromeFrame<Content: View>: View {
                 selectedTab: selectedTab,
                 accountLabel: accountLabel,
                 accountOptions: accountOptions,
+                palette: palette,
                 onLeadingTap: onLeadingTap,
                 onTrailingTap: onTrailingTap,
                 onSelectTab: onSelectTab,
@@ -151,7 +152,7 @@ private struct NativeAccountChromeFrame<Content: View>: View {
             )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            AppBottomBar(selectedTab: selectedTab, onSelectTab: onSelectTab)
+            AppBottomBar(selectedTab: selectedTab, palette: palette, onSelectTab: onSelectTab)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar(.hidden, for: .navigationBar)
@@ -206,7 +207,7 @@ private final class NativeAccountPageModel: ObservableObject {
     init(selectedAccount: BankAccountPayload, auditMode: Bool) {
         self.selectedAccount = selectedAccount
         self.auditMode = auditMode
-        self.verifyDate = nativeIsoToday()
+        self.verifyDate = nativeIsoYesterday()
         resetCurrentMonth()
     }
 
@@ -600,20 +601,19 @@ struct NativeAccountPageView: View {
         }
         .sheet(isPresented: $model.showVerifySheet) {
             verifyBalanceSheet
-                .presentationDetents([.medium])
+                .presentationDetents([.height(520)])
+                .presentationDragIndicator(.visible)
         }
-        .overlay {
-            if let tx = selectedTransaction {
-                SharedTransactionInspectPopupView(
-                    transaction: tx,
-                    onDismiss: { selectedTransaction = nil },
-                    onRefresh: {
-                        Task { await model.reloadTransactions(); await model.reloadChart() }
-                    }
-                )
-                .padding(.horizontal, 12)
-                .padding(.vertical, 18)
-            }
+        .sheet(item: $selectedTransaction) { tx in
+            TransactionInspectSheetView(
+                transaction: tx,
+                onDismiss: { selectedTransaction = nil },
+                onRefresh: {
+                    Task { await model.reloadTransactions(); await model.reloadChart() }
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -659,48 +659,25 @@ struct NativeAccountPageView: View {
     }
 
     private var verifyBalanceSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Verify Balance")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                Text("On the selected date, the final balances for this account match between the bank data and database data.")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-
-                DatePicker("Date", selection: Binding(
-                    get: { nativeDateFormatter.date(from: model.verifyDate) ?? Date() },
-                    set: { model.verifyDate = nativeIso(from: $0) }
-                ), displayedComponents: .date)
-                .datePickerStyle(.graphical)
-
-                HStack {
-                    Button("Cancel") {
-                        model.showVerifySheet = false
-                    }
-                    .buttonStyle(AccountSecondaryButtonStyle())
-                    Spacer(minLength: 8)
-                    Button(model.isVerifying ? "Saving..." : "Save") {
-                        Task {
-                            model.isVerifying = true
-                            defer { model.isVerifying = false }
-                            do {
-                                try await model.verifyBalance(on: model.verifyDate)
-                                model.showVerifySheet = false
-                                await model.loadAccountInfo()
-                            } catch {
-                                model.addMessage = error.localizedDescription
-                            }
-                        }
-                    }
-                    .buttonStyle(AccountPrimaryButtonStyle())
-                    .disabled(model.isVerifying)
+        VerifyBalanceSheetView(
+            accountName: model.accountLabel,
+            initialVerifiedDateISO: model.verifyDate,
+            isSaving: model.isVerifying,
+            statusText: model.addMessage.isEmpty ? nil : model.addMessage,
+            onCancel: { model.showVerifySheet = false },
+            onConfirm: { dateISO in
+                model.isVerifying = true
+                defer { model.isVerifying = false }
+                do {
+                    try await model.verifyBalance(on: dateISO)
+                    model.showVerifySheet = false
+                    await model.loadAccountInfo()
+                } catch {
+                    model.addMessage = error.localizedDescription
+                    throw error
                 }
-                Spacer()
             }
-            .padding(16)
-            .navigationTitle("Verify Balance")
-            .navigationBarTitleDisplayMode(.inline)
-        }
+        )
     }
 }
 
@@ -1281,30 +1258,65 @@ private struct NativeAccountTransactionRow: View {
     let isCreditAccount: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            NativeAccountIcon(category: transaction.category)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.merchant.uppercased())
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                Text(transaction.category ?? "Uncategorized")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transactionDateText)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                ZStack {
+                    Circle()
+                        .fill(Color.black.opacity(0.06))
+                        .frame(width: 38, height: 38)
+                    Text(txMerchantInitial)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                }
             }
-            Spacer(minLength: 8)
+            .frame(width: 46, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.merchant.isEmpty ? "Unknown merchant" : transaction.merchant)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .textCase(.uppercase)
+                Text(transactionSubtitle)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 10)
             VStack(alignment: .trailing, spacing: 4) {
                 Text(nativeMoneyValue(transaction.amount))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(transaction.amount >= 0 ? .red : .green)
                 if let bal = transaction.balanceAfter {
                     Text(balanceText(bal, isCreditAccount: isCreditAccount))
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var transactionSubtitle: String {
+        let left = [transaction.bank, transaction.card].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return left.isEmpty ? (transaction.category ?? "") : left.joined(separator: " • ")
+    }
+
+    private var txMerchantInitial: String {
+        let raw = transaction.merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = raw.first else { return "?" }
+        return String(first).uppercased()
+    }
+
+    private var transactionDateText: String {
+        nativeShortTransactionDate(transaction.dateISO ?? transaction.postedDate ?? transaction.date ?? transaction.effectiveDate)
     }
 }
 
@@ -1353,6 +1365,7 @@ private func nativeDateFromISO(_ iso: String) -> Date? {
 private func nativeWeekdayShort(_ date: Date) -> String {
     let df = DateFormatter()
     df.locale = Locale(identifier: "en_US_POSIX")
+    df.timeZone = TimeZone(secondsFromGMT: 0)
     df.dateFormat = "EEE"
     return df.string(from: date)
 }
@@ -1360,6 +1373,7 @@ private func nativeWeekdayShort(_ date: Date) -> String {
 private func nativeMonthDayShort(_ date: Date) -> String {
     let df = DateFormatter()
     df.locale = Locale(identifier: "en_US_POSIX")
+    df.timeZone = TimeZone(secondsFromGMT: 0)
     df.dateFormat = "MM/dd"
     return df.string(from: date)
 }
@@ -1371,6 +1385,11 @@ private func nativeIso(from date: Date) -> String {
     df.timeZone = TimeZone(secondsFromGMT: 0)
     df.dateFormat = "yyyy-MM-dd"
     return df.string(from: date)
+}
+
+private func nativeIsoYesterday() -> String {
+    let date = Calendar(identifier: .gregorian).date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    return nativeIso(from: date)
 }
 
 private let nativeDateFormatter: DateFormatter = {

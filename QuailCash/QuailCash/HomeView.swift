@@ -3,12 +3,14 @@ import WebKit
 import Combine
 import Charts
 import UniformTypeIdentifiers
+import UIKit
 
 struct HomeView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var model = HomeViewModel()
     @State private var activePopup: HomePopup?
     @State private var activeSheet: HomeSheet?
+    @State private var verifyAccountSheet: BankAccountPayload?
 
     var body: some View {
         AppChromeFrame(
@@ -43,7 +45,7 @@ struct HomeView: View {
                                        onImport: { activeSheet = .csvImport },
                                        onBankInfo: { activeSheet = .bankInfo },
                                        onOpenAccount: { account in navigate(.account(account, audit: false)) },
-                                       onVerifyAccount: { account in activePopup = .verifyAccount(account) },
+                                       onVerifyAccount: { account in verifyAccountSheet = account },
                                        onAuditAccount: { account in navigate(.account(account, audit: true)) })
                         upcomingTransactionsSection
                         recentTransactions(home: home) { tx in
@@ -79,6 +81,20 @@ struct HomeView: View {
                 onRefresh: { Task { await model.reload() } }
             )
             .presentationDetents(sheet.detents)
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $verifyAccountSheet) { account in
+            VerifyBalanceSheetView(
+                accountName: account.name,
+                initialVerifiedDateISO: isoYesterday(),
+                onCancel: { verifyAccountSheet = nil },
+                onConfirm: { dateISO in
+                    _ = try await QuailCashAPI.shared.verifyAccountBalance(accountID: account.id, verifiedDate: dateISO)
+                    await model.reload()
+                    verifyAccountSheet = nil
+                }
+            )
+            .presentationDetents([.height(520)])
             .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -1984,9 +2000,21 @@ private struct HomePopupOverlay: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 18)
             case .verifyAccount(let account):
-                AccountVerifyPopupView(account: account, onDismiss: onDismiss, onRefresh: onRefresh)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 18)
+                VStack {
+                    Spacer()
+                    VerifyBalanceSheetView(
+                        accountName: account.name,
+                        initialVerifiedDateISO: isoYesterday(),
+                        onCancel: onDismiss,
+                        onConfirm: { dateISO in
+                            _ = try await QuailCashAPI.shared.verifyAccountBalance(accountID: account.id, verifiedDate: dateISO)
+                            onRefresh()
+                            onDismiss()
+                        }
+                    )
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                }
             case .auditAccount(let account):
                 AccountAuditPopupView(account: account, onDismiss: onDismiss)
                     .padding(.horizontal, 12)
@@ -2430,32 +2458,16 @@ private struct BankInfoPopupView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     ForEach(accounts) { account in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("\(account.bank) — \(account.name)")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                Spacer()
-                Text(account.apy.map { String(format: "%.2f%%", $0) } ?? "—")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                            }
-                            HStack {
-                                Text("Type")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(account.type.uppercased())
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
+                        VStack(alignment: .leading, spacing: 8) {
+                            detailRow(label: "\(account.bank) — \(account.name)", value: account.apy.map { String(format: "%.2f%%", $0) } ?? "—", emphasized: true)
+                            detailRow(label: "Type", value: account.type.uppercased())
                             if let notes = account.notes, !notes.isEmpty {
-                                Text(notes)
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
+                                detailRow(label: "Notes", value: notes)
                             }
                         }
-                        .padding(10)
+                        .padding(12)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
                     }
@@ -2476,44 +2488,43 @@ private struct BankInfoPopupView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     ForEach(cards) { card in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text("\(card.bank) — \(card.name)")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                Spacer()
-                                Text(card.apr.map { String(format: "%.2f%%", $0) } ?? "—")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                            }
-                            HStack {
-                                Text("Limit")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(card.creditLimit.map { moneyValue($0) } ?? "—")
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                            }
+                        VStack(alignment: .leading, spacing: 8) {
+                            detailRow(label: "\(card.bank) — \(card.name)", value: card.apr.map { String(format: "%.2f%%", $0) } ?? "—", emphasized: true)
+                            detailRow(label: "Limit", value: card.creditLimit.map { moneyValue($0) } ?? "—")
                             if !card.benefits.isEmpty {
                                 ForEach(Array(card.benefits.enumerated()), id: \.offset) { _, benefit in
-                                    HStack {
-                                        Text((benefit.categories ?? []).joined(separator: ", ").isEmpty ? "Cash back" : (benefit.categories ?? []).joined(separator: ", "))
-                                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        Text(benefit.cashbackPercent.map { String(format: "%.2f%%", $0) } ?? "—")
-                                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    }
+                                    detailRow(
+                                        label: (benefit.categories ?? []).joined(separator: ", ").isEmpty ? "Cash back" : (benefit.categories ?? []).joined(separator: ", "),
+                                        value: benefit.cashbackPercent.map { String(format: "%.2f%%", $0) } ?? "—"
+                                    )
                                 }
                             }
                         }
-                        .padding(10)
+                        .padding(12)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
                     }
                 }
             }
         }
+    }
+
+    private func detailRow(label: String, value: String, emphasized: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label)
+                .font(.system(size: emphasized ? 13 : 11, weight: emphasized ? .semibold : .semibold, design: .rounded))
+                .foregroundStyle(emphasized ? .primary : .secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+            Text(value)
+                .font(.system(size: emphasized ? 13 : 11, weight: .bold, design: .rounded))
+                .foregroundStyle(emphasized ? .primary : .secondary)
+                .frame(minWidth: 88, alignment: .trailing)
+                .multilineTextAlignment(.trailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func labeledField<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
@@ -2869,67 +2880,109 @@ private struct TransactionInspectPopupView: View {
     }
 }
 
-private struct AccountVerifyPopupView: View {
-    @Environment(\.dismiss) private var dismiss
-    let account: BankAccountPayload
-    let onDismiss: () -> Void
-    let onRefresh: () -> Void
+struct VerifyBalanceSheetView: View {
+    let accountName: String
+    let initialVerifiedDateISO: String
+    let isSaving: Bool
+    let statusText: String?
+    let onCancel: () -> Void
+    let onConfirm: (String) async throws -> Void
 
-    @State private var verifiedDate = isoToday()
-    @State private var message = "On the selected date, the final balances for this account match between the bank data and database data."
-    @State private var statusText: String?
+    @State private var verifiedDateValue: Date
+    @State private var localStatusText: String?
+    @State private var isSubmitting = false
+
+    init(
+        accountName: String,
+        initialVerifiedDateISO: String,
+        isSaving: Bool = false,
+        statusText: String? = nil,
+        onCancel: @escaping () -> Void,
+        onConfirm: @escaping (String) async throws -> Void
+    ) {
+        self.accountName = accountName
+        self.initialVerifiedDateISO = initialVerifiedDateISO
+        self.isSaving = isSaving
+        self.statusText = statusText
+        self.onCancel = onCancel
+        self.onConfirm = onConfirm
+        _verifiedDateValue = State(initialValue: isoDateOrYesterday(initialVerifiedDateISO))
+        _localStatusText = State(initialValue: statusText)
+    }
 
     var body: some View {
-        PopupChrome(title: "Verify Balance", subtitle: account.name, onClose: close) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Verification date")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                VStack(spacing: 3) {
+                    Text("VERIFY BALANCE")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text(accountName)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
-                    TextField("YYYY-MM-DD", text: $verifiedDate)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                        .lineLimit(1)
                 }
-
-                Text(message)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-
-                HStack(spacing: 8) {
-                    Button("Cancel") { close() }
-                        .buttonStyle(HomeHeaderActionStyle(primary: false))
-                    Button("Confirm") { Task { await confirm() } }
-                        .buttonStyle(PrimaryButtonStyle())
-                }
-
-                if let statusText {
-                    Text(statusText)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button(action: onCancel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(width: 30, height: 30)
+                            .background(Color.black.opacity(0.05), in: Circle())
+                            .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(16)
+
+            DatePicker("", selection: $verifiedDateValue, in: ...Date(), displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .padding(6)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+
+            Text("On the selected date, the final balances for this account match between the bank data and database data.")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(HomeHeaderActionStyle(primary: false))
+                Button(isBusy ? "Saving..." : "Confirm") {
+                    Task { await confirm() }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isBusy)
+            }
+
+            if let text = localStatusText ?? statusText, !text.isEmpty {
+                Text(text)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .onChange(of: statusText) { _, newValue in
+            localStatusText = newValue
+        }
+    }
+
+    private var isBusy: Bool {
+        isSaving || isSubmitting
     }
 
     private func confirm() async {
+        guard !isBusy else { return }
+        isSubmitting = true
+        defer { isSubmitting = false }
         do {
-            _ = try await QuailCashAPI.shared.verifyAccountBalance(accountID: account.id, verifiedDate: verifiedDate)
-            statusText = "Saved."
-            onRefresh()
-            close()
+            try await onConfirm(isoFromDate(verifiedDateValue))
         } catch {
-            statusText = "Failed to verify."
+            localStatusText = "Failed to verify."
         }
-    }
-
-    private func close() {
-        dismiss()
-        onDismiss()
     }
 }
 
@@ -3366,137 +3419,117 @@ private struct BankInfoSheetView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        modalHeader(
-                            title: "Bank Info",
-                            subtitle: loadError ?? "Last updated: \(payload?.lastUpdated ?? "—")"
-                        )
-
-                        cardSection(title: "Set a new rate", subtitle: "Account, rate, date, and note") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                labeledMenu(title: "Account") {
-                                    Picker("Account", selection: $selectedAccountID) {
-                                        ForEach(payload?.accounts ?? []) { account in
-                                            Text("\(account.bank) — \(account.name) (APY)").tag(account.id)
-                                        }
-                                        ForEach(payload?.creditCards ?? []) { card in
-                                            Text("\(card.bank) — \(card.name) (APR)").tag(card.id)
-                                        }
-                                    }
-                                }
-
-                                modalField("Rate (%)", text: $ratePercent, keyboard: .decimalPad)
-                                modalField("Effective date", text: $effectiveDate)
-                                modalField("Note", text: $note)
-
-                                HStack(spacing: 8) {
-                                    Button("Save rate") { Task { await saveRate() } }
-                                        .buttonStyle(PrimaryButtonStyle())
-                                        .disabled(isSaving || selectedAccountID == 0)
-                                    if let saveMessage, !saveMessage.isEmpty {
-                                        Text(saveMessage)
-                                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Bank Info")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                            Text(loadError ?? "Last updated: \(payload?.lastUpdated ?? "—")")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        Button("Close") { close() }
+                            .buttonStyle(HomeHeaderActionStyle(primary: false))
+                    }
 
-                        cardSection(title: "Accounts", subtitle: "Savings & checking") {
-                            if (payload?.accounts ?? []).isEmpty {
-                                emptyCardNote("No account info saved yet.")
-                            } else {
-                                VStack(spacing: 8) {
+                    cardSection(title: "Set a new rate", subtitle: "Account, rate, date, and note") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            labeledMenu(title: "Account") {
+                                Picker("Account", selection: $selectedAccountID) {
                                     ForEach(payload?.accounts ?? []) { account in
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("\(account.bank) — \(account.name)")
-                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                            bankInfoGridRow(label: "Type", value: account.type.isEmpty ? "—" : account.type)
-                                            bankInfoGridRow(label: "APY", value: account.apy.map { String(format: "%.2f%%", $0) } ?? "—")
-                                            if let notes = account.notes, !notes.isEmpty {
-                                                Text(notes)
-                                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(12)
-                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                        Text("\(account.bank) — \(account.name) (APY)").tag(account.id)
+                                    }
+                                    ForEach(payload?.creditCards ?? []) { card in
+                                        Text("\(card.bank) — \(card.name) (APR)").tag(card.id)
                                     }
                                 }
                             }
-                        }
 
-                        cardSection(title: "Credit cards", subtitle: "APR, limits & rewards") {
-                            if (payload?.creditCards ?? []).isEmpty {
-                                emptyCardNote("No card info saved yet.")
-                            } else {
-                                VStack(spacing: 8) {
-                                    ForEach(payload?.creditCards ?? []) { card in
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("\(card.bank) — \(card.name)")
-                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                            bankInfoGridRow(label: "APR", value: card.apr.map { String(format: "%.2f%%", $0) } ?? "—")
-                                            bankInfoGridRow(label: "Limit", value: card.creditLimit.map(moneyValue) ?? "—")
-                                            if card.benefits.isEmpty {
-                                                emptyCardNote("No benefits saved.")
-                                            } else {
-                                                VStack(spacing: 6) {
-                                                    ForEach(Array(card.benefits.enumerated()), id: \.offset) { _, benefit in
-                                                        bankInfoGridRow(
-                                                            label: (benefit.categories ?? []).joined(separator: ", ").isEmpty ? "Cash back" : (benefit.categories ?? []).joined(separator: ", "),
-                                                            value: benefit.cashbackPercent.map { String(format: "%.2f%%", $0) } ?? "—"
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(12)
-                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
-                                    }
+                            modalField("Rate (%)", text: $ratePercent, keyboard: .decimalPad)
+                            modalField("Effective date", text: $effectiveDate)
+                            modalField("Note", text: $note)
+
+                            HStack(spacing: 8) {
+                                Button("Save rate") { Task { await saveRate() } }
+                                    .buttonStyle(PrimaryButtonStyle())
+                                    .disabled(isSaving || selectedAccountID == 0)
+                                if let saveMessage, !saveMessage.isEmpty {
+                                    Text(saveMessage)
+                                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 72)
-                    .padding(.bottom, 16)
+
+                    cardSection(title: "Accounts", subtitle: "Savings & checking") {
+                        if (payload?.accounts ?? []).isEmpty {
+                            emptyCardNote("No account info saved yet.")
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(payload?.accounts ?? []) { account in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("\(account.bank) — \(account.name)")
+                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        bankInfoGridRow(label: "Type", value: account.type.isEmpty ? "—" : account.type)
+                                        bankInfoGridRow(label: "APY", value: account.apy.map { String(format: "%.2f%%", $0) } ?? "—")
+                                        if let notes = account.notes, !notes.isEmpty {
+                                            Text(notes)
+                                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(12)
+                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                }
+                            }
+                        }
+                    }
+
+                    cardSection(title: "Credit cards", subtitle: "APR, limits & rewards") {
+                        if (payload?.creditCards ?? []).isEmpty {
+                            emptyCardNote("No card info saved yet.")
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(payload?.creditCards ?? []) { card in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("\(card.bank) — \(card.name)")
+                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        bankInfoGridRow(label: "APR", value: card.apr.map { String(format: "%.2f%%", $0) } ?? "—")
+                                        bankInfoGridRow(label: "Limit", value: card.creditLimit.map(moneyValue) ?? "—")
+                                        if card.benefits.isEmpty {
+                                            emptyCardNote("No benefits saved.")
+                                        } else {
+                                            VStack(spacing: 6) {
+                                                ForEach(Array(card.benefits.enumerated()), id: \.offset) { _, benefit in
+                                                    bankInfoGridRow(
+                                                        label: (benefit.categories ?? []).joined(separator: ", ").isEmpty ? "Cash back" : (benefit.categories ?? []).joined(separator: ", "),
+                                                        value: benefit.cashbackPercent.map { String(format: "%.2f%%", $0) } ?? "—"
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(12)
+                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                }
+                            }
+                        }
+                    }
                 }
-                pinnedCloseButton
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
             }
             .toolbar(.hidden, for: .navigationBar)
         }
         .task { await load() }
-    }
-
-    private func modalHeader(title: String, subtitle: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var pinnedCloseButton: some View {
-        VStack {
-            HStack {
-                Spacer()
-                Button("Close") { close() }
-                    .buttonStyle(HomeHeaderActionStyle(primary: false))
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            Spacer()
-        }
     }
 
     private func cardSection<Content: View>(title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) -> some View {
@@ -3522,6 +3555,7 @@ private struct BankInfoSheetView: View {
                 .foregroundStyle(.secondary)
             content()
                 .pickerStyle(.menu)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .frame(height: 40)
@@ -3551,11 +3585,13 @@ private struct BankInfoSheetView: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-                .frame(width: 72, alignment: .leading)
-            Text(value)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .multilineTextAlignment(.trailing)
+                .frame(width: 112, alignment: .trailing)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func emptyCardNote(_ text: String) -> some View {
@@ -3605,6 +3641,36 @@ private struct CsvImportSheetView: View {
     let onDismiss: () -> Void
     let onRefresh: () -> Void
 
+    private enum Tab: String {
+        case setup
+        case dryRun
+    }
+
+    private enum WorkKind {
+        case loadingAccounts
+        case preview
+        case save
+        case dryRun
+        case `import`
+
+        var label: String {
+            switch self {
+            case .loadingAccounts: return "Loading accounts..."
+            case .preview: return "Building preview..."
+            case .save: return "Saving mapping..."
+            case .dryRun: return "Running dry run..."
+            case .import: return "Importing..."
+            }
+        }
+    }
+
+    private struct AccountChoice: Identifiable, Hashable {
+        let id: Int
+        let label: String
+        let institution: String
+        let isCredit: Bool
+    }
+
     @State private var showFileImporter = false
     @State private var selectedFileURL: URL?
     @State private var selectedFileName = "No file selected"
@@ -3623,7 +3689,17 @@ private struct CsvImportSheetView: View {
     @State private var indicatorCol = ""
     @State private var creditIndicatorValue = "credit"
     @State private var invertAmount = false
-    @State private var isWorking = false
+    @State private var tab: Tab = .setup
+    @State private var workKind: WorkKind?
+    @State private var activePreset: CsvMappingPresetPayload?
+    @State private var activePresetAccountID = 0
+    @State private var presetCacheByAccount: [Int: CsvMappingPresetPayload?] = [:]
+    @State private var importDone = false
+    @State private var accountManuallyChosen = false
+    @State private var isAutoSelectingAccount = false
+
+    private let csvFileAccountCacheKey = "csv_file_account_cache"
+    private let csvHeaderSignatureCacheKey = "csv_header_sig_by_account"
 
     var body: some View {
         NavigationStack {
@@ -3631,155 +3707,14 @@ private struct CsvImportSheetView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     modalHeader
 
-                    sectionCard(title: "Upload file") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("Drag and drop CSV/Excel here")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                Text("or choose a file manually")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
-                                    .foregroundStyle(Color.black.opacity(0.18))
-                            )
-
-                            HStack(spacing: 8) {
-                                Button("Choose file") { showFileImporter = true }
-                                    .buttonStyle(HomeHeaderActionStyle(primary: false))
-                                Text(selectedFileName)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
+                    if dryRun != nil {
+                        tabBar
                     }
 
-                    if selectedFileURL != nil || preview != nil {
-                        sectionCard(title: "Setup") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                modalMenu("Account", selection: $selectedAccountID, choices: accountChoices)
-                                Text("Header row is detected automatically from the first row.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-
-                                HStack(spacing: 8) {
-                                    Button("Preview file") { Task { await loadPreview() } }
-                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
-                                        .disabled(selectedFileURL == nil || isWorking)
-                                    Button("Cancel") { close() }
-                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
-                                }
-                            }
-                        }
-                    }
-
-                    if let preview {
-                        sectionCard(title: "Mapping") {
-                            VStack(spacing: 10) {
-                                mappingPicker("Transaction date", selection: $purchaseCol, columns: preview.columns)
-                                mappingPicker("Posted date", selection: $postedCol, columns: preview.columns, optional: true)
-                                mappingPicker("Amount", selection: $amountCol, columns: preview.columns, optional: true)
-                                mappingPicker("Debit amount", selection: $debitCol, columns: preview.columns, optional: true)
-                                mappingPicker("Credit amount", selection: $creditCol, columns: preview.columns, optional: true)
-                                mappingPicker("Merchant", selection: $merchantCol, columns: preview.columns)
-                                mappingPicker("Indicator", selection: $indicatorCol, columns: preview.columns, optional: true)
-
-                                modalTextField("Indicator value treated as credit", text: $creditIndicatorValue)
-
-                                Toggle("Invert all amounts", isOn: $invertAmount)
-                                    .tint(.black)
-                            }
-                        }
-
-                        sectionCard(title: "Preview") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("\(preview.rowCount) rows • \(preview.columnCount) columns")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-
-                                ScrollView(.horizontal, showsIndicators: true) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack(spacing: 8) {
-                                            ForEach(preview.columns) { column in
-                                                Text(column.label)
-                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                                    .frame(width: 140, alignment: .leading)
-                                            }
-                                        }
-
-                                        ForEach(preview.previewRows) { row in
-                                            HStack(spacing: 8) {
-                                                ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
-                                                    Text(cell)
-                                                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                                                        .frame(width: 140, alignment: .leading)
-                                                        .lineLimit(2)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                HStack(spacing: 8) {
-                                    Button("Dry run") { Task { await runDryRun() } }
-                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
-                                    Button("Save mapping") { Task { await saveMapping() } }
-                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
-                                    Button("Done") { close() }
-                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
-                                    Button("Import") { Task { await runImport() } }
-                                        .buttonStyle(PrimaryButtonStyle())
-                                        .disabled(!canImport || isWorking)
-                                }
-                            }
-                        }
-                    }
-
-                    if let dryRun {
-                        sectionCard(title: "Dry run comparison") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    drySummaryCard(title: "Valid", value: "\(dryRun.summary?.validRows ?? 0)")
-                                    drySummaryCard(title: "Invalid", value: "\(dryRun.summary?.invalidRows ?? 0)")
-                                    drySummaryCard(title: "Total", value: "\(dryRun.summary?.totalRows ?? 0)")
-                                }
-                                if let compare = dryRun.compare {
-                                    HStack(spacing: 8) {
-                                        drySummaryCard(title: "Update exact", value: "\(compare.wouldUpdateExactCount ?? 0)")
-                                        drySummaryCard(title: "Update tip", value: "\(compare.wouldUpdateTipCount ?? 0)")
-                                        drySummaryCard(title: "Insert", value: "\(compare.wouldInsertCount ?? 0)")
-                                        drySummaryCard(title: "Pending", value: "\(compare.pendingCount ?? 0)")
-                                    }
-                                    Text("Window \(compare.importStartDate ?? "—") to \(compare.importEndDate ?? "—")")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-
-                    if let importResult {
-                        sectionCard(title: "Import result") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Inserted \(importResult.inserted ?? 0) • Updated \(importResult.updated ?? 0) • Auto categorized \(importResult.autoCategorized ?? 0)")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                Text("Skipped \(importResult.skipped ?? 0) • Reconciled \(importResult.reconciledPendingDuplicates ?? 0) • Deleted stale pending \(importResult.stalePendingDeleted ?? 0)")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    if !message.isEmpty {
-                        Text(message)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
+                    if tab == .setup {
+                        setupTabContent
+                    } else {
+                        dryRunTabContent
                     }
                 }
                 .padding(16)
@@ -3787,9 +3722,38 @@ private struct CsvImportSheetView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .task { await loadAccounts() }
+        .onChange(of: selectedAccountID) { oldValue, newValue in
+            guard newValue != 0, newValue != oldValue else { return }
+            Task { await handleAccountChange(oldValue: oldValue, newValue: newValue) }
+        }
+        .onChange(of: purchaseCol) { _, _ in importDone = false }
+        .onChange(of: postedCol) { _, _ in importDone = false }
+        .onChange(of: amountCol) { _, _ in
+            if amountCol.isEmpty == false {
+                debitCol = ""
+                creditCol = ""
+            }
+            importDone = false
+        }
+        .onChange(of: debitCol) { _, _ in
+            if debitCol.isEmpty == false || creditCol.isEmpty == false {
+                amountCol = ""
+            }
+            importDone = false
+        }
+        .onChange(of: creditCol) { _, _ in
+            if debitCol.isEmpty == false || creditCol.isEmpty == false {
+                amountCol = ""
+            }
+            importDone = false
+        }
+        .onChange(of: merchantCol) { _, _ in importDone = false }
+        .onChange(of: indicatorCol) { _, _ in importDone = false }
+        .onChange(of: creditIndicatorValue) { _, _ in importDone = false }
+        .onChange(of: invertAmount) { _, _ in importDone = false }
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: [.data, .commaSeparatedText, .plainText],
+            allowedContentTypes: [.data, .commaSeparatedText, .plainText, .spreadsheet, UTType(filenameExtension: "xlsx")!, UTType(filenameExtension: "xls")!],
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -3798,10 +3762,10 @@ private struct CsvImportSheetView: View {
                 do {
                     selectedFileURL = try copyImportedFile(url)
                     selectedFileName = selectedFileURL?.lastPathComponent ?? url.lastPathComponent
-                    preview = nil
-                    dryRun = nil
-                    importResult = nil
-                    message = ""
+                    resetWizardForNewFile()
+                    Task {
+                        await autoPrepareSelectedFile()
+                    }
                 } catch {
                     message = error.localizedDescription
                 }
@@ -3811,14 +3775,38 @@ private struct CsvImportSheetView: View {
         }
     }
 
-    private var accountChoices: [(id: Int, label: String)] {
-        let accounts = (bankInfo?.accounts ?? []).map { (id: $0.id, label: "\($0.bank) — \($0.name) (APY)") }
-        let cards = (bankInfo?.creditCards ?? []).map { (id: $0.id, label: "\($0.bank) — \($0.name) (APR)") }
+    private var accountChoices: [AccountChoice] {
+        let accounts = (bankInfo?.accounts ?? []).map {
+            AccountChoice(id: $0.id, label: "\($0.bank) - \($0.name)", institution: $0.bank, isCredit: false)
+        }
+        let cards = (bankInfo?.creditCards ?? []).map {
+            AccountChoice(id: $0.id, label: "\($0.bank) - \($0.name) (credit)", institution: $0.bank, isCredit: true)
+        }
         return accounts + cards
     }
 
-    private var canImport: Bool {
-        selectedFileURL != nil && selectedAccountID != 0 && !purchaseCol.isEmpty && !merchantCol.isEmpty && (!amountCol.isEmpty || (!debitCol.isEmpty && !creditCol.isEmpty))
+    private var canRunFinalizeActions: Bool {
+        preview != nil
+    }
+
+    private var hasSplitAmounts: Bool {
+        debitCol.isEmpty == false || creditCol.isEmpty == false
+    }
+
+    private var hasRequiredMapping: Bool {
+        guard selectedAccountID != 0, purchaseCol.isEmpty == false, merchantCol.isEmpty == false else {
+            return false
+        }
+        if hasSplitAmounts {
+            return debitCol.isEmpty == false && creditCol.isEmpty == false && amountCol.isEmpty
+        }
+        return amountCol.isEmpty == false
+    }
+
+    private var mappingNeedsSave: Bool {
+        guard selectedAccountID != 0 else { return true }
+        guard let activePreset, activePresetAccountID == selectedAccountID else { return true }
+        return activePreset.normalized != currentPresetPayload.normalized
     }
 
     private var modalHeader: some View {
@@ -3836,6 +3824,236 @@ private struct CsvImportSheetView: View {
         }
     }
 
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            csvTabButton(title: "Import setup", value: .setup)
+            csvTabButton(title: "Dry run", value: .dryRun)
+        }
+    }
+
+    private var setupTabContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            uploadCard
+
+            if selectedFileURL != nil {
+                setupCard
+            }
+
+            if let preview {
+                mappingCard(preview: preview)
+                previewCard(preview: preview)
+                finalizeCard
+            }
+
+            if let importResult {
+                importResultCard(importResult)
+            }
+
+            if !message.isEmpty {
+                statusMessageView(message)
+            }
+        }
+    }
+
+    private var dryRunTabContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let dryRun {
+                dryRunCard(dryRun)
+            } else {
+                sectionCard(title: "Dry run") {
+                    Text("Run a dry run from Import setup to compare against existing transactions.")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !message.isEmpty {
+                statusMessageView(message)
+            }
+        }
+    }
+
+    private var uploadCard: some View {
+        sectionCard(title: "Upload file") {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Drag and drop CSV/Excel here")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                    Text("or choose a file manually")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                        .foregroundStyle(Color.black.opacity(0.18))
+                )
+
+                HStack(spacing: 8) {
+                    Button("Choose file") { showFileImporter = true }
+                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                        .disabled(isWorking)
+                    Text(fileSummaryText)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private var setupCard: some View {
+        sectionCard(title: "Setup") {
+            VStack(alignment: .leading, spacing: 10) {
+                accountMenu
+
+                Text(headerSubtitle)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    actionButton("Preview file", workingFor: .preview, primary: false) {
+                        await loadPreview()
+                    }
+                    Button("Cancel") { close() }
+                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                        .disabled(isWorking)
+                }
+            }
+        }
+    }
+
+    private func mappingCard(preview: CsvPreviewPayload) -> some View {
+        sectionCard(title: "Map columns") {
+            VStack(alignment: .leading, spacing: 10) {
+                mappingPicker("Transaction date*", selection: $purchaseCol, columns: preview.columns)
+                mappingPicker("Posted date", selection: $postedCol, columns: preview.columns, optional: true)
+                mappingPicker("Amount*", selection: $amountCol, columns: preview.columns, optional: true)
+                mappingPicker("Merchant*", selection: $merchantCol, columns: preview.columns)
+                if amountCol.isEmpty {
+                    mappingPicker("Debit amount", selection: $debitCol, columns: preview.columns, optional: true)
+                    mappingPicker("Credit amount", selection: $creditCol, columns: preview.columns, optional: true)
+                }
+                mappingPicker("Credit/Debit indicator", selection: $indicatorCol, columns: preview.columns, optional: true)
+                modalTextField("Indicator value treated as credit", text: $creditIndicatorValue)
+                Toggle("Invert all amounts", isOn: $invertAmount)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .tint(.black)
+                Text("Map required fields: transaction date, merchant, and account.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func previewCard(preview: CsvPreviewPayload) -> some View {
+        let columns = preview.columns
+        let rows = Array(preview.previewRows.enumerated())
+        return sectionCard(title: "Preview") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(preview.rowCount) rows • \(preview.columnCount) columns")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                ScrollView(.horizontal, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(columns) { column in
+                                previewHeaderCell(column.label)
+                            }
+                        }
+
+                        ForEach(rows, id: \.element.id) { rowIndex, row in
+                            HStack(spacing: 0) {
+                                ForEach(Array(columns.enumerated()), id: \.offset) { offset, _ in
+                                    previewValueCell(
+                                        row.cells.indices.contains(offset) ? row.cells[offset] : "",
+                                        striped: !rowIndex.isMultiple(of: 2)
+                                    )
+                                }
+                            }
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(Color.black.opacity(0.06))
+                                    .frame(height: 1)
+                            }
+                        }
+                    }
+                }
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+            }
+        }
+    }
+
+    private func previewHeaderCell(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: 112, alignment: .leading)
+            .frame(minHeight: 24, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.05))
+    }
+
+    private func previewValueCell(_ text: String, striped: Bool) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium, design: .rounded))
+            .frame(width: 112, alignment: .leading)
+            .frame(minHeight: 24, alignment: .topLeading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .background(striped ? Color.black.opacity(0.025) : Color.white)
+    }
+
+    private var finalizeCard: some View {
+        sectionCard(title: "Finalize") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let workKind {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.black)
+                        Text(workKind.label)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    actionButton("Dry run", workingFor: .dryRun, primary: false) {
+                        await runDryRun()
+                    }
+                    .disabled(!canRunFinalizeActions || isWorking)
+
+                    if importDone {
+                        Button("Done") { close() }
+                            .buttonStyle(HomeHeaderActionStyle(primary: false))
+                            .disabled(isWorking)
+                    } else if mappingNeedsSave {
+                        actionButton("Save mapping", workingFor: .save, primary: false) {
+                            await saveMapping()
+                        }
+                        .disabled(!hasRequiredMapping || isWorking)
+                    } else {
+                        actionButton("Import", workingFor: .import, primary: true) {
+                            await runImport()
+                        }
+                        .disabled(!hasRequiredMapping || isWorking)
+                    }
+                }
+            }
+        }
+    }
+
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
@@ -3847,22 +4065,54 @@ private struct CsvImportSheetView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
     }
 
-    private func modalMenu(_ title: String, selection: Binding<Int>, choices: [(id: Int, label: String)]) -> some View {
+    private func csvTabButton(title: String, value: Tab) -> some View {
+        Button(title) {
+            tab = value
+        }
+        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .frame(maxWidth: .infinity)
+        .frame(height: 38)
+        .background(
+            ZStack(alignment: .bottom) {
+                Color.clear
+                Rectangle()
+                    .fill(tab == value ? Color.black : Color.black.opacity(0.12))
+                    .frame(height: tab == value ? 2 : 1)
+            }
+        )
+        .overlay(Rectangle().stroke(Color.black.opacity(0.08), lineWidth: 0.5))
+        .foregroundStyle(tab == value ? .primary : .secondary)
+        .buttonStyle(.plain)
+    }
+
+    private var accountMenu: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title)
+            Text("Account")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-            Picker(title, selection: selection) {
-                ForEach(choices, id: \.id) { choice in
-                    Text(choice.label).tag(choice.id)
+            Menu {
+                ForEach(accountChoices) { choice in
+                    Button(choice.label) {
+                        selectedAccountID = choice.id
+                    }
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(selectedAccountLabel)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
             }
-            .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .frame(height: 40)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
         }
     }
 
@@ -3871,20 +4121,36 @@ private struct CsvImportSheetView: View {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-            Picker(title, selection: selection) {
+            Menu {
                 if optional {
-                    Text("Not mapped").tag("")
+                    Button("Not mapped") {
+                        selection.wrappedValue = ""
+                    }
                 }
                 ForEach(columns) { column in
-                    Text("\(column.label) (col \(column.index + 1))").tag(String(column.index))
+                    Button("\(column.label) (col \(column.index + 1))") {
+                        selection.wrappedValue = String(column.index)
+                    }
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(mappingLabel(selection: selection.wrappedValue, columns: columns, optional: optional))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 42)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
             }
-            .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .frame(height: 40)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
         }
     }
 
@@ -3901,7 +4167,7 @@ private struct CsvImportSheetView: View {
         }
     }
 
-    private func drySummaryCard(title: String, value: String) -> some View {
+    private func drySummaryCard(title: String, value: String, tip: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -3911,16 +4177,27 @@ private struct CsvImportSheetView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(tip ? Color(red: 1.0, green: 0.972, blue: 0.937) : Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tip ? Color(red: 0.804, green: 0.471, blue: 0.0).opacity(0.25) : .black.opacity(0.06), lineWidth: 1))
     }
 
     private func loadAccounts() async {
+        workKind = .loadingAccounts
+        defer {
+            if workKind == .loadingAccounts {
+                workKind = nil
+            }
+        }
         do {
             let payload = try await QuailCashAPI.shared.fetchBankInfo()
             bankInfo = payload
             if selectedAccountID == 0 {
                 selectedAccountID = payload.accounts.first?.id ?? payload.creditCards.first?.id ?? 0
+            }
+            if selectedFileURL != nil, accountManuallyChosen == false {
+                _ = await maybeAutoSelectAccount(fileName: selectedFileName, columns: preview?.columns ?? [], previewRows: preview?.previewRows ?? [], force: true)
+            } else if selectedAccountID != 0 {
+                _ = await loadPreset(for: selectedAccountID)
             }
         } catch {
             message = error.localizedDescription
@@ -3941,49 +4218,80 @@ private struct CsvImportSheetView: View {
         debitCol = match(["debit"])
         creditCol = match(["credit"])
         merchantCol = match(["merchant", "description", "payee"])
-        indicatorCol = match(["indicator", "type"])
+        indicatorCol = match(["credit/debit", "credit debit", "indicator", "type"])
+        updateAmountModeFields()
+    }
+
+    private var currentPresetPayload: CsvMappingPresetPayload {
+        CsvMappingPresetPayload(
+            purchaseCol: Int(purchaseCol),
+            postedCol: Int(postedCol),
+            amountCol: Int(amountCol),
+            debitCol: Int(debitCol),
+            creditCol: Int(creditCol),
+            merchantCol: Int(merchantCol),
+            indicatorCol: Int(indicatorCol),
+            creditIndicatorValue: creditIndicatorValue,
+            invertAmount: invertAmount,
+            headerSignature: csvHeaderSignature(preview?.columns ?? [])
+        )
     }
 
     private func mappingFields() -> [String: String] {
-        var fields: [String: String] = [
-            "account_id": String(selectedAccountID),
-            "purchase_col": purchaseCol,
-            "merchant_col": merchantCol,
-            "delimiter": "auto",
-            "header_row": "1",
-            "data_start_row": "2",
-            "invert_amount": invertAmount ? "true" : "false",
-            "credit_indicator_value": creditIndicatorValue,
-        ]
+        var fields: [String: String] = ["delimiter": "auto"]
+        if selectedAccountID != 0 {
+            fields["account_id"] = String(selectedAccountID)
+        }
+        if let purchase = Int(purchaseCol) {
+            fields["purchase_col"] = String(purchase)
+        }
+        if let merchant = Int(merchantCol) {
+            fields["merchant_col"] = String(merchant)
+        }
+        fields["credit_indicator_value"] = creditIndicatorValue
+        fields["invert_amount"] = invertAmount ? "true" : "false"
         if !postedCol.isEmpty { fields["posted_col"] = postedCol }
-        if !amountCol.isEmpty { fields["amount_col"] = amountCol }
-        if !debitCol.isEmpty { fields["debit_col"] = debitCol }
-        if !creditCol.isEmpty { fields["credit_col"] = creditCol }
-        if !indicatorCol.isEmpty { fields["indicator_col"] = indicatorCol }
+        if hasSplitAmounts {
+            if !debitCol.isEmpty { fields["debit_col"] = debitCol }
+            if !creditCol.isEmpty { fields["credit_col"] = creditCol }
+        } else {
+            if !amountCol.isEmpty { fields["amount_col"] = amountCol }
+            if !indicatorCol.isEmpty { fields["indicator_col"] = indicatorCol }
+        }
         return fields
     }
 
     private func saveMapping() async {
-        guard canImport else {
-            message = "Choose a file, account, and required columns first."
+        guard hasRequiredMapping else {
+            message = "Choose account and map the required fields first."
             return
         }
-        isWorking = true
-        defer { isWorking = false }
+        workKind = .save
+        defer { workKind = nil }
         do {
             var payload: [String: Any] = [
                 "purchase_col": Int(purchaseCol) ?? 0,
                 "merchant_col": Int(merchantCol) ?? 0,
                 "credit_indicator_value": creditIndicatorValue,
                 "invert_amount": invertAmount,
+                "header_signature": csvHeaderSignature(preview?.columns ?? []),
             ]
             if let value = Int(postedCol) { payload["posted_col"] = value }
-            if let value = Int(amountCol) { payload["amount_col"] = value }
-            if let value = Int(debitCol) { payload["debit_col"] = value }
-            if let value = Int(creditCol) { payload["credit_col"] = value }
-            if let value = Int(indicatorCol) { payload["indicator_col"] = value }
+            if hasSplitAmounts {
+                if let value = Int(debitCol) { payload["debit_col"] = value }
+                if let value = Int(creditCol) { payload["credit_col"] = value }
+            } else {
+                if let value = Int(amountCol) { payload["amount_col"] = value }
+                if let value = Int(indicatorCol) { payload["indicator_col"] = value }
+            }
             try await QuailCashAPI.shared.saveCsvMappingPreset(accountID: selectedAccountID, preset: payload)
-            message = "Mapping saved."
+            let preset = currentPresetPayload
+            activePreset = preset
+            activePresetAccountID = selectedAccountID
+            presetCacheByAccount[selectedAccountID] = preset
+            setCachedHeaderSignature(accountID: selectedAccountID, signature: preset.headerSignature ?? "")
+            importDone = false
+            message = "Mapping saved for selected account."
         } catch {
             message = error.localizedDescription
         }
@@ -3994,49 +4302,486 @@ private struct CsvImportSheetView: View {
             message = "Pick a file first."
             return
         }
-        isWorking = true
-        defer { isWorking = false }
+        workKind = .preview
+        defer { workKind = nil }
         do {
             let next = try await QuailCashAPI.shared.fetchCsvPreview(fileURL: selectedFileURL)
             preview = next
             dryRun = nil
             importResult = nil
-            applyDefaultMappings(from: next)
-            message = "Preview loaded."
+            tab = .setup
+            importDone = false
+            let loadedPreset = await maybeAutoSelectAccount(fileName: selectedFileName, columns: next.columns, previewRows: next.previewRows, force: true)
+            if !loadedPreset {
+                let presetLoadedForCurrent = await loadPreset(for: selectedAccountID)
+                if !presetLoadedForCurrent {
+                    applyDefaultMappings(from: next)
+                }
+            }
+            let hdr = next.hasHeaderDetected ? "header detected" : "no header detected"
+            message = "Preview loaded (\(next.rowCount) rows, \(hdr))."
         } catch {
             message = error.localizedDescription
         }
     }
 
     private func runDryRun() async {
-        guard let selectedFileURL, canImport else {
-            message = "Complete the required mapping first."
+        guard let selectedFileURL else {
+            message = "Pick a file first."
             return
         }
-        isWorking = true
-        defer { isWorking = false }
+        guard selectedAccountID != 0 else {
+            message = "Choose an account first."
+            return
+        }
+        guard hasRequiredMapping else {
+            message = "Map required fields: transaction date, merchant, and account."
+            return
+        }
+        workKind = .dryRun
+        defer { workKind = nil }
         do {
             dryRun = try await QuailCashAPI.shared.runCsvDryRun(fileURL: selectedFileURL, fields: mappingFields())
-            message = "Dry run complete."
+            tab = .dryRun
+            let summary = dryRun?.summary
+            message = "Dry run: \(summary?.validRows ?? 0) valid, \(summary?.invalidRows ?? 0) invalid (\(summary?.totalRows ?? 0) total)."
         } catch {
             message = error.localizedDescription
         }
     }
 
     private func runImport() async {
-        guard let selectedFileURL, canImport else {
-            message = "Complete the required mapping first."
+        guard let selectedFileURL else {
+            message = "Pick a file first."
             return
         }
-        isWorking = true
-        defer { isWorking = false }
+        guard selectedAccountID != 0 else {
+            message = "Choose an account first."
+            return
+        }
+        guard hasRequiredMapping else {
+            message = "Map required fields: transaction date, merchant, and account."
+            return
+        }
+        workKind = .import
+        defer { workKind = nil }
         do {
             importResult = try await QuailCashAPI.shared.importCsvMapped(fileURL: selectedFileURL, fields: mappingFields())
-            message = "Import complete."
+            let preset = currentPresetPayload
+            activePreset = preset
+            activePresetAccountID = selectedAccountID
+            presetCacheByAccount[selectedAccountID] = preset
+            setCachedAccountForFileName(selectedFileName, accountID: selectedAccountID)
+            setCachedHeaderSignature(accountID: selectedAccountID, signature: preset.headerSignature ?? "")
+            importDone = true
+            message = "Imported \(importResult?.inserted ?? 0), updated \(importResult?.updated ?? 0), skipped \(importResult?.skipped ?? 0)."
             onRefresh()
+        } catch {
+            if isTimeoutError(error) {
+                onRefresh()
+                message = "The import request timed out while waiting for the server response. Check the account before retrying; the import may have completed."
+            } else {
+                message = error.localizedDescription
+            }
+        }
+    }
+
+    private func dryRunCard(_ payload: CsvDryRunPayload) -> some View {
+        sectionCard(title: "Dry run comparison") {
+            VStack(alignment: .leading, spacing: 10) {
+                let summary = payload.summary
+                HStack(spacing: 8) {
+                    drySummaryCard(title: "Valid", value: "\(summary?.validRows ?? 0)")
+                    drySummaryCard(title: "Invalid", value: "\(summary?.invalidRows ?? 0)")
+                    drySummaryCard(title: "Total", value: "\(summary?.totalRows ?? 0)")
+                }
+
+                if let compare = payload.compare {
+                    HStack(spacing: 8) {
+                        drySummaryCard(title: "Update exact", value: "\(compare.wouldUpdateExactCount ?? 0)")
+                        drySummaryCard(title: "Update tip", value: "\(compare.wouldUpdateTipCount ?? 0)", tip: true)
+                        drySummaryCard(title: "Insert", value: "\(compare.wouldInsertCount ?? 0)")
+                        drySummaryCard(title: "Pending", value: "\(compare.pendingCount ?? 0)")
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Import window")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Text("\(compare.importStartDate ?? "—") to \(compare.importEndDate ?? "—")")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
+                    .padding(10)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                            .foregroundStyle(Color.black.opacity(0.18))
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        compareLine(title: "Skipped before start", value: compare.skippedBeforeStart)
+                        compareLine(title: "Skipped after end", value: compare.skippedAfterEnd)
+                    }
+                    .padding(10)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                }
+
+                HStack(spacing: 8) {
+                    Button("Back to setup") { tab = .setup }
+                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                    if importDone == false, mappingNeedsSave == false {
+                        actionButton("Import", workingFor: .import, primary: true) {
+                            await runImport()
+                        }
+                        .disabled(!hasRequiredMapping || isWorking)
+                    }
+                }
+            }
+        }
+    }
+
+    private func importResultCard(_ payload: CsvImportResultPayload) -> some View {
+        sectionCard(title: "Import result") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Inserted \(payload.inserted ?? 0) • Updated \(payload.updated ?? 0) • Auto categorized \(payload.autoCategorized ?? 0)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                Text("Skipped \(payload.skipped ?? 0) • Reconciled \(payload.reconciledPendingDuplicates ?? 0) • Deleted stale pending \(payload.stalePendingDeleted ?? 0)")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func statusMessageView(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+    }
+
+    private func compareLine(title: String, value: Int?) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text("\(value ?? 0)")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+        }
+    }
+
+    private func actionButton(_ title: String, workingFor kind: WorkKind, primary: Bool, action: @escaping () async -> Void) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            HStack(spacing: 6) {
+                if workKind == kind {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(primary ? .white : .black)
+                }
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(primary ? AnyButtonStyle(PrimaryButtonStyle()) : AnyButtonStyle(HomeHeaderActionStyle(primary: false)))
+    }
+
+    private func handleAccountChange(oldValue: Int, newValue: Int) async {
+        if isAutoSelectingAccount {
+            isAutoSelectingAccount = false
+            return
+        }
+        accountManuallyChosen = true
+        importDone = false
+        _ = await loadPreset(for: newValue)
+    }
+
+    private func resetWizardForNewFile() {
+        preview = nil
+        dryRun = nil
+        importResult = nil
+        activePreset = nil
+        activePresetAccountID = 0
+        importDone = false
+        tab = .setup
+        accountManuallyChosen = false
+        message = "Analyzing file..."
+    }
+
+    private func updateAmountModeFields() {
+        if amountCol.isEmpty == false {
+            debitCol = ""
+            creditCol = ""
+        }
+    }
+
+    private var isWorking: Bool {
+        workKind != nil
+    }
+
+    private var selectedAccountLabel: String {
+        accountChoices.first(where: { $0.id == selectedAccountID })?.label ?? "Choose an account"
+    }
+
+    private var fileSummaryText: String {
+        guard let selectedFileURL else { return selectedFileName }
+        let bytes = ((try? selectedFileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        if bytes > 0 {
+            return "\(selectedFileName) (\(max(1, bytes / 1024)) KB)"
+        }
+        return selectedFileName
+    }
+
+    private var headerSubtitle: String {
+        if let workKind {
+            return workKind.label
+        }
+        if message.isEmpty == false {
+            return message
+        }
+        return "Header row is detected automatically from the first row."
+    }
+
+    private func mappingLabel(selection: String, columns: [CsvPreviewColumnPayload], optional: Bool) -> String {
+        guard let index = Int(selection),
+              let column = columns.first(where: { $0.index == index }) else {
+            return optional ? "Not mapped" : "Choose column"
+        }
+        return "\(column.label) (col \(column.index + 1))"
+    }
+
+    private func loadPreset(for accountID: Int) async -> Bool {
+        guard accountID != 0 else {
+            activePreset = nil
+            activePresetAccountID = 0
+            return false
+        }
+        if let cached = presetCacheByAccount[accountID] {
+            if let preset = cached {
+                applyPreset(preset)
+                activePresetAccountID = accountID
+                if let signature = preset.headerSignature, signature.isEmpty == false {
+                    setCachedHeaderSignature(accountID: accountID, signature: signature)
+                }
+                message = "Saved mapping loaded for selected account."
+                return true
+            }
+            activePreset = nil
+            activePresetAccountID = 0
+            return false
+        }
+        do {
+            let preset = try await QuailCashAPI.shared.fetchCsvMappingPreset(accountID: accountID)
+            presetCacheByAccount[accountID] = preset
+            if let preset {
+                applyPreset(preset)
+                activePresetAccountID = accountID
+                if let signature = preset.headerSignature, signature.isEmpty == false {
+                    setCachedHeaderSignature(accountID: accountID, signature: signature)
+                }
+                message = "Saved mapping loaded for selected account."
+                return true
+            }
         } catch {
             message = error.localizedDescription
         }
+        activePreset = nil
+        activePresetAccountID = 0
+        return false
+    }
+
+    private func applyPreset(_ preset: CsvMappingPresetPayload) {
+        activePreset = preset
+        purchaseCol = preset.purchaseCol.map(String.init) ?? ""
+        postedCol = preset.postedCol.map(String.init) ?? ""
+        amountCol = preset.amountCol.map(String.init) ?? ""
+        debitCol = preset.debitCol.map(String.init) ?? ""
+        creditCol = preset.creditCol.map(String.init) ?? ""
+        merchantCol = preset.merchantCol.map(String.init) ?? ""
+        indicatorCol = preset.indicatorCol.map(String.init) ?? ""
+        creditIndicatorValue = preset.creditIndicatorValue ?? "credit"
+        invertAmount = preset.invertAmount
+        updateAmountModeFields()
+    }
+
+    private func maybeAutoSelectAccount(
+        fileName: String,
+        columns: [CsvPreviewColumnPayload],
+        previewRows: [CsvPreviewRowPayload],
+        force: Bool
+    ) async -> Bool {
+        guard accountChoices.isEmpty == false else { return false }
+        if accountManuallyChosen && !force {
+            return await loadPreset(for: selectedAccountID)
+        }
+
+        var guessedID: Int?
+        if let cached = cachedAccountForFileName(fileName),
+           accountChoices.contains(where: { $0.id == cached }) {
+            guessedID = cached
+        }
+        if guessedID == nil, columns.isEmpty == false {
+            guessedID = await pickAccountBySavedHeaderMatch(columns: columns)
+        }
+        if guessedID == nil {
+            guessedID = pickAccountFromContext(fileName: fileName, columns: columns, previewRows: previewRows)
+        }
+        guard let guessedID else { return await loadPreset(for: selectedAccountID) }
+        if guessedID != selectedAccountID {
+            isAutoSelectingAccount = true
+            selectedAccountID = guessedID
+        }
+        let loadedPreset = await loadPreset(for: guessedID)
+        if cachedAccountForFileName(fileName) == guessedID {
+            message = "Auto-selected account from this file's last successful import. Verify before import."
+        } else if columns.isEmpty == false {
+            message = "Auto-selected account from saved header mapping. Verify before import."
+        } else {
+            message = "Auto-selected account from file. Verify before import."
+        }
+        return loadedPreset
+    }
+
+    private func autoPrepareSelectedFile() async {
+        guard selectedFileURL != nil else { return }
+        if bankInfo == nil {
+            await loadAccounts()
+        }
+        await loadPreview()
+    }
+
+    private func isTimeoutError(_ error: Error) -> Bool {
+        if let apiError = error as? QuailCashAPIError {
+            switch apiError {
+            case .transport(let underlying as NSError):
+                return underlying.domain == NSURLErrorDomain && underlying.code == NSURLErrorTimedOut
+            default:
+                return false
+            }
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+    }
+
+    private func pickAccountBySavedHeaderMatch(columns: [CsvPreviewColumnPayload]) async -> Int? {
+        let signature = csvHeaderSignature(columns)
+        guard signature.isEmpty == false else { return nil }
+        var matches: [Int] = []
+        var presetAccounts: [Int] = []
+        for choice in accountChoices {
+            let preset = await fetchPresetCached(for: choice.id)
+            if preset != nil {
+                presetAccounts.append(choice.id)
+            }
+            let savedSignature = normalizedText(preset?.headerSignature ?? cachedHeaderSignature(accountID: choice.id) ?? "")
+            if savedSignature.isEmpty == false && savedSignature == signature {
+                matches.append(choice.id)
+            }
+        }
+        if matches.count == 1 { return matches[0] }
+        if matches.isEmpty && presetAccounts.count == 1 { return presetAccounts[0] }
+        return nil
+    }
+
+    private func fetchPresetCached(for accountID: Int) async -> CsvMappingPresetPayload? {
+        if let cached = presetCacheByAccount[accountID] {
+            return cached
+        }
+        do {
+            let preset = try await QuailCashAPI.shared.fetchCsvMappingPreset(accountID: accountID)
+            presetCacheByAccount[accountID] = preset
+            return preset
+        } catch {
+            presetCacheByAccount[accountID] = nil
+            return nil
+        }
+    }
+
+    private func pickAccountFromContext(fileName: String, columns: [CsvPreviewColumnPayload], previewRows: [CsvPreviewRowPayload]) -> Int? {
+        let headerText = columns.map(\.label).joined(separator: " ")
+        let sampleText = previewRows.prefix(12).map { $0.cells.joined(separator: " ") }.joined(separator: " ")
+        let corpus = normalizedText([fileName, headerText, sampleText].joined(separator: " "))
+        guard corpus.isEmpty == false else { return nil }
+
+        let ranked = accountChoices.map { choice -> (id: Int, score: Int) in
+            let label = choice.label
+            let bank = choice.institution
+            let tokens = Set(tokenize(label) + tokenize(bank))
+            var score = 0
+
+            let bankPhrase = normalizedText(bank)
+            if bankPhrase.count >= 4 && corpus.contains(bankPhrase) {
+                score += 10
+            }
+            let labelPhrase = normalizedText(label.replacingOccurrences(of: "(credit)", with: ""))
+            if labelPhrase.count >= 6 && corpus.contains(labelPhrase) {
+                score += 8
+            }
+            for token in tokens where corpus.contains(token) {
+                score += 1
+            }
+            if choice.isCredit && ["visa", "mastercard", "amex", "credit"].contains(where: corpus.contains) {
+                score += 2
+            }
+            return (choice.id, score)
+        }.sorted { lhs, rhs in
+            lhs.score > rhs.score
+        }
+
+        guard let best = ranked.first, best.score >= 3 else { return nil }
+        let secondScore = ranked.dropFirst().first?.score ?? 0
+        guard (best.score - secondScore) >= 2 else { return nil }
+        return best.id
+    }
+
+    private func normalizedText(_ text: String) -> String {
+        text.lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func tokenize(_ text: String) -> [String] {
+        normalizedText(text)
+            .split(separator: " ")
+            .map(String.init)
+            .filter { $0.count >= 2 }
+    }
+
+    private func csvHeaderSignature(_ columns: [CsvPreviewColumnPayload]) -> String {
+        normalizedText(columns.map(\.label).joined(separator: "|"))
+    }
+
+    private func cachedAccountForFileName(_ fileName: String) -> Int? {
+        let key = normalizedText(fileName)
+        guard key.isEmpty == false,
+              let map = UserDefaults.standard.dictionary(forKey: csvFileAccountCacheKey) as? [String: Int] else {
+            return nil
+        }
+        return map[key]
+    }
+
+    private func setCachedAccountForFileName(_ fileName: String, accountID: Int) {
+        let key = normalizedText(fileName)
+        guard key.isEmpty == false else { return }
+        var map = UserDefaults.standard.dictionary(forKey: csvFileAccountCacheKey) as? [String: Int] ?? [:]
+        map[key] = accountID
+        UserDefaults.standard.set(map, forKey: csvFileAccountCacheKey)
+    }
+
+    private func cachedHeaderSignature(accountID: Int) -> String? {
+        let map = UserDefaults.standard.dictionary(forKey: csvHeaderSignatureCacheKey) as? [String: String] ?? [:]
+        return map[String(accountID)]
+    }
+
+    private func setCachedHeaderSignature(accountID: Int, signature: String) {
+        var map = UserDefaults.standard.dictionary(forKey: csvHeaderSignatureCacheKey) as? [String: String] ?? [:]
+        map[String(accountID)] = normalizedText(signature)
+        UserDefaults.standard.set(map, forKey: csvHeaderSignatureCacheKey)
     }
 
     private func copyImportedFile(_ url: URL) throws -> URL {
@@ -4057,6 +4802,36 @@ private struct CsvImportSheetView: View {
     private func close() {
         dismiss()
         onDismiss()
+    }
+}
+
+private extension CsvMappingPresetPayload {
+    var normalized: [String: String] {
+        [
+            "purchase_col": purchaseCol.map(String.init) ?? "",
+            "posted_col": postedCol.map(String.init) ?? "",
+            "amount_col": amountCol.map(String.init) ?? "",
+            "debit_col": debitCol.map(String.init) ?? "",
+            "credit_col": creditCol.map(String.init) ?? "",
+            "merchant_col": merchantCol.map(String.init) ?? "",
+            "indicator_col": indicatorCol.map(String.init) ?? "",
+            "credit_indicator_value": creditIndicatorValue ?? "credit",
+            "invert_amount": invertAmount ? "true" : "false",
+        ]
+    }
+}
+
+private struct AnyButtonStyle: ButtonStyle {
+    private let makeBody: (Configuration) -> AnyView
+
+    init<S: ButtonStyle>(_ style: S) {
+        makeBody = { configuration in
+            AnyView(style.makeBody(configuration: configuration))
+        }
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        makeBody(configuration)
     }
 }
 
@@ -4085,13 +4860,13 @@ private struct UnassignedWizardSheetView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 modalHeader
 
                 sectionCard(title: "Current transaction") {
                     if let current {
                         VStack(alignment: .leading, spacing: 10) {
-                            txKV(label: "Merchant", value: current.merchant.isEmpty ? "Unknown" : current.merchant)
+                            merchantValueBlock(current.merchant.isEmpty ? "Unknown" : current.merchant)
                             txKV(label: "Account", value: [current.bank, current.card].compactMap { $0 }.joined(separator: " • "))
                             txKV(label: "Amount", value: moneyValue(current.amount), valueColor: current.amount >= 0 ? .red : .green)
                             txKV(label: "Date", value: current.postedDate ?? "—")
@@ -4110,55 +4885,82 @@ private struct UnassignedWizardSheetView: View {
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .tint(.black)
 
-                        HStack(spacing: 8) {
+                        HStack(alignment: .bottom, spacing: 8) {
                             fieldShell(title: "Category") {
                                 TextField("Start typing…", text: $categoryText)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
                             }
-                            Menu {
-                                ForEach(categories, id: \.self) { category in
-                                    Button(category) { categoryText = category }
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(" ")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                Menu {
+                                    ForEach(categories, id: \.self) { category in
+                                        Button(category) { categoryText = category }
+                                    }
+                                } label: {
+                                    Text("Choose")
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 40)
                                 }
-                            } label: {
-                                Text("Choose")
+                                .buttonStyle(HomeHeaderActionStyle(primary: false, compact: true))
                             }
-                            .buttonStyle(HomeHeaderActionStyle(primary: false))
+                            .frame(width: 94)
                         }
 
-                        fieldShell(title: "Keywords (comma separated)") {
-                            TextField("amazon, prime", text: $keywordsText)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled(true)
-                        }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .center, spacing: 8) {
-                                Button("Skip") { Task { await skipCurrent() } }
-                                    .buttonStyle(UnassignedEqualActionStyle(primary: false))
-                                    .disabled(current == nil || isLoading)
-                                Button("View skipped (\(skipped.count))") { skippedOpen.toggle() }
-                                    .buttonStyle(UnassignedEqualActionStyle(primary: false))
-                                Button("Save rule") { Task { await saveRule() } }
-                                    .buttonStyle(UnassignedEqualActionStyle(primary: true))
-                                    .disabled(current == nil || isLoading)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Keywords (comma separated)")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            HStack(alignment: .bottom, spacing: 8) {
+                                fieldShell(title: nil) {
+                                    TextField("amazon, prime", text: $keywordsText)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled(true)
+                                }
+                                if !merchantKeywordChoices.isEmpty {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(" ")
+                                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                            .hidden()
+                                        Menu {
+                                            ForEach(merchantKeywordChoices, id: \.self) { word in
+                                                Button(word) { appendKeyword(word) }
+                                            }
+                                        } label: {
+                                            Text("Choose")
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 40)
+                                        }
+                                        .buttonStyle(HomeHeaderActionStyle(primary: false, compact: true))
+                                    }
+                                    .frame(width: 94)
+                                }
                             }
                         }
-                        .padding(10)
-                        .background(Color.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.05), lineWidth: 1))
                     }
                 }
 
-                sectionCard(title: "Queue") {
+                VStack(spacing: 10) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Button("Skip") { Task { await skipCurrent() } }
+                            .buttonStyle(UnassignedEqualActionStyle(primary: false))
+                            .disabled(current == nil || isLoading)
+                        Button("View skipped (\(skipped.count))") { skippedOpen.toggle() }
+                            .buttonStyle(UnassignedEqualActionStyle(primary: false))
+                        Button("Save rule") { Task { await saveRule() } }
+                            .buttonStyle(UnassignedEqualActionStyle(primary: true))
+                            .disabled(current == nil || isLoading)
+                    }
+
                     HStack(spacing: 10) {
                         Button("Prev") { move(-1) }
                             .buttonStyle(UnassignedQueueNavStyle())
                             .disabled(index == 0 || rows.isEmpty)
                         Spacer(minLength: 0)
                         VStack(spacing: 3) {
-                            Text("Queue")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
                             Text(rows.isEmpty ? "0 / 0" : "\(index + 1) / \(rows.count)")
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.secondary)
@@ -4222,17 +5024,15 @@ private struct UnassignedWizardSheetView: View {
 
     private var modalHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Create rule")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                    Text(rows.isEmpty ? "0 / 0" : "\(index + 1) / \(rows.count)")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+            ZStack {
+                Text("Create rule")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                HStack {
+                    Spacer()
+                    Button("Close") { Task { await close() } }
+                        .buttonStyle(HomeHeaderActionStyle(primary: false))
                 }
-                Spacer(minLength: 8)
-                Button("Close") { Task { await close() } }
-                    .buttonStyle(HomeHeaderActionStyle(primary: false))
             }
 
             modeTabs
@@ -4254,8 +5054,10 @@ private struct UnassignedWizardSheetView: View {
 
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+            }
             content()
         }
         .padding(14)
@@ -4263,16 +5065,34 @@ private struct UnassignedWizardSheetView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
     }
 
-    private func fieldShell<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldShell<Content: View>(title: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
+            if let title {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
             content()
                 .padding(.horizontal, 10)
                 .frame(height: 40)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func merchantValueBlock(_ merchant: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Merchant")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(merchant)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            .padding(.horizontal, 10)
+            .frame(minHeight: 40)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
         }
     }
 
@@ -4389,6 +5209,22 @@ private struct UnassignedWizardSheetView: View {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    private var merchantKeywordChoices: [String] {
+        let raw = current?.merchant ?? ""
+        let parts = raw
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 2 }
+        return Array(NSOrderedSet(array: parts)) as? [String] ?? []
+    }
+
+    private func appendKeyword(_ word: String) {
+        let existing = parsedKeywords()
+        guard !existing.contains(word) else { return }
+        keywordsText = existing.isEmpty ? word : existing.joined(separator: ", ") + ", " + word
     }
 
     private func saveRule() async {
@@ -4577,12 +5413,28 @@ private func homeMonthDayShort(_ date: Date) -> String {
 }
 
 private func isoToday() -> String {
+    isoFromDate(Date())
+}
+
+private func isoYesterday() -> String {
+    let date = Calendar(identifier: .gregorian).date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    return isoFromDate(date)
+}
+
+private func isoFromDate(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: Date())
+    return formatter.string(from: date)
+}
+
+private func isoDateOrYesterday(_ iso: String?) -> Date {
+    if let iso, let date = homeDateFromISO(iso) {
+        return date
+    }
+    return Calendar(identifier: .gregorian).date(byAdding: .day, value: -1, to: Date()) ?? Date()
 }
 
 private struct PopupChrome<Content: View>: View {
@@ -4647,8 +5499,8 @@ private func moneyValue(_ value: Double) -> String {
 private func formatAccountBalance(_ value: Double) -> String {
     let amount = abs(value)
     let raw = moneyValue(amount)
-    if value > 0 { return "CR \(raw)" }
-    if value < 0 { return raw }
+    if value > 0 { return raw }
+    if value < 0 { return "CR \(raw)" }
     return moneyValue(0)
 }
 
@@ -4688,12 +5540,13 @@ private struct AccountChipStyle: ButtonStyle {
 
 private struct HomeHeaderActionStyle: ButtonStyle {
     let primary: Bool
+    var compact: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .padding(.horizontal, 10)
-            .frame(height: 30)
+            .padding(.horizontal, compact ? 0 : 10)
+            .frame(height: compact ? 40 : 30)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(primary ? Color.black : Color.black.opacity(0.04))

@@ -1167,7 +1167,9 @@ def recurring_calendar(year: int, month: int, min_occ: int = 3, include_stale: b
                 "merchant": f'INTEREST — {a["institution"]} {a["name"]}',
                 "amount": round(est, 2),
                 "cadence": "interest",
-                "type": "Interest",
+                "type": "income",
+                "kind": "income",
+                "category": "Income",
                 "account_id": aid,
             })
 

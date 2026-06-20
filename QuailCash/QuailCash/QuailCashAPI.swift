@@ -37,6 +37,14 @@ final class QuailCashAPI {
         session = URLSession(configuration: configuration)
     }
 
+    private enum RequestTimeout {
+        static let standard: TimeInterval = 30
+        static let standardResource: TimeInterval = 60
+        static let csvPreview: TimeInterval = 90
+        static let csvDryRun: TimeInterval = 180
+        static let csvImport: TimeInterval = 1800
+    }
+
     func fetchHome(txLimit: Int = 15) async throws -> HomePayload {
         let request = makeRequest(url: AppConfig.homeURL(txLimit: txLimit))
         print("[QuailCash] QuailCashAPI.fetchHome url=\(request.url?.absoluteString ?? "nil")")
@@ -588,6 +596,101 @@ final class QuailCashAPI {
         }
     }
 
+    func fetchCategoryRuleList(
+        ruleID: String = "",
+        keyword: String = "",
+        category: String = "",
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> CategoryRuleListPayload {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "include_inactive", value: "1"),
+            URLQueryItem(name: "with_counts", value: "1"),
+            URLQueryItem(name: "limit", value: String(max(1, min(limit, 200)))),
+            URLQueryItem(name: "offset", value: String(max(0, offset))),
+        ]
+        if !ruleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "rule_id", value: ruleID))
+        }
+        if !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "keyword", value: keyword))
+        }
+        if !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        let request = makeRequest(url: AppConfig.url(path: "/category-rules/list", queryItems: queryItems))
+        let data = try await checkedData(for: request)
+        do {
+            return try JSONDecoder.quailCash.decode(CategoryRuleListPayload.self, from: data)
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func runCategoryRulesCheckAll(uncategorizedOnly: Bool) async throws -> CategoryRulesCheckAllPayload {
+        let request = makeRequest(url: AppConfig.url(path: "/category-rules/check-all", queryItems: [
+            URLQueryItem(name: "include_inactive", value: "1"),
+            URLQueryItem(name: "uncategorized_only", value: uncategorizedOnly ? "1" : "0"),
+            URLQueryItem(name: "sample_limit", value: "2"),
+            URLQueryItem(name: "apply_now", value: "1"),
+        ]))
+        let data = try await checkedData(for: request)
+        do {
+            return try JSONDecoder.quailCash.decode(CategoryRulesCheckAllPayload.self, from: data)
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func updateCategoryRule(ruleID: Int, category: String) async throws -> CategoryRuleUpdateResponse {
+        let request = makeRequest(
+            url: AppConfig.url(path: "/category-rules/\(ruleID)"),
+            method: "POST",
+            jsonBody: [
+                "category": category,
+                "reapply_existing": true,
+            ]
+        )
+        let data = try await checkedData(for: request)
+        do {
+            return try JSONDecoder.quailCash.decode(CategoryRuleUpdateResponse.self, from: data)
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func setCategoryRuleActive(ruleID: Int, isActive: Bool) async throws {
+        let request = makeRequest(
+            url: AppConfig.url(path: "/category-rules/\(ruleID)/active"),
+            method: "POST",
+            jsonBody: ["is_active": isActive]
+        )
+        _ = try await checkedData(for: request)
+    }
+
+    func deleteCategoryRule(ruleID: Int) async throws {
+        let request = makeRequest(url: AppConfig.url(path: "/category-rules/\(ruleID)"), method: "DELETE")
+        _ = try await checkedData(for: request)
+    }
+
+    func testCategoryRule(pattern: String, flags: String = "i", limit: Int = 50) async throws -> CategoryRuleTestPayload {
+        let request = makeRequest(
+            url: AppConfig.url(path: "/category-rules/test"),
+            method: "POST",
+            jsonBody: [
+                "pattern": pattern,
+                "flags": flags,
+                "limit": max(1, min(limit, 250)),
+            ]
+        )
+        let data = try await checkedData(for: request)
+        do {
+            return try JSONDecoder.quailCash.decode(CategoryRuleTestPayload.self, from: data)
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
     func fetchCategoryRuleJob(jobID: Int) async throws -> CategoryRuleApplyJobPayload {
         let request = makeRequest(url: AppConfig.url(path: "/category-rules/jobs/\(jobID)"))
         let data = try await checkedData(for: request)
@@ -617,7 +720,8 @@ final class QuailCashAPI {
                 "max_rows": String(maxRows),
             ],
             fileFieldName: "file",
-            fileURL: fileURL
+            fileURL: fileURL,
+            timeoutInterval: RequestTimeout.csvPreview
         )
         let data = try await checkedData(for: request)
         do {
@@ -640,12 +744,27 @@ final class QuailCashAPI {
         _ = try await checkedData(for: request)
     }
 
+    func fetchCsvMappingPreset(accountID: Int) async throws -> CsvMappingPresetPayload? {
+        let request = makeRequest(url: AppConfig.url(path: "/csv/mapping-presets", queryItems: [
+            URLQueryItem(name: "account_id", value: String(accountID)),
+            URLQueryItem(name: "institution_key", value: "__account__"),
+        ]))
+        let data = try await checkedData(for: request)
+        do {
+            let payload = try JSONDecoder.quailCash.decode(CsvMappingPresetResponsePayload.self, from: data)
+            return (payload.ok && payload.found) ? payload.preset : nil
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
     func runCsvDryRun(fileURL: URL, fields: [String: String]) async throws -> CsvDryRunPayload {
         let request = try makeMultipartRequest(
             url: AppConfig.url(path: "/csv/ingest-mapped/dry-run"),
             fields: fields,
             fileFieldName: "file",
-            fileURL: fileURL
+            fileURL: fileURL,
+            timeoutInterval: RequestTimeout.csvDryRun
         )
         let data = try await checkedData(for: request)
         do {
@@ -660,7 +779,8 @@ final class QuailCashAPI {
             url: AppConfig.url(path: "/csv/ingest-mapped"),
             fields: fields,
             fileFieldName: "file",
-            fileURL: fileURL
+            fileURL: fileURL,
+            timeoutInterval: RequestTimeout.csvImport
         )
         let data = try await checkedData(for: request)
         do {
@@ -916,6 +1036,49 @@ final class QuailCashAPI {
         } catch {
             if let text = String(data: data, encoding: .utf8) {
                 print("[QuailCash] QuailCashAPI.monthBudgetDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func fetchLESProfile() async throws -> LESProfilePayload {
+        let data = try await fetchData(path: "/les-profile", queryItems: [URLQueryItem(name: "key", value: "default")])
+        do {
+            return try JSONDecoder.quailCash.decode(LESProfilePayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.lesProfileDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func saveLESProfile(_ profile: LESProfile) async throws -> LESProfilePayload {
+        let data = try await fetchData(path: "/les-profile", method: "POST", jsonBody: [
+            "key": "default",
+            "profile": profile.asDictionary
+        ])
+        do {
+            return try JSONDecoder.quailCash.decode(LESProfilePayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.saveLESProfileDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
+            }
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func fetchLESPaychecks(year: Int, month: Int, profile: LESProfile) async throws -> LESPaychecksPayload {
+        let data = try await fetchData(path: "/les/paychecks", method: "POST", jsonBody: [
+            "year": year,
+            "month": month,
+            "profile": profile.asDictionary
+        ])
+        do {
+            return try JSONDecoder.quailCash.decode(LESPaychecksPayload.self, from: data)
+        } catch {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[QuailCash] QuailCashAPI.lesPaychecksDecodeFailure bodyPrefix=\(String(text.prefix(800)))")
             }
             throw QuailCashAPIError.decodingFailed
         }
@@ -1402,11 +1565,13 @@ final class QuailCashAPI {
         fields: [String: String],
         fileFieldName: String,
         fileURL: URL,
-        mimeType: String = "application/octet-stream"
+        mimeType: String = "application/octet-stream",
+        timeoutInterval: TimeInterval? = nil
     ) throws -> URLRequest {
         let boundary = "Boundary-\(UUID().uuidString)"
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.timeoutInterval = timeoutInterval ?? RequestTimeout.standardResource
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("QuailCash/1.0", forHTTPHeaderField: "User-Agent")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -1478,6 +1643,37 @@ final class QuailCashAPI {
         @unknown default:
             return "unknown decoding error"
         }
+    }
+}
+
+private extension LESProfile {
+    var asDictionary: [String: Any] {
+        [
+            "paygrade": paygrade,
+            "service_start": serviceStart,
+            "has_dependents": hasDependents,
+            "bas": bas,
+            "bah_override": bahOverride as Any,
+            "submarine_pay": submarinePay,
+            "career_sea_pay": careerSeaPay,
+            "spec_duty_pay": specDutyPay,
+            "filing_status": filingStatus,
+            "step2_multiple_jobs": step2MultipleJobs,
+            "dep_under17": depUnder17,
+            "other_dep": otherDep,
+            "other_income_annual": otherIncomeAnnual,
+            "other_deductions_annual": otherDeductionsAnnual,
+            "extra_withholding": extraWithholding,
+            "tsp_rate": tspRate,
+            "fica_include_special_pays": ficaIncludeSpecialPays,
+            "meal_rate": mealRate,
+            "meal_end_day": mealEndDay,
+            "meal_deduction_enabled": mealDeductionEnabled,
+            "meal_deduction_start": mealDeductionStart as Any,
+            "mid_month_fraction": midMonthFraction,
+            "allotments_total": allotmentsTotal,
+            "mid_month_collections_total": midMonthCollectionsTotal,
+        ]
     }
 }
 

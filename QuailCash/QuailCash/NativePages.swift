@@ -7,6 +7,9 @@ enum AppRoute: Hashable {
     case home
     case spending
     case settings
+    case setupWizard
+    case parserWizard
+    case incomeWizard
     case notificationSettings
     case notifications
     case budget
@@ -32,6 +35,12 @@ struct NativePageView: View {
                 NativeSpendingPageView()
             case .settings:
                 SettingsHomePageView()
+            case .setupWizard:
+                InitialSetupPageView()
+            case .parserWizard:
+                ParserWizardPageView()
+            case .incomeWizard:
+                IncomeWizardPageView()
             case .notificationSettings:
                 NotificationSettingsPageView()
             case .notifications:
@@ -1460,40 +1469,691 @@ private struct CsvImportPageView: View {
 }
 
 private struct RuleBuilderPageView: View {
+    @StateObject private var model = RegexRulesViewModel()
+    @State private var activeTestRule: CategoryRuleListRow?
+
     var body: some View {
-        PageShell(title: "Unassigned", subtitle: "Create a category rule for uncategorized transactions") {
+        PageShell(
+            title: "Regex Rules",
+            subtitle: "Edit categories, disable/delete rules, test regex, and re-apply to existing transactions.",
+            refreshAction: { await model.reload(reset: true) }
+        ) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("This is the native redirect target for the Unassigned row.")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Text("Next step: port the original rule form and keyword matcher here.")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                NavigationLink(value: AppRoute.analytics) {
-                    settingsRow(title: "Go to Analytics", subtitle: "See the category context")
+                rulesToolbarCard
+
+                if let summary = model.checkSummary {
+                    regexCheckSummaryCard(summary: summary)
+                }
+
+                if model.isLoading && model.rules.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 140)
+                } else if let errorMessage = model.errorMessage, model.rules.isEmpty {
+                    Text(errorMessage)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 28)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(model.rules) { rule in
+                            RegexRuleCardView(
+                                rule: rule,
+                                categories: model.categories,
+                                onSave: { newCategory in
+                                    await model.saveRule(ruleID: rule.id, category: newCategory)
+                                },
+                                onToggleActive: { isActive in
+                                    await model.setRuleActive(ruleID: rule.id, isActive: isActive)
+                                },
+                                onDelete: {
+                                    await model.deleteRule(ruleID: rule.id)
+                                },
+                                onTest: {
+                                    activeTestRule = rule
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if model.hasMore {
+                    Button {
+                        Task { await model.loadMore() }
+                    } label: {
+                        Text(model.isLoadingMore ? "Loading..." : "Load more")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isLoadingMore)
                 }
             }
         }
-        .navigationTitle("Unassigned")
+        .task { await model.startIfNeeded() }
+        .sheet(item: $activeTestRule) { rule in
+            RegexTestSheetView(
+                initialPattern: rule.pattern,
+                initialFlags: rule.flags ?? "i",
+                ruleID: rule.id
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .onChange(of: model.filterRuleID) { _, _ in
+            model.scheduleFilteredReload()
+        }
+        .onChange(of: model.filterKeyword) { _, _ in
+            model.scheduleFilteredReload()
+        }
+        .onChange(of: model.filterCategory) { _, _ in
+            model.scheduleFilteredReload()
+        }
+        .navigationTitle("Regex Rules")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func settingsRow(title: String, subtitle: String) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+    private var rulesToolbarCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await model.reload(reset: true) }
+                } label: {
+                    regexActionButton(model.isLoading ? "Refreshing..." : "Refresh", primary: false)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isLoading)
+
+                Button {
+                    Task { await model.runFullCheck() }
+                } label: {
+                    regexActionButton(model.isRunningCheck ? "Running..." : "Run full check", primary: false)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isRunningCheck)
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
+
+            Toggle("Only uncategorized", isOn: $model.uncategorizedOnly)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .tint(.black)
+
+            VStack(spacing: 8) {
+                TextField("Rule ID", text: $model.filterRuleID)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.numbersAndPunctuation)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                TextField("Keywords / regex", text: $model.filterKeyword)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Menu {
+                    Button("All categories") { model.filterCategory = "" }
+                    ForEach(model.categories, id: \.self) { category in
+                        Button(category) { model.filterCategory = category }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(model.filterCategory.isEmpty ? "Category" : model.filterCategory)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(model.filterCategory.isEmpty ? .secondary : .primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !model.statusText.isEmpty {
+                Text(model.statusText)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(model.statusIsError ? .red : .secondary)
+            }
         }
         .padding(14)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func regexCheckSummaryCard(summary: CategoryRulesCheckAllPayload) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Full check complete")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+            Text("Rules: \(summary.ruleCount ?? 0)   Applied: \(summary.totalApplied ?? 0)")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text("All matches: \(summary.totalMatchesAllRules ?? 0)   Uncategorized: \(summary.totalUncategorizedMatchesAllRules ?? 0)")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+
+            ForEach(summary.rows.prefix(8)) { row in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("#\(row.id) \(row.category)")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    Text("matches=\(row.matches ?? 0) total=\(row.totalMatches ?? 0) uncategorized=\(row.uncategorizedMatches ?? 0) applied=\(row.applied ?? 0)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    if let sample = row.samples.first {
+                        Text("sample: #\(sample.id) \(sample.merchant)")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func regexActionButton(_ title: String, primary: Bool) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .foregroundStyle(primary ? Color.white : Color.primary)
+            .background(primary ? Color.black : Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.black.opacity(primary ? 0.0 : 0.08), lineWidth: 1)
+            )
+    }
+}
+
+@MainActor
+private final class RegexRulesViewModel: ObservableObject {
+    @Published var categories: [String] = []
+    @Published var rules: [CategoryRuleListRow] = []
+    @Published var checkSummary: CategoryRulesCheckAllPayload?
+    @Published var filterRuleID: String = ""
+    @Published var filterKeyword: String = ""
+    @Published var filterCategory: String = ""
+    @Published var uncategorizedOnly: Bool = false
+    @Published var statusText: String = ""
+    @Published var statusIsError = false
+    @Published var errorMessage: String?
+    @Published var isLoading = false
+    @Published var isLoadingMore = false
+    @Published var isRunningCheck = false
+    @Published var hasMore = false
+
+    private var didStart = false
+    private var offset = 0
+    private let pageSize = 50
+    private var filterTask: Task<Void, Never>?
+
+    func startIfNeeded() async {
+        guard !didStart else { return }
+        didStart = true
+        await loadCategories()
+        await reload(reset: true)
+    }
+
+    func reload(reset: Bool) async {
+        filterTask?.cancel()
+        if reset {
+            offset = 0
+            hasMore = false
+            rules = []
+        }
+        isLoading = true
+        errorMessage = nil
+        do {
+            let payload = try await QuailCashAPI.shared.fetchCategoryRuleList(
+                ruleID: filterRuleID,
+                keyword: filterKeyword,
+                category: filterCategory,
+                limit: pageSize,
+                offset: 0
+            )
+            rules = payload.rows
+            offset = payload.rows.count
+            hasMore = payload.hasMore
+            setStatus(payload.rows.isEmpty ? "No matching rules" : "Loaded \(payload.rows.count)\(payload.hasMore ? "+" : "") rule(s)")
+        } catch {
+            errorMessage = error.localizedDescription
+            setStatus("Failed to load rules", isError: true)
+        }
+        isLoading = false
+    }
+
+    func loadMore() async {
+        guard hasMore, !isLoadingMore else { return }
+        isLoadingMore = true
+        do {
+            let payload = try await QuailCashAPI.shared.fetchCategoryRuleList(
+                ruleID: filterRuleID,
+                keyword: filterKeyword,
+                category: filterCategory,
+                limit: pageSize,
+                offset: offset
+            )
+            rules.append(contentsOf: payload.rows)
+            offset += payload.rows.count
+            hasMore = payload.hasMore
+            setStatus("Loaded \(rules.count)\(payload.hasMore ? "+" : "") rule(s)")
+        } catch {
+            setStatus("Failed to load more rules", isError: true)
+        }
+        isLoadingMore = false
+    }
+
+    func runFullCheck() async {
+        guard !isRunningCheck else { return }
+        isRunningCheck = true
+        do {
+            let payload = try await QuailCashAPI.shared.runCategoryRulesCheckAll(uncategorizedOnly: uncategorizedOnly)
+            checkSummary = payload
+            setStatus("Check complete: \(payload.ruleCount ?? 0) rules, applied \(payload.totalApplied ?? 0)")
+            await reload(reset: true)
+        } catch {
+            setStatus("Rule check failed", isError: true)
+        }
+        isRunningCheck = false
+    }
+
+    func saveRule(ruleID: Int, category: String) async {
+        do {
+            let response = try await QuailCashAPI.shared.updateCategoryRule(ruleID: ruleID, category: category)
+            if let jobID = response.applyJob?.id {
+                setStatus("Saved. Re-apply queued (job #\(jobID))...")
+                await reload(reset: true)
+                await waitForApplyJob(jobID)
+            } else {
+                setStatus("Saved + re-applied (\(response.applied ?? 0) transactions)")
+                await reload(reset: true)
+            }
+        } catch {
+            setStatus("Save failed", isError: true)
+        }
+    }
+
+    func setRuleActive(ruleID: Int, isActive: Bool) async {
+        do {
+            try await QuailCashAPI.shared.setCategoryRuleActive(ruleID: ruleID, isActive: isActive)
+            if let index = rules.firstIndex(where: { $0.id == ruleID }) {
+                let current = rules[index]
+                rules[index] = CategoryRuleListRow(
+                    id: current.id,
+                    pattern: current.pattern,
+                    flags: current.flags,
+                    category: current.category,
+                    isActive: isActive,
+                    matchCount: current.matchCount,
+                    regexError: current.regexError
+                )
+            }
+            setStatus(isActive ? "Rule enabled" : "Rule disabled")
+        } catch {
+            setStatus("Failed to update rule", isError: true)
+        }
+    }
+
+    func deleteRule(ruleID: Int) async {
+        do {
+            try await QuailCashAPI.shared.deleteCategoryRule(ruleID: ruleID)
+            rules.removeAll { $0.id == ruleID }
+            setStatus("Rule deleted")
+        } catch {
+            setStatus("Delete failed", isError: true)
+        }
+    }
+
+    func scheduleFilteredReload() {
+        filterTask?.cancel()
+        filterTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            await self.reload(reset: true)
+        }
+    }
+
+    private func loadCategories() async {
+        do {
+            categories = try await QuailCashAPI.shared.fetchCategories()
+        } catch {
+            categories = []
+        }
+    }
+
+    private func waitForApplyJob(_ jobID: Int) async {
+        do {
+            while true {
+                let job = try await QuailCashAPI.shared.fetchCategoryRuleJob(jobID: jobID)
+                let status = (job.status ?? "").lowercased()
+                if status == "completed" {
+                    setStatus("Saved + re-applied (\(job.totalApplied ?? 0) transactions)")
+                    await reload(reset: true)
+                    return
+                }
+                if status == "failed" {
+                    setStatus("Saved, but re-apply failed", isError: true)
+                    return
+                }
+                setStatus("Re-applying in background (job #\(jobID))...")
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+        } catch {
+            setStatus("Saved, but re-apply failed", isError: true)
+        }
+    }
+
+    private func setStatus(_ text: String, isError: Bool = false) {
+        statusText = text
+        statusIsError = isError
+    }
+}
+
+private struct RegexRuleCardView: View {
+    let rule: CategoryRuleListRow
+    let categories: [String]
+    let onSave: (String) async -> Void
+    let onToggleActive: (Bool) async -> Void
+    let onDelete: () async -> Void
+    let onTest: () -> Void
+
+    @State private var draftCategory: String
+    @State private var isSaving = false
+    @State private var showCategoryMenu = false
+
+    init(
+        rule: CategoryRuleListRow,
+        categories: [String],
+        onSave: @escaping (String) async -> Void,
+        onToggleActive: @escaping (Bool) async -> Void,
+        onDelete: @escaping () async -> Void,
+        onTest: @escaping () -> Void
+    ) {
+        self.rule = rule
+        self.categories = categories
+        self.onSave = onSave
+        self.onToggleActive = onToggleActive
+        self.onDelete = onDelete
+        self.onTest = onTest
+        _draftCategory = State(initialValue: rule.category)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("#\(rule.id) - \(rule.pattern)")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Category")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Category", text: $draftCategory)
+                            .textInputAutocapitalization(.words)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .padding(.horizontal, 12)
+                            .frame(height: 38)
+                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                        Menu {
+                            ForEach(categories, id: \.self) { category in
+                                Button(category) { draftCategory = category }
+                            }
+                        } label: {
+                            Text("Choose")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .frame(width: 82, height: 38)
+                                .foregroundStyle(.primary)
+                                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Label("\(rule.matchCount ?? 0)", systemImage: "number")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.04), in: Capsule(style: .continuous))
+
+                Toggle("Active", isOn: Binding(
+                    get: { rule.isActive },
+                    set: { next in
+                        Task { await onToggleActive(next) }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .tint(.black)
+            }
+
+            Text("Always re-applies to existing")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button {
+                    guard !isSaving else { return }
+                    isSaving = true
+                    Task {
+                        await onSave(draftCategory)
+                        isSaving = false
+                    }
+                } label: {
+                    regexMiniButton(isSaving ? "Saving..." : "Save", danger: false)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: onTest) {
+                    regexMiniButton("Test", danger: false)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    Task { await onDelete() }
+                } label: {
+                    regexMiniButton("Delete", danger: true)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let regexError = rule.regexError, !regexError.isEmpty {
+                Text(regexError)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func regexMiniButton(_ title: String, danger: Bool) -> some View {
+        Text(title)
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .foregroundStyle(danger ? Color.red : Color.primary)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(danger ? Color.red.opacity(0.22) : Color.black.opacity(0.08), lineWidth: 1)
+            )
+    }
+}
+
+private struct RegexTestSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @State private var pattern: String
+    @State private var flags: String
+    @State private var limitText: String = "50"
+    @State private var rows: [CategoryRuleTestRow] = []
+    @State private var statusText = ""
+    @State private var isRunning = false
+    let ruleID: Int
+
+    init(initialPattern: String, initialFlags: String, ruleID: Int) {
+        _pattern = State(initialValue: initialPattern)
+        _flags = State(initialValue: initialFlags)
+        self.ruleID = ruleID
+    }
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Test Regex")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                    Text("Rule #\(ruleID)")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Regex")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                    TextField("your regex...", text: $pattern)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Flags")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        TextField("i", text: $flags)
+                            .textInputAutocapitalization(.never)
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .padding(.horizontal, 12)
+                            .frame(height: 40)
+                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Recent limit")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        TextField("50", text: $limitText)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .padding(.horizontal, 12)
+                            .frame(height: 40)
+                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await runTest() }
+                    } label: {
+                        regexSheetPrimaryButton(isRunning ? "Running..." : "Run test", palette: palette)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRunning)
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        regexSheetSecondaryButton("Close", palette: palette)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if !statusText.isEmpty {
+                    Text(statusText)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(spacing: 8) {
+                    ForEach(rows) { row in
+                        HStack(spacing: 10) {
+                            Text(row.merchant)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("x\(row.count)")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text(row.matched ? "MATCH" : "-")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(row.matched ? .green : .secondary)
+                        }
+                        .padding(12)
+                        .background(Color.black.opacity(row.matched ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
+    }
+
+    private func regexSheetPrimaryButton(_ title: String, palette: QuailThemePalette) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(palette.primaryButtonText)
+            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func regexSheetSecondaryButton(_ title: String, palette: QuailThemePalette) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(palette.secondaryButtonText)
+            .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private func runTest() async {
+        guard !isRunning else { return }
+        isRunning = true
+        defer { isRunning = false }
+        do {
+            let payload = try await QuailCashAPI.shared.testCategoryRule(
+                pattern: pattern,
+                flags: flags,
+                limit: Int(limitText) ?? 50
+            )
+            rows = payload.tested
+            let matched = payload.tested.filter(\.matched).count
+            statusText = "\(matched) / \(payload.tested.count) matched"
+        } catch {
+            rows = []
+            statusText = "Test failed"
+        }
     }
 }
 
@@ -1698,37 +2358,48 @@ private struct CategoryPageView: View {
                         Button {
                             activeTransaction = tx
                         } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Text(model.displayDate(for: tx))
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 44, alignment: .leading)
+                            HStack(alignment: .center, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(model.displayDate(for: tx))
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.black.opacity(0.06))
+                                            .frame(width: 38, height: 38)
+                                        Text(String((tx.merchant.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() }) ?? "?"))
+                                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.primary)
+                                    }
+                                }
+                                .frame(width: 46, alignment: .leading)
 
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 3) {
                                     Text((tx.merchant.isEmpty ? "Unknown merchant" : tx.merchant).uppercased())
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
                                         .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.leading)
-                                    Text([tx.bank, tx.card].compactMap { $0 }.joined(separator: " • "))
+                                        .lineLimit(1)
+                                    Text([tx.bank, tx.card].compactMap { $0 }.joined(separator: " • ").isEmpty ? (tx.category ?? "") : [tx.bank, tx.card].compactMap { $0 }.joined(separator: " • "))
                                         .font(.system(size: 11, weight: .medium, design: .rounded))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                        .lineLimit(1)
                                 }
 
                                 Spacer(minLength: 8)
 
                                 VStack(alignment: .trailing, spacing: 4) {
                                     Text(nativeMoneyValue(tx.amount))
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.primary)
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .foregroundStyle(tx.amount >= 0 ? .red : .green)
                                     Text(nativeMoneyValue(model.runningBalance(for: tx.id)))
                                         .font(.system(size: 11, weight: .medium, design: .rounded))
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            .padding(12)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
                             .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                     }
@@ -2159,8 +2830,8 @@ func nativeMoneyValue(_ value: Double) -> String {
 func nativeFormatAccountBalance(_ value: Double) -> String {
     let amount = abs(value)
     let raw = nativeMoneyValue(amount)
-    if value > 0 { return "CR \(raw)" }
-    if value < 0 { return raw }
+    if value > 0 { return raw }
+    if value < 0 { return "CR \(raw)" }
     return nativeMoneyValue(0)
 }
 
@@ -2171,6 +2842,32 @@ func nativeIsoToday() -> String {
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     formatter.dateFormat = "yyyy-MM-dd"
     return formatter.string(from: Date())
+}
+
+func nativeShortTransactionDate(_ raw: String?) -> String {
+    guard let raw, !raw.isEmpty else { return "Today" }
+    let isoDayFormatter = DateFormatter()
+    isoDayFormatter.locale = Locale(identifier: "en_US_POSIX")
+    isoDayFormatter.calendar = Calendar(identifier: .gregorian)
+    isoDayFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+    isoDayFormatter.dateFormat = "yyyy-MM-dd"
+    if let date = isoDayFormatter.date(from: raw) {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
+    }
+    let iso = ISO8601DateFormatter()
+    iso.timeZone = TimeZone(secondsFromGMT: 0)
+    if let date = iso.date(from: raw) {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
+    }
+    return raw
 }
 
 func nativeIsoMonthStart() -> String {

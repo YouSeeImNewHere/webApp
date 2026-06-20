@@ -161,6 +161,8 @@ def _require_tenant_id() -> int | None:
 def _require_session_email(request: Request) -> str:
     e = (request.session.get("google_email") or "").strip().lower()
     if not e:
+        e = str(getattr(getattr(request, "state", None), "google_email", "") or "").strip().lower()
+    if not e:
         raise HTTPException(status_code=401, detail="google_auth_required")
     return e
 
