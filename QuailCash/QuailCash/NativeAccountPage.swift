@@ -91,6 +91,7 @@ private struct NativeAccountTopBar: View {
 }
 
 private struct NativeAccountChromeFrame<Content: View>: View {
+    @EnvironmentObject private var navigator: AppNavigator
     let badgeValue: Int?
     let selectedTab: BottomTab
     let accountLabel: String
@@ -139,7 +140,7 @@ private struct NativeAccountChromeFrame<Content: View>: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             NativeAccountTopBar(
-                badgeValue: badgeValue,
+                badgeValue: badgeValue ?? navigator.unreadCount,
                 selectedTab: selectedTab,
                 accountLabel: accountLabel,
                 accountOptions: accountOptions,
@@ -153,8 +154,10 @@ private struct NativeAccountChromeFrame<Content: View>: View {
             AppBottomBar(selectedTab: selectedTab, onSelectTab: onSelectTab)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .task {
+            await navigator.refreshUnreadCountIfNeeded()
+        }
     }
 }
 
@@ -580,7 +583,11 @@ struct NativeAccountPageView: View {
             onSelectTab: selectTab,
             onSelectAccount: selectAccount
         ) {
-            AppPageScroll {
+            AppPageScroll(refreshAction: {
+                await model.reloadChart()
+                await model.reloadUpcoming()
+                await model.reloadTransactions()
+            }) {
                 accountChartCard
                 if !model.upcomingEvents.isEmpty || model.upcomingLoading || model.upcomingError != nil {
                     upcomingCard
@@ -613,7 +620,7 @@ struct NativeAccountPageView: View {
     private func selectTab(_ tab: BottomTab) {
         switch tab {
         case .home: navigator.popToRoot()
-        case .spending: navigator.show(.budget)
+        case .spending: navigator.show(.spending)
         case .all: navigator.show(.allTransactions)
         case .analytics: navigator.show(.analytics)
         case .recurring: navigator.show(.recurring)
@@ -625,7 +632,7 @@ struct NativeAccountPageView: View {
         let label = model.accountOptions.first(where: { $0.id == id })?.label ?? "Account"
         let parts = label.split(separator: "-", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
         let name = parts.count > 1 ? parts[1] : label
-        navigator.show(.account(BankAccountPayload(id: id, name: name, total: 0, lastCsvUploadAt: nil, lastManualVerifiedAt: nil, creditLimit: nil), audit: model.auditMode))
+        navigator.replaceTop(with: .account(BankAccountPayload(id: id, name: name, total: 0, lastCsvUploadAt: nil, lastManualVerifiedAt: nil, creditLimit: nil), audit: model.auditMode))
     }
 
     private var accountChartCard: some View {
@@ -1001,18 +1008,32 @@ private struct AccountUpcomingCard: View {
                                         .font(.system(size: 12, weight: .medium, design: .rounded))
                                         .foregroundStyle(.secondary)
                                 }
-                                if let first = group.items.first {
-                                    Text(first.merchant ?? "—")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .lineLimit(1)
-                                    Text(nativeMoneyValue(first.amount ?? 0))
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle((first.amount ?? 0) >= 0 ? .red : .green)
+                                let summaries = groupSummaries(group.items)
+                                if summaries.isEmpty {
+                                    Text("—")
+                                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
                                 } else {
-                                    Text("—").font(.system(size: 13, weight: .medium, design: .rounded))
+                                    ForEach(Array(summaries.prefix(2)), id: \.label) { summary in
+                                        HStack(spacing: 8) {
+                                            Text(summary.label)
+                                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                                .lineLimit(1)
+                                            Spacer(minLength: 8)
+                                            Text(summary.amount)
+                                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                .foregroundStyle(summary.color)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    if summaries.count > 2 {
+                                        Text("+\(summaries.count - 2) more")
+                                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
-                            .frame(width: 132, alignment: .leading)
+                            .frame(width: 236, height: 126, alignment: .topLeading)
                             .padding(14)
                             .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
@@ -1047,6 +1068,48 @@ private struct AccountUpcomingCard: View {
                 items: items.sorted { ($0.amount ?? 0) < ($1.amount ?? 0) }
             )
         }
+    }
+
+    private struct GroupSummary {
+        let label: String
+        let amount: String
+        let color: Color
+        let total: Double
+    }
+
+    private func groupSummaries(_ items: [UpcomingEventPayload]) -> [GroupSummary] {
+        var grouped: [String: (total: Double, income: Bool, count: Int)] = [:]
+        for item in items {
+            let label = categoryLabel(item)
+            var current = grouped[label] ?? (0, false, 0)
+            current.total += abs(item.amount ?? 0)
+            current.income = current.income || isIncome(item)
+            current.count += 1
+            grouped[label] = current
+        }
+        return grouped.map { key, value in
+            GroupSummary(
+                label: value.count > 1 ? "\(key) (\(value.count))" : key,
+                amount: "\(value.income ? "+" : "-")\(nativeMoneyValue(value.total))",
+                color: value.income ? .green : .red,
+                total: value.total
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.total == rhs.total { return lhs.label < rhs.label }
+            return lhs.total > rhs.total
+        }
+    }
+
+    private func categoryLabel(_ event: UpcomingEventPayload) -> String {
+        let value = (event.type ?? event.category ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "Unassigned" : value
+    }
+
+    private func isIncome(_ event: UpcomingEventPayload) -> Bool {
+        let type = (event.type ?? "").lowercased()
+        let cadence = (event.cadence ?? "").lowercased()
+        return type == "income" || cadence == "paycheck" || cadence == "interest"
     }
 }
 

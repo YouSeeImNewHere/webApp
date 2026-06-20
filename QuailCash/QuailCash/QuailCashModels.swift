@@ -490,6 +490,175 @@ struct UpcomingEventPayload: Decodable, Hashable, Identifiable {
     }
 }
 
+enum UnassignedMode: String, CaseIterable, Identifiable {
+    case freq
+    case recent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .freq: return "Most frequent"
+        case .recent: return "Most recent"
+        }
+    }
+}
+
+struct UnassignedTransactionPayload: Decodable, Identifiable, Hashable {
+    let id: String
+    let postedDate: String?
+    let merchant: String
+    let amount: Double
+    let bank: String?
+    let card: String?
+    let usageCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case postedDate
+        case merchant
+        case amount
+        case bank
+        case card
+        case usageCount = "usage_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try TransactionItem.decodeStringFlexible(container, forKey: .id)
+        postedDate = try container.decodeIfPresent(String.self, forKey: .postedDate)
+        merchant = try container.decodeIfPresent(String.self, forKey: .merchant) ?? ""
+        amount = try container.decodeIfPresent(Double.self, forKey: .amount) ?? 0
+        bank = try container.decodeIfPresent(String.self, forKey: .bank)
+        card = try container.decodeIfPresent(String.self, forKey: .card)
+        usageCount = try? TransactionItem.decodeOptionalIntFlexible(container, forKey: .usageCount)
+    }
+}
+
+struct CategoryRuleApplyJobPayload: Decodable, Hashable {
+    let id: Int
+    let status: String?
+    let totalApplied: Int?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case totalApplied = "total_applied"
+        case error
+    }
+}
+
+struct CsvPreviewColumnPayload: Decodable, Hashable, Identifiable {
+    let index: Int
+    let label: String
+
+    var id: Int { index }
+}
+
+struct CsvPreviewRowPayload: Decodable, Hashable, Identifiable {
+    let rowNumber: Int
+    let cells: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case rowNumber = "row_number"
+        case cells
+    }
+
+    var id: Int { rowNumber }
+}
+
+struct CsvPreviewPayload: Decodable {
+    let ok: Bool?
+    let delimiter: String?
+    let hasHeaderDetected: Bool
+    let rowCount: Int
+    let columnCount: Int
+    let columns: [CsvPreviewColumnPayload]
+    let previewRows: [CsvPreviewRowPayload]
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case delimiter
+        case hasHeaderDetected = "has_header_detected"
+        case rowCount = "row_count"
+        case columnCount = "column_count"
+        case columns
+        case previewRows = "preview_rows"
+    }
+}
+
+struct CsvImportSummaryPayload: Decodable, Hashable {
+    let totalRows: Int?
+    let validRows: Int?
+    let invalidRows: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case totalRows = "total_rows"
+        case validRows = "valid_rows"
+        case invalidRows = "invalid_rows"
+    }
+}
+
+struct CsvDryRunComparePayload: Decodable, Hashable {
+    let accountID: Int?
+    let wouldUpdateExactCount: Int?
+    let wouldUpdateTipCount: Int?
+    let wouldInsertCount: Int?
+    let pendingCount: Int?
+    let skippedBeforeStart: Int?
+    let skippedAfterEnd: Int?
+    let importStartDate: String?
+    let importEndDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accountID = "account_id"
+        case wouldUpdateExactCount = "would_update_exact_count"
+        case wouldUpdateTipCount = "would_update_tip_count"
+        case wouldInsertCount = "would_insert_count"
+        case pendingCount = "pending_count"
+        case skippedBeforeStart = "skipped_before_start"
+        case skippedAfterEnd = "skipped_after_end"
+        case importStartDate = "import_start_date"
+        case importEndDate = "import_end_date"
+    }
+}
+
+struct CsvDryRunPayload: Decodable {
+    let ok: Bool?
+    let delimiter: String?
+    let summary: CsvImportSummaryPayload?
+    let compare: CsvDryRunComparePayload?
+}
+
+struct CsvImportResultPayload: Decodable {
+    let ok: Bool?
+    let inserted: Int?
+    let updated: Int?
+    let autoCategorized: Int?
+    let reconciledPendingDuplicates: Int?
+    let stalePendingDeleted: Int?
+    let skipped: Int?
+    let delimiter: String?
+    let importStartDate: String?
+    let importEndDate: String?
+    let summary: CsvImportSummaryPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case inserted
+        case updated
+        case autoCategorized = "auto_categorized"
+        case reconciledPendingDuplicates = "reconciled_pending_duplicates"
+        case stalePendingDeleted = "stale_pending_deleted"
+        case skipped
+        case delimiter
+        case importStartDate = "import_start_date"
+        case importEndDate = "import_end_date"
+        case summary
+    }
+}
+
 struct MonthBudgetPayload: Decodable {
     let safeToSpend: Double?
     let dailyLimit: Double?
@@ -655,6 +824,69 @@ struct NotificationItemPayload: Decodable, Identifiable, Hashable {
     }
 }
 
+struct NotificationDetailPayload: Decodable, Identifiable, Hashable {
+    let id: Int
+    let kind: String?
+    let subject: String?
+    let sender: String?
+    let body: String?
+    let createdAt: String?
+    let createdAtLocal: String?
+    let isRead: Bool?
+    let dismissed: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case subject
+        case sender
+        case body
+        case createdAt = "created_at"
+        case createdAtLocal = "created_at_local"
+        case isRead = "is_read"
+        case dismissed
+    }
+}
+
+struct AdminErrorNotificationPayload: Decodable, Identifiable, Hashable {
+    let id: Int
+    let createdAt: String?
+    let tenantID: Int?
+    let userEmail: String?
+    let method: String?
+    let path: String?
+    let queryString: String?
+    let pageURL: String?
+    let referer: String?
+    let requestID: String?
+    let statusCode: Int?
+    let errorMessage: String?
+    let clientIP: String?
+    let userAgent: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt = "created_at"
+        case tenantID = "tenant_id"
+        case userEmail = "user_email"
+        case method
+        case path
+        case queryString = "query_string"
+        case pageURL = "page_url"
+        case referer
+        case requestID = "request_id"
+        case statusCode = "status_code"
+        case errorMessage = "error_message"
+        case clientIP = "client_ip"
+        case userAgent = "user_agent"
+    }
+}
+
+struct PendingUserPayload: Decodable, Identifiable, Hashable {
+    let id: Int
+    let email: String?
+}
+
 struct DayLimitPayload: Decodable {
     let baseline: Double?
     let remainingToday: Double?
@@ -685,6 +917,84 @@ struct ChartSeriesPoint: Decodable, Hashable {
         case cards
         case cardsBalance = "cards_balance"
     }
+}
+
+struct CategoryTrendPayload: Decodable, Hashable {
+    let category: String
+    let period: String
+    let series: [CategoryTrendPoint]
+}
+
+struct CategoryTrendPoint: Decodable, Hashable {
+    let date: String
+    let amount: Double
+}
+
+struct CategoryLifetimeTotalPayload: Decodable, Hashable, Identifiable {
+    var id: String { category }
+    let category: String
+    let total: Double
+}
+
+struct SpendingCategoryTotalPayload: Decodable, Hashable, Identifiable {
+    var id: String { category }
+    let category: String
+    let total: Double
+}
+
+struct UnknownMerchantRangePayload: Decodable, Hashable {
+    let total: Double
+    let txCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case total
+        case txCount = "tx_count"
+    }
+}
+
+struct SpendingUnbudgetedSafeRangePayload: Decodable, Hashable {
+    let start: String
+    let end: String
+    let series: [SpendingUnbudgetedSafePoint]
+}
+
+struct SpendingUnbudgetedSafePoint: Decodable, Hashable, Identifiable {
+    var id: String { date }
+    let date: String
+    let unbudgetedSpend: Double
+    let dailySafeToSpend: Double
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case unbudgetedSpend = "unbudgeted_spend"
+        case dailySafeToSpend = "daily_safe_to_spend"
+    }
+}
+
+struct SpendingUnbudgetedDayPayload: Decodable, Hashable {
+    let day: String
+    let totals: SpendingUnbudgetedDayTotals
+    let purchases: [SpendingUnbudgetedDayPurchase]
+}
+
+struct SpendingUnbudgetedDayTotals: Decodable, Hashable {
+    let unbudgetedSpend: Double
+    let dailySafeToSpend: Double
+
+    enum CodingKeys: String, CodingKey {
+        case unbudgetedSpend = "unbudgeted_spend"
+        case dailySafeToSpend = "daily_safe_to_spend"
+    }
+}
+
+struct SpendingUnbudgetedDayPurchase: Decodable, Hashable, Identifiable {
+    let id: String
+    let kind: String
+    let merchant: String
+    let category: String
+    let amount: Double
+    let bank: String
+    let account: String
 }
 
 struct SettingsGoogleOAuthStatusPayload: Decodable {
@@ -734,11 +1044,15 @@ struct SettingsNotificationSettingsPayload: Decodable {
     let prefs: [String: Bool]
     let pushoverUserKeySet: Bool?
     let pushoverUserKey: String?
+    let iosPushDeviceCount: Int?
+    let iosPushConfigured: Bool?
 
     enum CodingKeys: String, CodingKey {
         case prefs
         case pushoverUserKeySet = "pushover_user_key_set"
         case pushoverUserKey = "pushover_user_key"
+        case iosPushDeviceCount = "ios_push_device_count"
+        case iosPushConfigured = "ios_push_configured"
     }
 }
 

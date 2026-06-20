@@ -2,11 +2,13 @@ import SwiftUI
 import WebKit
 import Combine
 import Charts
+import UniformTypeIdentifiers
 
 struct HomeView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var model = HomeViewModel()
     @State private var activePopup: HomePopup?
+    @State private var activeSheet: HomeSheet?
 
     var body: some View {
         AppChromeFrame(
@@ -17,7 +19,9 @@ struct HomeView: View {
             onTrailingTap: { navigate(.notifications) },
             onSelectTab: selectTab
         ) {
-            AppPageScroll(contentPadding: 12) {
+            AppPageScroll(contentPadding: 12, refreshAction: {
+                await model.reload()
+            }) {
                     chartSection
 
                     if let home = model.home {
@@ -33,16 +37,17 @@ struct HomeView: View {
                         monthlySpendingCard(
                             home: home,
                             onCategory: { navigate(.category($0)) },
-                            onUnassigned: { navigate(.ruleBuilder) }
+                            onUnassigned: { activeSheet = .unassigned }
                         )
                         bankTotalsCard(home: home,
-                                       onImport: { navigate(.csvImport) },
-                                       onBankInfo: { navigate(.bankInfo) },
+                                       onImport: { activeSheet = .csvImport },
+                                       onBankInfo: { activeSheet = .bankInfo },
                                        onOpenAccount: { account in navigate(.account(account, audit: false)) },
                                        onVerifyAccount: { account in activePopup = .verifyAccount(account) },
                                        onAuditAccount: { account in navigate(.account(account, audit: true)) })
+                        upcomingTransactionsSection
                         recentTransactions(home: home) { tx in
-                            activePopup = .transaction(tx)
+                            activeSheet = .transaction(tx)
                         }
                     } else {
                         loadingBlock
@@ -66,6 +71,15 @@ struct HomeView: View {
                     model.cancelAuthentication()
                 }
             )
+        }
+        .sheet(item: $activeSheet) { sheet in
+            HomeSheetHost(
+                sheet: sheet,
+                onDismiss: { activeSheet = nil },
+                onRefresh: { Task { await model.reload() } }
+            )
+            .presentationDetents(sheet.detents)
+            .presentationDragIndicator(.visible)
         }
         .overlay {
             if let popup = activePopup {
@@ -96,7 +110,7 @@ struct HomeView: View {
         case .home:
             navigator.popToRoot()
         case .spending:
-            navigator.show(AppRoute.budget)
+            navigator.show(AppRoute.spending)
         case .all:
             navigator.show(AppRoute.allTransactions)
         case .analytics:
@@ -267,6 +281,15 @@ struct HomeView: View {
         RecentTransactionsCard(transactions: Array(home.transactions.prefix(8)), onTapTransaction: onTapTransaction)
     }
 
+    private var upcomingTransactionsSection: some View {
+        UpcomingTransactionsCard(
+            events: model.upcomingEvents,
+            isLoading: model.upcomingLoading,
+            errorMessage: model.upcomingError
+        ) { group in
+            activeSheet = .upcomingDay(group)
+        }
+    }
 }
 
 private struct RecentTransactionsCard: View {
@@ -501,6 +524,165 @@ private struct MonthlySnapshotCard: View {
         } else {
             return AnyView(row)
         }
+    }
+}
+
+private struct UpcomingDayGroup: Identifiable, Hashable {
+    let id: String
+    let date: String
+    let weekday: String
+    let shortDate: String
+    let items: [UpcomingEventPayload]
+}
+
+private struct UpcomingTransactionsCard: View {
+    let events: [UpcomingEventPayload]
+    let isLoading: Bool
+    let errorMessage: String?
+    let onOpenDay: (UpcomingDayGroup) -> Void
+    @State private var isExpanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
+            HStack {
+                Spacer(minLength: 0)
+                Text("Upcoming transactions")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    isExpanded.toggle()
+                }
+            }
+
+            if isExpanded {
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 78, alignment: .center)
+                } else if let errorMessage, !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                } else {
+                    let groups = groupedDays
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(groups) { group in
+                                Button {
+                                    onOpenDay(group)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text(group.weekday)
+                                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                            Spacer(minLength: 10)
+                                            Text(group.shortDate)
+                                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                        if group.items.isEmpty {
+                                            Text("—")
+                                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            let summaries = categorySummaries(for: group.items)
+                                            ForEach(Array(summaries.prefix(2)), id: \.label) { summary in
+                                                HStack(spacing: 8) {
+                                                    Text(summary.label)
+                                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                                        .foregroundStyle(.primary)
+                                                        .lineLimit(1)
+                                                    Spacer(minLength: 8)
+                                                    Text(summary.amount)
+                                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                        .foregroundStyle(summary.color)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+
+                                            if summaries.count > 2 {
+                                                Text("+\(summaries.count - 2) more")
+                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                    }
+                                    .frame(width: 236, height: 126, alignment: .topLeading)
+                                    .padding(14)
+                                    .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private var groupedDays: [UpcomingDayGroup] {
+        let grouped = Dictionary(grouping: events, by: { $0.date })
+        return grouped.keys.sorted().map { key in
+            let date = homeDateFromISO(key) ?? Date()
+            let items = (grouped[key] ?? []).sorted {
+                let lhsIncome = isIncome($0)
+                let rhsIncome = isIncome($1)
+                if lhsIncome != rhsIncome { return lhsIncome && !rhsIncome }
+                return abs($0.amount ?? 0) > abs($1.amount ?? 0)
+            }
+            return UpcomingDayGroup(
+                id: key,
+                date: key,
+                weekday: homeWeekdayShort(date),
+                shortDate: homeMonthDayShort(date),
+                items: items
+            )
+        }
+    }
+
+    private func categorySummaries(for items: [UpcomingEventPayload]) -> [(label: String, amount: String, color: Color)] {
+        let grouped = Dictionary(grouping: items, by: { categoryLabel(for: $0) })
+        let summaries: [CategorySummary] = grouped.map { key, values in
+            let total = values.reduce(0.0) { $0 + abs($1.amount ?? 0) }
+            let income = values.contains(where: isIncome)
+            return CategorySummary(
+                label: key,
+                amount: "\(income ? "+" : "-")\(moneyValue(total))",
+                color: income ? Color.green : Color.red,
+                total: total
+            )
+        }
+        return summaries
+            .sorted { lhs, rhs in lhs.total > rhs.total }
+            .map { ($0.label, $0.amount, $0.color) }
+    }
+
+    private func categoryLabel(for event: UpcomingEventPayload) -> String {
+        if let category = event.category?.trimmingCharacters(in: .whitespacesAndNewlines), !category.isEmpty {
+            return category
+        }
+        if let type = event.type?.trimmingCharacters(in: .whitespacesAndNewlines), !type.isEmpty {
+            return type.capitalized
+        }
+        return "Unassigned"
+    }
+
+    private func isIncome(_ event: UpcomingEventPayload) -> Bool {
+        let type = (event.type ?? "").lowercased()
+        let cadence = (event.cadence ?? "").lowercased()
+        return type == "income" || cadence == "paycheck" || cadence == "interest"
     }
 }
 
@@ -1336,14 +1518,15 @@ private struct ChartChipButtonStyle: ButtonStyle {
 private struct SecondarySmallButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .frame(height: 30)
             .background(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.black.opacity(configuration.isPressed ? 0.10 : 0.06))
             )
             .overlay(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.black.opacity(0.06), lineWidth: 1)
             )
             .foregroundStyle(.primary)
@@ -1359,6 +1542,9 @@ final class HomeViewModel: ObservableObject {
     @Published var needsAuthentication = false
     @Published var errorMessage: String?
     @Published var statusText: String = "Starting..."
+    @Published var upcomingEvents: [UpcomingEventPayload] = []
+    @Published var upcomingLoading = false
+    @Published var upcomingError: String?
 
     private let api = QuailCashAPI.shared
     private var didStart = false
@@ -1385,6 +1571,15 @@ final class HomeViewModel: ObservableObject {
             extraSaved = nil
             home = try await api.fetchHome(txLimit: 15)
             extraSaved = try? await api.fetchExtraSaved()
+            upcomingLoading = true
+            upcomingError = nil
+            do {
+                upcomingEvents = try await api.fetchUpcomingWindow(daysAhead: 30)
+            } catch {
+                upcomingEvents = []
+                upcomingError = error.localizedDescription
+            }
+            upcomingLoading = false
             if let credit = home?.bankTotals.credit {
                 let accounts = credit.accounts.map { "\($0.id):\($0.total)" }.joined(separator: ", ")
                 print("[QuailCash] HomeViewModel.creditTotals total=\(credit.total) accounts=[\(accounts)]")
@@ -1396,10 +1591,16 @@ final class HomeViewModel: ObservableObject {
             showAuthSheet = true
             errorMessage = nil
             statusText = "Signed out. Sign in to load real data."
+            upcomingEvents = []
+            upcomingLoading = false
+            upcomingError = nil
             print("[QuailCash] HomeViewModel.reload() unauthorized -> showing auth sheet")
         } catch {
             errorMessage = error.localizedDescription
             statusText = "Error: \(error.localizedDescription)"
+            upcomingEvents = []
+            upcomingLoading = false
+            upcomingError = nil
             print("[QuailCash] HomeViewModel.reload() error: \(error.localizedDescription)")
         }
         isLoading = false
@@ -2769,6 +2970,1561 @@ private struct AccountAuditPopupView: View {
     }
 }
 
+private enum HomeSheet: Identifiable {
+    case transaction(TransactionItem)
+    case bankInfo
+    case csvImport
+    case unassigned
+    case upcomingDay(UpcomingDayGroup)
+
+    var id: String {
+        switch self {
+        case .transaction(let tx):
+            return "sheet-tx-\(tx.id)"
+        case .bankInfo:
+            return "sheet-bank-info"
+        case .csvImport:
+            return "sheet-csv-import"
+        case .unassigned:
+            return "sheet-unassigned"
+        case .upcomingDay(let group):
+            return "sheet-upcoming-\(group.id)"
+        }
+    }
+
+    var detents: Set<PresentationDetent> {
+        switch self {
+        case .upcomingDay:
+            return [.medium, .large]
+        default:
+            return [.large]
+        }
+    }
+}
+
+private struct HomeSheetHost: View {
+    let sheet: HomeSheet
+    let onDismiss: () -> Void
+    let onRefresh: () -> Void
+
+    var body: some View {
+        switch sheet {
+        case .transaction(let tx):
+            TransactionInspectSheetView(transaction: tx, onDismiss: onDismiss, onRefresh: onRefresh)
+        case .bankInfo:
+            BankInfoSheetView(onDismiss: onDismiss, onRefresh: onRefresh)
+        case .csvImport:
+            CsvImportSheetView(onDismiss: onDismiss, onRefresh: onRefresh)
+        case .unassigned:
+            UnassignedWizardSheetView(onDismiss: onDismiss, onRefresh: onRefresh)
+        case .upcomingDay(let group):
+            UpcomingDaySheetView(group: group, onDismiss: onDismiss)
+        }
+    }
+}
+
+private struct UpcomingDaySheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    let group: UpcomingDayGroup
+    let onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(group.items, id: \.id) { event in
+                        let merchant = event.merchant?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(((merchant?.isEmpty == false ? merchant : "Unknown") ?? "Unknown").uppercased())
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Text([categoryLabel(event), event.cadence].compactMap { value in
+                                    guard let value, !value.isEmpty else { return nil }
+                                    return value
+                                }.joined(separator: " • "))
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(signedAmount(event))
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(isIncome(event) ? .green : .red)
+                        }
+                        .padding(12)
+                        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle(group.date)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { close() }
+                }
+            }
+        }
+    }
+
+    private func categoryLabel(_ event: UpcomingEventPayload) -> String? {
+        if let category = event.category, !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return category
+        }
+        if let type = event.type, !type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return type.capitalized
+        }
+        return "Unassigned"
+    }
+
+    private func isIncome(_ event: UpcomingEventPayload) -> Bool {
+        let type = (event.type ?? "").lowercased()
+        let cadence = (event.cadence ?? "").lowercased()
+        return type == "income" || cadence == "paycheck" || cadence == "interest"
+    }
+
+    private func signedAmount(_ event: UpcomingEventPayload) -> String {
+        "\(isIncome(event) ? "+" : "-")\(moneyValue(abs(event.amount ?? 0)))"
+    }
+
+    private func close() {
+        dismiss()
+        onDismiss()
+    }
+}
+
+struct TransactionInspectSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    let transaction: TransactionItem
+    let onDismiss: () -> Void
+    let onRefresh: () -> Void
+
+    @State private var detail: TransactionDetailPayload?
+    @State private var categoryText = ""
+    @State private var statusText = "posted"
+    @State private var postedDateText = ""
+    @State private var metaEditing = false
+    @State private var statusMessage = ""
+    @State private var showDeleteConfirm = false
+    @State private var showInvertConfirm = false
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    sheetSection(title: "Transaction") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            txKV(label: "Merchant", value: detail?.merchant.isEmpty == false ? detail?.merchant ?? transaction.merchant : transaction.merchant)
+                            txKV(label: "Account", value: detail?.card ?? transaction.card ?? "—")
+                            txKV(label: "Amount", value: moneyValue(detail?.amount ?? transaction.amount), valueColor: (detail?.amount ?? transaction.amount) >= 0 ? .red : .green)
+                            txKV(label: "Date", value: detail?.postedDate ?? transaction.postedDate ?? transaction.dateISO ?? "—")
+                            txKV(label: "Matches", value: detail?.categoryRulePattern ?? (detail?.category ?? transaction.category ?? "—"))
+                        }
+                    }
+
+                    sheetSection(title: "Category") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("Set category", text: $categoryText)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 10)
+                                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+
+                            Button("Save category") { Task { await saveCategory() } }
+                                .buttonStyle(PrimaryButtonStyle())
+                                .disabled(isSaving)
+                        }
+                    }
+
+                    sheetSection(title: "Details") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if metaEditing {
+                                Picker("Status", selection: $statusText) {
+                                    Text("posted").tag("posted")
+                                    Text("pending").tag("pending")
+                                }
+                                .pickerStyle(.segmented)
+
+                                TextField("MM/DD/YYYY or unknown", text: $postedDateText)
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 10)
+                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+
+                                HStack(spacing: 8) {
+                                    Button("Save status/date") { Task { await saveMeta() } }
+                                        .buttonStyle(PrimaryButtonStyle())
+                                    Button("Cancel") {
+                                        resetMetaFields()
+                                        metaEditing = false
+                                    }
+                                    .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                }
+                            } else {
+                                txDetailRow(label: "Bank", value: detail?.bank ?? transaction.bank ?? "—")
+                                txDetailRow(label: "Card", value: detail?.card ?? transaction.card ?? "—")
+                                txDetailRow(label: "Status", value: detail?.status ?? transaction.status ?? "posted")
+                                txDetailRow(label: "Account type", value: detail?.accountType ?? transaction.accountType ?? "—")
+                                txDetailRow(label: "Ignored", value: (detail?.isIgnored ?? false) ? "Yes" : "No")
+                            }
+                        }
+                    }
+
+                    sheetSection(title: "Actions") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Button(metaEditing ? "Close edit" : "Edit status/date") {
+                                    metaEditing.toggle()
+                                    if !metaEditing { resetMetaFields() }
+                                }
+                                .buttonStyle(HomeHeaderActionStyle(primary: false))
+
+                                Button("Invert amount") { showInvertConfirm = true }
+                                    .buttonStyle(HomeHeaderActionStyle(primary: false))
+                            }
+
+                            HStack(spacing: 8) {
+                                Button((detail?.isIgnored ?? false) ? "Unignore" : "Ignore") {
+                                    Task { await toggleIgnore() }
+                                }
+                                .buttonStyle(HomeHeaderActionStyle(primary: false))
+
+                                Button("Delete") { showDeleteConfirm = true }
+                                    .buttonStyle(HomeHeaderActionStyle(primary: true))
+                            }
+                        }
+                    }
+
+                    if !statusMessage.isEmpty {
+                        Text(statusMessage)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Transaction")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { close() }
+                }
+            }
+        }
+        .task { await load() }
+        .confirmationDialog("Delete this transaction?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await deleteTransaction() } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Invert this transaction amount?", isPresented: $showInvertConfirm, titleVisibility: .visible) {
+            Button("Invert", role: .destructive) { Task { await invertAmount() } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func sheetSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            content()
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+    }
+
+    private func txKV(label: String, value: String, valueColor: Color = .primary) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 74, alignment: .leading)
+            Text(value)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(valueColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func txDetailRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private func load() async {
+        do {
+            let next = try await QuailCashAPI.shared.fetchTransactionDetail(txId: transaction.id)
+            detail = next
+            categoryText = next.category ?? transaction.category ?? ""
+            statusText = (next.status ?? transaction.status ?? "posted").lowercased()
+            postedDateText = next.postedDate ?? next.purchaseDate ?? transaction.postedDate ?? transaction.dateISO ?? ""
+            statusMessage = ""
+        } catch {
+            categoryText = transaction.category ?? ""
+            statusText = (transaction.status ?? "posted").lowercased()
+            postedDateText = transaction.postedDate ?? transaction.dateISO ?? ""
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func resetMetaFields() {
+        statusText = (detail?.status ?? transaction.status ?? "posted").lowercased()
+        postedDateText = detail?.postedDate ?? detail?.purchaseDate ?? transaction.postedDate ?? transaction.dateISO ?? ""
+    }
+
+    private func saveCategory() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            _ = try await QuailCashAPI.shared.updateTransactionCategory(txId: transaction.id, category: categoryText)
+            statusMessage = "Saved."
+            onRefresh()
+            await load()
+        } catch {
+            statusMessage = "Failed to save category."
+        }
+    }
+
+    private func saveMeta() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            _ = try await QuailCashAPI.shared.updateTransactionMeta(txId: transaction.id, status: statusText, postedDate: postedDateText)
+            statusMessage = "Saved."
+            metaEditing = false
+            onRefresh()
+            await load()
+        } catch {
+            statusMessage = "Failed to save metadata."
+        }
+    }
+
+    private func toggleIgnore() async {
+        do {
+            let next = !(detail?.isIgnored ?? false)
+            _ = try await QuailCashAPI.shared.ignoreTransaction(txId: transaction.id, ignored: next)
+            statusMessage = next ? "Ignored from calculations." : "Included in calculations."
+            onRefresh()
+            await load()
+        } catch {
+            statusMessage = "Failed to update ignore state."
+        }
+    }
+
+    private func invertAmount() async {
+        do {
+            _ = try await QuailCashAPI.shared.invertTransactionAmount(txId: transaction.id)
+            statusMessage = "Amount inverted."
+            onRefresh()
+            await load()
+        } catch {
+            statusMessage = "Failed to invert amount."
+        }
+    }
+
+    private func deleteTransaction() async {
+        do {
+            _ = try await QuailCashAPI.shared.deleteTransaction(txId: transaction.id)
+            onDismiss()
+            onRefresh()
+            dismiss()
+        } catch {
+            statusMessage = "Failed to delete transaction."
+        }
+    }
+
+    private func close() {
+        dismiss()
+        onDismiss()
+    }
+}
+
+private struct BankInfoSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
+    let onRefresh: () -> Void
+
+    @State private var payload: BankInfoPayload?
+    @State private var loadError: String?
+    @State private var selectedAccountID = 0
+    @State private var ratePercent = ""
+    @State private var effectiveDate = isoToday()
+    @State private var note = ""
+    @State private var saveMessage: String?
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .top) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        modalHeader(
+                            title: "Bank Info",
+                            subtitle: loadError ?? "Last updated: \(payload?.lastUpdated ?? "—")"
+                        )
+
+                        cardSection(title: "Set a new rate", subtitle: "Account, rate, date, and note") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                labeledMenu(title: "Account") {
+                                    Picker("Account", selection: $selectedAccountID) {
+                                        ForEach(payload?.accounts ?? []) { account in
+                                            Text("\(account.bank) — \(account.name) (APY)").tag(account.id)
+                                        }
+                                        ForEach(payload?.creditCards ?? []) { card in
+                                            Text("\(card.bank) — \(card.name) (APR)").tag(card.id)
+                                        }
+                                    }
+                                }
+
+                                modalField("Rate (%)", text: $ratePercent, keyboard: .decimalPad)
+                                modalField("Effective date", text: $effectiveDate)
+                                modalField("Note", text: $note)
+
+                                HStack(spacing: 8) {
+                                    Button("Save rate") { Task { await saveRate() } }
+                                        .buttonStyle(PrimaryButtonStyle())
+                                        .disabled(isSaving || selectedAccountID == 0)
+                                    if let saveMessage, !saveMessage.isEmpty {
+                                        Text(saveMessage)
+                                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+
+                        cardSection(title: "Accounts", subtitle: "Savings & checking") {
+                            if (payload?.accounts ?? []).isEmpty {
+                                emptyCardNote("No account info saved yet.")
+                            } else {
+                                VStack(spacing: 8) {
+                                    ForEach(payload?.accounts ?? []) { account in
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("\(account.bank) — \(account.name)")
+                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                            bankInfoGridRow(label: "Type", value: account.type.isEmpty ? "—" : account.type)
+                                            bankInfoGridRow(label: "APY", value: account.apy.map { String(format: "%.2f%%", $0) } ?? "—")
+                                            if let notes = account.notes, !notes.isEmpty {
+                                                Text(notes)
+                                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                    }
+                                }
+                            }
+                        }
+
+                        cardSection(title: "Credit cards", subtitle: "APR, limits & rewards") {
+                            if (payload?.creditCards ?? []).isEmpty {
+                                emptyCardNote("No card info saved yet.")
+                            } else {
+                                VStack(spacing: 8) {
+                                    ForEach(payload?.creditCards ?? []) { card in
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("\(card.bank) — \(card.name)")
+                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                            bankInfoGridRow(label: "APR", value: card.apr.map { String(format: "%.2f%%", $0) } ?? "—")
+                                            bankInfoGridRow(label: "Limit", value: card.creditLimit.map(moneyValue) ?? "—")
+                                            if card.benefits.isEmpty {
+                                                emptyCardNote("No benefits saved.")
+                                            } else {
+                                                VStack(spacing: 6) {
+                                                    ForEach(Array(card.benefits.enumerated()), id: \.offset) { _, benefit in
+                                                        bankInfoGridRow(
+                                                            label: (benefit.categories ?? []).joined(separator: ", ").isEmpty ? "Cash back" : (benefit.categories ?? []).joined(separator: ", "),
+                                                            value: benefit.cashbackPercent.map { String(format: "%.2f%%", $0) } ?? "—"
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 72)
+                    .padding(.bottom, 16)
+                }
+                pinnedCloseButton
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .task { await load() }
+    }
+
+    private func modalHeader(title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var pinnedCloseButton: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button("Close") { close() }
+                    .buttonStyle(HomeHeaderActionStyle(primary: false))
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            Spacer()
+        }
+    }
+
+    private func cardSection<Content: View>(title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            content()
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+    }
+
+    private func labeledMenu<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            content()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func modalField(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            TextField(title, text: text)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func bankInfoGridRow(label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func emptyCardNote(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+    }
+
+    private func load() async {
+        do {
+            let next = try await QuailCashAPI.shared.fetchBankInfo()
+            payload = next
+            loadError = nil
+            if selectedAccountID == 0 {
+                selectedAccountID = next.accounts.first?.id ?? next.creditCards.first?.id ?? 0
+            }
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func saveRate() async {
+        guard selectedAccountID != 0, let rate = Double(ratePercent.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            saveMessage = "Pick an account and enter a rate."
+            return
+        }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            _ = try await QuailCashAPI.shared.setInterestRate(accountID: selectedAccountID, ratePercent: rate, effectiveDate: effectiveDate, note: note)
+            saveMessage = "Saved."
+            onRefresh()
+            await load()
+        } catch {
+            saveMessage = "Save failed."
+        }
+    }
+
+    private func close() {
+        dismiss()
+        onDismiss()
+    }
+}
+
+private struct CsvImportSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
+    let onRefresh: () -> Void
+
+    @State private var showFileImporter = false
+    @State private var selectedFileURL: URL?
+    @State private var selectedFileName = "No file selected"
+    @State private var bankInfo: BankInfoPayload?
+    @State private var preview: CsvPreviewPayload?
+    @State private var dryRun: CsvDryRunPayload?
+    @State private var importResult: CsvImportResultPayload?
+    @State private var message = ""
+    @State private var selectedAccountID = 0
+    @State private var purchaseCol = ""
+    @State private var postedCol = ""
+    @State private var amountCol = ""
+    @State private var debitCol = ""
+    @State private var creditCol = ""
+    @State private var merchantCol = ""
+    @State private var indicatorCol = ""
+    @State private var creditIndicatorValue = "credit"
+    @State private var invertAmount = false
+    @State private var isWorking = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    modalHeader
+
+                    sectionCard(title: "Upload file") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("Drag and drop CSV/Excel here")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                Text("or choose a file manually")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                                    .foregroundStyle(Color.black.opacity(0.18))
+                            )
+
+                            HStack(spacing: 8) {
+                                Button("Choose file") { showFileImporter = true }
+                                    .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                Text(selectedFileName)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+
+                    if selectedFileURL != nil || preview != nil {
+                        sectionCard(title: "Setup") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                modalMenu("Account", selection: $selectedAccountID, choices: accountChoices)
+                                Text("Header row is detected automatically from the first row.")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+
+                                HStack(spacing: 8) {
+                                    Button("Preview file") { Task { await loadPreview() } }
+                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                        .disabled(selectedFileURL == nil || isWorking)
+                                    Button("Cancel") { close() }
+                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                }
+                            }
+                        }
+                    }
+
+                    if let preview {
+                        sectionCard(title: "Mapping") {
+                            VStack(spacing: 10) {
+                                mappingPicker("Transaction date", selection: $purchaseCol, columns: preview.columns)
+                                mappingPicker("Posted date", selection: $postedCol, columns: preview.columns, optional: true)
+                                mappingPicker("Amount", selection: $amountCol, columns: preview.columns, optional: true)
+                                mappingPicker("Debit amount", selection: $debitCol, columns: preview.columns, optional: true)
+                                mappingPicker("Credit amount", selection: $creditCol, columns: preview.columns, optional: true)
+                                mappingPicker("Merchant", selection: $merchantCol, columns: preview.columns)
+                                mappingPicker("Indicator", selection: $indicatorCol, columns: preview.columns, optional: true)
+
+                                modalTextField("Indicator value treated as credit", text: $creditIndicatorValue)
+
+                                Toggle("Invert all amounts", isOn: $invertAmount)
+                                    .tint(.black)
+                            }
+                        }
+
+                        sectionCard(title: "Preview") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("\(preview.rowCount) rows • \(preview.columnCount) columns")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+
+                                ScrollView(.horizontal, showsIndicators: true) {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack(spacing: 8) {
+                                            ForEach(preview.columns) { column in
+                                                Text(column.label)
+                                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                    .frame(width: 140, alignment: .leading)
+                                            }
+                                        }
+
+                                        ForEach(preview.previewRows) { row in
+                                            HStack(spacing: 8) {
+                                                ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                                                    Text(cell)
+                                                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                        .frame(width: 140, alignment: .leading)
+                                                        .lineLimit(2)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HStack(spacing: 8) {
+                                    Button("Dry run") { Task { await runDryRun() } }
+                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                    Button("Save mapping") { Task { await saveMapping() } }
+                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                    Button("Done") { close() }
+                                        .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                    Button("Import") { Task { await runImport() } }
+                                        .buttonStyle(PrimaryButtonStyle())
+                                        .disabled(!canImport || isWorking)
+                                }
+                            }
+                        }
+                    }
+
+                    if let dryRun {
+                        sectionCard(title: "Dry run comparison") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    drySummaryCard(title: "Valid", value: "\(dryRun.summary?.validRows ?? 0)")
+                                    drySummaryCard(title: "Invalid", value: "\(dryRun.summary?.invalidRows ?? 0)")
+                                    drySummaryCard(title: "Total", value: "\(dryRun.summary?.totalRows ?? 0)")
+                                }
+                                if let compare = dryRun.compare {
+                                    HStack(spacing: 8) {
+                                        drySummaryCard(title: "Update exact", value: "\(compare.wouldUpdateExactCount ?? 0)")
+                                        drySummaryCard(title: "Update tip", value: "\(compare.wouldUpdateTipCount ?? 0)")
+                                        drySummaryCard(title: "Insert", value: "\(compare.wouldInsertCount ?? 0)")
+                                        drySummaryCard(title: "Pending", value: "\(compare.pendingCount ?? 0)")
+                                    }
+                                    Text("Window \(compare.importStartDate ?? "—") to \(compare.importEndDate ?? "—")")
+                                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    if let importResult {
+                        sectionCard(title: "Import result") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Inserted \(importResult.inserted ?? 0) • Updated \(importResult.updated ?? 0) • Auto categorized \(importResult.autoCategorized ?? 0)")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                Text("Skipped \(importResult.skipped ?? 0) • Reconciled \(importResult.reconciledPendingDuplicates ?? 0) • Deleted stale pending \(importResult.stalePendingDeleted ?? 0)")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if !message.isEmpty {
+                        Text(message)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .task { await loadAccounts() }
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.data, .commaSeparatedText, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    selectedFileURL = try copyImportedFile(url)
+                    selectedFileName = selectedFileURL?.lastPathComponent ?? url.lastPathComponent
+                    preview = nil
+                    dryRun = nil
+                    importResult = nil
+                    message = ""
+                } catch {
+                    message = error.localizedDescription
+                }
+            case .failure(let error):
+                message = error.localizedDescription
+            }
+        }
+    }
+
+    private var accountChoices: [(id: Int, label: String)] {
+        let accounts = (bankInfo?.accounts ?? []).map { (id: $0.id, label: "\($0.bank) — \($0.name) (APY)") }
+        let cards = (bankInfo?.creditCards ?? []).map { (id: $0.id, label: "\($0.bank) — \($0.name) (APR)") }
+        return accounts + cards
+    }
+
+    private var canImport: Bool {
+        selectedFileURL != nil && selectedAccountID != 0 && !purchaseCol.isEmpty && !merchantCol.isEmpty && (!amountCol.isEmpty || (!debitCol.isEmpty && !creditCol.isEmpty))
+    }
+
+    private var modalHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Import CSV/Excel")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("Drop a CSV or Excel file, preview it, map columns, then import.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Close") { close() }
+                .buttonStyle(HomeHeaderActionStyle(primary: false))
+        }
+    }
+
+    private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            content()
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+    }
+
+    private func modalMenu(_ title: String, selection: Binding<Int>, choices: [(id: Int, label: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Picker(title, selection: selection) {
+                ForEach(choices, id: \.id) { choice in
+                    Text(choice.label).tag(choice.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func mappingPicker(_ title: String, selection: Binding<String>, columns: [CsvPreviewColumnPayload], optional: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Picker(title, selection: selection) {
+                if optional {
+                    Text("Not mapped").tag("")
+                }
+                ForEach(columns) { column in
+                    Text("\(column.label) (col \(column.index + 1))").tag(String(column.index))
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func modalTextField(_ title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            TextField(title, text: text)
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func drySummaryCard(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func loadAccounts() async {
+        do {
+            let payload = try await QuailCashAPI.shared.fetchBankInfo()
+            bankInfo = payload
+            if selectedAccountID == 0 {
+                selectedAccountID = payload.accounts.first?.id ?? payload.creditCards.first?.id ?? 0
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func applyDefaultMappings(from preview: CsvPreviewPayload) {
+        func match(_ keywords: [String]) -> String {
+            let lowercased = preview.columns.map { ($0.index, $0.label.lowercased()) }
+            return lowercased.first(where: { pair in
+                keywords.contains(where: { pair.1.contains($0) })
+            }).map { String($0.0) } ?? ""
+        }
+
+        purchaseCol = match(["transaction date", "purchase date", "date"])
+        postedCol = match(["posted date"])
+        amountCol = match(["amount"])
+        debitCol = match(["debit"])
+        creditCol = match(["credit"])
+        merchantCol = match(["merchant", "description", "payee"])
+        indicatorCol = match(["indicator", "type"])
+    }
+
+    private func mappingFields() -> [String: String] {
+        var fields: [String: String] = [
+            "account_id": String(selectedAccountID),
+            "purchase_col": purchaseCol,
+            "merchant_col": merchantCol,
+            "delimiter": "auto",
+            "header_row": "1",
+            "data_start_row": "2",
+            "invert_amount": invertAmount ? "true" : "false",
+            "credit_indicator_value": creditIndicatorValue,
+        ]
+        if !postedCol.isEmpty { fields["posted_col"] = postedCol }
+        if !amountCol.isEmpty { fields["amount_col"] = amountCol }
+        if !debitCol.isEmpty { fields["debit_col"] = debitCol }
+        if !creditCol.isEmpty { fields["credit_col"] = creditCol }
+        if !indicatorCol.isEmpty { fields["indicator_col"] = indicatorCol }
+        return fields
+    }
+
+    private func saveMapping() async {
+        guard canImport else {
+            message = "Choose a file, account, and required columns first."
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            var payload: [String: Any] = [
+                "purchase_col": Int(purchaseCol) ?? 0,
+                "merchant_col": Int(merchantCol) ?? 0,
+                "credit_indicator_value": creditIndicatorValue,
+                "invert_amount": invertAmount,
+            ]
+            if let value = Int(postedCol) { payload["posted_col"] = value }
+            if let value = Int(amountCol) { payload["amount_col"] = value }
+            if let value = Int(debitCol) { payload["debit_col"] = value }
+            if let value = Int(creditCol) { payload["credit_col"] = value }
+            if let value = Int(indicatorCol) { payload["indicator_col"] = value }
+            try await QuailCashAPI.shared.saveCsvMappingPreset(accountID: selectedAccountID, preset: payload)
+            message = "Mapping saved."
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func loadPreview() async {
+        guard let selectedFileURL else {
+            message = "Pick a file first."
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let next = try await QuailCashAPI.shared.fetchCsvPreview(fileURL: selectedFileURL)
+            preview = next
+            dryRun = nil
+            importResult = nil
+            applyDefaultMappings(from: next)
+            message = "Preview loaded."
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func runDryRun() async {
+        guard let selectedFileURL, canImport else {
+            message = "Complete the required mapping first."
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            dryRun = try await QuailCashAPI.shared.runCsvDryRun(fileURL: selectedFileURL, fields: mappingFields())
+            message = "Dry run complete."
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func runImport() async {
+        guard let selectedFileURL, canImport else {
+            message = "Complete the required mapping first."
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            importResult = try await QuailCashAPI.shared.importCsvMapped(fileURL: selectedFileURL, fields: mappingFields())
+            message = "Import complete."
+            onRefresh()
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func copyImportedFile(_ url: URL) throws -> URL {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped { url.stopAccessingSecurityScopedResource() }
+        }
+        let fileManager = FileManager.default
+        let ext = url.pathExtension.isEmpty ? "dat" : url.pathExtension
+        let tempURL = fileManager.temporaryDirectory.appendingPathComponent("csv-import-\(UUID().uuidString).\(ext)")
+        if fileManager.fileExists(atPath: tempURL.path) {
+            try fileManager.removeItem(at: tempURL)
+        }
+        try fileManager.copyItem(at: url, to: tempURL)
+        return tempURL
+    }
+
+    private func close() {
+        dismiss()
+        onDismiss()
+    }
+}
+
+private struct UnassignedWizardSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
+    let onRefresh: () -> Void
+
+    private struct DeferredRule: Hashable {
+        let category: String
+        let keywords: [String]
+    }
+
+    @State private var mode: UnassignedMode = .freq
+    @State private var rows: [UnassignedTransactionPayload] = []
+    @State private var categories: [String] = []
+    @State private var index = 0
+    @State private var categoryText = ""
+    @State private var keywordsText = ""
+    @State private var skipped: [UnassignedTransactionPayload] = []
+    @State private var pendingDeferredRules: [DeferredRule] = []
+    @State private var deferApplyUntilClose = false
+    @State private var skippedOpen = false
+    @State private var message = ""
+    @State private var isLoading = false
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                modalHeader
+
+                sectionCard(title: "Current transaction") {
+                    if let current {
+                        VStack(alignment: .leading, spacing: 10) {
+                            txKV(label: "Merchant", value: current.merchant.isEmpty ? "Unknown" : current.merchant)
+                            txKV(label: "Account", value: [current.bank, current.card].compactMap { $0 }.joined(separator: " • "))
+                            txKV(label: "Amount", value: moneyValue(current.amount), valueColor: current.amount >= 0 ? .red : .green)
+                            txKV(label: "Date", value: current.postedDate ?? "—")
+                            txKV(label: "Matches", value: current.usageCount.map(String.init) ?? "—")
+                        }
+                    } else {
+                        Text("No unassigned transactions right now.")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                sectionCard(title: "Create rule") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Defer apply until close", isOn: $deferApplyUntilClose)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .tint(.black)
+
+                        HStack(spacing: 8) {
+                            fieldShell(title: "Category") {
+                                TextField("Start typing…", text: $categoryText)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                            }
+                            Menu {
+                                ForEach(categories, id: \.self) { category in
+                                    Button(category) { categoryText = category }
+                                }
+                            } label: {
+                                Text("Choose")
+                            }
+                            .buttonStyle(HomeHeaderActionStyle(primary: false))
+                        }
+
+                        fieldShell(title: "Keywords (comma separated)") {
+                            TextField("amazon, prime", text: $keywordsText)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled(true)
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .center, spacing: 8) {
+                                Button("Skip") { Task { await skipCurrent() } }
+                                    .buttonStyle(UnassignedEqualActionStyle(primary: false))
+                                    .disabled(current == nil || isLoading)
+                                Button("View skipped (\(skipped.count))") { skippedOpen.toggle() }
+                                    .buttonStyle(UnassignedEqualActionStyle(primary: false))
+                                Button("Save rule") { Task { await saveRule() } }
+                                    .buttonStyle(UnassignedEqualActionStyle(primary: true))
+                                    .disabled(current == nil || isLoading)
+                            }
+                        }
+                        .padding(10)
+                        .background(Color.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.05), lineWidth: 1))
+                    }
+                }
+
+                sectionCard(title: "Queue") {
+                    HStack(spacing: 10) {
+                        Button("Prev") { move(-1) }
+                            .buttonStyle(UnassignedQueueNavStyle())
+                            .disabled(index == 0 || rows.isEmpty)
+                        Spacer(minLength: 0)
+                        VStack(spacing: 3) {
+                            Text("Queue")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                            Text(rows.isEmpty ? "0 / 0" : "\(index + 1) / \(rows.count)")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            if !pendingDeferredRules.isEmpty {
+                                Text("Queued \(pendingDeferredRules.count)")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        Spacer(minLength: 0)
+                        Button("Next") { move(1) }
+                            .buttonStyle(UnassignedQueueNavStyle())
+                            .disabled(rows.isEmpty)
+                    }
+
+                    if skippedOpen {
+                        if skipped.isEmpty {
+                            Text("No skipped transactions.")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(Array(skipped.enumerated()), id: \.element.id) { offset, tx in
+                                    HStack(alignment: .top, spacing: 10) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(tx.merchant.isEmpty ? "Unknown" : tx.merchant)
+                                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            Text([moneyValue(tx.amount), tx.postedDate ?? ""].filter { !$0.isEmpty }.joined(separator: " • "))
+                                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Button("Use") { restoreSkipped(at: offset) }
+                                            .buttonStyle(HomeHeaderActionStyle(primary: false))
+                                    }
+                                    .padding(10)
+                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !message.isEmpty {
+                    Text(message)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .task {
+            await loadCategories()
+            await loadRows(resetIndex: true)
+        }
+    }
+
+    private var modalHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Create rule")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text(rows.isEmpty ? "0 / 0" : "\(index + 1) / \(rows.count)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("Close") { Task { await close() } }
+                    .buttonStyle(HomeHeaderActionStyle(primary: false))
+            }
+
+            modeTabs
+        }
+    }
+
+    private var modeTabs: some View {
+        HStack(spacing: 0) {
+            modeTabButton(title: "Most frequent", value: .freq)
+            modeTabButton(title: "Most recent", value: .recent)
+        }
+        .padding(.top, 2)
+    }
+
+    private var current: UnassignedTransactionPayload? {
+        guard index >= 0, index < rows.count else { return nil }
+        return rows[index]
+    }
+
+    private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            content()
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+    }
+
+    private func fieldShell<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            content()
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+    }
+
+    private func modeTabButton(title: String, value: UnassignedMode) -> some View {
+        Button(title) {
+            guard mode != value else { return }
+            mode = value
+            Task { await loadRows(resetIndex: true) }
+        }
+        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .frame(maxWidth: .infinity)
+        .frame(height: 38)
+        .background(
+            ZStack(alignment: .bottom) {
+                Color.clear
+                Rectangle()
+                    .fill(mode == value ? Color.black : Color.black.opacity(0.12))
+                    .frame(height: mode == value ? 2 : 1)
+            }
+        )
+        .overlay(
+            Rectangle()
+                .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+        )
+        .foregroundStyle(mode == value ? .primary : .secondary)
+        .buttonStyle(.plain)
+    }
+
+    private func txKV(label: String, value: String, valueColor: Color = .primary) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 74, alignment: .leading)
+            Text(value.isEmpty ? "—" : value)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(valueColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func loadCategories() async {
+        do {
+            categories = try await QuailCashAPI.shared.fetchCategories()
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func loadRows(resetIndex: Bool) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            rows = try await QuailCashAPI.shared.fetchUnassigned(limit: 25, mode: mode)
+            if resetIndex || index >= rows.count {
+                index = 0
+            }
+            if rows.isEmpty {
+                message = "No unassigned transactions right now."
+            } else if message == "No unassigned transactions right now." {
+                message = ""
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func toggleMode() {
+        mode = mode == .freq ? .recent : .freq
+        Task { await loadRows(resetIndex: true) }
+    }
+
+    private func move(_ delta: Int) {
+        guard !rows.isEmpty else { return }
+        index = min(max(0, index + delta), rows.count - 1)
+    }
+
+    private func removeCurrentAndAdvance() async {
+        guard !rows.isEmpty else { return }
+        rows.remove(at: index)
+        categoryText = ""
+        keywordsText = ""
+        if index >= rows.count {
+            index = max(0, rows.count - 1)
+        }
+        if rows.isEmpty {
+            await loadRows(resetIndex: true)
+        }
+    }
+
+    private func skipCurrent() async {
+        guard let current else { return }
+        skipped.append(current)
+        await removeCurrentAndAdvance()
+        if rows.isEmpty {
+            message = "No additional unassigned transactions right now."
+        } else {
+            message = "Transaction skipped."
+        }
+    }
+
+    private func restoreSkipped(at index: Int) {
+        guard skipped.indices.contains(index) else { return }
+        let tx = skipped.remove(at: index)
+        rows.insert(tx, at: min(self.index, rows.count))
+        self.index = min(self.index, rows.count - 1)
+        if rows.isEmpty == false {
+            message = ""
+        }
+    }
+
+    private func parsedKeywords() -> [String] {
+        keywordsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func saveRule() async {
+        let category = categoryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let keywords = parsedKeywords()
+
+        guard !category.isEmpty else {
+            message = "Enter a category."
+            return
+        }
+        guard !keywords.isEmpty else {
+            message = "Enter at least one keyword."
+            return
+        }
+
+        if deferApplyUntilClose {
+            pendingDeferredRules.append(DeferredRule(category: category, keywords: keywords))
+            message = "Queued \(pendingDeferredRules.count) rule(s) for apply on close."
+            await removeCurrentAndAdvance()
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let job = try await QuailCashAPI.shared.createCategoryRule(category: category, keywords: keywords, applyNow: true)
+            if let job {
+                message = "Saved. Applying rule..."
+                try await waitForApplyJob(job.id)
+            }
+            onRefresh()
+            await removeCurrentAndAdvance()
+            if !rows.isEmpty {
+                message = "Rule saved."
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func flushDeferredRules() async throws {
+        guard !pendingDeferredRules.isEmpty else { return }
+        let queued = pendingDeferredRules
+        pendingDeferredRules = []
+        var failures: [DeferredRule] = []
+        for rule in queued {
+            do {
+                if let job = try await QuailCashAPI.shared.createCategoryRule(category: rule.category, keywords: rule.keywords, applyNow: true) {
+                    try await waitForApplyJob(job.id)
+                }
+            } catch {
+                failures.append(rule)
+            }
+        }
+        if !failures.isEmpty {
+            pendingDeferredRules = failures
+            throw NSError(domain: "QuailCashAPI", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to save \(failures.count) deferred rule(s)."])
+        }
+    }
+
+    private func waitForApplyJob(_ jobID: Int) async throws {
+        let deadline = Date().addingTimeInterval(90)
+        while Date() < deadline {
+            let job = try await QuailCashAPI.shared.fetchCategoryRuleJob(jobID: jobID)
+            let status = (job.status ?? "").lowercased()
+            if status == "completed" {
+                message = "Applied to \(job.totalApplied ?? 0) transactions."
+                return
+            }
+            if status == "failed" {
+                throw NSError(domain: "QuailCashAPI", code: 1, userInfo: [NSLocalizedDescriptionKey: job.error ?? "Rule apply failed."])
+            }
+            try await Task.sleep(nanoseconds: 1_200_000_000)
+        }
+        throw NSError(domain: "QuailCashAPI", code: 2, userInfo: [NSLocalizedDescriptionKey: "Rule apply timed out."])
+    }
+
+    private func close() async {
+        if !categoryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !parsedKeywords().isEmpty {
+            await saveRule()
+            if isLoading { return }
+        }
+        if !pendingDeferredRules.isEmpty {
+            message = "Saving \(pendingDeferredRules.count) deferred rule(s)..."
+            do {
+                try await flushDeferredRules()
+                onRefresh()
+            } catch {
+                message = error.localizedDescription
+                return
+            }
+        }
+        dismiss()
+        onDismiss()
+    }
+}
+
+private struct UnassignedEqualActionStyle: ButtonStyle {
+    let primary: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .frame(maxWidth: .infinity)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(primary ? Color.black : Color.black.opacity(0.04))
+                    .opacity(configuration.isPressed ? 0.82 : 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.black.opacity(primary ? 0.0 : 0.08), lineWidth: 1)
+            )
+            .foregroundStyle(primary ? .white : .primary)
+    }
+}
+
+private struct UnassignedQueueNavStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .frame(minWidth: 72)
+            .frame(height: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.black.opacity(configuration.isPressed ? 0.08 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+            )
+            .foregroundStyle(.primary)
+    }
+}
+
 private enum HomePopup: Identifiable {
     case incomeBreakdown
     case spentBreakdown
@@ -2796,6 +4552,28 @@ private enum HomePopup: Identifiable {
             return "audit-\(account.id)"
         }
     }
+}
+
+private func homeDateFromISO(_ iso: String) -> Date? {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.date(from: iso)
+}
+
+private func homeWeekdayShort(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "EEE"
+    return formatter.string(from: date)
+}
+
+private func homeMonthDayShort(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "MM/dd"
+    return formatter.string(from: date)
 }
 
 private func isoToday() -> String {
@@ -2877,9 +4655,12 @@ private func formatAccountBalance(_ value: Double) -> String {
 private struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .padding(.horizontal, 12)
+            .frame(height: 34)
             .foregroundStyle(.white)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(.black)
                     .opacity(configuration.isPressed ? 0.78 : 1.0)
             )
@@ -2912,16 +4693,22 @@ private struct HomeHeaderActionStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .frame(height: 30)
             .background(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(primary ? Color.black : Color.black.opacity(0.04))
                     .opacity(configuration.isPressed ? 0.8 : 1.0)
             )
             .overlay(
-                Capsule(style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.black.opacity(primary ? 0.0 : 0.08), lineWidth: 1)
             )
             .foregroundStyle(primary ? .white : .primary)
     }
 }
+    private struct CategorySummary {
+        let label: String
+        let amount: String
+        let color: Color
+        let total: Double
+    }

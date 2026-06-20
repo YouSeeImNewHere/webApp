@@ -10,7 +10,6 @@ struct SettingsHomePageView: View {
 
     @StateObject private var model = SettingsHomeViewModel()
     @State private var showGoogleAuth = false
-    @State private var showNotificationsSheet = false
     @State private var activeSheet: SettingsSheet?
     @State private var backfillDaysText = "7"
     @State private var backfillIncludeProcessed = true
@@ -33,16 +32,16 @@ struct SettingsHomePageView: View {
     var body: some View {
         AppChromeFrame(
             title: "Settings",
-            badgeValue: model.unreadCount,
+            badgeValue: nil,
             selectedTab: navigator.currentTab,
             onLeadingTap: { navigator.popToRoot() },
-            onTrailingTap: { showNotificationsSheet = true },
+            onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: { tab in
                 switch tab {
                 case .home:
                     navigator.popToRoot()
                 case .spending:
-                    navigator.show(.budget)
+                    navigator.show(.spending)
                 case .all:
                     navigator.show(.allTransactions)
                 case .analytics:
@@ -106,7 +105,7 @@ struct SettingsHomePageView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Button {
-                                showNotificationsSheet = true
+                                navigator.show(.notifications)
                             } label: {
                                 settingsPrimaryButton("Open Page")
                             }
@@ -347,9 +346,6 @@ struct SettingsHomePageView: View {
                 onCancel: {}
             )
         }
-        .sheet(isPresented: $showNotificationsSheet) {
-            NotificationSettingsSheet()
-        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .homeLayout:
@@ -359,7 +355,7 @@ struct SettingsHomePageView: View {
             case .initialSetup:
                 InitialSetupSheet(
                     onConnectGoogle: { showGoogleAuth = true },
-                    onOpenNotifications: { showNotificationsSheet = true },
+                    onOpenNotifications: { navigator.show(.notifications) },
                     onOpenBankInfo: { activeSheet = .bankInfo },
                     onOpenCsvImport: { activeSheet = .csvImport },
                     onOpenIncomeWizard: { activeSheet = .incomeWizard },
@@ -814,13 +810,16 @@ private struct SettingsSheetShell<Content: View>: View {
 
 private struct NotificationSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var pushManager: MobilePushManager
     @State private var prefs: [String: Bool] = [:]
     @State private var userKeyStatus = "Loading..."
+    @State private var iosPushStatus = "Checking iPhone push..."
     @State private var statusMessage = ""
     @State private var isSaving = false
 
     private let rows: [(key: String, title: String, subtitle: String)] = [
         ("disable_all", "Disable all", "Turn off all notifications."),
+        ("ios_push", "iPhone push", "Send alerts to this iPhone through the app."),
         ("credit_usage", "Credit usage", "Alert on card usage events."),
         ("credit_usage_total", "Credit usage total", "Summarize total card usage."),
         ("budget_over", "Budget over", "Notify when spending exceeds budget."),
@@ -846,6 +845,9 @@ private struct NotificationSettingsSheet: View {
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                         Text(userKeyStatus)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Text(iosPushStatus)
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
@@ -913,17 +915,33 @@ private struct NotificationSettingsSheet: View {
             } else {
                 userKeyStatus = "Pushover key not set."
             }
+            iosPushStatus = iosPushStatusText(from: out)
+            await pushManager.refreshAuthorizationStatus()
         } catch {
             userKeyStatus = "Notification settings unavailable."
+            iosPushStatus = "iPhone push status unavailable."
         }
     }
 
     private func savePref(key: String, value: Bool) async {
         guard !isSaving else { return }
+        if key == "ios_push" && value {
+            let granted = await pushManager.requestAuthorizationAndRegister()
+            if !granted {
+                prefs[key] = false
+                iosPushStatus = "Push permission is off in iPhone Settings."
+                statusMessage = "Enable notifications for QuailCash in iPhone Settings."
+                return
+            }
+        }
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await SettingsAPI.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)
+            let out = try await SettingsAPI.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)
+            iosPushStatus = iosPushStatusText(from: out)
+            if key == "ios_push" && !value {
+                await pushManager.unregisterCurrentDevice()
+            }
             statusMessage = "Saved."
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 if statusMessage == "Saved." { statusMessage = "" }
@@ -931,6 +949,18 @@ private struct NotificationSettingsSheet: View {
         } catch {
             statusMessage = "Failed to save."
         }
+    }
+
+    private func iosPushStatusText(from payload: SettingsNotificationSettingsPayload) -> String {
+        let count = max(0, payload.iosPushDeviceCount ?? 0)
+        let configured = payload.iosPushConfigured ?? false
+        if !configured {
+            return "iPhone push server is not configured yet."
+        }
+        if count == 0 {
+            return "No iPhone devices registered."
+        }
+        return count == 1 ? "1 iPhone registered." : "\(count) iPhones registered."
     }
 }
 

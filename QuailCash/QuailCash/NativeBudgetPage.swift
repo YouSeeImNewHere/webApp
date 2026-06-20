@@ -13,12 +13,14 @@ struct NativeBudgetPageView: View {
         AppChromeFrame(
             title: "Budget",
             badgeValue: nil,
-            selectedTab: navigator.currentTab,
+            selectedTab: nil,
             onLeadingTap: { navigator.show(.settings) },
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: selectTab
         ) {
-            AppPageScroll {
+            AppPageScroll(refreshAction: {
+                await model.load()
+            }) {
                 monthSummaryCard
                 budgetGroupsCard
                 sinkingFundsCard
@@ -65,7 +67,7 @@ struct NativeBudgetPageView: View {
         case .home:
             navigator.popToRoot()
         case .spending:
-            navigator.show(.budget)
+            navigator.show(.spending)
         case .all:
             navigator.show(.allTransactions)
         case .analytics:
@@ -698,6 +700,7 @@ private struct BudgetGroupRow: View {
                         .buttonStyle(BudgetSmallButtonStyle())
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -749,7 +752,7 @@ private struct SinkingFundCard: View {
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
             }
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                 Button("Add money", action: onAddMoney).buttonStyle(BudgetSmallButtonStyle())
                 Button("Use money", action: onUseMoney).buttonStyle(BudgetSmallButtonStyle())
                 Button("Edit", action: onEdit).buttonStyle(BudgetSmallButtonStyle())
@@ -786,7 +789,9 @@ private struct BudgetSpentPieChart: View {
             .foregroundStyle(Self.palette[index % Self.palette.count])
         }
         .chartLegend(.hidden)
+        .frame(maxWidth: .infinity)
         .padding(8)
+        .clipped()
         .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
     }
@@ -911,6 +916,8 @@ private struct BudgetSmallButtonStyle: ButtonStyle {
 private extension View {
     func budgetCard(dashed: Bool = false) -> some View {
         self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
             .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)

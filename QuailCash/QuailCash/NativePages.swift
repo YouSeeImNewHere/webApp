@@ -1,8 +1,11 @@
 import SwiftUI
 import WebKit
+import Combine
+import Charts
 
 enum AppRoute: Hashable {
     case home
+    case spending
     case settings
     case notificationSettings
     case notifications
@@ -25,6 +28,8 @@ struct NativePageView: View {
             switch route {
             case .home:
                 HomeView()
+            case .spending:
+                NativeSpendingPageView()
             case .settings:
                 SettingsHomePageView()
             case .notificationSettings:
@@ -52,7 +57,6 @@ struct NativePageView: View {
                     .id("account-\(account.id)-\(audit ? 1 : 0)")
             }
         }
-        .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
 }
@@ -146,12 +150,14 @@ private struct RouteWebPageView: UIViewRepresentable {
 struct PageShell<Content: View>: View {
     let title: String
     let subtitle: String
+    let refreshAction: (() async -> Void)?
     let content: Content
 
     @EnvironmentObject private var navigator: AppNavigator
-    init(title: String, subtitle: String, @ViewBuilder content: () -> Content) {
+    init(title: String, subtitle: String, refreshAction: (() async -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.subtitle = subtitle
+        self.refreshAction = refreshAction
         self.content = content()
     }
 
@@ -164,7 +170,7 @@ struct PageShell<Content: View>: View {
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: handleTabSelect
         ) {
-            AppPageScroll {
+            AppPageScroll(refreshAction: refreshAction) {
                 content
             }
         }
@@ -175,7 +181,7 @@ struct PageShell<Content: View>: View {
         case .home:
             navigator.popToRoot()
         case .spending:
-            navigator.show(.budget)
+            navigator.show(.spending)
         case .all:
             navigator.show(.allTransactions)
         case .analytics:
@@ -562,13 +568,16 @@ private struct SettingsPageView: View {
 }
 
 private struct NotificationSettingsPageView: View {
+    @EnvironmentObject private var pushManager: MobilePushManager
     @State private var prefs: [String: Bool] = [:]
     @State private var userKeyStatus = "Loading..."
+    @State private var iosPushStatus = "Checking iPhone push..."
     @State private var statusMessage = ""
     @State private var isSaving = false
 
     private let rows: [(key: String, title: String, subtitle: String)] = [
         ("disable_all", "Disable all", "Turn off all notifications."),
+        ("ios_push", "iPhone push", "Send alerts to this iPhone through the app."),
         ("credit_usage", "Credit usage", "Alert on card usage events."),
         ("credit_usage_total", "Credit usage total", "Summarize total card usage."),
         ("budget_over", "Budget over", "Notify when spending exceeds budget."),
@@ -594,6 +603,9 @@ private struct NotificationSettingsPageView: View {
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                         Text(userKeyStatus)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Text(iosPushStatus)
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
@@ -654,17 +666,33 @@ private struct NotificationSettingsPageView: View {
             } else {
                 userKeyStatus = "Pushover key not set."
             }
+            iosPushStatus = iosPushStatusText(from: out)
+            await pushManager.refreshAuthorizationStatus()
         } catch {
             userKeyStatus = "Notification settings unavailable."
+            iosPushStatus = "iPhone push status unavailable."
         }
     }
 
     private func savePref(key: String, value: Bool) async {
         guard !isSaving else { return }
+        if key == "ios_push" && value {
+            let granted = await pushManager.requestAuthorizationAndRegister()
+            if !granted {
+                prefs[key] = false
+                iosPushStatus = "Push permission is off in iPhone Settings."
+                statusMessage = "Enable notifications for QuailCash in iPhone Settings."
+                return
+            }
+        }
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await SettingsNetworking.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)
+            let out = try await SettingsNetworking.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)
+            iosPushStatus = iosPushStatusText(from: out)
+            if key == "ios_push" && !value {
+                await pushManager.unregisterCurrentDevice()
+            }
             statusMessage = "Saved."
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 if statusMessage == "Saved." { statusMessage = "" }
@@ -672,6 +700,18 @@ private struct NotificationSettingsPageView: View {
         } catch {
             statusMessage = "Failed to save."
         }
+    }
+
+    private func iosPushStatusText(from payload: SettingsNotificationSettingsPayload) -> String {
+        let count = max(0, payload.iosPushDeviceCount ?? 0)
+        let configured = payload.iosPushConfigured ?? false
+        if !configured {
+            return "iPhone push server is not configured yet."
+        }
+        if count == 0 {
+            return "No iPhone devices registered."
+        }
+        return count == 1 ? "1 iPhone registered." : "\(count) iPhones registered."
     }
 }
 
@@ -783,64 +823,369 @@ private enum SettingsNetworking {
 }
 
 private struct NotificationsPageView: View {
-    @State private var items: [NotificationItemPayload] = []
-    @State private var errorMessage: String?
-    @State private var isLoading = true
+    @StateObject private var model = NotificationsPageViewModel()
+    @State private var selectedNotification: NotificationDetailPayload?
+    @State private var selectedError: AdminErrorNotificationPayload?
 
     var body: some View {
-        PageShell(title: "Notifications", subtitle: "The same unread drawer as the web app") {
+        PageShell(title: "Notifications", subtitle: "Unread notifications, errors, and owner actions", refreshAction: {
+            await model.load()
+        }) {
             Group {
-                if isLoading {
+                if model.isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
-                } else if let errorMessage {
+                } else if let errorMessage = model.errorMessage {
                     Text(errorMessage)
                         .foregroundStyle(.secondary)
-                } else if items.isEmpty {
-                    Text("No notifications.")
-                        .foregroundStyle(.secondary)
                 } else {
-                    VStack(spacing: 10) {
-                        ForEach(items) { item in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(item.sender ?? "System")
-                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text(item.createdAtLocal ?? "")
-                                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text(item.subject ?? "(no subject)")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text(item.kind ?? "")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        if model.canViewErrors {
+                            Picker("Notifications Tab", selection: $model.selectedTab) {
+                                Text("General").tag(NotificationsPageViewModel.Tab.general)
+                                Text("Errors").tag(NotificationsPageViewModel.Tab.errors)
                             }
-                            .padding(14)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                            .pickerStyle(.segmented)
+                        }
+
+                        HStack(spacing: 8) {
+                            Button("Refresh") { Task { await model.load() } }
+                                .buttonStyle(.bordered)
+
+                            if model.selectedTab == .general {
+                                Button("Mark All Read") { Task { await model.markAllRead() } }
+                                    .buttonStyle(.bordered)
+                                Button("Clear Read") { Task { await model.clearRead() } }
+                                    .buttonStyle(.bordered)
+                            } else {
+                                Button("Clear Errors") { Task { await model.clearErrors() } }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+
+                        if model.selectedTab == .general {
+                            if model.items.isEmpty {
+                                Text("No notifications.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                VStack(spacing: 10) {
+                                    ForEach(model.items) { item in
+                                        Button {
+                                            Task { selectedNotification = await model.openNotification(item.id) }
+                                        } label: {
+                                            notificationRow(item)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        } else if model.errorItems.isEmpty {
+                            Text("No captured errors.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(spacing: 10) {
+                                ForEach(model.errorItems) { item in
+                                    Button {
+                                        selectedError = item
+                                    } label: {
+                                        errorRow(item)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("Notifications")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .task { await model.load() }
+        .sheet(item: $selectedNotification) { detail in
+            NotificationDetailSheetView(
+                detail: detail,
+                onDismissNotification: {
+                    Task {
+                        await model.dismiss(detail.id)
+                        selectedNotification = nil
+                    }
+                },
+                onApprovePendingUser: {
+                    Task {
+                        if let pendingUserID = await model.pendingUserID(for: detail) {
+                            await model.approvePendingUser(id: pendingUserID, notificationID: detail.id)
+                            selectedNotification = nil
+                        }
+                    }
+                }
+            )
+        }
+        .sheet(item: $selectedError) { error in
+            AdminErrorDetailSheetView(error: error)
+        }
     }
 
-    private func load() async {
+    private func notificationRow(_ item: NotificationItemPayload) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(item.sender ?? "System")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(item.createdAtLocal ?? "")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            Text(item.subject ?? "(no subject)")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let kind = item.kind, !kind.isEmpty {
+                Text(kind)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(item.isRead == false ? .black.opacity(0.18) : .black.opacity(0.06), lineWidth: 1))
+    }
+
+    private func errorRow(_ item: AdminErrorNotificationPayload) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("\(item.statusCode ?? 0) \(item.method ?? "") \(item.path ?? "")")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Text(item.createdAt ?? "")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Text(item.errorMessage ?? "Server error")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(item.userEmail ?? "unknown user")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+}
+
+@MainActor
+private final class NotificationsPageViewModel: ObservableObject {
+    enum Tab {
+        case general
+        case errors
+    }
+
+    @Published var items: [NotificationItemPayload] = []
+    @Published var errorItems: [AdminErrorNotificationPayload] = []
+    @Published var canViewErrors = false
+    @Published var selectedTab: Tab = .general
+    @Published var errorMessage: String?
+    @Published var isLoading = false
+
+    private let api = QuailCashAPI.shared
+
+    func load() async {
         isLoading = true
+        defer { isLoading = false }
         do {
-            items = try await QuailCashAPI.shared.fetchNotifications(limit: 100)
+            items = try await api.fetchNotifications(limit: 100)
+            do {
+                errorItems = try await api.fetchAdminErrorNotifications(limit: 200)
+                canViewErrors = true
+            } catch QuailCashAPIError.unauthorized {
+                canViewErrors = false
+                errorItems = []
+                selectedTab = .general
+            }
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
-        isLoading = false
+    }
+
+    func openNotification(_ id: Int) async -> NotificationDetailPayload? {
+        do {
+            let detail = try await api.fetchNotificationDetail(id: id)
+            try await api.markNotificationRead(id: id)
+            if let index = items.firstIndex(where: { $0.id == id }) {
+                items[index] = NotificationItemPayload(
+                    id: items[index].id,
+                    kind: items[index].kind,
+                    subject: items[index].subject,
+                    sender: items[index].sender,
+                    createdAt: items[index].createdAt,
+                    createdAtLocal: items[index].createdAtLocal,
+                    isRead: true
+                )
+            }
+            return detail
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func markAllRead() async {
+        do {
+            try await api.markAllNotificationsRead()
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func clearRead() async {
+        do {
+            try await api.clearReadNotifications()
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func dismiss(_ id: Int) async {
+        do {
+            try await api.dismissNotification(id: id)
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func clearErrors() async {
+        do {
+            try await api.clearAdminErrorNotifications()
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func pendingUserID(for detail: NotificationDetailPayload) async -> Int? {
+        guard detail.kind == "user_signup_pending" else { return nil }
+        if let id = parseUserID(from: detail.body) {
+            return id
+        }
+        guard let email = parseEmail(from: detail.body) else { return nil }
+        do {
+            let users = try await api.fetchPendingUsers()
+            return users.first(where: { ($0.email ?? "").lowercased() == email.lowercased() })?.id
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func approvePendingUser(id: Int, notificationID: Int) async {
+        do {
+            try await api.approvePendingUser(id: id)
+            try await api.dismissNotification(id: notificationID)
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func parseUserID(from body: String?) -> Int? {
+        guard let body else { return nil }
+        guard let range = body.range(of: #"User ID:\s*(\d+)"#, options: .regularExpression) else { return nil }
+        let match = String(body[range])
+        return Int(match.replacingOccurrences(of: "User ID:", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func parseEmail(from body: String?) -> String? {
+        guard let body else { return nil }
+        guard let range = body.range(of: #"Email:\s*([^\s]+)"#, options: .regularExpression) else { return nil }
+        let match = String(body[range])
+        return match.replacingOccurrences(of: "Email:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct NotificationDetailSheetView: View {
+    let detail: NotificationDetailPayload
+    let onDismissNotification: () -> Void
+    let onApprovePendingUser: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(detail.subject ?? "(no subject)")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                    Text("\(detail.sender ?? "")\(detail.createdAtLocal.map { " | \($0)" } ?? "")")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    Text(detail.body ?? "")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Button("Dismiss", action: onDismissNotification)
+                            .buttonStyle(.bordered)
+                        if detail.kind == "user_signup_pending" {
+                            Button("Approve", action: onApprovePendingUser)
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+            .navigationTitle("Notification")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+private struct AdminErrorDetailSheetView: View {
+    let error: AdminErrorNotificationPayload
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(error.errorMessage ?? "Server error")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                    detailRow("When", error.createdAt ?? "—")
+                    detailRow("User", error.userEmail ?? "—")
+                    detailRow("Method", error.method ?? "—")
+                    detailRow("Path", error.path ?? "—")
+                    detailRow("Query", error.queryString ?? "—")
+                    detailRow("Status", error.statusCode.map(String.init) ?? "—")
+                    detailRow("Tenant", error.tenantID.map(String.init) ?? "—")
+                    detailRow("Referer", error.referer ?? "—")
+                    detailRow("Page URL", error.pageURL ?? "—")
+                    detailRow("Request ID", error.requestID ?? "—")
+                    detailRow("Client IP", error.clientIP ?? "—")
+                    detailRow("User Agent", error.userAgent ?? "—")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+            .navigationTitle("Error Detail")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -1115,58 +1460,599 @@ private struct RuleBuilderPageView: View {
 
 private struct CategoryPageView: View {
     let category: String
-    @State private var transactions: [TransactionItem] = []
-    @State private var errorMessage: String?
-    @State private var isLoading = true
+    @StateObject private var model: CategoryPageViewModel
+    @State private var showAllCategories = false
+    @State private var activeTransaction: TransactionItem?
+
+    init(category: String) {
+        self.category = category
+        _model = StateObject(wrappedValue: CategoryPageViewModel(category: category))
+    }
 
     var body: some View {
-        PageShell(title: category, subtitle: "Category transactions and totals") {
-            Group {
-                if isLoading {
-                    ProgressView().padding(.vertical, 24)
-                } else if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(transactions) { tx in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(tx.merchant.isEmpty ? "Unknown merchant" : tx.merchant)
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .textCase(.uppercase)
+        PageShell(title: "Category", subtitle: model.selectedCategory, refreshAction: {
+            await model.reload()
+        }) {
+            categoryChartCard
+            categoryTransactionsCard
+        }
+        .task { model.startIfNeeded() }
+        .sheet(isPresented: $showAllCategories) {
+            CategoryLifetimeSheet(
+                rows: model.lifetimeRows,
+                selectedCategory: model.selectedCategory,
+                onSelect: { selected in
+                    model.selectCategory(selected)
+                    showAllCategories = false
+                }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $activeTransaction) { tx in
+            TransactionInspectSheetView(
+                transaction: tx,
+                onDismiss: { activeTransaction = nil },
+                onRefresh: { Task { await model.reload() } }
+            )
+        }
+    }
+
+    private var categoryChartCard: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Text(model.selectedCategory)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+                Button("All Categories") {
+                    showAllCategories = true
+                }
+                .buttonStyle(CategorySecondaryButtonStyle())
+            }
+
+            HStack(spacing: 6) {
+                categoryMetricPill(title: "% Growth", value: model.growthText, valueColor: model.growthColor)
+                categoryMetricPill(title: model.selectedCategory, value: nativeMoneyValue(model.cumulativeTotal), compact: true)
+            }
+
+            HStack(spacing: 4) {
+                categoryDateField(title: "Start", date: $model.startDate)
+                Spacer(minLength: 10)
+                categoryDateField(title: "End", date: $model.endDate)
+                Spacer(minLength: 4)
+                Button("Update") {
+                    model.updateFromPickers()
+                }
+                .buttonStyle(CategoryPrimaryButtonStyle())
+                .frame(height: 36)
+            }
+
+            HStack(spacing: 5) {
+                ForEach(0..<4, id: \.self) { idx in
+                    Button("Q\(idx + 1)") { model.setQuarter(idx + 1) }
+                        .buttonStyle(CategoryChipButtonStyle())
+                }
+
+                Spacer(minLength: 10)
+
+                HStack(spacing: 4) {
+                    Button {
+                        model.previousYear()
+                    } label: {
+                        Image(systemName: "arrow.left")
+                    }
+                    .buttonStyle(CategoryChipButtonStyle())
+
+                    Text(String(model.selectedYear))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
+
+                    Button {
+                        model.nextYear()
+                    } label: {
+                        Image(systemName: "arrow.right")
+                    }
+                    .buttonStyle(CategoryChipButtonStyle())
+                }
+            }
+
+            categoryChartBody
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Array(categoryMonthNames.enumerated()), id: \.offset) { idx, name in
+                        Button(name) { model.setMonth(idx) }
+                            .buttonStyle(CategoryChipButtonStyle())
+                    }
+                    Button("Annual") { model.setAnnual() }
+                        .buttonStyle(CategoryChipButtonStyle())
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private var categoryChartBody: some View {
+        if model.isLoading {
+            HStack {
+                ProgressView()
+                Text("Loading category...")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 220, alignment: .center)
+            .padding(10)
+            .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        } else if let errorMessage = model.errorMessage {
+            VStack(spacing: 8) {
+                Text(errorMessage)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Retry") {
+                    Task { await model.reload() }
+                }
+                .buttonStyle(CategorySecondaryButtonStyle())
+            }
+            .frame(maxWidth: .infinity, minHeight: 220, alignment: .center)
+            .padding(10)
+            .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        } else {
+            GeometryReader { proxy in
+                Chart {
+                    ForEach(model.dailyChartPoints) { point in
+                        BarMark(
+                            x: .value("Date", point.date),
+                            y: .value("Daily", point.daily)
+                        )
+                        .foregroundStyle(Color(red: 0.23, green: 0.51, blue: 0.96).opacity(0.68))
+                        .cornerRadius(3)
+
+                        LineMark(
+                            x: .value("Date", point.date),
+                            y: .value("Total", point.cumulative)
+                        )
+                        .foregroundStyle(Color.black.opacity(0.72))
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        .interpolationMethod(.linear)
+                    }
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks(position: .leading) { _ in
+                        AxisGridLine().foregroundStyle(.black.opacity(0.07))
+                        AxisTick().foregroundStyle(.black.opacity(0.08))
+                        AxisValueLabel()
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: proxy.size.width, height: 224, alignment: .topLeading)
+                .padding(11)
+                .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+            .frame(height: 224)
+        }
+    }
+
+    private var categoryTransactionsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Transactions")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+
+            if model.isLoading && model.transactions.isEmpty {
+                ProgressView().padding(.vertical, 12)
+            } else if model.transactions.isEmpty {
+                Text("No transactions in this range.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(model.transactions) { tx in
+                        Button {
+                            activeTransaction = tx
+                        } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Text(model.displayDate(for: tx))
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, alignment: .leading)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text((tx.merchant.isEmpty ? "Unknown merchant" : tx.merchant).uppercased())
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
                                     Text([tx.bank, tx.card].compactMap { $0 }.joined(separator: " • "))
                                         .font(.system(size: 11, weight: .medium, design: .rounded))
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(2)
                                 }
-                                Spacer()
-                                let amountText = nativeMoneyValue(tx.amount)
-                                Text(amountText)
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+
+                                Spacer(minLength: 8)
+
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text(nativeMoneyValue(tx.amount))
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.primary)
+                                    Text(nativeMoneyValue(model.runningBalance(for: tx.id)))
+                                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                }
                             }
-                            .padding(14)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                            .padding(12)
+                            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .navigationTitle(category)
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
     }
 
-    private func load() async {
+    private func categoryMetricPill(title: String, value: String, compact: Bool = false, valueColor: Color = .primary) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: compact ? 14 : 16, weight: .bold, design: .rounded))
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func categoryDateField(title: String, date: Binding<Date>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            DatePicker("", selection: date, displayedComponents: .date)
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .tint(.black)
+        }
+    }
+}
+
+private struct CategoryChartPoint: Identifiable, Hashable {
+    let date: Date
+    let daily: Double
+    let cumulative: Double
+    var id: Date { date }
+}
+
+private let categoryMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+private struct CategoryTransactionRow: Identifiable, Hashable {
+    let transaction: TransactionItem
+    let runningBalance: Double
+    var id: String { transaction.id }
+}
+
+@MainActor
+private final class CategoryPageViewModel: ObservableObject {
+    @Published var selectedCategory: String
+    @Published var startDate: Date
+    @Published var endDate: Date
+    @Published var selectedYear: Int
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var chartPoints: [CategoryChartPoint] = []
+    @Published var transactions: [TransactionItem] = []
+    @Published var lifetimeRows: [CategoryLifetimeTotalPayload] = []
+
+    private let api = QuailCashAPI.shared
+    private var runningBalancesByID: [String: Double] = [:]
+    private var didStart = false
+
+    init(category: String) {
+        selectedCategory = category
+        let calendar = Calendar.current
+        let now = Date()
+        let year = calendar.component(.year, from: now)
+        selectedYear = year
+        startDate = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? now
+        endDate = now
+    }
+
+    func startIfNeeded() {
+        guard !didStart else { return }
+        didStart = true
+        Task { await reload() }
+    }
+
+    func reload() async {
         isLoading = true
+        defer { isLoading = false }
+        errorMessage = nil
         do {
-            let start = nativeIsoMonthStart()
-            let end = nativeIsoToday()
-            transactions = try await QuailCashAPI.shared.fetchCategoryTransactions(category: category, start: start, end: end, limit: 100)
-            errorMessage = nil
+            async let lifetime = api.fetchCategoryLifetimeTotals()
+            async let trend = api.fetchCategoryTrend(category: selectedCategory, period: "all")
+            async let txs = api.fetchCategoryTransactions(
+                category: selectedCategory,
+                start: Self.isoDate(startDate),
+                end: Self.isoDate(endDate),
+                limit: 500
+            )
+            let (lifetimeRows, trendPayload, transactionItems) = try await (lifetime, trend, txs)
+            self.lifetimeRows = lifetimeRows
+            chartPoints = Self.buildChartPoints(from: trendPayload.series, start: startDate, end: endDate)
+            let sortedRows = Self.buildTransactionRows(from: transactionItems)
+            transactions = sortedRows.map(\.transaction)
+            runningBalancesByID = Dictionary(uniqueKeysWithValues: sortedRows.map { ($0.transaction.id, $0.runningBalance) })
+        } catch is CancellationError {
+            return
+        } catch QuailCashAPIError.unauthorized {
+            errorMessage = "Sign in to load this category."
         } catch {
             errorMessage = error.localizedDescription
         }
-        isLoading = false
+    }
+
+    func selectCategory(_ category: String) {
+        selectedCategory = category
+        Task { await reload() }
+    }
+
+    func updateFromPickers() {
+        let range = normalizedRange(start: startDate, end: endDate)
+        startDate = range.start
+        endDate = range.end
+        selectedYear = Calendar.current.component(.year, from: range.start)
+        Task { await reload() }
+    }
+
+    func setQuarter(_ quarter: Int) {
+        let q = max(1, min(4, quarter))
+        let startMonth = ((q - 1) * 3) + 1
+        let start = Calendar.current.date(from: DateComponents(year: selectedYear, month: startMonth, day: 1)) ?? startDate
+        let endMonth = startMonth + 2
+        let lastDay = Calendar.current.range(of: .day, in: .month, for: Calendar.current.date(from: DateComponents(year: selectedYear, month: endMonth, day: 1)) ?? Date())?.count ?? 30
+        let end = Calendar.current.date(from: DateComponents(year: selectedYear, month: endMonth, day: lastDay)) ?? endDate
+        setRange(start: start, end: end)
+    }
+
+    func setMonth(_ monthIndex: Int) {
+        let month = max(1, min(12, monthIndex + 1))
+        let start = Calendar.current.date(from: DateComponents(year: selectedYear, month: month, day: 1)) ?? startDate
+        let end = Calendar.current.date(byAdding: DateComponents(month: 1, day: -1), to: start) ?? endDate
+        setRange(start: start, end: end)
+    }
+
+    func setAnnual() {
+        let start = Calendar.current.date(from: DateComponents(year: selectedYear, month: 1, day: 1)) ?? startDate
+        let end = Calendar.current.date(from: DateComponents(year: selectedYear, month: 12, day: 31)) ?? endDate
+        setRange(start: start, end: end)
+    }
+
+    func previousYear() {
+        setYear(selectedYear - 1)
+    }
+
+    func nextYear() {
+        setYear(selectedYear + 1)
+    }
+
+    func setYear(_ year: Int) {
+        let currentYear = Calendar.current.component(.year, from: Date())
+        selectedYear = min(year, currentYear)
+        let start = Calendar.current.date(from: DateComponents(year: selectedYear, month: 1, day: 1)) ?? startDate
+        let end: Date
+        if selectedYear == currentYear {
+            end = Date()
+        } else {
+            end = Calendar.current.date(from: DateComponents(year: selectedYear, month: 12, day: 31)) ?? endDate
+        }
+        setRange(start: start, end: end)
+    }
+
+    func runningBalance(for id: String) -> Double {
+        runningBalancesByID[id] ?? 0
+    }
+
+    func displayDate(for tx: TransactionItem) -> String {
+        let raw = tx.postedDate ?? tx.effectiveDate ?? tx.date ?? tx.dateISO ?? ""
+        return Self.shortDate(raw)
+    }
+
+    func loadTransactionDetail(_ txID: String) async -> TransactionDetailPayload? {
+        do {
+            return try await api.fetchTransactionDetail(txId: txID)
+        } catch {
+            return nil
+        }
+    }
+
+    var dailyChartPoints: [CategoryChartPoint] {
+        chartPoints
+    }
+
+    var cumulativeTotal: Double {
+        chartPoints.last?.cumulative ?? 0
+    }
+
+    var growthText: String {
+        guard let first = chartPoints.first?.cumulative,
+              let last = chartPoints.last?.cumulative,
+              abs(first) > 0.0001 else {
+            return "—"
+        }
+        let pct = ((last - first) / abs(first)) * 100.0
+        return String(format: "%@%.2f%%", pct >= 0 ? "+" : "", pct)
+    }
+
+    var growthColor: Color {
+        guard let first = chartPoints.first?.cumulative,
+              let last = chartPoints.last?.cumulative,
+              abs(first) > 0.0001 else {
+            return .primary
+        }
+        return last >= first ? .red : .green
+    }
+
+    private func setRange(start: Date, end: Date) {
+        let range = normalizedRange(start: start, end: end)
+        startDate = range.start
+        endDate = range.end
+        selectedYear = Calendar.current.component(.year, from: range.start)
+        Task { await reload() }
+    }
+
+    private func normalizedRange(start: Date, end: Date) -> (start: Date, end: Date) {
+        let cal = Calendar.current
+        let s = cal.startOfDay(for: start)
+        let e = cal.startOfDay(for: max(start, end))
+        return (s, e)
+    }
+
+    private static func buildChartPoints(from series: [CategoryTrendPoint], start: Date, end: Date) -> [CategoryChartPoint] {
+        let startDay = Calendar.current.startOfDay(for: start)
+        let endDay = Calendar.current.startOfDay(for: end)
+        let filtered = series.compactMap { point -> (Date, Double)? in
+            guard let date = parseDate(point.date) else { return nil }
+            let day = Calendar.current.startOfDay(for: date)
+            guard day >= startDay, day <= endDay else { return nil }
+            return (day, point.amount)
+        }
+        .sorted { $0.0 < $1.0 }
+
+        var running = 0.0
+        return filtered.map { date, value in
+            running += value
+            return CategoryChartPoint(date: date, daily: value, cumulative: running)
+        }
+    }
+
+    private static func buildTransactionRows(from transactions: [TransactionItem]) -> [CategoryTransactionRow] {
+        let sorted = transactions.sorted {
+            let left = $0.dateISO ?? $0.postedDate ?? $0.effectiveDate ?? $0.date ?? ""
+            let right = $1.dateISO ?? $1.postedDate ?? $1.effectiveDate ?? $1.date ?? ""
+            if left != right { return left < right }
+            return $0.id < $1.id
+        }
+        var running = 0.0
+        let runningRows = sorted.map { tx -> CategoryTransactionRow in
+            running += tx.amount
+            return CategoryTransactionRow(transaction: tx, runningBalance: running)
+        }
+        return runningRows.reversed()
+    }
+
+    private static func isoDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: value)
+    }
+
+    private static func shortDate(_ value: String) -> String {
+        guard let date = parseDate(value) else { return value }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
+    }
+}
+
+private struct CategoryLifetimeSheet: View {
+    let rows: [CategoryLifetimeTotalPayload]
+    let selectedCategory: String
+    let onSelect: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(rows) { row in
+                Button {
+                    onSelect(row.category)
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(row.category)
+                            .font(.system(size: 14, weight: row.category == selectedCategory ? .bold : .semibold, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
+                        Text(nativeMoneyValue(row.total))
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("All Categories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct CategoryPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Color.black.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+}
+
+private struct CategorySecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Color.white.opacity(configuration.isPressed ? 0.88 : 1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+    }
+}
+
+private struct CategoryChipButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(Color.black.opacity(configuration.isPressed ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
     }
 }
 

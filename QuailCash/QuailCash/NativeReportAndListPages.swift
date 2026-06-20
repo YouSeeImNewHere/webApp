@@ -252,6 +252,19 @@ private struct NativeAnalyticsReport: Decodable {
     enum CodingKeys: String, CodingKey {
         case ok, month, summary, categoryBreakdown = "category_breakdown", accountSummary = "account_summary", biggestTransactions = "biggest_transactions", recurringSubscriptions = "recurring_subscriptions", budgetPerformance = "budget_performance", changesVsPreviousMonth = "changes_vs_previous_month"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
+        month = try container.decodeIfPresent(String.self, forKey: .month)
+        summary = try container.decodeIfPresent(NativeAnalyticsSummary.self, forKey: .summary)
+        categoryBreakdown = try container.decodeIfPresent([NativeAnalyticsCategory].self, forKey: .categoryBreakdown) ?? []
+        accountSummary = try container.decodeIfPresent([NativeAnalyticsAccount].self, forKey: .accountSummary) ?? []
+        biggestTransactions = try container.decodeIfPresent(NativeAnalyticsBiggestTransactions.self, forKey: .biggestTransactions)
+        recurringSubscriptions = try container.decodeIfPresent([NativeAnalyticsRecurringSubscription].self, forKey: .recurringSubscriptions) ?? []
+        budgetPerformance = try container.decodeIfPresent(NativeAnalyticsBudgetPerformance.self, forKey: .budgetPerformance)
+        changesVsPreviousMonth = try container.decodeIfPresent(NativeAnalyticsChanges.self, forKey: .changesVsPreviousMonth)
+    }
 }
 
 private struct NativeAnalyticsSummary: Decodable {
@@ -293,6 +306,17 @@ private struct NativeAnalyticsAccount: Decodable, Hashable {
 private struct NativeAnalyticsBiggestTransactions: Decodable {
     let outflows: [NativeAnalyticsTransaction]
     let inflows: [NativeAnalyticsTransaction]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outflows = try container.decodeIfPresent([NativeAnalyticsTransaction].self, forKey: .outflows) ?? []
+        inflows = try container.decodeIfPresent([NativeAnalyticsTransaction].self, forKey: .inflows) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case outflows
+        case inflows
+    }
 }
 
 private struct NativeAnalyticsTransaction: Decodable, Hashable, Identifiable {
@@ -353,6 +377,7 @@ private final class NativeAnalyticsViewModel: ObservableObject {
 
     func load() async {
         isLoading = true
+        defer { isLoading = false }
         errorMessage = nil
         statusText = "Loading report..."
         do {
@@ -362,11 +387,12 @@ private final class NativeAnalyticsViewModel: ObservableObject {
             )
             report = try JSONDecoder.quailCash.decode(NativeAnalyticsReport.self, from: data)
             statusText = "Loaded \(report?.month ?? monthKey)."
+        } catch is CancellationError {
+            return
         } catch {
             errorMessage = error.localizedDescription
             statusText = "Failed to load report."
         }
-        isLoading = false
     }
 
     var monthKey: String {

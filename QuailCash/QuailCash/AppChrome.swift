@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum BottomTab: String, CaseIterable, Identifiable {
     case home
@@ -91,7 +92,7 @@ struct AppTopBar: View {
 }
 
 struct AppBottomBar: View {
-    let selectedTab: BottomTab
+    let selectedTab: BottomTab?
     let onSelectTab: (BottomTab) -> Void
 
     var body: some View {
@@ -135,9 +136,10 @@ struct AppBottomBar: View {
 }
 
 struct AppChromeFrame<Content: View>: View {
+    @EnvironmentObject private var navigator: AppNavigator
     let title: String
     let badgeValue: Int?
-    let selectedTab: BottomTab
+    let selectedTab: BottomTab?
     let onLeadingTap: () -> Void
     let onTrailingTap: () -> Void
     let onSelectTab: (BottomTab) -> Void
@@ -146,7 +148,7 @@ struct AppChromeFrame<Content: View>: View {
     init(
         title: String,
         badgeValue: Int?,
-        selectedTab: BottomTab,
+        selectedTab: BottomTab?,
         onLeadingTap: @escaping () -> Void,
         onTrailingTap: @escaping () -> Void,
         onSelectTab: @escaping (BottomTab) -> Void,
@@ -175,10 +177,11 @@ struct AppChromeFrame<Content: View>: View {
 
             content
         }
+        .background(InteractivePopGestureEnabler())
         .safeAreaInset(edge: .top, spacing: 0) {
             AppTopBar(
                 title: title,
-                badgeValue: badgeValue,
+                badgeValue: badgeValue ?? navigator.unreadCount,
                 onLeadingTap: onLeadingTap,
                 onTrailingTap: onTrailingTap
             )
@@ -190,27 +193,72 @@ struct AppChromeFrame<Content: View>: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .task {
+            await navigator.refreshUnreadCountIfNeeded()
+        }
+    }
+}
+
+private struct InteractivePopGestureEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context: Context) {
+        uiViewController.enableInteractivePop()
+    }
+
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            enableInteractivePop()
+        }
+
+        func enableInteractivePop() {
+            guard let navigationController else { return }
+            navigationController.interactivePopGestureRecognizer?.isEnabled = true
+            navigationController.interactivePopGestureRecognizer?.delegate = nil
+        }
     }
 }
 
 struct AppPageScroll<Content: View>: View {
     let content: Content
     let contentPadding: CGFloat
+    let refreshAction: (() async -> Void)?
 
-    init(contentPadding: CGFloat = 12, @ViewBuilder content: () -> Content) {
+    init(contentPadding: CGFloat = 12, refreshAction: (() async -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.contentPadding = contentPadding
+        self.refreshAction = refreshAction
         self.content = content()
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                content
+        Group {
+            if let refreshAction {
+                scrollBody
+                    .refreshable {
+                        await refreshAction()
+                    }
+            } else {
+                scrollBody
             }
-            .padding(contentPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var scrollBody: some View {
+        GeometryReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    content
+                }
+                .frame(width: max(0, proxy.size.width - (contentPadding * 2)), alignment: .leading)
+                .padding(contentPadding)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+        }
+        .clipped()
     }
 }

@@ -5,18 +5,26 @@ import hmac
 import json
 from typing import Optional, Dict
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Request
 from pydantic import BaseModel
 
 from app.core.config import NOTIF_SECRET, MULTI_TENANT_ENABLED
-from app.core.tenancy import current_tenant_id, get_owner_tenant_id
+from app.core.tenancy import current_tenant_id, get_owner_tenant_id, get_user_by_email
 from app.core.pushover import send_pushover
+from app.core.apns import (
+    apns_configured,
+    register_ios_push_device,
+    revoke_ios_push_device,
+    active_ios_push_device_count_for_user,
+    send_ios_push_to_tenant,
+)
 from db import with_db_cursor, query_db
 
 router = APIRouter()
 
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "disable_all": False,
+    "ios_push": False,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
@@ -156,6 +164,14 @@ class NotificationPush(BaseModel):
     body: str = ""
 
 
+class IOSPushDeviceBody(BaseModel):
+    token: str
+    device_name: str | None = None
+    bundle_id: str | None = None
+    app_version: str | None = None
+    environment: str | None = None
+
+
 def create_notification(
     *,
     kind: str,
@@ -178,16 +194,20 @@ def create_notification(
     if MULTI_TENANT_ENABLED and tenant_id:
         dkey = f"t{int(tenant_id)}:{dkey}"
 
+    notification_id: int | None = None
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
             INSERT INTO notifications (tenant_id, kind, dedupe_key, subject, sender, body, is_read, dismissed)
             VALUES (%s, %s, %s, %s, %s, %s, FALSE, FALSE)
             ON CONFLICT (dedupe_key) DO NOTHING
+            RETURNING id
             """,
             ((int(tenant_id), kind, dkey, subject, sender, body) if tenant_id else (None, kind, dkey, subject, sender, body)),
         )
-        created = (cur.rowcount or 0) > 0
+        row = cur.fetchone()
+        created = bool(row and row.get("id"))
+        notification_id = int(row.get("id")) if row and row.get("id") is not None else None
         conn.commit()
         created_bool = bool(created)
     if created_bool:
@@ -197,7 +217,27 @@ def create_notification(
                 send_pushover(subject or "Notification", body or "", user_key=user_key)
         except Exception:
             pass
+        try:
+            prefs = _notification_prefs_for_tenant(tenant_id)
+            if tenant_id and notification_id and not bool(prefs.get("disable_all")) and bool(prefs.get("ios_push")) and apns_configured():
+                send_ios_push_to_tenant(
+                    tenant_id=int(tenant_id),
+                    notification_id=int(notification_id),
+                    kind=str(kind or ""),
+                    subject=str(subject or "Notification"),
+                    body=str(body or ""),
+                )
+        except Exception:
+            pass
     return created_bool
+
+
+def _session_email(request: Request) -> str:
+    for key in ("google_email", "email", "user_email"):
+        val = str(request.session.get(key) or "").strip().lower()
+        if val:
+            return val
+    return ""
 
 def _to_local_display_pg(ts: Optional[object]) -> str:
     """
@@ -281,6 +321,40 @@ def list_notifications(limit: int = 200):
         )
 
     return {"items": items}
+
+
+@router.post("/notifications/ios/devices")
+def upsert_ios_push_device(body: IOSPushDeviceBody, request: Request):
+    tid = _require_tenant_id()
+    session_email = _session_email(request)
+    user = get_user_by_email(session_email) if session_email else None
+    if not tid or not user:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    try:
+        register_ios_push_device(
+            tenant_id=int(tid),
+            user_id=int(user.get("id") or 0),
+            token=body.token,
+            device_name=body.device_name,
+            bundle_id=body.bundle_id,
+            app_version=body.app_version,
+            environment=body.environment,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    count = active_ios_push_device_count_for_user(int(user.get("id") or 0))
+    return {"ok": True, "device_count": int(count), "apns_configured": bool(apns_configured())}
+
+
+@router.delete("/notifications/ios/devices")
+def delete_ios_push_device(body: IOSPushDeviceBody, request: Request):
+    session_email = _session_email(request)
+    user = get_user_by_email(session_email) if session_email else None
+    if not user:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    changed = revoke_ios_push_device(token=body.token, user_id=int(user.get("id") or 0))
+    count = active_ios_push_device_count_for_user(int(user.get("id") or 0))
+    return {"ok": True, "revoked": bool(changed), "device_count": int(count)}
 
 @router.get("/notifications/unread-count")
 def unread_count():
