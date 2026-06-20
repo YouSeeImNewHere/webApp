@@ -574,10 +574,10 @@ private struct NotificationSettingsPageView: View {
     @State private var iosPushStatus = "Checking iPhone push..."
     @State private var statusMessage = ""
     @State private var isSaving = false
+    @State private var isSendingTest = false
 
     private let rows: [(key: String, title: String, subtitle: String)] = [
         ("disable_all", "Disable all", "Turn off all notifications."),
-        ("ios_push", "iPhone push", "Send alerts to this iPhone through the app."),
         ("credit_usage", "Credit usage", "Alert on card usage events."),
         ("credit_usage_total", "Credit usage total", "Summarize total card usage."),
         ("budget_over", "Budget over", "Notify when spending exceeds budget."),
@@ -605,9 +605,30 @@ private struct NotificationSettingsPageView: View {
                         Text(userKeyStatus)
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
-                        Text(iosPushStatus)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
+                        if MobilePushManager.isAvailable {
+                            Text(iosPushStatus)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("iPhone push is turned off in this build while you test without a paid Apple Developer account.")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        if MobilePushManager.isAvailable && prefs["ios_push"] == true {
+                            Button {
+                                Task { await sendTestPush() }
+                            } label: {
+                                Text(isSendingTest ? "Sending..." : "Send Test Push")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .frame(maxWidth: .infinity, minHeight: 42)
+                                    .foregroundStyle(.primary)
+                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isSendingTest)
+                            .padding(.top, 4)
+                        }
                     }
                 }
 
@@ -661,21 +682,27 @@ private struct NotificationSettingsPageView: View {
         do {
             let out = try await SettingsNetworking.fetch("/settings/notifications", as: SettingsNotificationSettingsPayload.self)
             prefs = out.prefs
+            prefs["ios_push"] = false
             if let key = out.pushoverUserKey, !key.isEmpty {
                 userKeyStatus = "Pushover key set."
             } else {
                 userKeyStatus = "Pushover key not set."
             }
-            iosPushStatus = iosPushStatusText(from: out)
+            iosPushStatus = MobilePushManager.isAvailable ? iosPushStatusText(from: out) : "iPhone push is unavailable in this build."
             await pushManager.refreshAuthorizationStatus()
         } catch {
             userKeyStatus = "Notification settings unavailable."
-            iosPushStatus = "iPhone push status unavailable."
+            iosPushStatus = MobilePushManager.isAvailable ? "iPhone push status unavailable." : "iPhone push is unavailable in this build."
         }
     }
 
     private func savePref(key: String, value: Bool) async {
         guard !isSaving else { return }
+        guard key != "ios_push" else {
+            prefs[key] = false
+            statusMessage = "iPhone push is disabled in this build."
+            return
+        }
         if key == "ios_push" && value {
             let granted = await pushManager.requestAuthorizationAndRegister()
             if !granted {
@@ -712,6 +739,18 @@ private struct NotificationSettingsPageView: View {
             return "No iPhone devices registered."
         }
         return count == 1 ? "1 iPhone registered." : "\(count) iPhones registered."
+    }
+
+    private func sendTestPush() async {
+        guard !isSendingTest else { return }
+        isSendingTest = true
+        defer { isSendingTest = false }
+        do {
+            try await QuailCashAPI.shared.sendIOSTestPush()
+            statusMessage = "Test push sent."
+        } catch {
+            statusMessage = error.localizedDescription.isEmpty ? "Failed to send test push." : error.localizedDescription
+        }
     }
 }
 

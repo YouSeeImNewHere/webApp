@@ -508,6 +508,22 @@ final class QuailCashAPI {
         _ = try await checkedData(for: request)
     }
 
+    func sendIOSTestPush(title: String? = nil, body: String? = nil) async throws {
+        var payload: [String: Any] = [:]
+        if let title, !title.isEmpty {
+            payload["title"] = title
+        }
+        if let body, !body.isEmpty {
+            payload["body"] = body
+        }
+        let request = makeRequest(
+            url: AppConfig.url(path: "/notifications/ios/test"),
+            method: "POST",
+            jsonBody: payload
+        )
+        _ = try await checkedData(for: request)
+    }
+
     func fetchCategoryTrend(category: String, period: String = "all") async throws -> CategoryTrendPayload {
         let request = makeRequest(url: AppConfig.url(path: "/category-trend", queryItems: [
             URLQueryItem(name: "category", value: category),

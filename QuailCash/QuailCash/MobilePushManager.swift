@@ -6,6 +6,7 @@ import UserNotifications
 @MainActor
 final class MobilePushManager: NSObject, ObservableObject {
     static let shared = MobilePushManager()
+    static let isAvailable = false
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var deviceToken: String = ""
@@ -17,6 +18,7 @@ final class MobilePushManager: NSObject, ObservableObject {
     }
 
     func bootstrap() async {
+        guard Self.isAvailable else { return }
         UNUserNotificationCenter.current().delegate = self
         await refreshAuthorizationStatus()
         if authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral {
@@ -25,11 +27,16 @@ final class MobilePushManager: NSObject, ObservableObject {
     }
 
     func refreshAuthorizationStatus() async {
+        guard Self.isAvailable else {
+            authorizationStatus = .denied
+            return
+        }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         authorizationStatus = settings.authorizationStatus
     }
 
     func requestAuthorizationAndRegister() async -> Bool {
+        guard Self.isAvailable else { return false }
         do {
             let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
             await refreshAuthorizationStatus()
@@ -43,6 +50,7 @@ final class MobilePushManager: NSObject, ObservableObject {
     }
 
     func registerDeviceToken(_ data: Data) {
+        guard Self.isAvailable else { return }
         let token = data.map { String(format: "%02x", $0) }.joined()
         deviceToken = token
         Task {
@@ -57,6 +65,7 @@ final class MobilePushManager: NSObject, ObservableObject {
     }
 
     func unregisterCurrentDevice() async {
+        guard Self.isAvailable else { return }
         guard !deviceToken.isEmpty else { return }
         try? await QuailCashAPI.shared.unregisterIOSPushDevice(token: deviceToken)
     }

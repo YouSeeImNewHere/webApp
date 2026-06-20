@@ -172,6 +172,11 @@ class IOSPushDeviceBody(BaseModel):
     environment: str | None = None
 
 
+class IOSPushTestBody(BaseModel):
+    title: str | None = None
+    body: str | None = None
+
+
 def create_notification(
     *,
     kind: str,
@@ -238,6 +243,14 @@ def _session_email(request: Request) -> str:
         if val:
             return val
     return ""
+
+
+def _notification_prefs_for_session_request(request: Request) -> tuple[dict[str, bool], dict | None, int | None]:
+    tid = _require_tenant_id()
+    session_email = _session_email(request)
+    user = get_user_by_email(session_email) if session_email else None
+    prefs = _notification_prefs_for_tenant(tid)
+    return prefs, user, tid
 
 def _to_local_display_pg(ts: Optional[object]) -> str:
     """
@@ -355,6 +368,37 @@ def delete_ios_push_device(body: IOSPushDeviceBody, request: Request):
     changed = revoke_ios_push_device(token=body.token, user_id=int(user.get("id") or 0))
     count = active_ios_push_device_count_for_user(int(user.get("id") or 0))
     return {"ok": True, "revoked": bool(changed), "device_count": int(count)}
+
+
+@router.post("/notifications/ios/test")
+def send_ios_push_test(body: IOSPushTestBody, request: Request):
+    prefs, user, tid = _notification_prefs_for_session_request(request)
+    if not user or not tid:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    if not apns_configured():
+        raise HTTPException(status_code=503, detail="ios_push_not_configured")
+    if bool(prefs.get("disable_all")) or not bool(prefs.get("ios_push")):
+        raise HTTPException(status_code=409, detail="ios_push_disabled")
+    device_count = active_ios_push_device_count_for_user(int(user.get("id") or 0))
+    if device_count <= 0:
+        raise HTTPException(status_code=409, detail="ios_push_device_not_registered")
+
+    title = str((body.title or "").strip() or "QuailCash Test Notification")
+    message = str((body.body or "").strip() or "This is a test push from QuailCash.")
+    result = send_ios_push_to_tenant(
+        tenant_id=int(tid),
+        notification_id=0,
+        kind="ios_push_test",
+        subject=title,
+        body=message,
+    )
+    if int(result.get("sent") or 0) <= 0:
+        raise HTTPException(status_code=502, detail="ios_push_send_failed")
+    return {
+        "ok": True,
+        "sent": int(result.get("sent") or 0),
+        "attempted": int(result.get("attempted") or 0),
+    }
 
 @router.get("/notifications/unread-count")
 def unread_count():
