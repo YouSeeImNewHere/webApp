@@ -1674,7 +1674,6 @@ private final class NativeRecurringViewModel: ObservableObject {
 }
 
 struct NativeRecurringPageView: View {
-    @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var model = NativeRecurringViewModel()
 
     var body: some View {
@@ -1767,19 +1766,23 @@ struct NativeRecurringPageView: View {
         NativeCard(title: "Recurring", centered: true) {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Include stale", isOn: $model.includeStale)
-                HStack {
+                HStack(alignment: .center, spacing: 8) {
                     Text("Min occurrences:")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                     TextField("", text: $model.minOccurrences)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 70)
-                    Button("Refresh") { model.reloadAll() }.buttonStyle(NativeCompactButtonStyle())
-                    Button("Income Wizard") { navigator.show(.incomeWizard) }.buttonStyle(NativeCompactButtonStyle())
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .frame(width: 34)
+                    Button("Refresh") { model.reloadAll() }
+                        .buttonStyle(NativeCompactButtonStyle())
                     Button("Review ignored") {
                         Task {
                             await model.loadIgnored()
                             model.showIgnoredModal = true
                         }
-                    }.buttonStyle(NativeCompactButtonStyle())
+                    }
+                    .buttonStyle(NativeCompactButtonStyle())
                 }
                 if !model.lesStatusText.isEmpty {
                     Text(model.lesStatusText)

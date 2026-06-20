@@ -159,6 +159,9 @@ DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
 
 
 def _session_email(request: Request) -> str:
+    state_email = str(getattr(request.state, "google_email", "") or "").strip().lower()
+    if state_email:
+        return state_email
     for key in ("google_email", "email", "user_email"):
         val = (request.session.get(key) or "").strip().lower()
         if val:
@@ -654,7 +657,7 @@ def set_paycheck_matchers(body: PaycheckMatchersIn):
 
 
 def _require_approved_session_user(request: Request) -> tuple[int, str]:
-    session_email = (request.session.get("google_email") or "").strip().lower()
+    session_email = _session_email(request)
     if not session_email:
         raise HTTPException(status_code=401, detail="google_auth_required")
 

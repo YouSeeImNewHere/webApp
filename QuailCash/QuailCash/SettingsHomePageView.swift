@@ -965,28 +965,45 @@ private struct WidgetSetupSheet: View {
     @Environment(\.dismiss) private var dismiss
     let platform: WidgetPlatform
     @State private var statusText = "Loading..."
-    @State private var widgetScript = ""
+    @State private var widgetToken = ""
     @State private var widgetURL = ""
     @State private var widgetVersionText = ""
 
     var body: some View {
         SettingsSheetShell(title: platform == .ios ? "iOS Widgets" : "Android Widgets",
-                   subtitle: platform == .ios ? "Scriptable setup and widget script" : "KWGT setup and widget URL") {
+                   subtitle: platform == .ios ? "Native home screen and lock screen widget setup" : "KWGT setup and widget URL") {
             VStack(alignment: .leading, spacing: 12) {
                 Text(statusText)
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
 
                 if platform == .ios {
-                    Text("Paste the generated Scriptable code into a new script on your phone.")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("The native widget uses a widget token instead of Scriptable.")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Text("1. Generate and copy a widget token.")
+                        Text("2. Add the QuailCash widget to the Home Screen or Lock Screen.")
+                        Text("3. Long-press the widget, choose Edit Widget, then paste the token into Widget Token.")
+                    }
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+
                     Button {
-                        Task { await loadWidgetScript() }
+                        Task { await loadWidgetTokenOnly(copyToClipboardAfterLoad: true) }
                     } label: {
-                        settingsSheetPrimaryButton("Copy Script")
+                        settingsSheetPrimaryButton("Generate + Copy Token")
                     }
                     .buttonStyle(.plain)
+
+                    if !widgetToken.isEmpty {
+                        Text(widgetToken)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .textSelection(.enabled)
+                            .padding(10)
+                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
                     Button {
                         dismiss()
                     } label: {
@@ -1033,15 +1050,6 @@ private struct WidgetSetupSheet: View {
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
-
-                if !widgetScript.isEmpty && platform == .ios {
-                    Text(widgetScript)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .lineLimit(10)
-                        .textSelection(.enabled)
-                        .padding(10)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
             }
         }
         .task { await load() }
@@ -1051,22 +1059,24 @@ private struct WidgetSetupSheet: View {
     private func load() async {
         switch platform {
         case .ios:
-            await loadWidgetScript()
+            await loadWidgetTokenOnly(copyToClipboardAfterLoad: false)
         case .android:
             await loadWidgetTokenAndURLOnly()
         }
     }
 
-    private func loadWidgetScript() async {
-        statusText = "Generating script..."
+    private func loadWidgetTokenOnly(copyToClipboardAfterLoad: Bool) async {
+        statusText = "Generating widget token..."
         do {
-            let out = try await SettingsAPI.fetch("/settings/widget-script", method: "POST", as: SettingsWidgetScriptPayload.self)
-            widgetScript = out.script
+            let out = try await SettingsAPI.fetch("/settings/widget-token", method: "POST", as: SettingsWidgetTokenPayload.self)
+            widgetToken = out.widgetToken
             widgetVersionText = "Widget version \(out.widgetVersion ?? 0)"
-            statusText = "Script ready."
-            copyToClipboard(out.script)
+            statusText = "Widget token ready."
+            if copyToClipboardAfterLoad {
+                copyToClipboard(out.widgetToken)
+            }
         } catch {
-            statusText = "Failed to generate script."
+            statusText = "Failed to generate widget token."
         }
     }
 
@@ -3090,7 +3100,7 @@ private struct IncomeWizardContentView: View {
                     get: { profile.mealDeductionEnabled },
                     set: { profile.mealDeductionEnabled = $0 }
                 ))
-                settingsDateField("Meal deduction start", text: Binding(
+                settingsOptionalDatePickerField("Meal deduction start", text: Binding(
                     get: { profile.mealDeductionStart ?? "" },
                     set: { profile.mealDeductionStart = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
                 ))
@@ -3337,6 +3347,41 @@ private struct IncomeWizardContentView: View {
 
     private func settingsDateField(_ title: String, text: Binding<String>) -> some View {
         settingsInlineField(title, text: text)
+    }
+
+    private func settingsOptionalDatePickerField(_ title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+            HStack(spacing: 8) {
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { isoDateStringToDate(text.wrappedValue.isEmpty ? isoDateString(Date()) : text.wrappedValue) },
+                        set: { text.wrappedValue = isoDateString($0) }
+                    ),
+                    displayedComponents: .date
+                )
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    text.wrappedValue = ""
+                } label: {
+                    Text("Clear")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 42)
+            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func settingsBoolMenu(_ title: String, value: Binding<Bool>) -> some View {
