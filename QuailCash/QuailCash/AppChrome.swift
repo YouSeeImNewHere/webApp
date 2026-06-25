@@ -96,37 +96,57 @@ struct AppBottomBar: View {
     let selectedTab: BottomTab?
     let palette: QuailThemePalette
     let onSelectTab: (BottomTab) -> Void
+    let onDashboardTap: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
-            ForEach(BottomTab.allCases) { tab in
-                Button {
-                    onSelectTab(tab)
-                } label: {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .center, spacing: 6) {
+                ForEach(BottomTab.allCases) { tab in
+                    Button {
+                        onSelectTab(tab)
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 16, weight: .semibold))
+                            Text(tab.title)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                        }
+                        .frame(minWidth: 84)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(selectedTab == tab ? palette.chromeIconForeground : palette.chromeIconForeground.opacity(0.72))
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(selectedTab == tab ? palette.selectedTabFill : .clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(selectedTab == tab ? palette.border : .clear, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Button(action: onDashboardTap) {
                     VStack(spacing: 4) {
-                        Image(systemName: tab.systemImage)
+                        Image(systemName: "square.grid.2x2.fill")
                             .font(.system(size: 16, weight: .semibold))
-                        Text(tab.title)
+                        Text("Dashboard")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(minWidth: 108)
                     .padding(.vertical, 8)
-                    .foregroundStyle(selectedTab == tab ? palette.chromeIconForeground : palette.chromeIconForeground.opacity(0.72))
+                    .foregroundStyle(palette.primaryButtonText)
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(selectedTab == tab ? palette.selectedTabFill : .clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(selectedTab == tab ? palette.border : .clear, lineWidth: 1)
+                            .fill(palette.primaryButton)
                     )
                 }
                 .buttonStyle(.plain)
             }
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 6)
-        .padding(.bottom, 2)
         .background(palette.barBackground)
         .overlay(
             Rectangle()
@@ -143,6 +163,7 @@ struct AppChromeFrame<Content: View>: View {
     let title: String
     let badgeValue: Int?
     let selectedTab: BottomTab?
+    let showsBottomBar: Bool
     let onLeadingTap: () -> Void
     let onTrailingTap: () -> Void
     let onSelectTab: (BottomTab) -> Void
@@ -152,6 +173,7 @@ struct AppChromeFrame<Content: View>: View {
         title: String,
         badgeValue: Int?,
         selectedTab: BottomTab?,
+        showsBottomBar: Bool = true,
         onLeadingTap: @escaping () -> Void,
         onTrailingTap: @escaping () -> Void,
         onSelectTab: @escaping (BottomTab) -> Void,
@@ -160,6 +182,7 @@ struct AppChromeFrame<Content: View>: View {
         self.title = title
         self.badgeValue = badgeValue
         self.selectedTab = selectedTab
+        self.showsBottomBar = showsBottomBar
         self.onLeadingTap = onLeadingTap
         self.onTrailingTap = onTrailingTap
         self.onSelectTab = onSelectTab
@@ -189,11 +212,14 @@ struct AppChromeFrame<Content: View>: View {
             )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            AppBottomBar(
-                selectedTab: selectedTab,
-                palette: palette,
-                onSelectTab: onSelectTab
-            )
+            if showsBottomBar {
+                AppBottomBar(
+                    selectedTab: selectedTab,
+                    palette: palette,
+                    onSelectTab: onSelectTab,
+                    onDashboardTap: { navigator.setRoot(.dashboard) }
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar(.hidden, for: .navigationBar)

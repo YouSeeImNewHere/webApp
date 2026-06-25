@@ -1,6 +1,21 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import ActivityKit
+
+struct ImportBatchAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        var title: String
+        var status: String
+        var processedFileCount: Int
+        var totalFileCount: Int
+        var currentFileTransactions: Int
+        var importedTransactions: Int
+        var skippedTransactions: Int
+    }
+
+    var batchName: String
+}
 
 struct QuailCashWidgetConfigurationIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "QuailCash Widget"
@@ -407,9 +422,95 @@ private extension View {
     }
 }
 
+struct QuailCashImportLiveActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: ImportBatchAttributes.self) { context in
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: "square.and.arrow.down.on.square.fill")
+                        .foregroundStyle(.blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(context.state.title)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                        Text(context.state.status)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Text("\(context.state.processedFileCount)/\(context.state.totalFileCount)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                }
+                HStack(spacing: 10) {
+                    liveStat(label: "File Tx", value: "\(context.state.currentFileTransactions)")
+                    liveStat(label: "Imported", value: "\(context.state.importedTransactions)")
+                    liveStat(label: "Skipped", value: "\(context.state.skippedTransactions)")
+                }
+                ProgressView(value: Double(context.state.processedFileCount), total: Double(max(context.state.totalFileCount, 1)))
+                    .tint(.blue)
+            }
+            .padding(14)
+            .activityBackgroundTint(Color(.systemBackground))
+            .activitySystemActionForegroundColor(.blue)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image(systemName: "square.and.arrow.down.on.square.fill")
+                        .foregroundStyle(.blue)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(context.state.title)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                        Text(context.state.status)
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text("\(context.state.processedFileCount)/\(context.state.totalFileCount)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            liveStat(label: "File Tx", value: "\(context.state.currentFileTransactions)")
+                            liveStat(label: "Imported", value: "\(context.state.importedTransactions)")
+                            liveStat(label: "Skipped", value: "\(context.state.skippedTransactions)")
+                        }
+                        ProgressView(value: Double(context.state.processedFileCount), total: Double(max(context.state.totalFileCount, 1)))
+                            .tint(.blue)
+                    }
+                }
+            } compactLeading: {
+                Image(systemName: "square.and.arrow.down.on.square.fill")
+            } compactTrailing: {
+                Text("\(context.state.processedFileCount)/\(context.state.totalFileCount)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+            } minimal: {
+                Image(systemName: "square.and.arrow.down.on.square.fill")
+            }
+        }
+    }
+
+    private func liveStat(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 @main
 struct QuailCashWidgetsBundle: WidgetBundle {
     var body: some Widget {
         QuailCashHomeWidget()
+        QuailCashImportLiveActivityWidget()
     }
 }

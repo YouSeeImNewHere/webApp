@@ -3,8 +3,15 @@ import WebKit
 import Combine
 import Charts
 
+private func nativePagesPalette() -> QuailThemePalette {
+    QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+}
+
 enum AppRoute: Hashable {
+    case dashboard
     case home
+    case fitness
+    case vehicle
     case spending
     case settings
     case setupWizard
@@ -18,6 +25,7 @@ enum AppRoute: Hashable {
     case allTransactions
     case bankInfo
     case csvImport
+    case importQueue
     case ruleBuilder
     case category(String)
     case account(BankAccountPayload, audit: Bool)
@@ -29,8 +37,22 @@ struct NativePageView: View {
     var body: some View {
         Group {
             switch route {
+            case .dashboard:
+                DashboardPageView()
             case .home:
                 HomeView()
+            case .fitness:
+                DashboardModulePlaceholderPageView(
+                    title: "Fitness",
+                    subtitle: "Training, body stats, and progress snapshots will live here.",
+                    icon: "figure.run"
+                )
+            case .vehicle:
+                DashboardModulePlaceholderPageView(
+                    title: "Vehicle",
+                    subtitle: "Maintenance, fuel, trips, and costs will live here.",
+                    icon: "car.fill"
+                )
             case .spending:
                 NativeSpendingPageView()
             case .settings:
@@ -57,6 +79,8 @@ struct NativePageView: View {
                 BankInfoPageView()
             case .csvImport:
                 CsvImportPageView()
+            case .importQueue:
+                ImportQueuePageView()
             case .ruleBuilder:
                 RuleBuilderPageView()
             case .category(let name):
@@ -201,6 +225,218 @@ struct PageShell<Content: View>: View {
     }
 }
 
+private struct DashboardPageView: View {
+    @EnvironmentObject private var navigator: AppNavigator
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        AppChromeFrame(
+            title: "Dashboard",
+            badgeValue: nil,
+            selectedTab: nil,
+            showsBottomBar: false,
+            onLeadingTap: { navigator.show(.settings) },
+            onTrailingTap: { navigator.show(.notifications) },
+            onSelectTab: { _ in }
+        ) {
+            AppPageScroll(contentPadding: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Launch the part of the app you want to use.")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+
+                    dashboardLauncherCard(
+                        title: "Finance",
+                        subtitle: "Budget, spending, accounts, recurring, and reporting.",
+                        icon: "creditcard.fill",
+                        accent: palette.accent,
+                        status: "Ready",
+                        actionTitle: "Open Finance",
+                        onTap: { navigator.setRoot(.home) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Fitness",
+                        subtitle: "Prototype space for workouts, body metrics, and recovery.",
+                        icon: "figure.strengthtraining.traditional",
+                        accent: palette.positive,
+                        status: "Prototype",
+                        actionTitle: "Open Fitness",
+                        onTap: { navigator.setRoot(.fitness) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Vehicle",
+                        subtitle: "Prototype space for mileage, maintenance, and operating costs.",
+                        icon: "car.fill",
+                        accent: Color.orange,
+                        status: "Prototype",
+                        actionTitle: "Open Vehicle",
+                        onTap: { navigator.setRoot(.vehicle) }
+                    )
+
+                    dashboardPreviewStrip(palette: palette)
+                }
+            }
+        }
+    }
+
+    private func dashboardLauncherCard(
+        title: String,
+        subtitle: String,
+        icon: String,
+        accent: Color,
+        status: String,
+        actionTitle: String,
+        onTap: @escaping () -> Void
+    ) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return Button(action: onTap) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(accent.opacity(0.16))
+                        .frame(width: 56, height: 56)
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(accent)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(title)
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                        Text(status)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.secondaryButtonText)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(palette.secondaryButton, in: Capsule(style: .continuous))
+                    }
+
+                    Text(subtitle)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+
+                    HStack(spacing: 8) {
+                        Text(actionTitle)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(palette.primaryButtonText)
+                            .padding(.horizontal, 12)
+                            .frame(height: 36)
+                            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func dashboardPreviewStrip(palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Quick Glance")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            Text("Reserved for cross-app snapshots. Finance, fitness, and vehicle previews can land here later.")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                dashboardPreviewTile(title: "Finance", value: "Preview later", palette: palette)
+                dashboardPreviewTile(title: "Fitness", value: "Preview later", palette: palette)
+                dashboardPreviewTile(title: "Vehicle", value: "Preview later", palette: palette)
+            }
+        }
+        .padding(16)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private func dashboardPreviewTile(title: String, value: String, palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
+        .padding(12)
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+}
+
+private struct DashboardModulePlaceholderPageView: View {
+    @EnvironmentObject private var navigator: AppNavigator
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+
+    let title: String
+    let subtitle: String
+    let icon: String
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        AppChromeFrame(
+            title: title,
+            badgeValue: nil,
+            selectedTab: nil,
+            showsBottomBar: false,
+            onLeadingTap: { navigator.show(.settings) },
+            onTrailingTap: { navigator.show(.notifications) },
+            onSelectTab: { _ in }
+        ) {
+            AppPageScroll(contentPadding: 14) {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .fill(palette.elevatedSurface)
+                                .frame(width: 72, height: 72)
+                            Image(systemName: icon)
+                                .font(.system(size: 28, weight: .semibold))
+                                .foregroundStyle(palette.accent)
+                        }
+
+                        Text(title)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                        Text(subtitle)
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(palette.border, lineWidth: 1))
+
+                    Button {
+                        navigator.setRoot(.dashboard)
+                    } label: {
+                        Text("Back to Dashboard")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(palette.primaryButtonText)
+                            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
 private struct SettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.openURL) private var openURL
@@ -229,6 +465,7 @@ private struct SettingsPageView: View {
     ]
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         PageShell(title: "Settings", subtitle: "App-level shortcuts and account tools") {
             VStack(alignment: .leading, spacing: 12) {
                 settingsSection(title: "Appearance") {
@@ -267,8 +504,8 @@ private struct SettingsPageView: View {
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 10)
-                                .background(Color.black, in: Capsule(style: .continuous))
-                                .foregroundStyle(.white)
+                                .background(palette.primaryButton, in: Capsule(style: .continuous))
+                                .foregroundStyle(palette.primaryButtonText)
                         }
                         .buttonStyle(.plain)
                     }
@@ -475,7 +712,8 @@ private struct SettingsPageView: View {
     }
 
     private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -485,8 +723,8 @@ private struct SettingsPageView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
@@ -512,13 +750,14 @@ private struct SettingsPageView: View {
     }
 
     private func settingsActionChip(_ title: String) -> some View {
-        Text(title)
+        let palette = QuailTheme.palette(for: themeSelection)
+        return Text(title)
             .font(.system(size: 13, weight: .semibold, design: .rounded))
             .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .foregroundStyle(.white)
-            .background(Color.black, in: Capsule(style: .continuous))
+            .foregroundStyle(palette.primaryButtonText)
+            .background(palette.primaryButton, in: Capsule(style: .continuous))
     }
 
     private func loadSettings() async {
@@ -577,6 +816,7 @@ private struct SettingsPageView: View {
 }
 
 private struct NotificationSettingsPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @EnvironmentObject private var pushManager: MobilePushManager
     @State private var prefs: [String: Bool] = [:]
     @State private var userKeyStatus = "Loading..."
@@ -602,6 +842,7 @@ private struct NotificationSettingsPageView: View {
     ]
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         PageShell(title: "Notifications", subtitle: "Smart notifications and alert preferences") {
             VStack(alignment: .leading, spacing: 12) {
                 settingsCard {
@@ -623,16 +864,16 @@ private struct NotificationSettingsPageView: View {
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
-                        if MobilePushManager.isAvailable && prefs["ios_push"] == true {
+                if MobilePushManager.isAvailable && prefs["ios_push"] == true {
                             Button {
                                 Task { await sendTestPush() }
                             } label: {
                                 Text(isSendingTest ? "Sending..." : "Send Test Push")
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .frame(maxWidth: .infinity, minHeight: 42)
-                                    .foregroundStyle(.primary)
-                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.10), lineWidth: 1))
+                                    .foregroundStyle(palette.secondaryButtonText)
+                                    .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .disabled(isSendingTest)
@@ -680,11 +921,12 @@ private struct NotificationSettingsPageView: View {
     }
 
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
+        let palette = QuailTheme.palette(for: themeSelection)
+        return content()
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func load() async {
@@ -871,6 +1113,7 @@ private enum SettingsNetworking {
 }
 
 private struct NotificationsPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @StateObject private var model = NotificationsPageViewModel()
     @State private var selectedNotification: NotificationDetailPayload?
     @State private var selectedError: AdminErrorNotificationPayload?
@@ -973,7 +1216,8 @@ private struct NotificationsPageView: View {
     }
 
     private func notificationRow(_ item: NotificationItemPayload) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(item.sender ?? "System")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -995,12 +1239,13 @@ private struct NotificationsPageView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(item.isRead == false ? .black.opacity(0.18) : .black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(item.isRead == false ? palette.border.opacity(2.0) : palette.border, lineWidth: 1))
     }
 
     private func errorRow(_ item: AdminErrorNotificationPayload) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("\(item.statusCode ?? 0) \(item.method ?? "") \(item.path ?? "")")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -1022,8 +1267,8 @@ private struct NotificationsPageView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 
@@ -1238,6 +1483,7 @@ private struct AdminErrorDetailSheetView: View {
 }
 
 private struct BudgetPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @State private var monthBudget: MonthBudgetPayload?
     @State private var extraSaved: Double?
     @State private var errorMessage: String?
@@ -1261,7 +1507,8 @@ private struct BudgetPageView: View {
     }
 
     private func budgetCard(monthBudget: MonthBudgetPayload, extraSaved: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 12) {
             statRow("Safe to spend", nativeMoneyValue(monthBudget.safeToSpend ?? 0))
             statRow("Daily limit", nativeMoneyValue(monthBudget.dailyLimit ?? 0))
             statRow("Income", nativeMoneyValue(monthBudget.expectedIncome ?? 0))
@@ -1270,8 +1517,8 @@ private struct BudgetPageView: View {
             statRow("Extra saved", nativeMoneyValue(extraSaved ?? 0))
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func statRow(_ label: String, _ value: String) -> some View {
@@ -1298,6 +1545,7 @@ private struct BudgetPageView: View {
 }
 
 private struct AnalyticsPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     var body: some View {
         PageShell(title: "Analytics", subtitle: "Placeholder for chart-heavy views and category analysis") {
             VStack(alignment: .leading, spacing: 10) {
@@ -1313,7 +1561,8 @@ private struct AnalyticsPageView: View {
     }
 
     private func quickLink(_ title: String) -> some View {
-        HStack {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return HStack {
             Text(title)
             Spacer()
             Image(systemName: "chevron.right")
@@ -1321,8 +1570,8 @@ private struct AnalyticsPageView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 
@@ -1339,6 +1588,7 @@ private struct RecurringPageView: View {
 }
 
 private struct AllTransactionsPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @State private var transactions: [TransactionItem] = []
     @State private var errorMessage: String?
     @State private var isLoading = true
@@ -1365,7 +1615,8 @@ private struct AllTransactionsPageView: View {
     }
 
     private func transactionRow(_ tx: TransactionItem) -> some View {
-        HStack {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(tx.merchant.isEmpty ? "Unknown merchant" : tx.merchant)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -1379,8 +1630,8 @@ private struct AllTransactionsPageView: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded))
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func load() async {
@@ -1396,6 +1647,7 @@ private struct AllTransactionsPageView: View {
 }
 
 private struct BankInfoPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @State private var payload: BankInfoPayload?
     @State private var errorMessage: String?
     @State private var isLoading = true
@@ -1426,7 +1678,8 @@ private struct BankInfoPageView: View {
     }
 
     private func bankSection(title: String, items: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
             ForEach(items, id: \.self) { item in
@@ -1434,8 +1687,8 @@ private struct BankInfoPageView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
             }
         }
     }
@@ -1468,7 +1721,191 @@ private struct CsvImportPageView: View {
     }
 }
 
+private struct ImportQueuePageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @State private var items: [QueuedCsvImportItem] = []
+    @State private var activeIDs: Set<UUID> = []
+    @State private var statusMessage = ""
+
+    var body: some View {
+        PageShell(title: "Import Queue", subtitle: "Assigned CSV files wait here until you process the whole queue.", refreshAction: load) {
+            let palette = QuailTheme.palette(for: themeSelection)
+            if items.isEmpty {
+                Text("No queued imports yet.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 140)
+            } else {
+                VStack(spacing: 10) {
+                    if items.contains(where: { $0.status == .assigned || $0.status == .failed || $0.status == .needsReview }) {
+                        Button {
+                            Task { await processAll() }
+                        } label: {
+                            Text(activeIDs.isEmpty == false ? "Processing..." : "Process All Assigned")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(ImportQueueActionButtonStyle(primary: true))
+                        .disabled(activeIDs.isEmpty == false)
+                    }
+
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Text(item.accountLabel)
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                Spacer(minLength: 8)
+                                statusBadge(for: item.status)
+                            }
+                            Text(item.originalFileName)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            Text(item.detail)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                            Text(item.queuedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                if item.status != .imported {
+                                    Button {
+                                        Task { await retry(item) }
+                                    } label: {
+                                        Text(activeIDs.contains(item.id) ? "Processing..." : (item.status == .assigned ? "Process" : "Retry"))
+                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(ImportQueueActionButtonStyle(primary: true))
+                                    .disabled(activeIDs.contains(item.id))
+                                }
+
+                                Button(role: .destructive) {
+                                    remove(item)
+                                } label: {
+                                    Text("Remove")
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(ImportQueueActionButtonStyle(primary: false))
+                                .disabled(activeIDs.contains(item.id))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+                    }
+                }
+            }
+            if !statusMessage.isEmpty {
+                Text(statusMessage)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Import Queue")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { load() }
+    }
+
+    private func load() {
+        items = ImportQueueStore.load()
+    }
+
+    private func statusBadge(for status: QueuedCsvImportItem.Status) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        let fill: Color
+        switch status {
+        case .assigned:
+            fill = palette.accent.opacity(0.18)
+        case .processing:
+            fill = palette.accent.opacity(0.28)
+        case .imported:
+            fill = palette.positive.opacity(0.18)
+        case .needsReview:
+            fill = Color.orange.opacity(0.18)
+        case .failed:
+            fill = palette.negative.opacity(0.18)
+        }
+        return Text(statusLabel(status))
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(fill, in: Capsule())
+    }
+
+    private func statusLabel(_ status: QueuedCsvImportItem.Status) -> String {
+        switch status {
+        case .assigned: return "Assigned"
+        case .processing: return "Processing"
+        case .imported: return "Imported"
+        case .needsReview: return "Needs Review"
+        case .failed: return "Failed"
+        }
+    }
+
+    private func retry(_ item: QueuedCsvImportItem) async {
+        activeIDs.insert(item.id)
+        defer { activeIDs.remove(item.id) }
+        let url = ImportQueueStore.storedFileURL(for: item)
+        guard let data = try? Data(contentsOf: url) else {
+            ImportQueueStore.updateStatus(id: item.id, status: .failed, detail: "Stored file could not be read.")
+            statusMessage = "Stored file missing for \(item.originalFileName)."
+            load()
+            return
+        }
+        let summary = await ShortcutImportProcessor.process(
+            fileData: data,
+            originalName: item.originalFileName,
+            accountID: item.accountID,
+            accountLabel: item.accountLabel,
+            existingQueueID: item.id
+        )
+        statusMessage = "\(item.originalFileName): \(summary.detail)"
+        load()
+    }
+
+    private func remove(_ item: QueuedCsvImportItem) {
+        ImportQueueStore.remove(id: item.id)
+        statusMessage = "Removed \(item.originalFileName)."
+        load()
+    }
+
+    private func processAll() async {
+        activeIDs = Set(items.map(\.id))
+        defer { activeIDs.removeAll() }
+        let summary = await ShortcutImportProcessor.processAllAssigned()
+        statusMessage = "Processed \(summary.processed): \(summary.imported) imported, \(summary.review) need review, \(summary.failed) failed."
+        load()
+    }
+}
+
+private struct ImportQueueActionButtonStyle: ButtonStyle {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+
+    let primary: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        configuration.label
+            .foregroundStyle(primary ? palette.primaryButtonText : palette.secondaryButtonText)
+            .frame(height: 36)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(primary ? palette.primaryButton : palette.secondaryButton)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(palette.border.opacity(primary ? 0.0 : 1.0), lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.82 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 private struct RuleBuilderPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @StateObject private var model = RegexRulesViewModel()
     @State private var activeTestRule: CategoryRuleListRow?
 
@@ -1520,13 +1957,14 @@ private struct RuleBuilderPageView: View {
                 if model.hasMore {
                     Button {
                         Task { await model.loadMore() }
-                    } label: {
-                        Text(model.isLoadingMore ? "Loading..." : "Load more")
+                } label: {
+                    let palette = QuailTheme.palette(for: themeSelection)
+                    Text(model.isLoadingMore ? "Loading..." : "Load more")
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+                            .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isLoadingMore)
@@ -1557,7 +1995,8 @@ private struct RuleBuilderPageView: View {
     }
 
     private var rulesToolbarCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Button {
                     Task { await model.reload(reset: true) }
@@ -1578,7 +2017,7 @@ private struct RuleBuilderPageView: View {
 
             Toggle("Only uncategorized", isOn: $model.uncategorizedOnly)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .tint(.black)
+                .tint(palette.accent)
 
             VStack(spacing: 8) {
                 TextField("Rule ID", text: $model.filterRuleID)
@@ -1587,7 +2026,7 @@ private struct RuleBuilderPageView: View {
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .padding(.horizontal, 12)
                     .frame(height: 38)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 TextField("Keywords / regex", text: $model.filterKeyword)
                     .textInputAutocapitalization(.never)
@@ -1595,7 +2034,7 @@ private struct RuleBuilderPageView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .padding(.horizontal, 12)
                     .frame(height: 38)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 Menu {
                     Button("All categories") { model.filterCategory = "" }
@@ -1615,7 +2054,7 @@ private struct RuleBuilderPageView: View {
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 38)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -1623,16 +2062,17 @@ private struct RuleBuilderPageView: View {
             if !model.statusText.isEmpty {
                 Text(model.statusText)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(model.statusIsError ? .red : .secondary)
+                    .foregroundStyle(model.statusIsError ? palette.negative : .secondary)
             }
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func regexCheckSummaryCard(summary: CategoryRulesCheckAllPayload) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Full check complete")
                 .font(.system(size: 14, weight: .bold, design: .rounded))
             Text("Rules: \(summary.ruleCount ?? 0)   Applied: \(summary.totalApplied ?? 0)")
@@ -1658,26 +2098,27 @@ private struct RuleBuilderPageView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func regexActionButton(_ title: String, primary: Bool) -> some View {
-        Text(title)
+        let palette = QuailTheme.palette(for: themeSelection)
+        return Text(title)
             .font(.system(size: 13, weight: .semibold, design: .rounded))
             .lineLimit(1)
             .minimumScaleFactor(0.82)
             .padding(.horizontal, 12)
             .frame(height: 38)
-            .foregroundStyle(primary ? Color.white : Color.primary)
-            .background(primary ? Color.black : Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundStyle(primary ? palette.primaryButtonText : palette.secondaryButtonText)
+            .background(primary ? palette.primaryButton : palette.secondaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(.black.opacity(primary ? 0.0 : 0.08), lineWidth: 1)
+                    .stroke(primary ? .clear : palette.border, lineWidth: 1)
             )
     }
 }
@@ -1867,6 +2308,7 @@ private final class RegexRulesViewModel: ObservableObject {
 }
 
 private struct RegexRuleCardView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let rule: CategoryRuleListRow
     let categories: [String]
     let onSave: (String) async -> Void
@@ -1896,7 +2338,8 @@ private struct RegexRuleCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 10) {
             Text("#\(rule.id) - \(rule.pattern)")
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1912,7 +2355,7 @@ private struct RegexRuleCardView: View {
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .padding(.horizontal, 12)
                             .frame(height: 38)
-                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                         Menu {
                             ForEach(categories, id: \.self) { category in
@@ -1922,9 +2365,9 @@ private struct RegexRuleCardView: View {
                             Text("Choose")
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .frame(width: 82, height: 38)
-                                .foregroundStyle(.primary)
-                                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+                                .foregroundStyle(palette.secondaryButtonText)
+                                .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
                         }
                     }
                 }
@@ -1935,7 +2378,7 @@ private struct RegexRuleCardView: View {
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.04), in: Capsule(style: .continuous))
+                    .background(palette.elevatedSurface, in: Capsule(style: .continuous))
 
                 Toggle("Active", isOn: Binding(
                     get: { rule.isActive },
@@ -1945,7 +2388,7 @@ private struct RegexRuleCardView: View {
                 ))
                 .toggleStyle(.switch)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .tint(.black)
+                .tint(palette.accent)
             }
 
             Text("Always re-applies to existing")
@@ -1985,20 +2428,21 @@ private struct RegexRuleCardView: View {
             }
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func regexMiniButton(_ title: String, danger: Bool) -> some View {
-        Text(title)
+        let palette = QuailTheme.palette(for: themeSelection)
+        return Text(title)
             .font(.system(size: 12, weight: .semibold, design: .rounded))
             .frame(maxWidth: .infinity)
             .frame(height: 36)
-            .foregroundStyle(danger ? Color.red : Color.primary)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundStyle(danger ? Color.red : palette.secondaryButtonText)
+            .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(danger ? Color.red.opacity(0.22) : Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(danger ? Color.red.opacity(0.22) : palette.border, lineWidth: 1)
             )
     }
 }
@@ -2041,7 +2485,7 @@ private struct RegexTestSheetView: View {
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .padding(.horizontal, 12)
                         .frame(height: 40)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
 
                 HStack(spacing: 10) {
@@ -2053,7 +2497,7 @@ private struct RegexTestSheetView: View {
                             .font(.system(size: 13, weight: .medium, design: .monospaced))
                             .padding(.horizontal, 12)
                             .frame(height: 40)
-                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Recent limit")
@@ -2063,7 +2507,7 @@ private struct RegexTestSheetView: View {
                             .font(.system(size: 13, weight: .medium, design: .monospaced))
                             .padding(.horizontal, 12)
                             .frame(height: 40)
-                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
 
@@ -2104,7 +2548,7 @@ private struct RegexTestSheetView: View {
                                 .foregroundStyle(row.matched ? .green : .secondary)
                         }
                         .padding(12)
-                        .background(Color.black.opacity(row.matched ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background((row.matched ? palette.elevatedSurface.opacity(1.15) : palette.elevatedSurface), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                 }
             }
@@ -2158,6 +2602,7 @@ private struct RegexTestSheetView: View {
 }
 
 private struct CategoryPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let category: String
     @StateObject private var model: CategoryPageViewModel
     @State private var showAllCategories = false
@@ -2197,7 +2642,8 @@ private struct CategoryPageView: View {
     }
 
     private var categoryChartCard: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 Text(model.selectedCategory)
@@ -2273,12 +2719,13 @@ private struct CategoryPageView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     @ViewBuilder
     private var categoryChartBody: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         if model.isLoading {
             HStack {
                 ProgressView()
@@ -2288,7 +2735,7 @@ private struct CategoryPageView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 220, alignment: .center)
             .padding(10)
-            .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         } else if let errorMessage = model.errorMessage {
             VStack(spacing: 8) {
                 Text(errorMessage)
@@ -2302,7 +2749,7 @@ private struct CategoryPageView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 220, alignment: .center)
             .padding(10)
-            .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         } else {
             GeometryReader { proxy in
                 Chart {
@@ -2318,7 +2765,7 @@ private struct CategoryPageView: View {
                             x: .value("Date", point.date),
                             y: .value("Total", point.cumulative)
                         )
-                        .foregroundStyle(Color.black.opacity(0.72))
+                        .foregroundStyle(palette.secondaryButtonText.opacity(0.72))
                         .lineStyle(StrokeStyle(lineWidth: 2))
                         .interpolationMethod(.linear)
                     }
@@ -2326,8 +2773,8 @@ private struct CategoryPageView: View {
                 .chartXAxis(.hidden)
                 .chartYAxis {
                     AxisMarks(position: .leading) { _ in
-                        AxisGridLine().foregroundStyle(.black.opacity(0.07))
-                        AxisTick().foregroundStyle(.black.opacity(0.08))
+                        AxisGridLine().foregroundStyle(palette.border.opacity(0.75))
+                        AxisTick().foregroundStyle(palette.border.opacity(0.9))
                         AxisValueLabel()
                             .font(.system(size: 10, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
@@ -2335,14 +2782,15 @@ private struct CategoryPageView: View {
                 }
                 .frame(width: proxy.size.width, height: 224, alignment: .topLeading)
                 .padding(11)
-                .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
             .frame(height: 224)
         }
     }
 
     private var categoryTransactionsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Transactions")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
 
@@ -2366,7 +2814,7 @@ private struct CategoryPageView: View {
                                         .lineLimit(1)
                                     ZStack {
                                         Circle()
-                                            .fill(Color.black.opacity(0.06))
+                                            .fill(palette.border.opacity(0.9))
                                             .frame(width: 38, height: 38)
                                         Text(String((tx.merchant.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() }) ?? "?"))
                                             .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -2399,7 +2847,7 @@ private struct CategoryPageView: View {
                             }
                             .padding(.vertical, 10)
                             .padding(.horizontal, 12)
-                            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
@@ -2408,12 +2856,13 @@ private struct CategoryPageView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func categoryMetricPill(title: String, value: String, compact: Bool = false, valueColor: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2427,18 +2876,19 @@ private struct CategoryPageView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func categoryDateField(title: String, date: Binding<Date>) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
             DatePicker("", selection: date, displayedComponents: .date)
                 .labelsHidden()
                 .datePickerStyle(.compact)
-                .tint(.black)
+                .tint(palette.primaryButton)
         }
     }
 }
@@ -2733,40 +3183,44 @@ private struct CategoryLifetimeSheet: View {
 
 private struct CategoryPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white)
+            .foregroundStyle(palette.primaryButtonText)
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(Color.black.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(palette.primaryButton.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }
 
 private struct CategorySecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(Color.white.opacity(configuration.isPressed ? 0.88 : 1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+            .background(palette.secondaryButton.opacity(configuration.isPressed ? 0.88 : 1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 
 private struct CategoryChipButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
             .padding(.horizontal, 10)
             .frame(height: 32)
-            .background(Color.black.opacity(configuration.isPressed ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.secondaryButton.opacity(configuration.isPressed ? 0.72 : 0.92), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 
 private struct AccountPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let account: BankAccountPayload
     let auditMode: Bool
 
@@ -2790,7 +3244,8 @@ private struct AccountPageView: View {
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
-        HStack {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return HStack {
             Text(label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2799,12 +3254,13 @@ private struct AccountPageView: View {
                 .font(.system(size: 13, weight: .bold, design: .rounded))
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func detailLink(_ label: String) -> some View {
-        HStack {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return HStack {
             Text(label)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
             Spacer()
@@ -2813,8 +3269,8 @@ private struct AccountPageView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 

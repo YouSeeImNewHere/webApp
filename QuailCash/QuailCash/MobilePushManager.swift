@@ -18,8 +18,8 @@ final class MobilePushManager: NSObject, ObservableObject {
     }
 
     func bootstrap() async {
-        guard Self.isAvailable else { return }
         UNUserNotificationCenter.current().delegate = self
+        guard Self.isAvailable else { return }
         await refreshAuthorizationStatus()
         if authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral {
             UIApplication.shared.registerForRemoteNotifications()
@@ -111,6 +111,14 @@ extension MobilePushManager: UNUserNotificationCenterDelegate {
 }
 
 final class QuailCashAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = MobilePushManager.shared
+        return true
+    }
+
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data

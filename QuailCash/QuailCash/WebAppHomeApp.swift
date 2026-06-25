@@ -1,5 +1,4 @@
 import SwiftUI
-
 @main
 struct QuailCashApp: App {
     @UIApplicationDelegateAdaptor(QuailCashAppDelegate.self) private var appDelegate
@@ -10,7 +9,7 @@ struct QuailCashApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack(path: $navigator.path) {
-                NativePageView(route: .home)
+                NativePageView(route: navigator.rootRoute)
                     .navigationDestination(for: AppRoute.self) { route in
                         NativePageView(route: route)
                     }

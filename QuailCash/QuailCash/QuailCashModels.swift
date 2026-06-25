@@ -808,6 +808,32 @@ struct CsvImportResultPayload: Decodable {
     }
 }
 
+struct CsvJobStatusPayload: Decodable {
+    let ok: Bool?
+    let status: String
+    let totalRows: Int?
+    let processedRows: Int?
+    let inserted: Int?
+    let updated: Int?
+    let skipped: Int?
+    let autoCategorized: Int?
+    let reconciledPendingDuplicates: Int?
+    let stalePendingDeleted: Int?
+    let lastPostedCutoff: String?
+    let error: String?
+    let summary: CsvImportSummaryPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, status, inserted, updated, skipped, error, summary
+        case totalRows = "total_rows"
+        case processedRows = "processed_rows"
+        case autoCategorized = "auto_categorized"
+        case reconciledPendingDuplicates = "reconciled_pending_duplicates"
+        case stalePendingDeleted = "stale_pending_deleted"
+        case lastPostedCutoff = "last_posted_cutoff"
+    }
+}
+
 struct MonthBudgetPayload: Decodable {
     let safeToSpend: Double?
     let dailyLimit: Double?

@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 
 private func nativeCategorySymbolName(_ category: String?) -> String {
     let key = String(category ?? "")
@@ -24,22 +25,25 @@ private func nativeCategorySymbolName(_ category: String?) -> String {
 }
 
 private struct NativeIconBadge: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let category: String?
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ZStack {
             Circle()
-                .fill(Color.white)
-                .overlay(Circle().stroke(.black.opacity(0.08), lineWidth: 1))
+                .fill(palette.surface)
+                .overlay(Circle().stroke(palette.border, lineWidth: 1))
             Image(systemName: nativeCategorySymbolName(category))
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.accent)
         }
         .frame(width: 36, height: 36)
     }
 }
 
 private struct NativeCard<Content: View>: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let title: String
     let centered: Bool
     @ViewBuilder let content: Content
@@ -51,6 +55,7 @@ private struct NativeCard<Content: View>: View {
     }
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 if centered {
@@ -69,8 +74,8 @@ private struct NativeCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 
@@ -109,71 +114,76 @@ private func nativeShortDate(_ iso: String?) -> String {
 
 private struct NativePrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
-            .foregroundStyle(.white)
+            .foregroundStyle(palette.primaryButtonText)
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.78 : 1.0))
+                    .fill(palette.primaryButton.opacity(configuration.isPressed ? 0.78 : 1.0))
             )
     }
 }
 
 private struct NativeSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.06 : 0.04))
+                    .fill(palette.secondaryButton.opacity(configuration.isPressed ? 0.88 : 1.0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.black.opacity(0.08), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
     }
 }
 
 private struct NativeChipButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.06 : 0.04))
+                    .fill(palette.secondaryButton.opacity(configuration.isPressed ? 0.88 : 1.0))
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .stroke(.black.opacity(0.08), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
     }
 }
 
 private struct NativeCompactButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundStyle(.primary)
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(palette.secondaryButtonText)
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.06 : 0.04))
+                    .fill(palette.secondaryButton.opacity(configuration.isPressed ? 0.88 : 1.0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(.black.opacity(0.08), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
     }
 }
 
 private struct NativePopupChrome<Content: View>: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let title: String
     let subtitle: String
     let onClose: () -> Void
@@ -187,6 +197,7 @@ private struct NativePopupChrome<Content: View>: View {
     }
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -205,8 +216,8 @@ private struct NativePopupChrome<Content: View>: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .frame(width: 30, height: 30)
-                        .background(Color.black.opacity(0.05), in: Circle())
-                        .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.secondaryButton, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -217,40 +228,43 @@ private struct NativePopupChrome<Content: View>: View {
             content
         }
         .frame(maxWidth: 520)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(palette.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 10)
     }
 }
 
 private func nativeSignedMoneyColor(_ value: Double) -> Color {
-    if value < 0 { return .red }
-    if value > 0 { return .green }
+    let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+    if value < 0 { return palette.negative }
+    if value > 0 { return palette.positive }
     return .primary
 }
 
-private func nativeMenuLabel(_ text: String) -> some View {
-    HStack(spacing: 6) {
+private func nativeMenuLabel(_ text: String, compact: Bool = false) -> some View {
+    let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+    return HStack(spacing: 6) {
         Text(text)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .foregroundStyle(.primary)
+            .font(.system(size: compact ? 12 : 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(palette.secondaryButtonText)
             .lineLimit(1)
-            .truncationMode(.tail)
-        Spacer(minLength: 8)
+            .minimumScaleFactor(0.85)
+        Spacer(minLength: compact ? 4 : 8)
         Image(systemName: "chevron.down")
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
     }
-    .padding(.horizontal, 12)
-    .frame(height: 34)
+    .padding(.horizontal, compact ? 10 : 12)
+    .frame(height: 36)
     .frame(maxWidth: .infinity)
-    .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    .background(palette.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func nativeTransactionAmountColor(_ value: Double) -> Color {
-    if value >= 0 { return .red }
-    if value < 0 { return .green }
+    let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+    if value >= 0 { return palette.negative }
+    if value < 0 { return palette.positive }
     return .primary
 }
 
@@ -516,16 +530,96 @@ private final class NativeAnalyticsViewModel: ObservableObject {
         return String(format: "%04d-%02d", cal.component(.year, from: month), cal.component(.month, from: month))
     }
 
+    var selectedMonthNumber: Int {
+        Calendar.current.component(.month, from: month)
+    }
+
+    var selectedYear: Int {
+        Calendar.current.component(.year, from: month)
+    }
+
+    var availableYears: [Int] {
+        let current = Calendar.current.component(.year, from: Date())
+        return Array((current - 5)...(current + 1)).reversed()
+    }
+
+    func setMonth(_ monthNumber: Int) {
+        var components = Calendar.current.dateComponents([.year, .month], from: month)
+        components.month = monthNumber
+        components.day = 1
+        if let updated = Calendar.current.date(from: components) {
+            month = updated
+        }
+    }
+
+    func setYear(_ year: Int) {
+        var components = Calendar.current.dateComponents([.year, .month], from: month)
+        components.year = year
+        components.day = 1
+        if let updated = Calendar.current.date(from: components) {
+            month = updated
+        }
+    }
+
     func reload() { Task { await load() } }
 
     func exportPDF() {
-        // Native placeholder for the web page's "Download PDF" action.
-        statusText = "PDF export is not implemented yet."
+        guard let report else {
+            statusText = "Load a report first."
+            return
+        }
+        let html = analyticsPrintHTML(report: report)
+        let formatter = UIMarkupTextPrintFormatter(markupText: html)
+        let controller = UIPrintInteractionController.shared
+        controller.printFormatter = formatter
+        controller.printInfo = {
+            let info = UIPrintInfo(dictionary: nil)
+            info.outputType = .general
+            info.jobName = "QuailCash \(report.month ?? monthKey)"
+            return info
+        }()
+        guard UIApplication.shared.connectedScenes.first is UIWindowScene else {
+            statusText = "Unable to open print dialog."
+            return
+        }
+        controller.present(animated: true, completionHandler: nil)
+        statusText = "Opened print dialog."
+    }
+
+    private func analyticsPrintHTML(report: NativeAnalyticsReport) -> String {
+        func row(_ label: String, _ value: String) -> String {
+            "<tr><td>\(label)</td><td style=\"text-align:right; font-weight:600;\">\(value)</td></tr>"
+        }
+        let summary = report.summary
+        let rows = [
+            row("Income", nativeMoneyValue(summary?.income ?? 0)),
+            row("Spending", nativeMoneyValue(summary?.spending ?? 0)),
+            row("Net", nativeMoneyValue(summary?.net ?? 0)),
+            row("Starting Balance", nativeMoneyValue(summary?.startingBalance ?? 0)),
+            row("Ending Balance", nativeMoneyValue(summary?.endingBalance ?? 0)),
+        ].joined()
+        let cats = report.categoryBreakdown.map { row($0.category ?? "Uncategorized", nativeMoneyValue($0.amount ?? 0)) }.joined()
+        return """
+        <html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; color: #111; }
+        h1 { font-size: 28px; margin-bottom: 4px; }
+        h2 { font-size: 18px; margin-top: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 8px 0; border-bottom: 1px solid #ddd; font-size: 14px; }
+        </style></head><body>
+        <h1>Analytics Report</h1>
+        <div>\(report.month ?? monthKey)</div>
+        <h2>Month Summary</h2><table>\(rows)</table>
+        <h2>Category Breakdown</h2><table>\(cats)</table>
+        </body></html>
+        """
     }
 }
 
 struct NativeAnalyticsPageView: View {
     @StateObject private var model = NativeAnalyticsViewModel()
+    private let monthNames = Calendar.current.monthSymbols
 
     var body: some View {
         PageShell(title: "Analytics", subtitle: "Monthly report and category analysis") {
@@ -598,27 +692,45 @@ struct NativeAnalyticsPageView: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Month").font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
-                DatePicker("", selection: $model.month, displayedComponents: .date)
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-                    .controlSize(.small)
+                HStack(spacing: 6) {
+                    Menu {
+                        ForEach(Array(monthNames.enumerated()), id: \.offset) { index, name in
+                            Button(name) { model.setMonth(index + 1) }
+                        }
+                    } label: {
+                        nativeMenuLabel(monthNames[max(0, model.selectedMonthNumber - 1)])
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 110)
+
+                    Menu {
+                        ForEach(model.availableYears, id: \.self) { year in
+                            Button(String(year)) { model.setYear(year) }
+                        }
+                    } label: {
+                        nativeMenuLabel(String(model.selectedYear), compact: true)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 78)
+                }
             }
             Spacer(minLength: 0)
-            Button("Load Report") { model.reload() }
-                .buttonStyle(NativePrimaryButtonStyle())
-            Button("Download PDF") { model.exportPDF() }
+            Button("Update") { model.reload() }
+                .buttonStyle(NativeCompactButtonStyle())
+            Button("PDF") { model.exportPDF() }
                 .buttonStyle(NativeSecondaryButtonStyle())
         }
     }
 
     private func heroChip(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+        return VStack(spacing: 2) {
             Text(title).font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 12, weight: .bold, design: .rounded))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func analyticsCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -658,7 +770,8 @@ struct NativeAnalyticsPageView: View {
     }
 
     private func analyticsAccounts(_ rows: [NativeAnalyticsAccount]) -> some View {
-        VStack(spacing: 8) {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+        return VStack(spacing: 8) {
             ForEach(rows, id: \.self) { row in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -679,19 +792,21 @@ struct NativeAnalyticsPageView: View {
                     }
                 }
                 .padding(12)
-                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
     }
 
     private func analyticsTransactions(_ payload: NativeAnalyticsBiggestTransactions?) -> some View {
-        VStack(spacing: 8) {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+        return VStack(spacing: 8) {
             ForEach((payload?.outflows ?? []) + (payload?.inflows ?? [])) { tx in
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text((tx.merchant ?? "(No merchant)").uppercased())
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        Text([tx.date, tx.category, tx.account].compactMap { $0 }.joined(separator: " • "))
+                        let txMeta = [tx.date, tx.category, tx.account].compactMap { $0 }
+                        Text(txMeta.joined(separator: " • "))
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
@@ -700,13 +815,14 @@ struct NativeAnalyticsPageView: View {
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                 }
                 .padding(12)
-                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
     }
 
     private func analyticsRecurring(_ rows: [NativeAnalyticsRecurringSubscription]) -> some View {
-        VStack(spacing: 8) {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+        return VStack(spacing: 8) {
             ForEach(rows, id: \.self) { row in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -721,7 +837,7 @@ struct NativeAnalyticsPageView: View {
                     }
                 }
                 .padding(12)
-                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
     }
@@ -1185,10 +1301,12 @@ struct NativeAllTransactionsPageView: View {
 }
 
 private struct NativeTransactionRow: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let transaction: TransactionItem
     let onTap: () -> Void
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         Button(action: onTap) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -1199,7 +1317,7 @@ private struct NativeTransactionRow: View {
 
                     ZStack {
                         Circle()
-                            .fill(Color.black.opacity(0.06))
+                            .fill(palette.elevatedSurface)
                             .frame(width: 38, height: 38)
                         Text(transactionInitial)
                             .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -1226,7 +1344,7 @@ private struct NativeTransactionRow: View {
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
-            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1244,6 +1362,7 @@ private struct NativeTransactionRow: View {
 }
 
 private struct NativeTransactionInspectView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let transaction: TransactionItem
     let detail: TransactionDetailPayload?
     let onDismiss: () -> Void
@@ -1257,8 +1376,9 @@ private struct NativeTransactionInspectView: View {
     @State private var showInvertConfirm = false
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ZStack {
-            Color.black.opacity(0.46)
+            palette.tooltipBackground.opacity(0.56)
                 .ignoresSafeArea()
                 .onTapGesture(perform: close)
 
@@ -1866,7 +1986,8 @@ struct NativeRecurringPageView: View {
     }
 
     private func calendarCellView(_ cell: NativeCalendarCell) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+        return VStack(alignment: .leading, spacing: 4) {
             Text(String(cell.day))
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
             if !cell.events.isEmpty {
@@ -1880,7 +2001,7 @@ struct NativeRecurringPageView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
         .padding(6)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -1925,10 +2046,12 @@ private struct NativeRecurringGroupCard: View {
 }
 
 private struct NativeRecurringPatternRow: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let pattern: NativeRecurringPattern
     let onTap: () -> Void
     let onIgnore: () -> Void
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         HStack(spacing: 10) {
             Button(action: onTap) {
                 NativeIconBadge(category: pattern.categoryForIcon)
@@ -1950,7 +2073,7 @@ private struct NativeRecurringPatternRow: View {
             }
         }
         .padding(10)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -1963,9 +2086,11 @@ private extension NativeRecurringPattern {
 
 private struct NativeRecurringDayModal: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let events: [NativeRecurringCalendarEvent]
     let dateISO: String
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -1981,8 +2106,8 @@ private struct NativeRecurringDayModal: View {
                             Text(nativeMoneyValue(event.amount ?? 0)).font(.system(size: 13, weight: .bold, design: .rounded))
                         }
                         .padding(12)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
                     }
                 }
                 .padding(16)
@@ -2070,12 +2195,14 @@ private struct NativeIgnoredRecurringModal: View {
 
 private struct NativeMergeRecurringModal: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let alias: String
     let patterns: [NativeRecurringPattern]
     @Binding var selected: Set<String>
     @Binding var message: String
     let onConfirm: () -> Void
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -2094,7 +2221,7 @@ private struct NativeMergeRecurringModal: View {
                                 Spacer()
                             }
                             .padding(10)
-                            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

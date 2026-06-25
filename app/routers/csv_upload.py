@@ -8,12 +8,14 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import threading
+import uuid
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, List
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -23,6 +25,17 @@ from app.routers.accounts import mark_account_csv_upload
 from db import with_db_cursor
 
 router = APIRouter()
+
+_csv_jobs: dict[str, dict] = {}
+_csv_jobs_lock = threading.Lock()
+
+
+def _job_update(job_id: str, **fields) -> None:
+    with _csv_jobs_lock:
+        if job_id not in _csv_jobs:
+            _csv_jobs[job_id] = {}
+        _csv_jobs[job_id].update(fields)
+
 
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"}
@@ -2122,6 +2135,378 @@ async def ingest_csv_mapped(
         "import_end_date": end_date.isoformat(),
         "summary": mapped["summary"],
     }
+
+
+def _run_csv_ingest_job(
+    job_id: str,
+    file_data: bytes,
+    file_name: str,
+    account_id: int,
+    purchase_col: int,
+    amount_col: str | None,
+    debit_col: str | None,
+    credit_col: str | None,
+    merchant_col: int,
+    posted_col: str | None,
+    category_col: str | None,
+    indicator_col: str | None,
+    credit_indicator_value: str,
+    delimiter: str,
+    header_row: int,
+    data_start_row: int,
+    invert_amount: str,
+    tid: int | None,
+) -> None:
+    try:
+        class _FakeUpload:
+            def __init__(self, data: bytes, name: str):
+                self.filename = name
+                self.file = io.BytesIO(data)
+
+        fake_file = _FakeUpload(file_data, file_name)
+        rows, _used_delim = _read_upload_rows(fake_file, delimiter=delimiter)
+        if not rows:
+            _job_update(job_id, status="failed", error="File is empty or has no readable rows")
+            return
+
+        has_header_b = _auto_has_header_row(rows, int(header_row))
+        invert_amount_b = _to_bool(invert_amount, default=False)
+        start_idx = _csv_start_index(
+            has_header=has_header_b,
+            header_row=int(header_row),
+            data_start_row=int(data_start_row),
+        )
+
+        try:
+            amount_idx = _parse_col_opt(amount_col)
+            debit_idx = _parse_col_opt(debit_col)
+            credit_idx = _parse_col_opt(credit_col)
+            posted_idx = _parse_col_opt(posted_col)
+            category_idx = _parse_col_opt(category_col)
+            indicator_idx = _parse_col_opt(indicator_col)
+        except Exception:
+            _job_update(job_id, status="failed", error="Invalid optional column mapping")
+            return
+
+        mapped = _analyze_mapped_rows(
+            rows,
+            start_idx=start_idx,
+            purchase_col=int(purchase_col),
+            amount_col=amount_idx,
+            debit_col=debit_idx,
+            credit_col=credit_idx,
+            merchant_col=int(merchant_col),
+            posted_col=posted_idx,
+            category_col=category_idx,
+            indicator_col=indicator_idx,
+            credit_indicator_value=credit_indicator_value,
+            invert_amount=invert_amount_b,
+        )
+
+        total_valid = len(mapped["valid_rows"])
+        _job_update(job_id, total_rows=total_valid, processed_rows=0)
+
+        inserted = 0
+        updated = 0
+        auto_categorized = 0
+        reconciled = 0
+        stale_deleted = 0
+        errors: list[dict[str, Any]] = list(mapped["summary"]["sample_errors"])
+
+        with with_db_cursor() as (conn, cur):
+            if not _account_exists_for_scope(cur, int(account_id), tid):
+                _job_update(job_id, status="failed", error="Account not found for current workspace")
+                return
+            _ensure_starting_balance_row_for_account(cur, account_id=int(account_id), tenant_id=tid)
+
+            colmap = _transactions_column_lookup(cur)
+            tx_id_col = _pick_col(colmap, "id")
+            posted_col_name = _pick_col(colmap, "posteddate", "postedDate")
+            purchase_col_name = _pick_col(colmap, "purchasedate", "purchaseDate")
+            amount_col_name = _pick_col(colmap, "amount")
+            merchant_col_name = _pick_col(colmap, "merchant")
+            status_col_name = _pick_col(colmap, "status")
+            source_col_name = _pick_col(colmap, "source")
+            time_col_name = _pick_col(colmap, "time")
+            account_col_name = _pick_col(colmap, "account_id")
+            category_col_name = _pick_col(colmap, "category")
+            tenant_col_name = _pick_col(colmap, "tenant_id")
+            ignore_col_name = _pick_col(colmap, "is_ignored")
+            has_pending_email = _has_pending_email_rows(
+                cur,
+                account_id=int(account_id),
+                tenant_id=tid,
+                account_col=account_col_name,
+                status_col=status_col_name,
+                source_col=source_col_name,
+                tenant_col=tenant_col_name,
+            )
+
+            required_db = [tx_id_col, posted_col_name, purchase_col_name, amount_col_name, merchant_col_name, account_col_name]
+            if any(x is None for x in required_db):
+                _job_update(job_id, status="failed", error="transactions schema missing required columns")
+                return
+
+            last_posted = _latest_posted_cutoff_for_account(
+                cur,
+                account_id=int(account_id),
+                tenant_id=tid,
+                posted_col=posted_col_name,
+                purchase_col=purchase_col_name,
+                status_col=status_col_name,
+                account_col=account_col_name,
+                tenant_col=tenant_col_name,
+                ignore_col=ignore_col_name,
+            )
+            start_after_last_posted = (last_posted + timedelta(days=1)) if last_posted else None
+            end_date = datetime.now().date() - timedelta(days=1)
+
+            processed_rows = 0
+            for entry in mapped["valid_rows"]:
+                row_no = int(entry["row_number"])
+                row_effective_date = entry.get("posted_date") or entry.get("purchase_date")
+                if start_after_last_posted and row_effective_date and row_effective_date < start_after_last_posted:
+                    processed_rows += 1
+                    _job_update(job_id, processed_rows=processed_rows, inserted=inserted, updated=updated)
+                    continue
+                if row_effective_date and row_effective_date > end_date:
+                    processed_rows += 1
+                    _job_update(job_id, processed_rows=processed_rows, inserted=inserted, updated=updated)
+                    continue
+
+                purchase_mmddyy = entry["purchase_date"].strftime("%m/%d/%y")
+                posted_mmddyy = entry["posted_date"].strftime("%m/%d/%y")
+                amount = float(entry["amount"])
+                merchant = str(entry["merchant"])
+                category = str(entry.get("category") or "")
+
+                pending_match_id = None
+                if has_pending_email:
+                    pending_match_id, _match_kind = _pick_pending_update_target(
+                        cur,
+                        account_id=int(account_id),
+                        amount=amount,
+                        purchase_date=entry.get("purchase_date"),
+                        merchant=merchant,
+                        tenant_id=tid,
+                        id_col=tx_id_col,
+                        account_col=account_col_name,
+                        amount_col=amount_col_name,
+                        purchase_col=purchase_col_name,
+                        merchant_col=merchant_col_name,
+                        status_col=status_col_name,
+                        source_col=source_col_name,
+                        tenant_col=tenant_col_name,
+                        tx_id_base=_make_base_id(int(account_id), purchase_mmddyy, amount),
+                        window_days=4,
+                    )
+                if pending_match_id:
+                    set_parts: list[str] = []
+                    set_vals: list[Any] = []
+                    if status_col_name:
+                        set_parts.append(f"{status_col_name} = %s")
+                        set_vals.append("Posted")
+                    if posted_col_name:
+                        set_parts.append(f"{posted_col_name} = %s")
+                        set_vals.append(posted_mmddyy)
+                    if purchase_col_name:
+                        set_parts.append(f"{purchase_col_name} = %s")
+                        set_vals.append(purchase_mmddyy)
+                    if amount_col_name:
+                        set_parts.append(f"{amount_col_name} = %s")
+                        set_vals.append(amount)
+                    if merchant_col_name:
+                        set_parts.append(f"{merchant_col_name} = %s")
+                        set_vals.append(merchant)
+                    if source_col_name:
+                        set_parts.append(f"{source_col_name} = %s")
+                        set_vals.append("CSV")
+                    if category_col_name and category:
+                        set_parts.append(f"{category_col_name} = %s")
+                        set_vals.append(category)
+                    if time_col_name:
+                        set_parts.append(f"{time_col_name} = %s")
+                        set_vals.append("unknown")
+                    if set_parts:
+                        where = [f"{tx_id_col} = %s"]
+                        where_vals: list[Any] = [pending_match_id]
+                        if tid and tenant_col_name:
+                            where.append(f"{tenant_col_name} = %s")
+                            where_vals.append(int(tid))
+                        cur.execute(
+                            f"UPDATE transactions SET {', '.join(set_parts)} WHERE {' AND '.join(where)}",
+                            tuple(set_vals + where_vals),
+                        )
+                        updated += 1
+                    processed_rows += 1
+                    _job_update(job_id, processed_rows=processed_rows, inserted=inserted, updated=updated)
+                    continue
+
+                base = _make_base_id(int(account_id), purchase_mmddyy, amount)
+                tx_id = _next_tx_id(cur, base)
+
+                payload: dict[str, Any] = {
+                    str(tx_id_col): tx_id,
+                    str(status_col_name): "Posted" if status_col_name else None,
+                    str(purchase_col_name): purchase_mmddyy,
+                    str(posted_col_name): posted_mmddyy,
+                    str(amount_col_name): amount,
+                    str(merchant_col_name): merchant,
+                    str(source_col_name): "CSV" if source_col_name else None,
+                    str(time_col_name): "unknown" if time_col_name else None,
+                    str(account_col_name): int(account_id),
+                    str(category_col_name): category if (category and category_col_name) else None,
+                    str(tenant_col_name): int(tid) if (tid and tenant_col_name) else None,
+                }
+                insert_payload = {k: v for k, v in payload.items() if k and v is not None}
+                cols = list(insert_payload.keys())
+                vals = [insert_payload[c] for c in cols]
+                ph = ", ".join(["%s"] * len(cols))
+                sql = f"INSERT INTO transactions ({', '.join(cols)}) VALUES ({ph})"
+                try:
+                    cur.execute(sql, vals)
+                    inserted += 1
+                except Exception as e:
+                    if len(errors) < 25:
+                        errors.append({"row_number": row_no, "error": str(e)})
+
+                processed_rows += 1
+                _job_update(job_id, processed_rows=processed_rows, inserted=inserted, updated=updated)
+
+            if has_pending_email:
+                reconciled = _reconcile_existing_pending_duplicates(
+                    cur,
+                    account_id=int(account_id),
+                    tenant_id=tid,
+                    id_col=tx_id_col,
+                    account_col=account_col_name,
+                    amount_col=amount_col_name,
+                    purchase_col=purchase_col_name,
+                    merchant_col=merchant_col_name,
+                    status_col=status_col_name,
+                    source_col=source_col_name,
+                    tenant_col=tenant_col_name,
+                    limit=600,
+                    window_days=2,
+                )
+                stale_deleted = _delete_stale_pending_without_csv_match(
+                    cur,
+                    account_id=int(account_id),
+                    tenant_id=tid,
+                    id_col=tx_id_col,
+                    account_col=account_col_name,
+                    amount_col=amount_col_name,
+                    purchase_col=purchase_col_name,
+                    merchant_col=merchant_col_name,
+                    status_col=status_col_name,
+                    source_col=source_col_name,
+                    tenant_col=tenant_col_name,
+                    stale_days=4,
+                    limit=3000,
+                    window_days=4,
+                )
+            auto_categorized = _apply_category_rules_after_csv_import(
+                cur,
+                account_id=int(account_id),
+                tenant_id=tid,
+                tx_id_col=tx_id_col,
+                account_col=account_col_name,
+                merchant_col=merchant_col_name,
+                category_col=category_col_name,
+                source_col=source_col_name,
+                tenant_col=tenant_col_name,
+            )
+            conn.commit()
+
+        if (inserted + updated + int(reconciled or 0) + int(stale_deleted or 0) + int(auto_categorized or 0)) > 0:
+            _refresh_widget_cache_for_tenant(tid)
+        try:
+            mark_account_csv_upload(int(account_id), tid)
+        except Exception:
+            pass
+
+        skipped = int(mapped["summary"]["invalid_rows"]) + max(0, int(mapped["summary"]["valid_rows"]) - inserted - updated)
+        _job_update(
+            job_id,
+            status="done",
+            inserted=inserted,
+            updated=updated,
+            auto_categorized=int(auto_categorized),
+            reconciled_pending_duplicates=int(reconciled),
+            stale_pending_deleted=int(stale_deleted),
+            skipped=skipped,
+            processed_rows=processed_rows,
+            total_rows=total_valid,
+            last_posted_cutoff=(last_posted.isoformat() if last_posted else None),
+            summary=mapped["summary"],
+        )
+    except Exception as exc:
+        _job_update(job_id, status="failed", error=str(exc))
+
+
+@router.post("/csv/ingest-mapped/async")
+async def ingest_csv_mapped_async(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    account_id: int = Form(...),
+    purchase_col: int = Form(...),
+    amount_col: str | None = Form(None),
+    debit_col: str | None = Form(None),
+    credit_col: str | None = Form(None),
+    merchant_col: int = Form(...),
+    posted_col: str | None = Form(None),
+    category_col: str | None = Form(None),
+    indicator_col: str | None = Form(None),
+    credit_indicator_value: str = Form("credit"),
+    delimiter: str = Form("auto"),
+    header_row: int = Form(1),
+    data_start_row: int = Form(2),
+    invert_amount: str = Form("false"),
+):
+    tid = _require_tenant_id_or_none()
+    file_data = await file.read()
+    file_name = file.filename or "import.csv"
+    job_id = str(uuid.uuid4())
+    _job_update(
+        job_id,
+        status="running",
+        total_rows=0,
+        processed_rows=0,
+        inserted=0,
+        updated=0,
+        skipped=0,
+    )
+    background_tasks.add_task(
+        _run_csv_ingest_job,
+        job_id=job_id,
+        file_data=file_data,
+        file_name=file_name,
+        account_id=account_id,
+        purchase_col=purchase_col,
+        amount_col=amount_col,
+        debit_col=debit_col,
+        credit_col=credit_col,
+        merchant_col=merchant_col,
+        posted_col=posted_col,
+        category_col=category_col,
+        indicator_col=indicator_col,
+        credit_indicator_value=credit_indicator_value,
+        delimiter=delimiter,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        invert_amount=invert_amount,
+        tid=tid,
+    )
+    return {"ok": True, "job_id": job_id}
+
+
+@router.get("/csv/jobs/{job_id}")
+def get_csv_job_status(job_id: str):
+    with _csv_jobs_lock:
+        job = dict(_csv_jobs.get(job_id) or {})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"ok": True, **job}
 
 
 @router.post("/csv/ingest")

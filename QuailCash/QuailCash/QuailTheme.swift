@@ -46,6 +46,12 @@ struct QuailThemePalette {
     let surface: Color
     let elevatedSurface: Color
     let border: Color
+    let accent: Color
+    let positive: Color
+    let negative: Color
+    let tooltipBackground: Color
+    let tooltipText: Color
+    let notificationBadge: Color
     let primaryButton: Color
     let primaryButtonText: Color
     let secondaryButton: Color
@@ -67,6 +73,12 @@ enum QuailTheme {
                 surface: .white,
                 elevatedSurface: .white,
                 border: Color.black.opacity(0.06),
+                accent: Color(red: 0.16, green: 0.44, blue: 0.94),
+                positive: Color(red: 0.11, green: 0.60, blue: 0.28),
+                negative: Color(red: 0.86, green: 0.22, blue: 0.18),
+                tooltipBackground: Color.black.opacity(0.82),
+                tooltipText: .white,
+                notificationBadge: Color.red,
                 primaryButton: .black,
                 primaryButtonText: .white,
                 secondaryButton: .white,
@@ -84,6 +96,12 @@ enum QuailTheme {
                 surface: Color(red: 0.14, green: 0.15, blue: 0.18),
                 elevatedSurface: Color(red: 0.17, green: 0.18, blue: 0.21),
                 border: Color.white.opacity(0.08),
+                accent: Color(red: 0.52, green: 0.72, blue: 1.00),
+                positive: Color(red: 0.46, green: 0.85, blue: 0.56),
+                negative: Color(red: 1.00, green: 0.48, blue: 0.43),
+                tooltipBackground: Color.white.opacity(0.10),
+                tooltipText: .white,
+                notificationBadge: Color(red: 1.00, green: 0.38, blue: 0.34),
                 primaryButton: .white,
                 primaryButtonText: .black,
                 secondaryButton: Color.white.opacity(0.08),
@@ -101,6 +119,12 @@ enum QuailTheme {
                 surface: Color(red: 0.07, green: 0.07, blue: 0.08),
                 elevatedSurface: Color(red: 0.10, green: 0.10, blue: 0.11),
                 border: Color.white.opacity(0.10),
+                accent: Color(red: 0.57, green: 0.78, blue: 1.00),
+                positive: Color(red: 0.46, green: 0.90, blue: 0.56),
+                negative: Color(red: 1.00, green: 0.48, blue: 0.43),
+                tooltipBackground: Color.white.opacity(0.10),
+                tooltipText: .white,
+                notificationBadge: Color(red: 1.00, green: 0.38, blue: 0.34),
                 primaryButton: .white,
                 primaryButtonText: .black,
                 secondaryButton: Color.white.opacity(0.08),
@@ -118,6 +142,12 @@ enum QuailTheme {
                 surface: Color(red: 1.00, green: 0.98, blue: 0.92),
                 elevatedSurface: Color(red: 0.99, green: 0.96, blue: 0.88),
                 border: Color(red: 0.73, green: 0.68, blue: 0.55).opacity(0.35),
+                accent: Color(red: 0.15, green: 0.38, blue: 0.67),
+                positive: Color(red: 0.27, green: 0.52, blue: 0.23),
+                negative: Color(red: 0.79, green: 0.25, blue: 0.20),
+                tooltipBackground: Color(red: 0.00, green: 0.27, blue: 0.31).opacity(0.88),
+                tooltipText: .white,
+                notificationBadge: Color(red: 0.86, green: 0.29, blue: 0.24),
                 primaryButton: Color(red: 0.00, green: 0.27, blue: 0.31),
                 primaryButtonText: .white,
                 secondaryButton: Color(red: 0.93, green: 0.89, blue: 0.78),
@@ -135,6 +165,12 @@ enum QuailTheme {
                 surface: Color(red: 0.11, green: 0.17, blue: 0.13),
                 elevatedSurface: Color(red: 0.14, green: 0.21, blue: 0.16),
                 border: Color(red: 0.56, green: 0.78, blue: 0.63).opacity(0.18),
+                accent: Color(red: 0.63, green: 0.87, blue: 0.70),
+                positive: Color(red: 0.59, green: 0.92, blue: 0.60),
+                negative: Color(red: 1.00, green: 0.55, blue: 0.48),
+                tooltipBackground: Color.white.opacity(0.10),
+                tooltipText: .white,
+                notificationBadge: Color(red: 0.96, green: 0.36, blue: 0.32),
                 primaryButton: Color(red: 0.62, green: 0.84, blue: 0.66),
                 primaryButtonText: .black,
                 secondaryButton: Color.white.opacity(0.08),
@@ -152,6 +188,12 @@ enum QuailTheme {
                 surface: Color(red: 0.10, green: 0.14, blue: 0.23),
                 elevatedSurface: Color(red: 0.13, green: 0.18, blue: 0.30),
                 border: Color.white.opacity(0.10),
+                accent: Color(red: 0.66, green: 0.80, blue: 1.00),
+                positive: Color(red: 0.50, green: 0.88, blue: 0.60),
+                negative: Color(red: 1.00, green: 0.52, blue: 0.46),
+                tooltipBackground: Color.white.opacity(0.10),
+                tooltipText: .white,
+                notificationBadge: Color(red: 0.98, green: 0.40, blue: 0.35),
                 primaryButton: Color(red: 0.66, green: 0.80, blue: 1.00),
                 primaryButtonText: .black,
                 secondaryButton: Color.white.opacity(0.08),

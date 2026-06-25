@@ -2,30 +2,32 @@ import SwiftUI
 
 private struct SharedTransactionPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
-            .foregroundStyle(.white)
+            .foregroundStyle(palette.primaryButtonText)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.78 : 1.0))
+                    .fill(palette.primaryButton.opacity(configuration.isPressed ? 0.78 : 1.0))
             )
     }
 }
 
 private struct SharedTransactionSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.06 : 0.04))
+                    .fill(palette.secondaryButton.opacity(configuration.isPressed ? 0.88 : 1.0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.black.opacity(0.08), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
     }
 }
@@ -34,18 +36,19 @@ private struct SharedTransactionHeaderActionStyle: ButtonStyle {
     let primary: Bool
 
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundStyle(primary ? .white : .primary)
+            .foregroundStyle(primary ? palette.primaryButtonText : palette.secondaryButtonText)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(primary ? Color.black.opacity(configuration.isPressed ? 0.78 : 1.0) : Color.black.opacity(configuration.isPressed ? 0.06 : 0.04))
+                    .fill(primary ? palette.primaryButton.opacity(configuration.isPressed ? 0.78 : 1.0) : palette.secondaryButton.opacity(configuration.isPressed ? 0.88 : 1.0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(primary ? .clear : .black.opacity(0.08), lineWidth: 1)
+                    .stroke(primary ? .clear : palette.border, lineWidth: 1)
             )
     }
 }
@@ -56,6 +59,7 @@ private func sharedTransactionAmountColor(_ value: Double) -> Color {
 }
 
 struct SharedTransactionInspectPopupView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let transaction: TransactionItem
     let onDismiss: () -> Void
     let onRefresh: () -> Void
@@ -71,9 +75,11 @@ struct SharedTransactionInspectPopupView: View {
     @State private var showInvertConfirm = false
     @State private var isSaving = false
 
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
+
     var body: some View {
         ZStack(alignment: .top) {
-            Color.white
+            palette.surface
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -117,8 +123,8 @@ struct SharedTransactionInspectPopupView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .frame(width: 30, height: 30)
-                        .background(Color.black.opacity(0.05), in: Circle())
-                        .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.secondaryButton, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -127,10 +133,10 @@ struct SharedTransactionInspectPopupView: View {
             .padding(.bottom, 12)
 
             Rectangle()
-                .fill(Color.black.opacity(0.06))
+                .fill(palette.border)
                 .frame(height: 1)
         }
-        .background(Color.white)
+        .background(palette.surface)
     }
 
     @ViewBuilder
@@ -199,8 +205,8 @@ struct SharedTransactionInspectPopupView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
 
                 Button("Save") { Task { await saveCategory() } }
                     .buttonStyle(SharedTransactionPrimaryButtonStyle())

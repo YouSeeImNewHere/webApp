@@ -5,8 +5,13 @@ import Charts
 import UniformTypeIdentifiers
 import UIKit
 
+private func homeThemePalette() -> QuailThemePalette {
+    QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+}
+
 struct HomeView: View {
     @EnvironmentObject private var navigator: AppNavigator
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @StateObject private var model = HomeViewModel()
     @State private var activePopup: HomePopup?
     @State private var activeSheet: HomeSheet?
@@ -137,7 +142,8 @@ struct HomeView: View {
     }
 
     private var loadingBlock: some View {
-        VStack(spacing: 14) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(spacing: 14) {
             Text("Backend: \(AppConfig.apiBaseURL.absoluteString)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -152,7 +158,7 @@ struct HomeView: View {
             } else if let error = model.errorMessage {
                 Text(error)
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(homeThemePalette().negative)
                     .multilineTextAlignment(.center)
             } else {
                 Text("Waiting for data.")
@@ -184,12 +190,13 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private var statusCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Status")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -202,8 +209,8 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private var chartSection: some View {
@@ -247,7 +254,8 @@ struct HomeView: View {
     }
 
     private func metricTile(title: String, value: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -263,8 +271,8 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func metricTile(title: String, value: Double, subtitle: String) -> some View {
@@ -309,11 +317,13 @@ struct HomeView: View {
 }
 
 private struct RecentTransactionsCard: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let transactions: [TransactionItem]
     let onTapTransaction: (TransactionItem) -> Void
     @State private var isExpanded = true
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
             HStack {
                 Spacer(minLength: 0)
@@ -346,12 +356,13 @@ private struct RecentTransactionsCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 }
 
 private struct MonthlySnapshotCard: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let monthBudget: MonthBudgetPayload?
     let dayLimit: DayLimitPayload?
     let extraSaved: Double?
@@ -363,6 +374,7 @@ private struct MonthlySnapshotCard: View {
     @State private var isExpanded = true
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
             HStack(alignment: .center, spacing: 8) {
                 Color.clear
@@ -383,7 +395,7 @@ private struct MonthlySnapshotCard: View {
                         Image(systemName: "chart.bar.fill")
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 32, height: 32)
-                            .background(Color.black.opacity(0.04), in: Circle())
+                            .background(palette.secondaryButton.opacity(0.9), in: Circle())
                     }
                     .buttonStyle(.plain)
 
@@ -404,7 +416,7 @@ private struct MonthlySnapshotCard: View {
                             .foregroundStyle(.secondary)
                         Text(moneyValue(monthBudget?.safeToSpend ?? 0))
                             .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundStyle((monthBudget?.safeToSpend ?? 0) < 0 ? .red : .primary)
+                            .foregroundStyle((monthBudget?.safeToSpend ?? 0) < 0 ? palette.negative : .primary)
                             .lineLimit(1)
                         Text(monthMeta)
                             .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -427,7 +439,7 @@ private struct MonthlySnapshotCard: View {
                                 onRecalc()
                             }
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .buttonStyle(SecondarySmallButtonStyle())
+                            .buttonStyle(SecondarySmallButtonStyle(palette: palette))
                         }
                         Text(dayMeta)
                             .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -466,8 +478,8 @@ private struct MonthlySnapshotCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(palette.border, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .onTapGesture {
             withAnimation(.snappy) {
@@ -504,6 +516,7 @@ private struct MonthlySnapshotCard: View {
     }
 
     private func monthRow(label: String, value: Double, tappable: Bool, action: (() -> Void)?) -> AnyView {
+        let palette = QuailTheme.palette(for: themeSelection)
         let row = HStack(spacing: 10) {
             Text(label)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -522,11 +535,11 @@ private struct MonthlySnapshotCard: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.black.opacity(0.03))
+                .fill(palette.secondaryButton.opacity(0.92))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                .stroke(palette.border, lineWidth: 1)
         )
         .opacity(tappable ? 1.0 : 0.96)
 
@@ -552,6 +565,7 @@ private struct UpcomingDayGroup: Identifiable, Hashable {
 }
 
 private struct UpcomingTransactionsCard: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let events: [UpcomingEventPayload]
     let isLoading: Bool
     let errorMessage: String?
@@ -559,6 +573,7 @@ private struct UpcomingTransactionsCard: View {
     @State private var isExpanded = true
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
             HStack {
                 Spacer(minLength: 0)
@@ -632,8 +647,8 @@ private struct UpcomingTransactionsCard: View {
                                     }
                                     .frame(width: 236, height: 126, alignment: .topLeading)
                                     .padding(14)
-                                    .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+                                    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -644,8 +659,8 @@ private struct UpcomingTransactionsCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private var groupedDays: [UpcomingDayGroup] {
@@ -669,6 +684,7 @@ private struct UpcomingTransactionsCard: View {
     }
 
     private func categorySummaries(for items: [UpcomingEventPayload]) -> [(label: String, amount: String, color: Color)] {
+        let palette = homeThemePalette()
         let grouped = Dictionary(grouping: items, by: { categoryLabel(for: $0) })
         let summaries: [CategorySummary] = grouped.map { key, values in
             let total = values.reduce(0.0) { $0 + abs($1.amount ?? 0) }
@@ -676,7 +692,7 @@ private struct UpcomingTransactionsCard: View {
             return CategorySummary(
                 label: key,
                 amount: "\(income ? "+" : "-")\(moneyValue(total))",
-                color: income ? Color.green : Color.red,
+                color: income ? palette.positive : palette.negative,
                 total: total
             )
         }
@@ -703,6 +719,7 @@ private struct UpcomingTransactionsCard: View {
 }
 
 private struct MonthlySpendingCard: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let totals: [CategoryTotalItem]
     let unknownMerchantTotal: UnknownMerchantTotalMonth?
     let unassignedAllTime: Int?
@@ -712,6 +729,7 @@ private struct MonthlySpendingCard: View {
     @State private var isExpanded = true
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
             HStack {
                 Spacer(minLength: 0)
@@ -767,21 +785,21 @@ private struct MonthlySpendingCard: View {
                                 Text("+ Rule")
                                     .font(.system(size: 12, weight: .bold, design: .rounded))
                                     .foregroundStyle(.secondary)
-                                Text("\(unassignedAllTime)")
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    .frame(minWidth: 22, minHeight: 22)
-                                    .background(Color.black.opacity(0.06), in: Capsule())
+                                    Text("\(unassignedAllTime)")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .frame(minWidth: 22, minHeight: 22)
+                                        .background(palette.selectedTabFill, in: Capsule())
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.black.opacity(0.03))
+                                    .fill(palette.elevatedSurface)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                                    .stroke(palette.border, lineWidth: 1)
                             )
                         }
                         .buttonStyle(.plain)
@@ -791,12 +809,13 @@ private struct MonthlySpendingCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
 private func categoryRow(name: String, count: Int?, amount: Double, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return Button(action: action) {
             HStack(spacing: 8) {
                 Text(name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -807,7 +826,7 @@ private func categoryRow(name: String, count: Int?, amount: Double, action: @esc
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                         .frame(minWidth: 22, minHeight: 22)
-                        .background(Color.black.opacity(0.06), in: Capsule())
+                        .background(palette.selectedTabFill, in: Capsule())
                 }
                 Spacer(minLength: 8)
                 Text(moneyValue(amount))
@@ -818,11 +837,11 @@ private func categoryRow(name: String, count: Int?, amount: Double, action: @esc
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.black.opacity(0.03))
+                    .fill(palette.elevatedSurface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1049,10 +1068,11 @@ final class ChartViewModel: ObservableObject {
     }
 
     var growthPercentValueColor: Color {
+        let palette = homeThemePalette()
         guard let first = points.first?.value, let last = points.last?.value, first != 0 else {
             return .primary
         }
-        return last >= first ? .green : .red
+        return last >= first ? palette.positive : palette.negative
     }
 
     var growthDeltaText: String {
@@ -1176,9 +1196,11 @@ struct ChartPoint: Identifiable, Hashable {
 }
 
 private struct AnalyticsChartSection: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @StateObject private var model = ChartViewModel()
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: 11) {
             HStack(alignment: .center, spacing: 8) {
                 Spacer(minLength: 0)
@@ -1190,7 +1212,7 @@ private struct AnalyticsChartSection: View {
                 Button("Next ▶") {
                     model.nextMode()
                 }
-                .buttonStyle(ChartSecondaryButtonStyle())
+                .buttonStyle(ChartSecondaryButtonStyle(palette: palette))
             }
 
             HStack(spacing: 4) {
@@ -1203,7 +1225,7 @@ private struct AnalyticsChartSection: View {
                 Button("Update") {
                     model.updateFromPickers()
                 }
-                .buttonStyle(ChartPrimaryButtonStyle())
+                .buttonStyle(ChartPrimaryButtonStyle(palette: palette))
                 .frame(height: 36)
             }
 
@@ -1217,13 +1239,13 @@ private struct AnalyticsChartSection: View {
                     Button("Q\(idx + 1)") {
                         model.setQuarter(idx + 1)
                     }
-                    .buttonStyle(ChartChipButtonStyle())
+                    .buttonStyle(ChartChipButtonStyle(palette: palette))
                 }
 
                 Button("YTD") {
                     model.setYTD()
                 }
-                .buttonStyle(ChartChipButtonStyle())
+                .buttonStyle(ChartChipButtonStyle(palette: palette))
 
                 Spacer(minLength: 12)
 
@@ -1233,7 +1255,7 @@ private struct AnalyticsChartSection: View {
                     } label: {
                         Image(systemName: "arrow.left")
                     }
-                    .buttonStyle(ChartChipButtonStyle())
+                    .buttonStyle(ChartChipButtonStyle(palette: palette))
 
                     Text(String(model.selectedYear))
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -1246,7 +1268,7 @@ private struct AnalyticsChartSection: View {
                     } label: {
                         Image(systemName: "arrow.right")
                     }
-                    .buttonStyle(ChartChipButtonStyle())
+                    .buttonStyle(ChartChipButtonStyle(palette: palette))
                 }
             }
 
@@ -1258,33 +1280,34 @@ private struct AnalyticsChartSection: View {
                         Button(name) {
                             model.setMonth(idx)
                         }
-                        .buttonStyle(ChartChipButtonStyle())
+                        .buttonStyle(ChartChipButtonStyle(palette: palette))
                     }
 
                     Button("Annual") {
                         model.setAnnual()
                     }
-                    .buttonStyle(ChartChipButtonStyle())
+                    .buttonStyle(ChartChipButtonStyle(palette: palette))
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
         .task {
             model.startIfNeeded()
         }
     }
 
     private var chartContainer: some View {
-        GeometryReader { proxy in
+        let palette = QuailTheme.palette(for: themeSelection)
+        return GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 chartBody
                     .frame(width: proxy.size.width, height: 224, alignment: .topLeading)
                     .clipped()
                     .padding(11)
-                    .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 if model.selectedMode == .netWorth {
                     HStack(spacing: 6) {
@@ -1304,8 +1327,8 @@ private struct AnalyticsChartSection: View {
                     .scaleEffect(0.9, anchor: .leading)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.9), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+                    .background(palette.surface.opacity(0.96), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(palette.border, lineWidth: 1))
                     .padding(.top, 8)
                     .padding(.leading, 68)
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -1320,24 +1343,24 @@ private struct AnalyticsChartSection: View {
                             ForEach(model.tooltipLines, id: \.self) { line in
                                 Text(line)
                                     .font(.system(size: 10, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.92))
+                                    .foregroundStyle(palette.tooltipText.opacity(0.92))
                             }
                         }
                         HStack(spacing: 4) {
                             Text(model.tooltipTitle)
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.88))
+                                .foregroundStyle(palette.tooltipText.opacity(0.88))
                             if !model.tooltipExpanded {
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white.opacity(0.92))
+                                    .foregroundStyle(palette.tooltipText.opacity(0.92))
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(palette.tooltipBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .frame(maxWidth: 160, alignment: .leading)
                     .padding(.trailing, 10)
                     .padding(.bottom, 22)
@@ -1355,6 +1378,7 @@ private struct AnalyticsChartSection: View {
 
     @ViewBuilder
     private var chartBody: some View {
+        let palette = homeThemePalette()
         if model.isLoading {
             HStack {
                 ProgressView()
@@ -1372,7 +1396,7 @@ private struct AnalyticsChartSection: View {
                 Button("Retry") {
                     Task { await model.reload() }
                 }
-                .buttonStyle(SecondarySmallButtonStyle())
+                .buttonStyle(SecondarySmallButtonStyle(palette: palette))
             }
             .frame(maxWidth: .infinity, minHeight: 170, alignment: .center)
         } else {
@@ -1410,7 +1434,7 @@ private struct AnalyticsChartSection: View {
 
                 if let selected = model.selectedPoint {
                     RuleMark(x: .value("Selected", selected.date))
-                        .foregroundStyle(.black.opacity(0.18))
+                        .foregroundStyle(palette.border)
 
                     PointMark(
                         x: .value("Selected", selected.date),
@@ -1423,8 +1447,8 @@ private struct AnalyticsChartSection: View {
             .chartXAxis(.hidden)
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
-                    AxisGridLine().foregroundStyle(.black.opacity(0.07))
-                    AxisTick().foregroundStyle(.black.opacity(0.08))
+                    AxisGridLine().foregroundStyle(palette.border.opacity(0.9))
+                    AxisTick().foregroundStyle(palette.border)
                     AxisValueLabel()
                         .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -1455,7 +1479,8 @@ private struct AnalyticsChartSection: View {
     }
 
     private func metricPill(title: String, value: String, compact: Bool = false, valueColor: Color = .primary) -> some View {
-        HStack(spacing: 6) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return HStack(spacing: 6) {
             Text(title)
                 .font(.system(size: compact ? 10 : 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -1468,8 +1493,8 @@ private struct AnalyticsChartSection: View {
         .frame(maxWidth: compact ? 122 : .infinity)
         .padding(.horizontal, compact ? 9 : 11)
         .padding(.vertical, compact ? 7 : 8)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(.black.opacity(0.05), lineWidth: 1))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func dateField(title: String, date: Binding<Date>) -> some View {
@@ -1488,6 +1513,8 @@ private struct AnalyticsChartSection: View {
 }
 
 private struct ChartPrimaryButtonStyle: ButtonStyle {
+    let palette: QuailThemePalette
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -1495,13 +1522,16 @@ private struct ChartPrimaryButtonStyle: ButtonStyle {
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.82 : 1.0))
+                    .fill(palette.primaryButton)
+                    .opacity(configuration.isPressed ? 0.82 : 1.0)
             )
-            .foregroundStyle(.white)
+            .foregroundStyle(palette.primaryButtonText)
     }
 }
 
 private struct ChartSecondaryButtonStyle: ButtonStyle {
+    let palette: QuailThemePalette
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -1509,14 +1539,17 @@ private struct ChartSecondaryButtonStyle: ButtonStyle {
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.85 : 1.0))
+                    .fill(palette.secondaryButton)
+                    .opacity(configuration.isPressed ? 0.85 : 1.0)
             )
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.14), lineWidth: 1))
-            .foregroundStyle(.primary)
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
+            .foregroundStyle(palette.secondaryButtonText)
     }
 }
 
 private struct ChartChipButtonStyle: ButtonStyle {
+    let palette: QuailThemePalette
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -1524,14 +1557,17 @@ private struct ChartChipButtonStyle: ButtonStyle {
             .frame(height: 32)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.82 : 1.0))
+                    .fill(palette.secondaryButton)
+                    .opacity(configuration.isPressed ? 0.82 : 1.0)
             )
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.14), lineWidth: 1))
-            .foregroundStyle(.primary)
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
+            .foregroundStyle(palette.secondaryButtonText)
     }
 }
 
 private struct SecondarySmallButtonStyle: ButtonStyle {
+    let palette: QuailThemePalette
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -1539,11 +1575,12 @@ private struct SecondarySmallButtonStyle: ButtonStyle {
             .frame(height: 30)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.10 : 0.06))
+                    .fill(palette.elevatedSurface)
+                    .opacity(configuration.isPressed ? 0.78 : 1.0)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
             .foregroundStyle(.primary)
     }
@@ -1665,6 +1702,7 @@ private struct BankTotalsAccordionCard: View {
     @State private var expandedSection: String? = nil
 
     var body: some View {
+        let palette = homeThemePalette()
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Spacer(minLength: 0)
@@ -1704,13 +1742,14 @@ private struct BankTotalsAccordionCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     @ViewBuilder
     private func sectionCard(title: String, key: String, group: BankGroupPayload?) -> some View {
         if let group {
+            let palette = homeThemePalette()
             let isExpanded = expandedSection == key
             Button {
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
@@ -1777,11 +1816,11 @@ private struct BankTotalsAccordionCard: View {
                 .padding(16)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.black.opacity(isExpanded ? 0.03 : 0.02))
+                        .fill(isExpanded ? palette.elevatedSurface : palette.surface)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                        .stroke(palette.border, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -1812,6 +1851,7 @@ private struct AccountRow: View {
     let onAudit: () -> Void
 
     var body: some View {
+        let palette = homeThemePalette()
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.name)
@@ -1850,8 +1890,8 @@ private struct AccountRow: View {
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture(perform: onOpen)
     }
@@ -1887,9 +1927,11 @@ private struct AccountRow: View {
 }
 
 private struct TransactionRow: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let tx: TransactionItem
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(transactionDateText)
@@ -1899,7 +1941,7 @@ private struct TransactionRow: View {
 
                 ZStack {
                     Circle()
-                        .fill(Color.black.opacity(0.06))
+                        .fill(palette.elevatedSurface)
                         .frame(width: 38, height: 38)
                     Text(txMerchantInitial)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -1925,11 +1967,12 @@ private struct TransactionRow: View {
 
             Text(formattedAmount)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(tx.amount >= 0 ? .red : .green)
+                .foregroundStyle(tx.amount >= 0 ? palette.negative : palette.positive)
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private var transactionSubtitle: String {
@@ -1968,13 +2011,15 @@ private struct TransactionRow: View {
 }
 
 private struct HomePopupOverlay: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let popup: HomePopup
     let onDismiss: () -> Void
     let onRefresh: () -> Void
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ZStack {
-            Color.black.opacity(0.46)
+            palette.tooltipBackground.opacity(0.56)
                 .ignoresSafeArea()
                 .onTapGesture(perform: onDismiss)
 
@@ -2035,6 +2080,7 @@ private struct IncomeBreakdownPopupView: View {
     @State private var isLoading = true
 
     var body: some View {
+        let palette = homeThemePalette()
         PopupChrome(title: "Last month's income", subtitle: subtitleText, onClose: onDismiss) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -2065,7 +2111,8 @@ private struct IncomeBreakdownPopupView: View {
                                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 }
                                 .padding(12)
-                                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                             }
                         }
 
@@ -2092,7 +2139,8 @@ private struct IncomeBreakdownPopupView: View {
     }
 
     private func incomePill(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2101,7 +2149,8 @@ private struct IncomeBreakdownPopupView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func load() async {
@@ -2145,7 +2194,7 @@ private struct SpentBreakdownPopupView: View {
                             spentPill("Roundups", nativeMoneyValue(payload.roundupsTotal))
                         }
 
-                        breakdownSection(title: "Excluded categories", items: payload.excluded, accent: .red, tappable: false)
+                        breakdownSection(title: "Excluded categories", items: payload.excluded, accent: homeThemePalette().negative, tappable: false)
                         breakdownSection(title: "Included categories", items: payload.included, accent: .primary, tappable: true)
                     }
                 }
@@ -2163,7 +2212,8 @@ private struct SpentBreakdownPopupView: View {
     }
 
     private func spentPill(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2172,11 +2222,13 @@ private struct SpentBreakdownPopupView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func breakdownSection(title: String, items: [SpentBreakdownCategory], accent: Color, tappable: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 15, weight: .bold, design: .rounded))
 
@@ -2221,7 +2273,8 @@ private struct SpentBreakdownPopupView: View {
                                                 }
                                                 .padding(.vertical, 8)
                                                 .padding(.horizontal, 10)
-                                                .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
                                             }
                                         }
                                     } else {
@@ -2233,8 +2286,8 @@ private struct SpentBreakdownPopupView: View {
                             }
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(accent.opacity(0.08), lineWidth: 1))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(accent == .primary ? palette.border : accent.opacity(0.18), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                     }
@@ -2288,6 +2341,7 @@ private struct ExtraSavedBreakdownPopupView: View {
     @State private var isLoading = true
 
     var body: some View {
+        let palette = homeThemePalette()
         PopupChrome(title: "Extra saved", subtitle: subtitleText, onClose: onDismiss) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -2319,7 +2373,8 @@ private struct ExtraSavedBreakdownPopupView: View {
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
                                 }
                                 .padding(12)
-                                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                             }
                         }
                     }
@@ -2338,7 +2393,8 @@ private struct ExtraSavedBreakdownPopupView: View {
     }
 
     private func extraSavedPill(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2347,7 +2403,8 @@ private struct ExtraSavedBreakdownPopupView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func load() async {
@@ -2392,7 +2449,8 @@ private struct BankInfoPopupView: View {
     }
 
     private var rateEditor: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Set a new rate")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
 
@@ -2436,7 +2494,8 @@ private struct BankInfoPopupView: View {
             }
         }
         .padding(14)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -2449,6 +2508,7 @@ private struct BankInfoPopupView: View {
     @ViewBuilder
     private func bankSection(title: String, subtitle: String, accounts: [BankInfoAccountPayload], cardStyle: Bool) -> some View {
         if !accounts.isEmpty {
+            let palette = homeThemePalette()
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -2468,8 +2528,8 @@ private struct BankInfoPopupView: View {
                             }
                         }
                         .padding(12)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                     }
                 }
             }
@@ -2479,6 +2539,7 @@ private struct BankInfoPopupView: View {
     @ViewBuilder
     private func bankSection(title: String, subtitle: String, cards: [BankInfoCreditCardPayload]) -> some View {
         if !cards.isEmpty {
+            let palette = homeThemePalette()
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -2503,8 +2564,8 @@ private struct BankInfoPopupView: View {
                             }
                         }
                         .padding(12)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                     }
                 }
             }
@@ -2528,7 +2589,8 @@ private struct BankInfoPopupView: View {
     }
 
     private func labeledField<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2537,8 +2599,8 @@ private struct BankInfoPopupView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
@@ -2645,7 +2707,8 @@ private struct TransactionInspectPopupView: View {
     }
 
     private var txGrid: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 10) {
             txKV(label: "Merchant", value: detail?.merchant.isEmpty == false ? detail!.merchant : transaction.merchant)
             txKV(label: "Account", value: detail?.card ?? transaction.card ?? "—")
             txKV(label: "Amount", value: moneyValue(detail?.amount ?? transaction.amount))
@@ -2653,11 +2716,12 @@ private struct TransactionInspectPopupView: View {
             txKV(label: "Matches", value: detail?.categoryRulePattern ?? (detail?.category ?? transaction.category ?? "—"))
         }
         .padding(12)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var categoryEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 6) {
             Text("category")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2667,8 +2731,8 @@ private struct TransactionInspectPopupView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
 
                 Button("Save") { Task { await saveCategory() } }
                     .buttonStyle(PrimaryButtonStyle())
@@ -2678,7 +2742,8 @@ private struct TransactionInspectPopupView: View {
     }
 
     private var detailSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             Text("details")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -2691,8 +2756,8 @@ private struct TransactionInspectPopupView: View {
                 txDetailRow(label: "Ignored", value: (detail?.isIgnored ?? false) ? "Yes" : "No")
             }
             .padding(12)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
@@ -2720,7 +2785,8 @@ private struct TransactionInspectPopupView: View {
     }
 
     private var metaEditor: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Status")
@@ -2734,8 +2800,8 @@ private struct TransactionInspectPopupView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -2746,8 +2812,8 @@ private struct TransactionInspectPopupView: View {
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
                 }
             }
             HStack(spacing: 8) {
@@ -2911,7 +2977,8 @@ struct VerifyBalanceSheetView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 VStack(spacing: 3) {
                     Text("VERIFY BALANCE")
@@ -2927,8 +2994,8 @@ struct VerifyBalanceSheetView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .bold))
                             .frame(width: 30, height: 30)
-                            .background(Color.black.opacity(0.05), in: Circle())
-                            .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                            .background(palette.elevatedSurface, in: Circle())
+                            .overlay(Circle().stroke(palette.border, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
@@ -2938,8 +3005,8 @@ struct VerifyBalanceSheetView: View {
                 .datePickerStyle(.graphical)
                 .labelsHidden()
                 .padding(6)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
 
             Text("On the selected date, the final balances for this account match between the bank data and database data.")
                 .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -3082,6 +3149,7 @@ private struct UpcomingDaySheetView: View {
     let onDismiss: () -> Void
 
     var body: some View {
+        let palette = homeThemePalette()
         NavigationStack {
             ScrollView {
                 VStack(spacing: 10) {
@@ -3101,11 +3169,11 @@ private struct UpcomingDaySheetView: View {
                             Spacer()
                             Text(signedAmount(event))
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(isIncome(event) ? .green : .red)
+                                .foregroundStyle(isIncome(event) ? palette.positive : palette.negative)
                         }
                         .padding(12)
-                        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+                        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                     }
                 }
                 .padding(16)
@@ -3163,6 +3231,7 @@ struct TransactionInspectSheetView: View {
     @State private var isSaving = false
 
     var body: some View {
+        let palette = homeThemePalette()
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -3170,7 +3239,7 @@ struct TransactionInspectSheetView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             txKV(label: "Merchant", value: detail?.merchant.isEmpty == false ? detail?.merchant ?? transaction.merchant : transaction.merchant)
                             txKV(label: "Account", value: detail?.card ?? transaction.card ?? "—")
-                            txKV(label: "Amount", value: moneyValue(detail?.amount ?? transaction.amount), valueColor: (detail?.amount ?? transaction.amount) >= 0 ? .red : .green)
+                            txKV(label: "Amount", value: moneyValue(detail?.amount ?? transaction.amount), valueColor: (detail?.amount ?? transaction.amount) >= 0 ? palette.negative : palette.positive)
                             txKV(label: "Date", value: detail?.postedDate ?? transaction.postedDate ?? transaction.dateISO ?? "—")
                             txKV(label: "Matches", value: detail?.categoryRulePattern ?? (detail?.category ?? transaction.category ?? "—"))
                         }
@@ -3182,8 +3251,8 @@ struct TransactionInspectSheetView: View {
                                 .font(.system(size: 13, weight: .medium, design: .rounded))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 10)
-                                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
 
                             Button("Save category") { Task { await saveCategory() } }
                                 .buttonStyle(PrimaryButtonStyle())
@@ -3204,8 +3273,8 @@ struct TransactionInspectSheetView: View {
                                     .font(.system(size: 13, weight: .medium, design: .rounded))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 10)
-                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                    .background(homeThemePalette().surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(homeThemePalette().border, lineWidth: 1))
 
                                 HStack(spacing: 8) {
                                     Button("Save status/date") { Task { await saveMeta() } }
@@ -3279,14 +3348,15 @@ struct TransactionInspectSheetView: View {
     }
 
     private func sheetSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
             content()
         }
         .padding(14)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func txKV(label: String, value: String, valueColor: Color = .primary) -> some View {
@@ -3483,8 +3553,8 @@ private struct BankInfoSheetView: View {
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(12)
-                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                    .background(homeThemePalette().surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(homeThemePalette().border, lineWidth: 1))
                                 }
                             }
                         }
@@ -3516,8 +3586,8 @@ private struct BankInfoSheetView: View {
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(12)
-                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                    .background(homeThemePalette().surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(homeThemePalette().border, lineWidth: 1))
                                 }
                             }
                         }
@@ -3533,7 +3603,8 @@ private struct BankInfoSheetView: View {
     }
 
     private func cardSection<Content: View>(title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
             if let subtitle, !subtitle.isEmpty {
@@ -3544,12 +3615,13 @@ private struct BankInfoSheetView: View {
             content()
         }
         .padding(14)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func labeledMenu<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -3559,13 +3631,14 @@ private struct BankInfoSheetView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .frame(height: 40)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
     private func modalField(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -3575,8 +3648,8 @@ private struct BankInfoSheetView: View {
                 .autocorrectionDisabled(true)
                 .padding(.horizontal, 10)
                 .frame(height: 40)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
@@ -3699,7 +3772,9 @@ private struct CsvImportSheetView: View {
     @State private var isAutoSelectingAccount = false
 
     private let csvFileAccountCacheKey = "csv_file_account_cache"
+    private let csvFileFamilyAccountCacheKey = "csv_file_family_account_cache"
     private let csvHeaderSignatureCacheKey = "csv_header_sig_by_account"
+    private let csvHeaderAccountCacheKey = "csv_header_account_cache"
 
     var body: some View {
         NavigationStack {
@@ -3874,7 +3949,8 @@ private struct CsvImportSheetView: View {
     }
 
     private var uploadCard: some View {
-        sectionCard(title: "Upload file") {
+        let palette = homeThemePalette()
+        return sectionCard(title: "Upload file") {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Drag and drop CSV/Excel here")
@@ -3885,11 +3961,11 @@ private struct CsvImportSheetView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
-                        .foregroundStyle(Color.black.opacity(0.18))
+                        .foregroundStyle(palette.border)
                 )
 
                 HStack(spacing: 8) {
@@ -3927,7 +4003,8 @@ private struct CsvImportSheetView: View {
     }
 
     private func mappingCard(preview: CsvPreviewPayload) -> some View {
-        sectionCard(title: "Map columns") {
+        let palette = homeThemePalette()
+        return sectionCard(title: "Map columns") {
             VStack(alignment: .leading, spacing: 10) {
                 mappingPicker("Transaction date*", selection: $purchaseCol, columns: preview.columns)
                 mappingPicker("Posted date", selection: $postedCol, columns: preview.columns, optional: true)
@@ -3941,7 +4018,7 @@ private struct CsvImportSheetView: View {
                 modalTextField("Indicator value treated as credit", text: $creditIndicatorValue)
                 Toggle("Invert all amounts", isOn: $invertAmount)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .tint(.black)
+                    .tint(palette.accent)
                 Text("Map required fields: transaction date, merchant, and account.")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -3950,6 +4027,7 @@ private struct CsvImportSheetView: View {
     }
 
     private func previewCard(preview: CsvPreviewPayload) -> some View {
+        let palette = homeThemePalette()
         let columns = preview.columns
         let rows = Array(preview.previewRows.enumerated())
         return sectionCard(title: "Preview") {
@@ -3977,20 +4055,21 @@ private struct CsvImportSheetView: View {
                             }
                             .overlay(alignment: .bottom) {
                                 Rectangle()
-                                    .fill(Color.black.opacity(0.06))
+                                    .fill(palette.border)
                                     .frame(height: 1)
                             }
                         }
                     }
                 }
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
             }
         }
     }
 
     private func previewHeaderCell(_ text: String) -> some View {
-        Text(text)
+        let palette = homeThemePalette()
+        return Text(text)
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(.primary)
             .lineLimit(1)
@@ -3999,11 +4078,12 @@ private struct CsvImportSheetView: View {
             .frame(minHeight: 24, alignment: .leading)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .background(Color.black.opacity(0.05))
+            .background(palette.elevatedSurface)
     }
 
     private func previewValueCell(_ text: String, striped: Bool) -> some View {
-        Text(text)
+        let palette = homeThemePalette()
+        return Text(text)
             .font(.system(size: 10, weight: .medium, design: .rounded))
             .frame(width: 112, alignment: .leading)
             .frame(minHeight: 24, alignment: .topLeading)
@@ -4011,7 +4091,7 @@ private struct CsvImportSheetView: View {
             .padding(.vertical, 4)
             .lineLimit(1)
             .truncationMode(.tail)
-            .background(striped ? Color.black.opacity(0.025) : Color.white)
+            .background(striped ? palette.elevatedSurface.opacity(0.92) : palette.surface)
     }
 
     private var finalizeCard: some View {
@@ -4021,7 +4101,7 @@ private struct CsvImportSheetView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(.black)
+                            .tint(homeThemePalette().accent)
                         Text(workKind.label)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundStyle(.secondary)
@@ -4055,18 +4135,20 @@ private struct CsvImportSheetView: View {
     }
 
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
             content()
         }
         .padding(14)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func csvTabButton(title: String, value: Tab) -> some View {
-        Button(title) {
+        let palette = homeThemePalette()
+        return Button(title) {
             tab = value
         }
         .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -4076,17 +4158,18 @@ private struct CsvImportSheetView: View {
             ZStack(alignment: .bottom) {
                 Color.clear
                 Rectangle()
-                    .fill(tab == value ? Color.black : Color.black.opacity(0.12))
+                    .fill(tab == value ? palette.accent : palette.border)
                     .frame(height: tab == value ? 2 : 1)
             }
         )
-        .overlay(Rectangle().stroke(Color.black.opacity(0.08), lineWidth: 0.5))
+        .overlay(Rectangle().stroke(palette.border, lineWidth: 0.5))
         .foregroundStyle(tab == value ? .primary : .secondary)
         .buttonStyle(.plain)
     }
 
     private var accountMenu: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             Text("Account")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -4109,15 +4192,16 @@ private struct CsvImportSheetView: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 40)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func mappingPicker(_ title: String, selection: Binding<String>, columns: [CsvPreviewColumnPayload], optional: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -4147,28 +4231,30 @@ private struct CsvImportSheetView: View {
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: 42)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func modalTextField(_ title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
             TextField(title, text: text)
                 .padding(.horizontal, 10)
                 .frame(height: 40)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
     private func drySummaryCard(title: String, value: String, tip: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -4177,8 +4263,8 @@ private struct CsvImportSheetView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(tip ? Color(red: 1.0, green: 0.972, blue: 0.937) : Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tip ? Color(red: 0.804, green: 0.471, blue: 0.0).opacity(0.25) : .black.opacity(0.06), lineWidth: 1))
+        .background((tip ? palette.secondaryButton : palette.surface), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tip ? palette.accent.opacity(0.25) : palette.border, lineWidth: 1))
     }
 
     private func loadAccounts() async {
@@ -4372,6 +4458,10 @@ private struct CsvImportSheetView: View {
             activePresetAccountID = selectedAccountID
             presetCacheByAccount[selectedAccountID] = preset
             setCachedAccountForFileName(selectedFileName, accountID: selectedAccountID)
+            setCachedAccountForFileFamily(selectedFileName, accountID: selectedAccountID)
+            if let signature = preset.headerSignature, signature.isEmpty == false {
+                setCachedAccountForHeaderSignature(signature, accountID: selectedAccountID)
+            }
             setCachedHeaderSignature(accountID: selectedAccountID, signature: preset.headerSignature ?? "")
             importDone = true
             message = "Imported \(importResult?.inserted ?? 0), updated \(importResult?.updated ?? 0), skipped \(importResult?.skipped ?? 0)."
@@ -4387,7 +4477,8 @@ private struct CsvImportSheetView: View {
     }
 
     private func dryRunCard(_ payload: CsvDryRunPayload) -> some View {
-        sectionCard(title: "Dry run comparison") {
+        let palette = homeThemePalette()
+        return sectionCard(title: "Dry run comparison") {
             VStack(alignment: .leading, spacing: 10) {
                 let summary = payload.summary
                 HStack(spacing: 8) {
@@ -4412,11 +4503,11 @@ private struct CsvImportSheetView: View {
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                     }
                     .padding(10)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                            .foregroundStyle(Color.black.opacity(0.18))
+                            .foregroundStyle(palette.border)
                     )
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -4424,8 +4515,8 @@ private struct CsvImportSheetView: View {
                         compareLine(title: "Skipped after end", value: compare.skippedAfterEnd)
                     }
                     .padding(10)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
                 }
 
                 HStack(spacing: 8) {
@@ -4479,7 +4570,7 @@ private struct CsvImportSheetView: View {
                 if workKind == kind {
                     ProgressView()
                         .controlSize(.small)
-                        .tint(primary ? .white : .black)
+                        .tint(primary ? homeThemePalette().primaryButtonText : homeThemePalette().secondaryButtonText)
                 }
                 Text(title)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -4625,6 +4716,17 @@ private struct CsvImportSheetView: View {
            accountChoices.contains(where: { $0.id == cached }) {
             guessedID = cached
         }
+        if guessedID == nil,
+           let cached = cachedAccountForFileFamily(fileName),
+           accountChoices.contains(where: { $0.id == cached }) {
+            guessedID = cached
+        }
+        if guessedID == nil,
+           columns.isEmpty == false,
+           let cached = cachedAccountForHeaderSignature(csvHeaderSignature(columns)),
+           accountChoices.contains(where: { $0.id == cached }) {
+            guessedID = cached
+        }
         if guessedID == nil, columns.isEmpty == false {
             guessedID = await pickAccountBySavedHeaderMatch(columns: columns)
         }
@@ -4639,6 +4741,11 @@ private struct CsvImportSheetView: View {
         let loadedPreset = await loadPreset(for: guessedID)
         if cachedAccountForFileName(fileName) == guessedID {
             message = "Auto-selected account from this file's last successful import. Verify before import."
+        } else if cachedAccountForFileFamily(fileName) == guessedID {
+            message = "Auto-selected account from this file family. Verify before import."
+        } else if columns.isEmpty == false,
+                  cachedAccountForHeaderSignature(csvHeaderSignature(columns)) == guessedID {
+            message = "Auto-selected account from this header signature. Verify before import."
         } else if columns.isEmpty == false {
             message = "Auto-selected account from saved header mapping. Verify before import."
         } else {
@@ -4756,6 +4863,20 @@ private struct CsvImportSheetView: View {
         normalizedText(columns.map(\.label).joined(separator: "|"))
     }
 
+    private func fileFamilySignature(_ fileName: String) -> String {
+        let ext = (fileName as NSString).pathExtension
+        let stem = ext.isEmpty ? fileName : ((fileName as NSString).deletingPathExtension)
+        let normalized = normalizedText(stem)
+        guard normalized.isEmpty == false else { return "" }
+
+        let stripped = normalized
+            .replacingOccurrences(of: "\\b(19|20)\\d{2}\\b", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\b\\d{1,2}\\b", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\\b", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\b(statement|transactions|activity|export|download)\\b", with: " ", options: .regularExpression)
+        return normalizedText(stripped)
+    }
+
     private func cachedAccountForFileName(_ fileName: String) -> Int? {
         let key = normalizedText(fileName)
         guard key.isEmpty == false,
@@ -4773,6 +4894,23 @@ private struct CsvImportSheetView: View {
         UserDefaults.standard.set(map, forKey: csvFileAccountCacheKey)
     }
 
+    private func cachedAccountForFileFamily(_ fileName: String) -> Int? {
+        let key = fileFamilySignature(fileName)
+        guard key.isEmpty == false,
+              let map = UserDefaults.standard.dictionary(forKey: csvFileFamilyAccountCacheKey) as? [String: Int] else {
+            return nil
+        }
+        return map[key]
+    }
+
+    private func setCachedAccountForFileFamily(_ fileName: String, accountID: Int) {
+        let key = fileFamilySignature(fileName)
+        guard key.isEmpty == false else { return }
+        var map = UserDefaults.standard.dictionary(forKey: csvFileFamilyAccountCacheKey) as? [String: Int] ?? [:]
+        map[key] = accountID
+        UserDefaults.standard.set(map, forKey: csvFileFamilyAccountCacheKey)
+    }
+
     private func cachedHeaderSignature(accountID: Int) -> String? {
         let map = UserDefaults.standard.dictionary(forKey: csvHeaderSignatureCacheKey) as? [String: String] ?? [:]
         return map[String(accountID)]
@@ -4782,6 +4920,23 @@ private struct CsvImportSheetView: View {
         var map = UserDefaults.standard.dictionary(forKey: csvHeaderSignatureCacheKey) as? [String: String] ?? [:]
         map[String(accountID)] = normalizedText(signature)
         UserDefaults.standard.set(map, forKey: csvHeaderSignatureCacheKey)
+    }
+
+    private func cachedAccountForHeaderSignature(_ signature: String) -> Int? {
+        let key = normalizedText(signature)
+        guard key.isEmpty == false,
+              let map = UserDefaults.standard.dictionary(forKey: csvHeaderAccountCacheKey) as? [String: Int] else {
+            return nil
+        }
+        return map[key]
+    }
+
+    private func setCachedAccountForHeaderSignature(_ signature: String, accountID: Int) {
+        let key = normalizedText(signature)
+        guard key.isEmpty == false else { return }
+        var map = UserDefaults.standard.dictionary(forKey: csvHeaderAccountCacheKey) as? [String: Int] ?? [:]
+        map[key] = accountID
+        UserDefaults.standard.set(map, forKey: csvHeaderAccountCacheKey)
     }
 
     private func copyImportedFile(_ url: URL) throws -> URL {
@@ -4868,7 +5023,7 @@ private struct UnassignedWizardSheetView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             merchantValueBlock(current.merchant.isEmpty ? "Unknown" : current.merchant)
                             txKV(label: "Account", value: [current.bank, current.card].compactMap { $0 }.joined(separator: " • "))
-                            txKV(label: "Amount", value: moneyValue(current.amount), valueColor: current.amount >= 0 ? .red : .green)
+                            txKV(label: "Amount", value: moneyValue(current.amount), valueColor: current.amount >= 0 ? homeThemePalette().negative : homeThemePalette().positive)
                             txKV(label: "Date", value: current.postedDate ?? "—")
                             txKV(label: "Matches", value: current.usageCount.map(String.init) ?? "—")
                         }
@@ -4883,7 +5038,7 @@ private struct UnassignedWizardSheetView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Toggle("Defer apply until close", isOn: $deferApplyUntilClose)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .tint(.black)
+                            .tint(homeThemePalette().accent)
 
                         HStack(alignment: .bottom, spacing: 8) {
                             fieldShell(title: "Category") {
@@ -4998,8 +5153,8 @@ private struct UnassignedWizardSheetView: View {
                                             .buttonStyle(HomeHeaderActionStyle(primary: false))
                                     }
                                     .padding(10)
-                                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                                    .background(homeThemePalette().surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(homeThemePalette().border, lineWidth: 1))
                                 }
                             }
                         }
@@ -5053,7 +5208,8 @@ private struct UnassignedWizardSheetView: View {
     }
 
     private func sectionCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 8) {
             if !title.isEmpty {
                 Text(title)
                     .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -5061,12 +5217,13 @@ private struct UnassignedWizardSheetView: View {
             content()
         }
         .padding(14)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.black.opacity(0.05), lineWidth: 1))
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func fieldShell<Content: View>(title: String? = nil, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             if let title {
                 Text(title)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -5075,13 +5232,14 @@ private struct UnassignedWizardSheetView: View {
             content()
                 .padding(.horizontal, 10)
                 .frame(height: 40)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
     private func merchantValueBlock(_ merchant: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let palette = homeThemePalette()
+        return VStack(alignment: .leading, spacing: 5) {
             Text("Merchant")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
@@ -5091,13 +5249,14 @@ private struct UnassignedWizardSheetView: View {
                 .textSelection(.enabled)
             .padding(.horizontal, 10)
             .frame(minHeight: 40)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
     private func modeTabButton(title: String, value: UnassignedMode) -> some View {
-        Button(title) {
+        let palette = homeThemePalette()
+        return Button(title) {
             guard mode != value else { return }
             mode = value
             Task { await loadRows(resetIndex: true) }
@@ -5109,13 +5268,13 @@ private struct UnassignedWizardSheetView: View {
             ZStack(alignment: .bottom) {
                 Color.clear
                 Rectangle()
-                    .fill(mode == value ? Color.black : Color.black.opacity(0.12))
+                    .fill(mode == value ? palette.primaryButton : palette.border.opacity(1.8))
                     .frame(height: mode == value ? 2 : 1)
             }
         )
         .overlay(
             Rectangle()
-                .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                .stroke(palette.border, lineWidth: 0.5)
         )
         .foregroundStyle(mode == value ? .primary : .secondary)
         .buttonStyle(.plain)
@@ -5323,41 +5482,45 @@ private struct UnassignedWizardSheetView: View {
 }
 
 private struct UnassignedEqualActionStyle: ButtonStyle {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     let primary: Bool
 
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .frame(maxWidth: .infinity)
             .frame(height: 34)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(primary ? Color.black : Color.black.opacity(0.04))
+                    .fill(primary ? palette.primaryButton : palette.secondaryButton)
                     .opacity(configuration.isPressed ? 0.82 : 1.0)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.black.opacity(primary ? 0.0 : 0.08), lineWidth: 1)
+                    .stroke(primary ? .clear : palette.border, lineWidth: 1)
             )
-            .foregroundStyle(primary ? .white : .primary)
+            .foregroundStyle(primary ? palette.primaryButtonText : palette.secondaryButtonText)
     }
 }
 
 private struct UnassignedQueueNavStyle: ButtonStyle {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         configuration.label
             .font(.system(size: 12, weight: .semibold, design: .rounded))
             .frame(minWidth: 72)
             .frame(height: 36)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Color.black.opacity(configuration.isPressed ? 0.08 : 0.04))
+                    .fill(palette.secondaryButton.opacity(configuration.isPressed ? 0.82 : 1.0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
     }
 }
 
@@ -5451,6 +5614,7 @@ private struct PopupChrome<Content: View>: View {
     }
 
     var body: some View {
+        let palette = homeThemePalette()
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -5469,8 +5633,8 @@ private struct PopupChrome<Content: View>: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .frame(width: 30, height: 30)
-                        .background(Color.black.opacity(0.05), in: Circle())
-                        .overlay(Circle().stroke(.black.opacity(0.06), lineWidth: 1))
+                        .background(palette.elevatedSurface, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -5481,8 +5645,8 @@ private struct PopupChrome<Content: View>: View {
             content
         }
         .frame(maxWidth: 520)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(palette.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 10)
     }
 }
@@ -5506,14 +5670,15 @@ private func formatAccountBalance(_ value: Double) -> String {
 
 private struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 12, weight: .bold, design: .rounded))
             .padding(.horizontal, 12)
             .frame(height: 34)
-            .foregroundStyle(.white)
+            .foregroundStyle(palette.primaryButtonText)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(.black)
+                    .fill(palette.primaryButton)
                     .opacity(configuration.isPressed ? 0.78 : 1.0)
             )
     }
@@ -5521,20 +5686,21 @@ private struct PrimaryButtonStyle: ButtonStyle {
 
 private struct AccountChipStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color.white)
+                    .fill(palette.secondaryButton)
                     .opacity(configuration.isPressed ? 0.8 : 1.0)
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .stroke(.black.opacity(0.08), lineWidth: 1)
+                    .stroke(palette.border, lineWidth: 1)
             )
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.secondaryButtonText)
     }
 }
 
@@ -5543,20 +5709,21 @@ private struct HomeHeaderActionStyle: ButtonStyle {
     var compact: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
         configuration.label
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .padding(.horizontal, compact ? 0 : 10)
             .frame(height: compact ? 40 : 30)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(primary ? Color.black : Color.black.opacity(0.04))
+                    .fill(primary ? palette.primaryButton : palette.secondaryButton)
                     .opacity(configuration.isPressed ? 0.8 : 1.0)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.black.opacity(primary ? 0.0 : 0.08), lineWidth: 1)
+                    .stroke(primary ? .clear : palette.border, lineWidth: 1)
             )
-            .foregroundStyle(primary ? .white : .primary)
+            .foregroundStyle(primary ? palette.primaryButtonText : palette.secondaryButtonText)
     }
 }
     private struct CategorySummary {

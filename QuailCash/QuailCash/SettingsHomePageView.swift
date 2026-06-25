@@ -2,6 +2,10 @@ import SwiftUI
 import UIKit
 import Combine
 
+private func settingsThemePalette() -> QuailThemePalette {
+    QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+}
+
 struct SettingsHomePageView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var navigator: AppNavigator
@@ -147,6 +151,8 @@ struct SettingsHomePageView: View {
                             settingsSplitRow(title: "Setup wizard", subtitle: "Open the onboarding wizard anytime.", primaryDestination: .setupWizard, primaryLabel: "Open Wizard")
                             Divider().opacity(0.18)
                             settingsSplitRow(title: "Parser wizard", subtitle: "Create and maintain live parser rules.", primaryDestination: .parserWizard, primaryLabel: "Open Wizard")
+                            Divider().opacity(0.18)
+                            settingsSplitRow(title: "Import queue", subtitle: "Review Shortcut-driven CSV imports and any files that need attention.", primaryDestination: .importQueue, primaryLabel: "Open Page")
                             Divider().opacity(0.18)
                             settingsSplitRow(title: "External apps", subtitle: "Install required mobile apps for widgets and push notifications.", primaryAction: { activeSheet = .externalApps }, primaryLabel: "Open Page")
                             Divider().opacity(0.18)
@@ -772,6 +778,7 @@ private struct SettingsSheetShell<Content: View>: View {
 }
 
 private struct NotificationSettingsSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var pushManager: MobilePushManager
     @State private var prefs: [String: Bool] = [:]
@@ -878,11 +885,12 @@ private struct NotificationSettingsSheet: View {
     }
 
     private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
+        let palette = QuailTheme.palette(for: themeSelection)
+        return content()
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func load() async {
@@ -962,6 +970,7 @@ private struct NotificationSettingsSheet: View {
 }
 
 private struct WidgetSetupSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     let platform: WidgetPlatform
     @State private var statusText = "Loading..."
@@ -970,6 +979,7 @@ private struct WidgetSetupSheet: View {
     @State private var widgetVersionText = ""
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         SettingsSheetShell(title: platform == .ios ? "iOS Widgets" : "Android Widgets",
                    subtitle: platform == .ios ? "Native home screen and lock screen widget setup" : "KWGT setup and widget URL") {
             VStack(alignment: .leading, spacing: 12) {
@@ -1001,7 +1011,7 @@ private struct WidgetSetupSheet: View {
                             .font(.system(size: 11, weight: .regular, design: .monospaced))
                             .textSelection(.enabled)
                             .padding(10)
-                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
 
                     Button {
@@ -1034,7 +1044,7 @@ private struct WidgetSetupSheet: View {
                             .font(.system(size: 11, weight: .regular, design: .monospaced))
                             .textSelection(.enabled)
                             .padding(10)
-                            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
 
                     Button {
@@ -1138,6 +1148,7 @@ private struct InitialSetupSheet: View {
 }
 
 private struct InitialSetupContentView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     let showCloseButton: Bool
     let onConnectGoogle: () -> Void
@@ -1196,16 +1207,17 @@ private struct InitialSetupContentView: View {
     }
 
     private var setupHeaderCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 12) {
             if let onboarding {
                 Text(progressSummary)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 999, style: .continuous)
-                            .fill(Color.black.opacity(0.08))
+                            .fill(palette.elevatedSurface)
                         RoundedRectangle(cornerRadius: 999, style: .continuous)
-                            .fill(LinearGradient(colors: [Color.green, Color.mint], startPoint: .leading, endPoint: .trailing))
+                            .fill(LinearGradient(colors: [palette.positive, palette.accent], startPoint: .leading, endPoint: .trailing))
                             .frame(width: geo.size.width * CGFloat(progressPercent) / 100.0)
                     }
                 }
@@ -1230,8 +1242,8 @@ private struct InitialSetupContentView: View {
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private var existingAccountsCard: some View {
@@ -1508,22 +1520,25 @@ private struct InitialSetupContentView: View {
     }
 
     private func setupStepCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let palette = settingsThemePalette()
+        return VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
             content()
         }
         .padding(14)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func settingsTextField(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
-        TextField(placeholder, text: text)
+        let palette = settingsThemePalette()
+        return TextField(placeholder, text: text)
             .keyboardType(keyboard)
             .padding(.horizontal, 10)
             .frame(height: 44)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func resetFormIfNeeded() {
@@ -1663,6 +1678,7 @@ private struct ParserWizardSheet: View {
 }
 
 private struct ParserWizardContentView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     let showCloseButton: Bool
     @StateObject private var model = EmailParserWizardViewModel()
@@ -1672,6 +1688,7 @@ private struct ParserWizardContentView: View {
     @State private var resultsExpanded = true
 
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Build parser configs per account/email scope using parser slots (Parser 1, Parser 2, Parser 3...).")
@@ -1681,7 +1698,7 @@ private struct ParserWizardContentView: View {
                 if !model.statusText.isEmpty {
                     Text(model.statusText)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(model.statusIsError ? .red : .secondary)
+                        .foregroundStyle(model.statusIsError ? palette.negative : .secondary)
                 }
 
                 parserStepCard("Step 1: Scope", isExpanded: $scopeExpanded) {
@@ -1735,7 +1752,7 @@ private struct ParserWizardContentView: View {
                         }
 
                         Toggle("Try HTML body when Merchant/Date/Amount are blank", isOn: $model.tryHTMLOnMissing)
-                            .tint(.black)
+                            .tint(palette.accent)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
 
                         Button {
@@ -2743,7 +2760,8 @@ private struct DynamicCodingKey: CodingKey {
 }
 
 private func parserStepCard<Content: View>(_ title: String, isExpanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 10) {
         DisclosureGroup(isExpanded: isExpanded) {
             VStack(alignment: .leading, spacing: 10) {
                 content()
@@ -2756,26 +2774,28 @@ private func parserStepCard<Content: View>(_ title: String, isExpanded: Binding<
         }
     }
     .padding(14)
-    .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+    .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func parserField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 6) {
         Text(title)
             .font(.system(size: 12, weight: .bold, design: .rounded))
         content()
             .font(.system(size: 14, weight: .semibold, design: .rounded))
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
 }
 
 private func parserGuidedRow(title: String, order: Binding<String>, label: Binding<String>, endMode: Binding<String>, endText: Binding<String>) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 8) {
         Text(title)
             .font(.system(size: 13, weight: .bold, design: .rounded))
         HStack(spacing: 8) {
@@ -2798,12 +2818,13 @@ private func parserGuidedRow(title: String, order: Binding<String>, label: Bindi
         }
     }
     .padding(10)
-    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func parserSampleRow(sample: ParserWizardSample, isSelected: Bool, isPrimary: Bool, previewRow: ParserWizardPreviewRow?, onToggleSelected: @escaping () -> Void, onMakePrimary: @escaping () -> Void) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 8) {
         HStack(alignment: .top, spacing: 8) {
             Toggle("", isOn: Binding(get: { isSelected }, set: { _ in onToggleSelected() }))
                 .labelsHidden()
@@ -2834,12 +2855,13 @@ private func parserSampleRow(sample: ParserWizardSample, isSelected: Bool, isPri
         }
     }
     .padding(12)
-    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func parserResultRow(_ row: ParserWizardPreviewRow) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 4) {
         HStack {
             Text(row.sampleID)
                 .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -2859,12 +2881,13 @@ private func parserResultRow(_ row: ParserWizardPreviewRow) -> some View {
         }
     }
     .padding(12)
-    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func parserTestRow(_ row: ParserWizardTestRow) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 4) {
         HStack {
             Text(row.subject)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -2884,11 +2907,12 @@ private func parserTestRow(_ row: ParserWizardTestRow) -> some View {
         }
     }
     .padding(12)
-    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func parserLiveCaptureGrid(_ extracted: ParserWizardExtracted) -> some View {
+    let palette = settingsThemePalette()
     let items = [
         ("Amount", extracted.amount ?? ""),
         ("Merchant", extracted.merchant ?? ""),
@@ -2906,14 +2930,15 @@ private func parserLiveCaptureGrid(_ extracted: ParserWizardExtracted) -> some V
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(10)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.black.opacity(0.08), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 }
 
 private func parserCorrelationRow(_ row: ParserWizardCorrelationRow) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
+    let palette = settingsThemePalette()
+    return VStack(alignment: .leading, spacing: 4) {
         HStack {
             Text(row.subject.isEmpty ? "(no subject)" : row.subject)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -2937,21 +2962,23 @@ private func parserCorrelationRow(_ row: ParserWizardCorrelationRow) -> some Vie
         }
     }
     .padding(12)
-    .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+    .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private func parserEmptyState(_ text: String) -> some View {
-    Text(text)
+    let palette = settingsThemePalette()
+    return Text(text)
         .font(.system(size: 12, weight: .medium, design: .rounded))
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
 }
 
 private struct ExternalAppsSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     let onOpenIosWidgets: () -> Void
     let onOpenAndroidWidgets: () -> Void
@@ -2984,6 +3011,7 @@ private struct ExternalAppsSheet: View {
 
 private struct IncomeWizardContentView: View {
     @AppStorage("quail.incomeWizard.type") private var incomeType: String = "les"
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     let showCloseButton: Bool
 
@@ -3046,7 +3074,7 @@ private struct IncomeWizardContentView: View {
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.black.opacity(0.08), in: Capsule(style: .continuous))
+                                .background(QuailTheme.palette(for: themeSelection).elevatedSurface, in: Capsule(style: .continuous))
                         }
                         Text(incomeType == "salary" ? "Salary wizard fields are scaffolded and will be enabled in a follow-up update." : "Hourly wizard fields are scaffolded and will be enabled in a follow-up update.")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -3309,29 +3337,32 @@ private struct IncomeWizardContentView: View {
     }
 
     private func incomeTypeButton(_ title: String, value: String) -> some View {
-        Button {
+        let palette = settingsThemePalette()
+        return Button {
             incomeType = value
         } label: {
             Text(title)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .frame(maxWidth: .infinity, minHeight: 40)
-                .foregroundStyle(incomeType == value ? Color.white : Color.primary)
-                .background((incomeType == value ? Color.black : Color.black.opacity(0.05)), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.black.opacity(incomeType == value ? 0 : 0.08), lineWidth: 1))
+                .foregroundStyle(incomeType == value ? palette.primaryButtonText : palette.secondaryButtonText)
+                .background((incomeType == value ? palette.primaryButton : palette.secondaryButton), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(incomeType == value ? .clear : palette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
     private func settingsLikeCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
+        let palette = settingsThemePalette()
+        return content()
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.black.opacity(0.06), lineWidth: 1))
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
     private func settingsInlineField(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = settingsThemePalette()
+        return VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
             TextField(title, text: text)
@@ -3340,7 +3371,8 @@ private struct IncomeWizardContentView: View {
                 .autocorrectionDisabled()
                 .padding(.horizontal, 10)
                 .frame(height: 42)
-                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -3350,7 +3382,8 @@ private struct IncomeWizardContentView: View {
     }
 
     private func settingsOptionalDatePickerField(_ title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = settingsThemePalette()
+        return VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
             HStack(spacing: 8) {
@@ -3373,13 +3406,15 @@ private struct IncomeWizardContentView: View {
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 10)
                         .frame(height: 30)
-                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(palette.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 10)
             .frame(height: 42)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -3392,7 +3427,8 @@ private struct IncomeWizardContentView: View {
     }
 
     private func settingsMenuField(_ title: String, selection: Binding<String>, options: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let palette = settingsThemePalette()
+        return VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
             Picker(title, selection: selection) {
@@ -3403,7 +3439,8 @@ private struct IncomeWizardContentView: View {
             .pickerStyle(.menu)
             .padding(.horizontal, 10)
             .frame(height: 42)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -3437,6 +3474,7 @@ private struct IncomeWizardContentView: View {
 }
 
 private struct AdminConsoleSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.dismiss) private var dismiss
     @Binding var nonAdminPreview: Bool
     @Binding var viewModeText: String

@@ -3,6 +3,7 @@ import Combine
 
 @MainActor
 final class AppNavigator: ObservableObject {
+    @Published var rootRoute: AppRoute = .dashboard
     @Published var path: [AppRoute] = []
     @Published var currentTab: BottomTab = .home
     @Published var unreadCount: Int = 0
@@ -11,8 +12,8 @@ final class AppNavigator: ObservableObject {
 
     func show(_ route: AppRoute) {
         currentTab = tab(for: route)
-        if route == .home {
-            popToRoot()
+        if isRootCandidate(route) {
+            setRoot(route)
             return
         }
         if path.last == route { return }
@@ -21,8 +22,8 @@ final class AppNavigator: ObservableObject {
 
     func replaceTop(with route: AppRoute) {
         currentTab = tab(for: route)
-        if route == .home {
-            popToRoot()
+        if isRootCandidate(route) {
+            setRoot(route)
             return
         }
         if path.isEmpty {
@@ -39,7 +40,13 @@ final class AppNavigator: ObservableObject {
     }
 
     func popToRoot() {
-        currentTab = .home
+        currentTab = tab(for: rootRoute)
+        path = []
+    }
+
+    func setRoot(_ route: AppRoute) {
+        rootRoute = route
+        currentTab = tab(for: route)
         path = []
     }
 
@@ -61,7 +68,11 @@ final class AppNavigator: ObservableObject {
 
     private func tab(for route: AppRoute) -> BottomTab {
         switch route {
+        case .dashboard:
+            return .home
         case .home:
+            return .home
+        case .fitness, .vehicle:
             return .home
         case .spending:
             return .spending
@@ -73,8 +84,17 @@ final class AppNavigator: ObservableObject {
             return .analytics
         case .recurring:
             return .recurring
-        case .settings, .setupWizard, .parserWizard, .incomeWizard, .notificationSettings, .notifications, .bankInfo, .csvImport, .ruleBuilder, .category, .account:
+        case .settings, .setupWizard, .parserWizard, .incomeWizard, .notificationSettings, .notifications, .bankInfo, .csvImport, .importQueue, .ruleBuilder, .category, .account:
             return .home
+        }
+    }
+
+    private func isRootCandidate(_ route: AppRoute) -> Bool {
+        switch route {
+        case .dashboard, .home, .fitness, .vehicle:
+            return true
+        default:
+            return false
         }
     }
 }

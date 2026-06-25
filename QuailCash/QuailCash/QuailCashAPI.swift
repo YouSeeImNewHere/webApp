@@ -790,6 +790,33 @@ final class QuailCashAPI {
         }
     }
 
+    func importCsvMappedAsync(fileURL: URL, fields: [String: String]) async throws -> String {
+        let request = try makeMultipartRequest(
+            url: AppConfig.url(path: "/csv/ingest-mapped/async"),
+            fields: fields,
+            fileFieldName: "file",
+            fileURL: fileURL,
+            timeoutInterval: RequestTimeout.csvImport
+        )
+        let data = try await checkedData(for: request)
+        struct Response: Decodable { let ok: Bool; let jobId: String; enum CodingKeys: String, CodingKey { case ok; case jobId = "job_id" } }
+        do {
+            return try JSONDecoder.quailCash.decode(Response.self, from: data).jobId
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
+    func pollCsvJob(jobID: String) async throws -> CsvJobStatusPayload {
+        let request = makeRequest(url: AppConfig.url(path: "/csv/jobs/\(jobID)"))
+        let data = try await checkedData(for: request)
+        do {
+            return try JSONDecoder.quailCash.decode(CsvJobStatusPayload.self, from: data)
+        } catch {
+            throw QuailCashAPIError.decodingFailed
+        }
+    }
+
     func createTransaction(accountID: Int, amount: Double, merchant: String, status: String, date: String) async throws -> Bool {
         let body: [String: Any] = [
             "account_id": accountID,
