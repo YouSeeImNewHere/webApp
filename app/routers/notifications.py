@@ -245,10 +245,25 @@ def _session_email(request: Request) -> str:
     return ""
 
 
+def _user_for_session_or_tenant(request: Request, tid: int | None) -> dict | None:
+    session_email = _session_email(request)
+    if session_email:
+        return get_user_by_email(session_email)
+    # Bearer-token auth (iOS) — no session cookie; resolve by tenant_id
+    if tid and MULTI_TENANT_ENABLED:
+        with with_db_cursor() as (_, cur):
+            cur.execute(
+                "SELECT id, email, status, tenant_id, is_owner FROM users WHERE tenant_id = %s AND is_owner = TRUE LIMIT 1",
+                (int(tid),),
+            )
+            row = cur.fetchone()
+        return dict(row) if row else None
+    return None
+
+
 def _notification_prefs_for_session_request(request: Request) -> tuple[dict[str, bool], dict | None, int | None]:
     tid = _require_tenant_id()
-    session_email = _session_email(request)
-    user = get_user_by_email(session_email) if session_email else None
+    user = _user_for_session_or_tenant(request, tid)
     prefs = _notification_prefs_for_tenant(tid)
     return prefs, user, tid
 
@@ -339,8 +354,7 @@ def list_notifications(limit: int = 200):
 @router.post("/notifications/ios/devices")
 def upsert_ios_push_device(body: IOSPushDeviceBody, request: Request):
     tid = _require_tenant_id()
-    session_email = _session_email(request)
-    user = get_user_by_email(session_email) if session_email else None
+    user = _user_for_session_or_tenant(request, tid)
     if not tid or not user:
         raise HTTPException(status_code=401, detail="unauthorized")
     try:
@@ -361,8 +375,8 @@ def upsert_ios_push_device(body: IOSPushDeviceBody, request: Request):
 
 @router.delete("/notifications/ios/devices")
 def delete_ios_push_device(body: IOSPushDeviceBody, request: Request):
-    session_email = _session_email(request)
-    user = get_user_by_email(session_email) if session_email else None
+    tid = _require_tenant_id()
+    user = _user_for_session_or_tenant(request, tid)
     if not user:
         raise HTTPException(status_code=401, detail="unauthorized")
     changed = revoke_ios_push_device(token=body.token, user_id=int(user.get("id") or 0))

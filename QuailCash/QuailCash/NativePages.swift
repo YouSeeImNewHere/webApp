@@ -1197,7 +1197,7 @@ private struct FinanceNotificationsContent: View {
     private func load() async {
         do {
             let out = try await SettingsNetworking.fetch("/settings/notifications", as: SettingsNotificationSettingsPayload.self)
-            prefs = out.prefs; prefs["ios_push"] = false
+            prefs = out.prefs
             userKeyStatus = (out.pushoverUserKey?.isEmpty == false) ? "Pushover key set." : "Pushover key not set."
             iosPushStatus = MobilePushManager.isAvailable ? iosPushStatusText(from: out) : "iPhone push is unavailable in this build."
             await pushManager.refreshAuthorizationStatus()
@@ -1208,10 +1208,7 @@ private struct FinanceNotificationsContent: View {
     }
 
     private func savePref(key: String, value: Bool) async {
-        guard !isSaving, key != "ios_push" else {
-            if key == "ios_push" { prefs[key] = false; statusMessage = "iPhone push is disabled in this build." }
-            return
-        }
+        guard !isSaving else { return }
         isSaving = true; defer { isSaving = false }
         do {
             let out = try await SettingsNetworking.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)
