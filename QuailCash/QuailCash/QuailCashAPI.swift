@@ -1565,6 +1565,97 @@ final class QuailCashAPI {
         }
     }
 
+    // MARK: - Vehicle
+
+    struct VehicleProfilePayload: Codable {
+        var make: String?
+        var model: String?
+        var year: Int?
+        var vin: String?
+        var licensePlate: String?
+        var currentMileage: Int?
+        var oilType: String?
+        var notes: String?
+    }
+
+    struct VehicleFuelPayload: Codable {
+        var id: Int
+        var date: String
+        var mileage: Int
+        var gallons: Double?
+        var pricePerGallon: Double?
+        var milesSinceLast: Double?
+        var mpg: Double?
+        var station: String?
+        var notes: String?
+    }
+
+    struct VehicleMaintenancePayload: Codable {
+        var id: Int
+        var typeName: String
+        var date: String
+        var mileage: Int
+        var cost: Double?
+        var isShopPerformed: Bool?
+        var shopName: String?
+        var notes: String?
+    }
+
+    struct VehicleInspectionPayload: Codable {
+        var id: Int
+        var name: String
+        var periodicityDays: Int
+        var lastCheckedDate: String?
+        var isBuiltIn: Bool?
+    }
+
+    struct VehicleIssueAPIPayload: Codable {
+        var id: Int
+        var title: String
+        var description: String?
+        var mileageNoticed: Int?
+        var dateNoticed: String?
+        var isResolved: Bool?
+        var resolvedDate: String?
+        var notes: String?
+    }
+
+    private struct VehicleListWrapper<T: Codable>: Codable {
+        var records: [T]
+    }
+
+    private func vehicleDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return d
+    }
+
+    func fetchVehicleProfile() async throws -> VehicleProfilePayload? {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/profile")))
+        if data.count <= 2 { return nil }
+        return try? vehicleDecoder().decode(VehicleProfilePayload.self, from: data)
+    }
+
+    func fetchVehicleFuel(limit: Int = 500) async throws -> [VehicleFuelPayload] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/fuel", queryItems: [URLQueryItem(name: "limit", value: "\(limit)")])))
+        return (try? vehicleDecoder().decode(VehicleListWrapper<VehicleFuelPayload>.self, from: data).records) ?? []
+    }
+
+    func fetchVehicleMaintenance(limit: Int = 500) async throws -> [VehicleMaintenancePayload] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/maintenance", queryItems: [URLQueryItem(name: "limit", value: "\(limit)")])))
+        return (try? vehicleDecoder().decode(VehicleListWrapper<VehicleMaintenancePayload>.self, from: data).records) ?? []
+    }
+
+    func fetchVehicleInspections() async throws -> [VehicleInspectionPayload] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/inspections")))
+        return (try? vehicleDecoder().decode([VehicleInspectionPayload].self, from: data)) ?? []
+    }
+
+    func fetchVehicleIssues() async throws -> [VehicleIssueAPIPayload] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/issues")))
+        return (try? vehicleDecoder().decode([VehicleIssueAPIPayload].self, from: data)) ?? []
+    }
+
     private func makeRequest(url: URL, method: String = "GET", jsonBody: [String: Any]? = nil) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method

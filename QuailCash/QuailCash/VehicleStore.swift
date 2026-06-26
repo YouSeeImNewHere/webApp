@@ -313,6 +313,95 @@ final class VehicleStore: ObservableObject {
     var activeTireSet: TireSet? { tireSets.first(where: { $0.isActive }) }
     var openIssues: [VehicleIssue] { issues.filter { !$0.isResolved } }
 
+    // MARK: API Refresh
+
+    func refresh() async {
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate]
+
+        // Each fetch is independent — one failure doesn't block the others
+        if let p = try? await QuailCashAPI.shared.fetchVehicleProfile(), p.make != nil || p.currentMileage != nil {
+            if let v = p.make,          !v.isEmpty { profile.make = v }
+            if let v = p.model,         !v.isEmpty { profile.model = v }
+            if let v = p.year                      { profile.year = v }
+            if let v = p.vin,           !v.isEmpty { profile.vin = v }
+            if let v = p.licensePlate,  !v.isEmpty { profile.licensePlate = v }
+            if let v = p.currentMileage            { profile.currentMileage = v }
+            if let v = p.oilType,       !v.isEmpty { profile.oilType = v }
+        }
+
+        if let payloads = try? await QuailCashAPI.shared.fetchVehicleFuel(), !payloads.isEmpty {
+            fuelRecords = payloads.compactMap { p -> FuelRecord? in
+                guard let date = df.date(from: p.date), let gal = p.gallons, gal > 0 else { return nil }
+                return FuelRecord(
+                    id: stableID("fuel-\(p.id)"),
+                    date: date,
+                    mileage: p.mileage,
+                    gallons: gal,
+                    pricePerGallon: p.pricePerGallon,
+                    stationName: p.station ?? "",
+                    notes: p.notes ?? ""
+                )
+            }.sorted { $0.date > $1.date }
+        }
+
+        if let payloads = try? await QuailCashAPI.shared.fetchVehicleMaintenance(), !payloads.isEmpty {
+            maintenanceRecords = payloads.compactMap { p -> MaintenanceRecord? in
+                guard let date = df.date(from: p.date) else { return nil }
+                let typeID = maintenanceTypes.first { $0.name.lowercased() == p.typeName.lowercased() }?.id ?? UUID()
+                return MaintenanceRecord(
+                    id: stableID("maint-\(p.id)"),
+                    typeID: typeID,
+                    typeName: p.typeName,
+                    date: date,
+                    mileage: p.mileage,
+                    isShopPerformed: p.isShopPerformed ?? false,
+                    shopName: p.shopName ?? "",
+                    cost: p.cost,
+                    notes: p.notes ?? ""
+                )
+            }.sorted { $0.date > $1.date }
+        }
+
+        if let payloads = try? await QuailCashAPI.shared.fetchVehicleInspections(), !payloads.isEmpty {
+            inspectionItems = payloads.map { p in
+                InspectionCheckItem(
+                    id: stableID("inspect-\(p.id)"),
+                    name: p.name,
+                    periodicityDays: p.periodicityDays,
+                    lastCheckedDate: p.lastCheckedDate.flatMap { df.date(from: $0) },
+                    isBuiltIn: p.isBuiltIn ?? false
+                )
+            }
+        }
+
+        if let payloads = try? await QuailCashAPI.shared.fetchVehicleIssues(), !payloads.isEmpty {
+            issues = payloads.map { p in
+                VehicleIssue(
+                    id: stableID("issue-\(p.id)"),
+                    dateNoticed: p.dateNoticed.flatMap { df.date(from: $0) } ?? Date(),
+                    mileageNoticed: p.mileageNoticed ?? 0,
+                    title: p.title,
+                    description: p.description ?? "",
+                    isResolved: p.isResolved ?? false,
+                    resolvedDate: p.resolvedDate.flatMap { df.date(from: $0) }
+                )
+            }
+        }
+
+        save()
+    }
+
+    private func stableID(_ seed: String) -> UUID {
+        var bytes = Array(repeating: UInt8(0), count: 16)
+        for (i, byte) in Data(seed.utf8).prefix(16).enumerated() { bytes[i] = byte }
+        for (i, byte) in Data(seed.utf8).dropFirst(16).prefix(16).enumerated() { bytes[i] ^= byte }
+        bytes[6] = (bytes[6] & 0x0F) | 0x40
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        return UUID(uuid: (bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],
+                           bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
+    }
+
     // MARK: Mutations
 
     func addMaintenanceRecord(_ r: MaintenanceRecord) {

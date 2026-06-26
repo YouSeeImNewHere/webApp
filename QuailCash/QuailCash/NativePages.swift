@@ -235,9 +235,59 @@ struct PageShell<Content: View>: View {
     }
 }
 
+@MainActor
+private final class DashboardGlanceModel: ObservableObject {
+    @Published var safeToSpend: Double? = nil
+    @Published var billsRemaining: Double? = nil
+    @Published var daysLeft: Int = DashboardGlanceModel.calendarDaysLeft()
+
+    func load() async {
+        do {
+            let home = try await QuailCashAPI.shared.fetchHome(txLimit: 1)
+            safeToSpend = home.monthBudget?.safeToSpend
+            billsRemaining = home.monthBudget?.billsRemaining
+            daysLeft = home.monthBudget?.daysLeft ?? DashboardGlanceModel.calendarDaysLeft()
+        } catch { }
+    }
+
+    private static func calendarDaysLeft() -> Int {
+        let cal = Calendar.current
+        let now = Date()
+        guard let range = cal.range(of: .day, in: .month, for: now) else { return 0 }
+        return range.count - cal.component(.day, from: now)
+    }
+}
+
+@MainActor
+private final class DashboardAuthModel: ObservableObject {
+    @Published var isSignedIn: Bool? = nil
+    @Published var showAuthSheet = false
+
+    func checkAuth() async {
+        do {
+            _ = try await QuailCashAPI.shared.fetchNotificationsUnreadCount()
+            isSignedIn = true
+        } catch QuailCashAPIError.unauthorized {
+            isSignedIn = false
+        } catch {
+            // network error — leave state unchanged
+        }
+    }
+
+    func finishAuth() {
+        showAuthSheet = false
+        Task { await checkAuth() }
+    }
+
+    func cancelAuth() {
+        showAuthSheet = false
+    }
+}
+
 private struct DashboardPageView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @StateObject private var authModel = DashboardAuthModel()
 
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
@@ -252,6 +302,10 @@ private struct DashboardPageView: View {
         ) {
             AppPageScroll(contentPadding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
+                    if authModel.isSignedIn == false {
+                        signInCard(palette: palette)
+                    }
+
                     Text("Launch the part of the app you want to use.")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -261,8 +315,6 @@ private struct DashboardPageView: View {
                         subtitle: "Budget, spending, accounts, recurring, and reporting.",
                         icon: "creditcard.fill",
                         accent: palette.accent,
-                        status: "Ready",
-                        actionTitle: "Open Quail Cash",
                         onTap: { navigator.setRoot(.home) }
                     )
 
@@ -271,25 +323,62 @@ private struct DashboardPageView: View {
                         subtitle: "Mileage, maintenance, inspections, and operating costs.",
                         icon: "car.fill",
                         accent: Color.orange,
-                        status: "Beta",
-                        actionTitle: "Open Quail Car",
                         onTap: { navigator.setRoot(.vehicle) }
                     )
 
                     dashboardLauncherCard(
                         title: "Quail Fitness",
-                        subtitle: "Prototype space for workouts, body metrics, and recovery.",
+                        subtitle: "Workouts, body metrics, progressions, and recovery.",
                         icon: "figure.strengthtraining.traditional",
                         accent: palette.positive,
-                        status: "Prototype",
-                        actionTitle: "Open Quail Fitness",
                         onTap: { navigator.setRoot(.fitness) }
                     )
 
-                    dashboardPreviewStrip(palette: palette)
+                    DashboardQuickGlanceSection()
                 }
             }
         }
+        .sheet(isPresented: $authModel.showAuthSheet) {
+            AuthSessionView(
+                startURL: AppConfig.mobileAuthStartURL(),
+                callbackScheme: AppConfig.callbackScheme,
+                onAuthenticated: { authModel.finishAuth() },
+                onCancel: { authModel.cancelAuth() }
+            )
+        }
+        .task { await authModel.checkAuth() }
+    }
+
+    private func signInCard(palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(palette.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("You're not signed in")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text("Sign in to access Quail Cash and sync your data.")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            Button {
+                authModel.showAuthSheet = true
+            } label: {
+                Text("Sign In")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .foregroundStyle(palette.primaryButtonText)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.accent.opacity(0.4), lineWidth: 1))
     }
 
     private func dashboardLauncherCard(
@@ -297,53 +386,35 @@ private struct DashboardPageView: View {
         subtitle: String,
         icon: String,
         accent: Color,
-        status: String,
-        actionTitle: String,
         onTap: @escaping () -> Void
     ) -> some View {
         let palette = QuailTheme.palette(for: themeSelection)
         return Button(action: onTap) {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(accent.opacity(0.16))
-                        .frame(width: 56, height: 56)
+                        .frame(width: 52, height: 52)
                     Image(systemName: icon)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(accent)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center, spacing: 8) {
-                        Text(title)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-                        Text(status)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.secondaryButtonText)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(palette.secondaryButton, in: Capsule(style: .continuous))
-                    }
-
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
                     Text(subtitle)
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
-
-                    HStack(spacing: 8) {
-                        Text(actionTitle)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(palette.primaryButtonText)
-                            .padding(.horizontal, 12)
-                            .frame(height: 36)
-                            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.secondary)
-                    }
                 }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -353,39 +424,119 @@ private struct DashboardPageView: View {
         .buttonStyle(.plain)
     }
 
-    private func dashboardPreviewStrip(palette: QuailThemePalette) -> some View {
+}
+
+private struct DashboardQuickGlanceSection: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @ObservedObject private var fit = FitnessStore.shared
+    @ObservedObject private var car = VehicleStore.shared
+    @StateObject private var cash = DashboardGlanceModel()
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         VStack(alignment: .leading, spacing: 10) {
             Text("Quick Glance")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
-            Text("Reserved for cross-app snapshots. Quail Cash, Quail Car, and Quail Fitness previews can land here later.")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
-                dashboardPreviewTile(title: "Quail Cash", value: "Preview later", palette: palette)
-                dashboardPreviewTile(title: "Quail Car", value: "Preview later", palette: palette)
-                dashboardPreviewTile(title: "Quail Fitness", value: "Preview later", palette: palette)
-            }
+            glanceCard(icon: "creditcard.fill", title: "Quail Cash",
+                       color: palette.accent, rows: financeRows, palette: palette)
+            glanceCard(icon: "car.fill", title: "Quail Car",
+                       color: .orange, rows: carRows, palette: palette)
+            glanceCard(icon: "figure.strengthtraining.traditional", title: "Quail Fitness",
+                       color: palette.positive, rows: fitnessRows, palette: palette)
         }
         .padding(16)
         .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.border, lineWidth: 1))
+        .task { await cash.load() }
     }
 
-    private func dashboardPreviewTile(title: String, value: String, palette: QuailThemePalette) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
+    private func glanceCard(icon: String, title: String, color: Color, rows: [(String, String)], palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(color)
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .tracking(0.4)
+            }
+            VStack(spacing: 6) {
+                ForEach(rows, id: \.0) { label, value in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(label)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Text(value)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
         .padding(12)
         .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private var financeRows: [(String, String)] {
+        let spendText: String = {
+            guard let s = cash.safeToSpend else { return "—" }
+            return s < 0 ? "-\(moneyValue(abs(s)))" : moneyValue(s)
+        }()
+        let billsText = cash.billsRemaining.map { moneyValue($0) } ?? "—"
+        let days = cash.daysLeft
+        return [
+            ("Safe to spend", spendText),
+            ("Month closes", days == 0 ? "Today" : "in \(days) day\(days == 1 ? "" : "s")"),
+            ("Bills remaining", billsText),
+        ]
+    }
+
+    private var carRows: [(String, String)] {
+        let mileage = car.profile.currentMileage
+        let lastFuel = car.fuelRecords.max(by: { $0.date < $1.date })
+        let openCount = car.openIssues.count
+        let dueCount = car.inspectionItems.filter { $0.isDue }.count
+
+        var rows: [(String, String)] = []
+        rows.append(("Odometer", mileage > 0 ? "\(mileage.formatted()) mi" : "—"))
+        rows.append(("Last fillup", lastFuel.map { relativeShort($0.date) } ?? "No records"))
+        if openCount > 0 {
+            rows.append(("Open issues", "\(openCount)"))
+        } else if dueCount > 0 {
+            rows.append(("Inspections due", "\(dueCount)"))
+        } else {
+            rows.append(("Status", "All clear"))
+        }
+        return rows
+    }
+
+    private var fitnessRows: [(String, String)] {
+        let cal = Calendar.current
+        let now = Date()
+        let sorted = fit.sessions.sorted { $0.date > $1.date }
+        let weekCount = sorted.filter { cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }.count
+        let totalSetsThisWeek = sorted
+            .filter { cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }
+            .reduce(0) { $0 + $1.totalSets }
+        let lastDate = sorted.first?.date
+        let activeGoals = fit.goals.filter { $0.targetDate > now }.count
+
+        return [
+            ("This week", weekCount == 0 ? "Rest week" : "\(weekCount) session\(weekCount == 1 ? "" : "s"), \(totalSetsThisWeek) sets"),
+            ("Last workout", lastDate.map { relativeShort($0) } ?? "—"),
+            ("Active goals", activeGoals == 0 ? "None" : "\(activeGoals)"),
+        ]
+    }
+
+    private func relativeShort(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
@@ -451,10 +602,10 @@ private struct DashboardModulePlaceholderPageView: View {
 
 private struct DashboardSettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
-    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var navigator: AppNavigator
 
     @State private var googleStatusText = "Checking..."
+    @State private var showGoogleAuth = false
 
     private let themes: [(String, String)] = [
         ("system", "System"), ("light", "Default (Light)"), ("dark", "Dark"),
@@ -463,70 +614,115 @@ private struct DashboardSettingsPageView: View {
 
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
-        PageShell(title: "Settings", subtitle: "Appearance, connections, and notifications") {
-            VStack(alignment: .leading, spacing: 12) {
-                dsSection(title: "Appearance") {
-                    Picker("Color scheme", selection: $themeSelection) {
-                        ForEach(themes, id: \.0) { Text($1).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    Text("Tip: System follows your device theme.")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-
-                dsSection(title: "Google Gmail") {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("OAuth connection").font(.system(size: 14, weight: .semibold, design: .rounded))
-                            Text(googleStatusText).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button {
-                            if let url = URL(string: AppConfig.url(path: "/gmail/oauth/start", queryItems: [URLQueryItem(name: "next", value: "/settings")]).absoluteString) {
-                                openURL(url)
+        AppChromeFrame(
+            title: "Settings",
+            badgeValue: nil,
+            selectedTab: nil,
+            showsBottomBar: false,
+            onLeadingTap: { navigator.show(.dashboardSettings) },
+            onTrailingTap: { navigator.show(.notifications) },
+            onSelectTab: { _ in }
+        ) {
+            VStack(spacing: 0) {
+                AppPageScroll(contentPadding: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        dsSection(title: "Appearance") {
+                            Picker("Color scheme", selection: $themeSelection) {
+                                ForEach(themes, id: \.0) { Text($1).tag($0) }
                             }
-                        } label: {
-                            Text(googleStatusText.contains("Connected") ? "Reconnect" : "Connect Google")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .padding(.horizontal, 12).padding(.vertical, 10)
-                                .background(palette.primaryButton, in: Capsule(style: .continuous))
-                                .foregroundStyle(palette.primaryButtonText)
+                            .pickerStyle(.menu)
+                            Text("Tip: System follows your device theme.")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
+
+                        dsSection(title: "Google Gmail") {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("OAuth connection").font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    Text(googleStatusText).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button { showGoogleAuth = true } label: {
+                                    dsChip(googleStatusText.contains("Connected") ? "Reconnect" : "Connect Google")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        dsSection(title: "Notifications") {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Smart notifications").font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    Text("Spending, fitness, and vehicle alerts.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                NavigationLink(value: AppRoute.notificationSettings) {
+                                    dsChip("Open")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        dsSection(title: "Advanced") {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("App Settings").font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    Text("Cache, rules, setup, import, and admin tools.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                NavigationLink(value: AppRoute.settings) {
+                                    dsChip("Open")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                 }
 
-                dsSection(title: "Notifications") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Smart notifications").font(.system(size: 14, weight: .semibold, design: .rounded))
-                            Text("Spending, fitness, and vehicle alerts.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        NavigationLink(value: AppRoute.notificationSettings) {
-                            dsChip("Open")
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                dsSection(title: "Advanced") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("App Settings").font(.system(size: 14, weight: .semibold, design: .rounded))
-                            Text("Cache, rules, setup, import, and admin tools.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        NavigationLink(value: AppRoute.settings) {
-                            dsChip("Open")
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                dashboardAppBar(palette: palette)
             }
         }
         .task { await loadGoogle() }
+        .sheet(isPresented: $showGoogleAuth) {
+            AuthSessionView(
+                startURL: AppConfig.url(path: "/gmail/oauth/start", queryItems: [
+                    URLQueryItem(name: "next", value: "/settings")
+                ]),
+                callbackScheme: AppConfig.callbackScheme,
+                onAuthenticated: { Task { await loadGoogle() } },
+                onCancel: {}
+            )
+        }
+    }
+
+    private func dashboardAppBar(palette: QuailThemePalette) -> some View {
+        HStack(spacing: 0) {
+            appBarTab(icon: "square.grid.2x2.fill", label: "Dashboard", palette: palette) { navigator.setRoot(.dashboard) }
+            appBarTab(icon: "creditcard.fill", label: "Cash", palette: palette) { navigator.setRoot(.home) }
+            appBarTab(icon: "car.fill", label: "Car", palette: palette) { navigator.setRoot(.vehicle) }
+            appBarTab(icon: "figure.strengthtraining.traditional", label: "Fitness", palette: palette) { navigator.setRoot(.fitness) }
+        }
+        .frame(height: 56)
+        .background(palette.barBackground)
+        .overlay(Rectangle().fill(palette.barDivider).frame(height: 1), alignment: .top)
+        .safeAreaPadding(.bottom)
+    }
+
+    private func appBarTab(icon: String, label: String, palette: QuailThemePalette, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(palette.chromeIconForeground.opacity(0.72))
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(palette.chromeIconForeground.opacity(0.72))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
     }
 
     private func dsSection<C: View>(title: String, @ViewBuilder content: () -> C) -> some View {

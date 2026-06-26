@@ -1641,13 +1641,12 @@ final class HomeViewModel: ObservableObject {
             print("[QuailCash] HomeViewModel.reload() success")
         } catch QuailCashAPIError.unauthorized {
             needsAuthentication = true
-            showAuthSheet = true
             errorMessage = nil
             statusText = "Signed out. Sign in to load real data."
             upcomingEvents = []
             upcomingLoading = false
             upcomingError = nil
-            print("[QuailCash] HomeViewModel.reload() unauthorized -> showing auth sheet")
+            print("[QuailCash] HomeViewModel.reload() unauthorized -> needsAuthentication")
         } catch {
             errorMessage = error.localizedDescription
             statusText = "Error: \(error.localizedDescription)"
@@ -1680,7 +1679,6 @@ final class HomeViewModel: ObservableObject {
             await reload()
         } catch QuailCashAPIError.unauthorized {
             needsAuthentication = true
-            showAuthSheet = true
             errorMessage = nil
             statusText = "Signed out. Sign in to recalculate."
         } catch {
@@ -5651,7 +5649,7 @@ private struct PopupChrome<Content: View>: View {
     }
 }
 
-private func moneyValue(_ value: Double) -> String {
+func moneyValue(_ value: Double) -> String {
     let formatter = NumberFormatter()
     formatter.numberStyle = .currency
     formatter.currencyCode = "USD"

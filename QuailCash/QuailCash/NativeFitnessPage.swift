@@ -1582,15 +1582,19 @@ private struct AddFitnessGoalSheet: View {
 
 private struct FitnessProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var store = FitnessStore.shared
     @AppStorage("fitness.profile.primaryGoal") private var primaryGoalRaw: String = FitnessGoalType.muscleMass.rawValue
     @AppStorage("fitness.profile.ageYears") private var ageYears: Int = 25
     @AppStorage("fitness.profile.heightCm") private var heightCm: Double = 175
     @AppStorage("fitness.profile.trainingYears") private var trainingYears: Int = 0
+    @State private var manualWeightKg: Double = 0
 
     private var primaryGoal: Binding<FitnessGoalType> {
         Binding(get: { FitnessGoalType(rawValue: primaryGoalRaw) ?? .muscleMass },
                 set: { primaryGoalRaw = $0.rawValue })
     }
+
+    private var displayWeightKg: Double { store.latestBodyMassKg ?? manualWeightKg }
 
     var body: some View {
         NavigationStack {
@@ -1604,7 +1608,7 @@ private struct FitnessProfileSheet: View {
                     .pickerStyle(.inline)
                     .labelsHidden()
                 }
-                Section("Personal Stats") {
+                Section {
                     Stepper("Age: \(ageYears)", value: $ageYears, in: 13...99)
                     HStack {
                         Text("Height")
@@ -1614,6 +1618,29 @@ private struct FitnessProfileSheet: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                         Text("cm").foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Weight")
+                        Spacer()
+                        if store.latestBodyMassKg != nil {
+                            Text(String(format: "%.1f kg", displayWeightKg))
+                                .foregroundStyle(.secondary)
+                            Text("from Health").font(.caption).foregroundStyle(.tertiary)
+                        } else {
+                            TextField("kg", value: $manualWeightKg, format: .number)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                            Text("kg").foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Personal Stats")
+                } footer: {
+                    if store.latestBodyMassKg == nil {
+                        Text("Grant Health access to sync weight automatically, or enter it manually.")
+                    } else {
+                        Text("Weight synced from Apple Health.")
                     }
                 }
                 Section("Training Experience") {
@@ -1630,8 +1657,16 @@ private struct FitnessProfileSheet: View {
             .navigationTitle("My Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        if store.latestBodyMassKg == nil && manualWeightKg > 0 {
+                            Task { await store.saveBodyMass(manualWeightKg) }
+                        }
+                        dismiss()
+                    }
+                }
             }
+            .onAppear { manualWeightKg = store.latestBodyMassKg ?? 0 }
         }
     }
 }

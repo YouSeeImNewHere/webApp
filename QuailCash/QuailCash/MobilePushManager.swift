@@ -6,7 +6,7 @@ import UserNotifications
 @MainActor
 final class MobilePushManager: NSObject, ObservableObject {
     static let shared = MobilePushManager()
-    static let isAvailable = false
+    static let isAvailable = true
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var deviceToken: String = ""

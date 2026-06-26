@@ -583,11 +583,13 @@ final class FitnessStore: ObservableObject {
             HKQuantityType(.restingHeartRate),
             HKQuantityType(.heartRateVariabilitySDNN),
             HKQuantityType(.stepCount),
+            HKQuantityType(.bodyMass),
             HKCategoryType(.sleepAnalysis),
         ]
         let writeTypes: Set<HKSampleType> = [
             HKWorkoutType.workoutType(),
             HKQuantityType(.activeEnergyBurned),
+            HKQuantityType(.bodyMass),
         ]
         do {
             try await hkStore.requestAuthorization(toShare: writeTypes, read: readTypes)
@@ -598,17 +600,31 @@ final class FitnessStore: ObservableObject {
 
     func refreshHealthData() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        async let rhr   = fetchLatestQuantity(.restingHeartRate, unit: .count().unitDivided(by: .minute()))
-        async let hrv   = fetchLatestQuantity(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli))
-        async let sleep = fetchLastNightSleep()
-        async let steps = fetchTodaySteps()
-        let (rhrVal, hrvVal, sleepVal, stepsVal) = await (rhr, hrv, sleep, steps)
+        async let rhr    = fetchLatestQuantity(.restingHeartRate, unit: .count().unitDivided(by: .minute()))
+        async let hrv    = fetchLatestQuantity(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli))
+        async let sleep  = fetchLastNightSleep()
+        async let steps  = fetchTodaySteps()
+        async let weight = fetchLatestQuantity(.bodyMass, unit: .gramUnit(with: .kilo))
+        let (rhrVal, hrvVal, sleepVal, stepsVal, weightVal) = await (rhr, hrv, sleep, steps, weight)
         healthSnapshot = HealthSnapshot(
             restingHR: rhrVal,
             hrv: hrvVal,
             sleepHours: sleepVal,
             todaySteps: stepsVal
         )
+        if let kg = weightVal {
+            latestBodyMassKg = kg
+        }
+    }
+
+    @Published var latestBodyMassKg: Double? = nil
+
+    func saveBodyMass(_ kg: Double) async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let type = HKQuantityType(.bodyMass)
+        let sample = HKQuantitySample(type: type, quantity: HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: kg), start: Date(), end: Date())
+        try? await hkStore.save(sample)
+        latestBodyMassKg = kg
     }
 
     private func fetchLatestQuantity(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit) async -> Double? {

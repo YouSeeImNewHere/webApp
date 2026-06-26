@@ -143,6 +143,7 @@ struct VehiclePageView: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet, palette: palette)
         }
+        .task { await store.refresh() }
     }
 
     @ViewBuilder
