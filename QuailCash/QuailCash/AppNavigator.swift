@@ -72,7 +72,10 @@ final class AppNavigator: ObservableObject {
             return .home
         case .home:
             return .home
-        case .fitness, .vehicle:
+        case .dashboard, .dashboardSettings:
+            return .home
+        case .fitness, .fitnessSettings, .fitnessNotifications, .fitnessGoals,
+             .vehicle, .vehicleSettings, .vehicleNotifications:
             return .home
         case .spending:
             return .spending

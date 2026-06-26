@@ -9,9 +9,15 @@ private func nativePagesPalette() -> QuailThemePalette {
 
 enum AppRoute: Hashable {
     case dashboard
+    case dashboardSettings
     case home
     case fitness
+    case fitnessSettings
+    case fitnessNotifications
+    case fitnessGoals
     case vehicle
+    case vehicleSettings
+    case vehicleNotifications
     case spending
     case settings
     case setupWizard
@@ -39,20 +45,24 @@ struct NativePageView: View {
             switch route {
             case .dashboard:
                 DashboardPageView()
+            case .dashboardSettings:
+                DashboardSettingsPageView()
             case .home:
                 HomeView()
             case .fitness:
-                DashboardModulePlaceholderPageView(
-                    title: "Fitness",
-                    subtitle: "Training, body stats, and progress snapshots will live here.",
-                    icon: "figure.run"
-                )
+                FitnessPageView()
+            case .fitnessSettings:
+                QuailFitnessSettingsPageView()
+            case .fitnessNotifications:
+                QuailFitnessNotificationsPageView()
+            case .fitnessGoals:
+                FitnessGoalsPageView()
             case .vehicle:
-                DashboardModulePlaceholderPageView(
-                    title: "Vehicle",
-                    subtitle: "Maintenance, fuel, trips, and costs will live here.",
-                    icon: "car.fill"
-                )
+                VehiclePageView()
+            case .vehicleSettings:
+                QuailCarSettingsPageView()
+            case .vehicleNotifications:
+                QuailCarNotificationsPageView()
             case .spending:
                 NativeSpendingPageView()
             case .settings:
@@ -199,7 +209,7 @@ struct PageShell<Content: View>: View {
             title: title,
             badgeValue: nil,
             selectedTab: navigator.currentTab,
-            onLeadingTap: { navigator.show(.settings) },
+            onLeadingTap: { navigator.show(.dashboardSettings) },
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: handleTabSelect
         ) {
@@ -236,7 +246,7 @@ private struct DashboardPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
-            onLeadingTap: { navigator.show(.settings) },
+            onLeadingTap: { navigator.show(.dashboardSettings) },
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: { _ in }
         ) {
@@ -247,33 +257,33 @@ private struct DashboardPageView: View {
                         .foregroundStyle(.secondary)
 
                     dashboardLauncherCard(
-                        title: "Finance",
+                        title: "Quail Cash",
                         subtitle: "Budget, spending, accounts, recurring, and reporting.",
                         icon: "creditcard.fill",
                         accent: palette.accent,
                         status: "Ready",
-                        actionTitle: "Open Finance",
+                        actionTitle: "Open Quail Cash",
                         onTap: { navigator.setRoot(.home) }
                     )
 
                     dashboardLauncherCard(
-                        title: "Fitness",
+                        title: "Quail Car",
+                        subtitle: "Mileage, maintenance, inspections, and operating costs.",
+                        icon: "car.fill",
+                        accent: Color.orange,
+                        status: "Beta",
+                        actionTitle: "Open Quail Car",
+                        onTap: { navigator.setRoot(.vehicle) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Quail Fitness",
                         subtitle: "Prototype space for workouts, body metrics, and recovery.",
                         icon: "figure.strengthtraining.traditional",
                         accent: palette.positive,
                         status: "Prototype",
-                        actionTitle: "Open Fitness",
+                        actionTitle: "Open Quail Fitness",
                         onTap: { navigator.setRoot(.fitness) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Vehicle",
-                        subtitle: "Prototype space for mileage, maintenance, and operating costs.",
-                        icon: "car.fill",
-                        accent: Color.orange,
-                        status: "Prototype",
-                        actionTitle: "Open Vehicle",
-                        onTap: { navigator.setRoot(.vehicle) }
                     )
 
                     dashboardPreviewStrip(palette: palette)
@@ -347,14 +357,14 @@ private struct DashboardPageView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Quick Glance")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
-            Text("Reserved for cross-app snapshots. Finance, fitness, and vehicle previews can land here later.")
+            Text("Reserved for cross-app snapshots. Quail Cash, Quail Car, and Quail Fitness previews can land here later.")
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                dashboardPreviewTile(title: "Finance", value: "Preview later", palette: palette)
-                dashboardPreviewTile(title: "Fitness", value: "Preview later", palette: palette)
-                dashboardPreviewTile(title: "Vehicle", value: "Preview later", palette: palette)
+                dashboardPreviewTile(title: "Quail Cash", value: "Preview later", palette: palette)
+                dashboardPreviewTile(title: "Quail Car", value: "Preview later", palette: palette)
+                dashboardPreviewTile(title: "Quail Fitness", value: "Preview later", palette: palette)
             }
         }
         .padding(16)
@@ -437,11 +447,126 @@ private struct DashboardModulePlaceholderPageView: View {
     }
 }
 
-private struct SettingsPageView: View {
+// MARK: - Dashboard Settings Page
+
+private struct DashboardSettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var navigator: AppNavigator
 
-    @State private var googleStatusText = "Checking connection..."
+    @State private var googleStatusText = "Checking..."
+
+    private let themes: [(String, String)] = [
+        ("system", "System"), ("light", "Default (Light)"), ("dark", "Dark"),
+        ("oled", "OLED Black"), ("solarized", "Solarized"), ("forest", "Forest"), ("midnight", "Midnight Blue"),
+    ]
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        PageShell(title: "Settings", subtitle: "Appearance, connections, and notifications") {
+            VStack(alignment: .leading, spacing: 12) {
+                dsSection(title: "Appearance") {
+                    Picker("Color scheme", selection: $themeSelection) {
+                        ForEach(themes, id: \.0) { Text($1).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    Text("Tip: System follows your device theme.")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+
+                dsSection(title: "Google Gmail") {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("OAuth connection").font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text(googleStatusText).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            if let url = URL(string: AppConfig.url(path: "/gmail/oauth/start", queryItems: [URLQueryItem(name: "next", value: "/settings")]).absoluteString) {
+                                openURL(url)
+                            }
+                        } label: {
+                            Text(googleStatusText.contains("Connected") ? "Reconnect" : "Connect Google")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 12).padding(.vertical, 10)
+                                .background(palette.primaryButton, in: Capsule(style: .continuous))
+                                .foregroundStyle(palette.primaryButtonText)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                dsSection(title: "Notifications") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Smart notifications").font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text("Spending, fitness, and vehicle alerts.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        NavigationLink(value: AppRoute.notificationSettings) {
+                            dsChip("Open")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                dsSection(title: "Advanced") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("App Settings").font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text("Cache, rules, setup, import, and admin tools.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        NavigationLink(value: AppRoute.settings) {
+                            dsChip("Open")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .task { await loadGoogle() }
+    }
+
+    private func dsSection<C: View>(title: String, @ViewBuilder content: () -> C) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+            content()
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    private func dsChip(_ label: String) -> some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return Text(label)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .foregroundStyle(palette.primaryButtonText)
+            .background(palette.primaryButton, in: Capsule(style: .continuous))
+    }
+
+    private func loadGoogle() async {
+        do {
+            let out = try await SettingsNetworking.fetch("/gmail/oauth/status", as: SettingsGoogleOAuthStatusPayload.self)
+            googleStatusText = out.connected == true ? (out.email.flatMap { "Connected as \($0)" } ?? "Connected") : "Not connected"
+        } catch {
+            googleStatusText = "Status unavailable"
+        }
+    }
+}
+
+// MARK: - Settings Page
+
+private struct SettingsPageView: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+
     @State private var setupProgressText = "Loading setup progress..."
     @State private var setupProgressSubtext = ""
     @State private var cacheVersionsText = "Loading current versions..."
@@ -454,63 +579,9 @@ private struct SettingsPageView: View {
     @State private var isLoading = true
     @State private var setupProgressPercent = 0
 
-    private let themes: [(String, String)] = [
-        ("system", "System"),
-        ("light", "Default (Light)"),
-        ("dark", "Dark"),
-        ("oled", "OLED Black"),
-        ("solarized", "Solarized"),
-        ("forest", "Forest"),
-        ("midnight", "Midnight Blue"),
-    ]
-
     var body: some View {
-        let palette = QuailTheme.palette(for: themeSelection)
-        PageShell(title: "Settings", subtitle: "App-level shortcuts and account tools") {
+        PageShell(title: "App Settings", subtitle: "Cache, rules, setup, and admin tools") {
             VStack(alignment: .leading, spacing: 12) {
-                settingsSection(title: "Appearance") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Picker("Color scheme", selection: $themeSelection) {
-                            ForEach(themes, id: \.0) { theme in
-                                Text(theme.1).tag(theme.0)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        Text("Tip: System follows your device theme.")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                settingsSection(title: "Google Gmail") {
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("OAuth connection")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            Text(googleStatusText)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button {
-                            if let url = URL(string: AppConfig.url(path: "/gmail/oauth/start", queryItems: [
-                                URLQueryItem(name: "next", value: "/settings")
-                            ]).absoluteString) {
-                                openURL(url)
-                            }
-                        } label: {
-                            Text(googleStatusText.contains("Connected") ? "Reconnect Google" : "Connect Google")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(palette.primaryButton, in: Capsule(style: .continuous))
-                                .foregroundStyle(palette.primaryButtonText)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
                 settingsSection(title: "Notifications") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .center, spacing: 12) {
@@ -764,17 +835,6 @@ private struct SettingsPageView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let googleOut = try await SettingsNetworking.fetch("/gmail/oauth/status", as: SettingsGoogleOAuthStatusPayload.self)
-            if googleOut.connected == true {
-                googleStatusText = googleOut.email.flatMap { "Connected as \($0)" } ?? "Connected"
-            } else {
-                googleStatusText = "Not connected"
-            }
-        } catch {
-            googleStatusText = "Connection status unavailable"
-        }
-
-        do {
             let setupOut = try await SettingsNetworking.fetch("/settings/initial-setup-status", as: SettingsInitialSetupPayload.self)
             setupProgressPercent = setupOut.percent ?? 0
             let counts = setupOut.counts
@@ -817,6 +877,46 @@ private struct SettingsPageView: View {
 
 private struct NotificationSettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @State private var selectedTab = "finance"
+
+    var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
+        PageShell(title: "Notifications", subtitle: "Alerts and preferences for all sections") {
+            VStack(alignment: .leading, spacing: 12) {
+                // Tab selector
+                HStack(spacing: 6) {
+                    ForEach([("finance","Finance","banknote.fill"),("fitness","Fitness","figure.run"),("vehicle","Vehicle","car.fill")], id: \.0) { id, label, icon in
+                        let isSelected = selectedTab == id
+                        Button { selectedTab = id } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+                                Text(label).font(.system(size: 12, weight: .semibold, design: .rounded))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(isSelected ? palette.chromeIconForeground : palette.chromeIconForeground.opacity(0.60))
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected ? palette.selectedTabFill : .clear))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(isSelected ? palette.border : Color.clear, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+
+                switch selectedTab {
+                case "fitness":  FitnessNotificationsContent()
+                case "vehicle":  VehicleNotificationsContent()
+                default:         FinanceNotificationsContent()
+                }
+            }
+        }
+    }
+}
+
+private struct FinanceNotificationsContent: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @EnvironmentObject private var pushManager: MobilePushManager
     @State private var prefs: [String: Bool] = [:]
     @State private var userKeyStatus = "Loading..."
@@ -843,88 +943,57 @@ private struct NotificationSettingsPageView: View {
 
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
-        PageShell(title: "Notifications", subtitle: "Smart notifications and alert preferences") {
-            VStack(alignment: .leading, spacing: 12) {
-                settingsCard {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Smart notifications")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Text("Spending power, overspending protection, and savings nudges.")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                        Text(userKeyStatus)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                        if MobilePushManager.isAvailable {
-                            Text(iosPushStatus)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("iPhone push is turned off in this build while you test without a paid Apple Developer account.")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            settingsCard(palette: palette) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Smart notifications").font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text("Spending power, overspending protection, and savings nudges.")
+                        .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    Text(userKeyStatus).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    if MobilePushManager.isAvailable {
+                        Text(iosPushStatus).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    } else {
+                        Text("iPhone push is turned off in this build.")
+                            .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                    if MobilePushManager.isAvailable && prefs["ios_push"] == true {
+                        Button { Task { await sendTestPush() } } label: {
+                            Text(isSendingTest ? "Sending..." : "Send Test Push")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .frame(maxWidth: .infinity, minHeight: 42)
+                                .foregroundStyle(palette.secondaryButtonText)
+                                .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                         }
-                if MobilePushManager.isAvailable && prefs["ios_push"] == true {
-                            Button {
-                                Task { await sendTestPush() }
-                            } label: {
-                                Text(isSendingTest ? "Sending..." : "Send Test Push")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .frame(maxWidth: .infinity, minHeight: 42)
-                                    .foregroundStyle(palette.secondaryButtonText)
-                                    .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isSendingTest)
-                            .padding(.top, 4)
-                        }
+                        .buttonStyle(.plain).disabled(isSendingTest).padding(.top, 4)
                     }
                 }
-
-                settingsCard {
-                    VStack(spacing: 8) {
-                        ForEach(rows, id: \.key) { row in
-                            HStack(alignment: .center, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(row.title)
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    Text(row.subtitle)
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Toggle("", isOn: Binding(
-                                    get: { prefs[row.key] ?? false },
-                                    set: { newValue in
-                                        prefs[row.key] = newValue
-                                        Task { await savePref(key: row.key, value: newValue) }
-                                    }
-                                ))
-                                .labelsHidden()
+            }
+            settingsCard(palette: palette) {
+                VStack(spacing: 8) {
+                    ForEach(rows, id: \.key) { row in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(row.title).font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Text(row.subtitle).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
                             }
-                            .padding(.vertical, 4)
-                            if row.key != rows.last?.key {
-                                Divider().opacity(0.12)
-                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(get: { prefs[row.key] ?? false }, set: { v in prefs[row.key] = v; Task { await savePref(key: row.key, value: v) } })).labelsHidden()
                         }
+                        .padding(.vertical, 4)
+                        if row.key != rows.last?.key { Divider().opacity(0.12) }
                     }
                 }
-                if !statusMessage.isEmpty {
-                    Text(statusMessage)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
+            }
+            if !statusMessage.isEmpty {
+                Text(statusMessage).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
             }
         }
         .task { await load() }
     }
 
-    private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        let palette = QuailTheme.palette(for: themeSelection)
-        return content()
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private func settingsCard<C: View>(palette: QuailThemePalette, @ViewBuilder content: () -> C) -> some View {
+        content().padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
@@ -932,13 +1001,8 @@ private struct NotificationSettingsPageView: View {
     private func load() async {
         do {
             let out = try await SettingsNetworking.fetch("/settings/notifications", as: SettingsNotificationSettingsPayload.self)
-            prefs = out.prefs
-            prefs["ios_push"] = false
-            if let key = out.pushoverUserKey, !key.isEmpty {
-                userKeyStatus = "Pushover key set."
-            } else {
-                userKeyStatus = "Pushover key not set."
-            }
+            prefs = out.prefs; prefs["ios_push"] = false
+            userKeyStatus = (out.pushoverUserKey?.isEmpty == false) ? "Pushover key set." : "Pushover key not set."
             iosPushStatus = MobilePushManager.isAvailable ? iosPushStatusText(from: out) : "iPhone push is unavailable in this build."
             await pushManager.refreshAuthorizationStatus()
         } catch {
@@ -948,60 +1012,31 @@ private struct NotificationSettingsPageView: View {
     }
 
     private func savePref(key: String, value: Bool) async {
-        guard !isSaving else { return }
-        guard key != "ios_push" else {
-            prefs[key] = false
-            statusMessage = "iPhone push is disabled in this build."
+        guard !isSaving, key != "ios_push" else {
+            if key == "ios_push" { prefs[key] = false; statusMessage = "iPhone push is disabled in this build." }
             return
         }
-        if key == "ios_push" && value {
-            let granted = await pushManager.requestAuthorizationAndRegister()
-            if !granted {
-                prefs[key] = false
-                iosPushStatus = "Push permission is off in iPhone Settings."
-                statusMessage = "Enable notifications for QuailCash in iPhone Settings."
-                return
-            }
-        }
-        isSaving = true
-        defer { isSaving = false }
+        isSaving = true; defer { isSaving = false }
         do {
             let out = try await SettingsNetworking.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)
             iosPushStatus = iosPushStatusText(from: out)
-            if key == "ios_push" && !value {
-                await pushManager.unregisterCurrentDevice()
-            }
+            if key == "ios_push" && !value { await pushManager.unregisterCurrentDevice() }
             statusMessage = "Saved."
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                if statusMessage == "Saved." { statusMessage = "" }
-            }
-        } catch {
-            statusMessage = "Failed to save."
-        }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { if statusMessage == "Saved." { statusMessage = "" } }
+        } catch { statusMessage = "Failed to save." }
     }
 
     private func iosPushStatusText(from payload: SettingsNotificationSettingsPayload) -> String {
         let count = max(0, payload.iosPushDeviceCount ?? 0)
-        let configured = payload.iosPushConfigured ?? false
-        if !configured {
-            return "iPhone push server is not configured yet."
-        }
-        if count == 0 {
-            return "No iPhone devices registered."
-        }
-        return count == 1 ? "1 iPhone registered." : "\(count) iPhones registered."
+        guard payload.iosPushConfigured ?? false else { return "iPhone push server is not configured yet." }
+        return count == 0 ? "No iPhone devices registered." : count == 1 ? "1 iPhone registered." : "\(count) iPhones registered."
     }
 
     private func sendTestPush() async {
         guard !isSendingTest else { return }
-        isSendingTest = true
-        defer { isSendingTest = false }
-        do {
-            try await QuailCashAPI.shared.sendIOSTestPush()
-            statusMessage = "Test push sent."
-        } catch {
-            statusMessage = error.localizedDescription.isEmpty ? "Failed to send test push." : error.localizedDescription
-        }
+        isSendingTest = true; defer { isSendingTest = false }
+        do { try await QuailCashAPI.shared.sendIOSTestPush(); statusMessage = "Test push sent." }
+        catch { statusMessage = error.localizedDescription.isEmpty ? "Failed to send test push." : error.localizedDescription }
     }
 }
 

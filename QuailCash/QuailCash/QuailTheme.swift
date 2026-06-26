@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum QuailThemeMode: String {
     case system
@@ -63,10 +64,41 @@ struct QuailThemePalette {
     let selectedTabFill: Color
 }
 
+private extension Color {
+    static func adaptive(light: Color, dark: Color) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
+    }
+}
+
 enum QuailTheme {
     static func palette(for rawMode: String) -> QuailThemePalette {
         switch QuailThemeMode(rawValue: rawMode) {
-        case .system, .light:
+        case .system:
+            let light = palette(for: "light")
+            let dark = palette(for: "dark")
+            return QuailThemePalette(
+                backgroundTop:        .adaptive(light: light.backgroundTop,        dark: dark.backgroundTop),
+                backgroundBottom:     .adaptive(light: light.backgroundBottom,     dark: dark.backgroundBottom),
+                surface:              .adaptive(light: light.surface,              dark: dark.surface),
+                elevatedSurface:      .adaptive(light: light.elevatedSurface,      dark: dark.elevatedSurface),
+                border:               .adaptive(light: light.border,               dark: dark.border),
+                accent:               .adaptive(light: light.accent,               dark: dark.accent),
+                positive:             .adaptive(light: light.positive,             dark: dark.positive),
+                negative:             .adaptive(light: light.negative,             dark: dark.negative),
+                tooltipBackground:    .adaptive(light: light.tooltipBackground,    dark: dark.tooltipBackground),
+                tooltipText:          .adaptive(light: light.tooltipText,          dark: dark.tooltipText),
+                notificationBadge:    .adaptive(light: light.notificationBadge,    dark: dark.notificationBadge),
+                primaryButton:        .adaptive(light: light.primaryButton,        dark: dark.primaryButton),
+                primaryButtonText:    .adaptive(light: light.primaryButtonText,    dark: dark.primaryButtonText),
+                secondaryButton:      .adaptive(light: light.secondaryButton,      dark: dark.secondaryButton),
+                secondaryButtonText:  .adaptive(light: light.secondaryButtonText,  dark: dark.secondaryButtonText),
+                chromeIconBackground: .adaptive(light: light.chromeIconBackground, dark: dark.chromeIconBackground),
+                chromeIconForeground: .adaptive(light: light.chromeIconForeground, dark: dark.chromeIconForeground),
+                barBackground:        .adaptive(light: light.barBackground,        dark: dark.barBackground),
+                barDivider:           .adaptive(light: light.barDivider,           dark: dark.barDivider),
+                selectedTabFill:      .adaptive(light: light.selectedTabFill,      dark: dark.selectedTabFill)
+            )
+        case .light:
             return QuailThemePalette(
                 backgroundTop: Color(red: 0.98, green: 0.98, blue: 0.99),
                 backgroundBottom: Color(red: 0.94, green: 0.95, blue: 0.97),

@@ -535,7 +535,16 @@ enum ImportLiveActivityManager {
             importedTransactions: importedTransactions,
             skippedTransactions: skippedTransactions
         )
-        await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .default)
+        let content = ActivityContent(state: state, staleDate: nil)
+        await activity.update(
+            content,
+            alertConfiguration: AlertConfiguration(
+                title: "\(activity.attributes.batchName)",
+                body: "\(status)",
+                sound: .default
+            )
+        )
+        await activity.end(content, dismissalPolicy: .default)
     }
 }
 

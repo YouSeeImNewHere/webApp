@@ -19,7 +19,7 @@ struct HomeView: View {
 
     var body: some View {
         AppChromeFrame(
-            title: "Home",
+            title: "Quail Cash",
             badgeValue: notificationBadgeValue,
             selectedTab: navigator.currentTab,
             onLeadingTap: { navigate(.settings) },
