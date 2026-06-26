@@ -1201,6 +1201,10 @@ private struct FinanceNotificationsContent: View {
             userKeyStatus = (out.pushoverUserKey?.isEmpty == false) ? "Pushover key set." : "Pushover key not set."
             iosPushStatus = MobilePushManager.isAvailable ? iosPushStatusText(from: out) : "iPhone push is unavailable in this build."
             await pushManager.refreshAuthorizationStatus()
+            // Auto-register device token if ios_push is enabled but no device registered yet
+            if MobilePushManager.isAvailable && prefs["ios_push"] == true && (out.iosPushDeviceCount ?? 0) == 0 {
+                _ = await pushManager.requestAuthorizationAndRegister()
+            }
         } catch {
             userKeyStatus = "Notification settings unavailable."
             iosPushStatus = MobilePushManager.isAvailable ? "iPhone push status unavailable." : "iPhone push is unavailable in this build."
@@ -1209,6 +1213,15 @@ private struct FinanceNotificationsContent: View {
 
     private func savePref(key: String, value: Bool) async {
         guard !isSaving else { return }
+        if key == "ios_push" && value {
+            let granted = await pushManager.requestAuthorizationAndRegister()
+            if !granted {
+                prefs[key] = false
+                iosPushStatus = "Push permission is off in iPhone Settings."
+                statusMessage = "Enable notifications for QuailCash in iPhone Settings."
+                return
+            }
+        }
         isSaving = true; defer { isSaving = false }
         do {
             let out = try await SettingsNetworking.fetch("/settings/notifications", method: "POST", jsonBody: [key: value], as: SettingsNotificationSettingsPayload.self)

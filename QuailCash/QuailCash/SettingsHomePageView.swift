@@ -913,11 +913,6 @@ private struct NotificationSettingsSheet: View {
 
     private func savePref(key: String, value: Bool) async {
         guard !isSaving else { return }
-        guard key != "ios_push" else {
-            prefs[key] = false
-            statusMessage = "iPhone push is disabled in this build."
-            return
-        }
         if key == "ios_push" && value {
             let granted = await pushManager.requestAuthorizationAndRegister()
             if !granted {

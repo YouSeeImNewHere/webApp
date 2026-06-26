@@ -232,7 +232,8 @@ def _send_single_apns_push(
     ]
     try:
         result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=12)
-    except Exception:
+    except Exception as exc:
+        import logging; logging.getLogger("apns").error("apns curl exception: %s", exc)
         return False, False
 
     raw = str(result.stdout or "")
@@ -242,6 +243,9 @@ def _send_single_apns_push(
         status_code = int(parts[1].strip()) if len(parts) > 1 else 0
     except Exception:
         status_code = 0
+    import logging; logging.getLogger("apns").warning(
+        "apns send: host=%s status=%s body=%r stderr=%r", host, status_code, response_body, result.stderr
+    )
     if status_code == 200:
         return True, False
     should_revoke = False
