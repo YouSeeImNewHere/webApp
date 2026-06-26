@@ -414,6 +414,29 @@ def send_ios_push_test(body: IOSPushTestBody, request: Request):
         "attempted": int(result.get("attempted") or 0),
     }
 
+
+@router.post("/notifications/ios/test-both-envs")
+def send_ios_push_test_both_envs(request: Request):
+    """Debug endpoint: tries the stored token against both sandbox and production APNs."""
+    from app.core.apns import _build_provider_token, _send_single_apns_push, ensure_ios_push_devices_table_pg
+    tid = _require_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+    ensure_ios_push_devices_table_pg()
+    rows = query_db(
+        "SELECT token, environment FROM ios_push_devices WHERE tenant_id = %s AND revoked_at IS NULL ORDER BY id DESC LIMIT 1",
+        (int(tid),),
+    )
+    if not rows:
+        raise HTTPException(status_code=409, detail="no_device_registered")
+    token = str((rows[0] or {}).get("token") or "").strip()
+    db_env = str((rows[0] or {}).get("environment") or "").strip()
+    provider_token = _build_provider_token()
+    payload = {"aps": {"alert": {"title": "QuailCash env probe", "body": "env test"}, "sound": "default"}, "kind": "env_probe"}
+    prod_ok, _ = _send_single_apns_push(token=token, environment="production", provider_token=provider_token, payload=payload)
+    sand_ok, _ = _send_single_apns_push(token=token, environment="sandbox", provider_token=provider_token, payload=payload)
+    return {"token_prefix": token[:8], "token_len": len(token), "db_env": db_env, "production_ok": prod_ok, "sandbox_ok": sand_ok}
+
 @router.get("/notifications/unread-count")
 def unread_count():
     ensure_notifications_table_pg()
