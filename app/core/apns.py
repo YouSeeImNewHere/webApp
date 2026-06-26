@@ -180,6 +180,7 @@ def send_ios_push_to_tenant(
         "kind": str(kind or ""),
     }
     attempted = 0
+    import logging as _log
     sent = 0
     for row in rows:
         token = str((row or {}).get("token") or "").strip().lower()
@@ -187,6 +188,10 @@ def send_ios_push_to_tenant(
             continue
         attempted += 1
         env_value = str((row or {}).get("environment") or "").strip().lower()
+        _log.getLogger("apns").warning(
+            "apns token: len=%d prefix=%s suffix=%s db_env=%s key_id=%s team_id=%s topic=%s",
+            len(token), token[:8], token[-8:], env_value, APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC,
+        )
         ok, should_revoke = _send_single_apns_push(
             token=token,
             environment=(env_value or ("sandbox" if APNS_USE_SANDBOX else "production")),
