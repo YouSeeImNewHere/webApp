@@ -87,6 +87,19 @@ final class MobilePushManager: NSObject, ObservableObject {
         #if targetEnvironment(simulator)
         return "sandbox"
         #else
+        // Read aps-environment from the embedded provisioning profile so debug
+        // and release builds automatically report the correct environment.
+        if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+           let data = try? Data(contentsOf: url),
+           let ascii = String(bytes: data, encoding: .ascii),
+           let keyRange = ascii.range(of: "aps-environment") {
+            let after = ascii[keyRange.upperBound...]
+            if let start = after.range(of: "<string>"),
+               let end = after.range(of: "</string>") {
+                let value = String(after[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return value == "development" ? "sandbox" : "production"
+            }
+        }
         return "production"
         #endif
     }
