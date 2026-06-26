@@ -84,7 +84,7 @@ final class MobilePushManager: NSObject, ObservableObject {
     }
 
     private var apnsEnvironment: String {
-        #if DEBUG
+        #if targetEnvironment(simulator)
         return "sandbox"
         #else
         return "production"
