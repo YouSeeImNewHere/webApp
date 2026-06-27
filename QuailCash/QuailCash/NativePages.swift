@@ -21,6 +21,7 @@ enum AppRoute: Hashable {
     case spending
     case map
     case mapSettings
+    case adminDashboard
     case settings
     case setupWizard
     case parserWizard
@@ -71,6 +72,8 @@ struct NativePageView: View {
                 RouteMapPageView()
             case .mapSettings:
                 MapSettingsPageView()
+            case .adminDashboard:
+                AdminDashboardPageView()
             case .settings:
                 SettingsHomePageView()
             case .setupWizard:
@@ -346,6 +349,14 @@ private struct DashboardPageView: View {
                         icon: "map.fill",
                         accent: Color.blue,
                         onTap: { navigator.setRoot(.map) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Quail Admin",
+                        subtitle: "Render services and Neon database health at a glance.",
+                        icon: "server.rack",
+                        accent: Color.purple,
+                        onTap: { navigator.show(.adminDashboard) }
                     )
 
                     DashboardQuickGlanceSection()

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
+import requests as _requests
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -389,3 +391,127 @@ def admin_error_notifications_client(request: Request, body: ClientErrorBody):
         user_agent=(str(body.user_agent or "").strip() or request.headers.get("user-agent") or None),
     )
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Infra metrics  (Render + Neon)
+# ---------------------------------------------------------------------------
+
+RENDER_API_KEY = os.getenv("RENDER_API_KEY", "")
+NEON_API_KEY   = os.getenv("NEON_API_KEY", "")
+NEON_PROJECT_ID = os.getenv("NEON_PROJECT_ID", "")
+
+
+def _render_metrics() -> dict:
+    if not RENDER_API_KEY:
+        return {"error": "RENDER_API_KEY not configured"}
+    headers = {"Authorization": f"Bearer {RENDER_API_KEY}", "Accept": "application/json"}
+    try:
+        svc_r = _requests.get("https://api.render.com/v1/services?limit=20", headers=headers, timeout=10)
+        svc_r.raise_for_status()
+        services_raw = svc_r.json()
+
+        services = []
+        for item in services_raw:
+            svc = item.get("service", item)
+            services.append({
+                "id": svc.get("id"),
+                "name": svc.get("name"),
+                "type": svc.get("type"),
+                "status": svc.get("suspended", "not_suspended"),
+                "serviceDetails": {
+                    "env": svc.get("serviceDetails", {}).get("env"),
+                    "region": svc.get("serviceDetails", {}).get("region"),
+                    "plan": svc.get("serviceDetails", {}).get("plan"),
+                    "numInstances": svc.get("serviceDetails", {}).get("numInstances"),
+                    "healthCheckPath": svc.get("serviceDetails", {}).get("healthCheckPath"),
+                },
+                "updatedAt": svc.get("updatedAt"),
+                "createdAt": svc.get("createdAt"),
+                "dashboardUrl": f"https://dashboard.render.com/web/{svc.get('id', '')}",
+            })
+
+        return {"services": services}
+    except _requests.HTTPError as e:
+        return {"error": f"Render API error: {e.response.status_code if e.response else 'unknown'}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _neon_metrics() -> dict:
+    if not NEON_API_KEY:
+        return {"error": "NEON_API_KEY not configured"}
+    headers = {"Authorization": f"Bearer {NEON_API_KEY}", "Accept": "application/json"}
+    project_id = NEON_PROJECT_ID
+    try:
+        if not project_id:
+            proj_r = _requests.get("https://console.neon.tech/api/v2/projects", headers=headers, timeout=10)
+            proj_r.raise_for_status()
+            projects = proj_r.json().get("projects", [])
+            if projects:
+                project_id = projects[0]["id"]
+            else:
+                return {"error": "No Neon projects found"}
+
+        proj_r = _requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}", headers=headers, timeout=10)
+        proj_r.raise_for_status()
+        project = proj_r.json().get("project", {})
+
+        br_r = _requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}/branches", headers=headers, timeout=10)
+        br_r.raise_for_status()
+        branches = [
+            {
+                "id": b.get("id"),
+                "name": b.get("name"),
+                "default": b.get("default", False),
+                "currentState": b.get("current_state"),
+                "logicalSize": b.get("logical_size"),
+                "cpuUsedSec": b.get("cpu_used_sec"),
+                "updatedAt": b.get("updated_at"),
+            }
+            for b in br_r.json().get("branches", [])
+        ]
+
+        ep_r = _requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}/endpoints", headers=headers, timeout=10)
+        ep_r.raise_for_status()
+        endpoints = [
+            {
+                "id": e.get("id"),
+                "host": e.get("host"),
+                "type": e.get("type"),
+                "currentState": e.get("current_state"),
+                "pendingState": e.get("pending_state"),
+                "region": e.get("region_id"),
+                "autoscalingLimitMinCu": e.get("autoscaling_limit_min_cu"),
+                "autoscalingLimitMaxCu": e.get("autoscaling_limit_max_cu"),
+                "suspendTimeoutSeconds": e.get("suspend_timeout_seconds"),
+                "updatedAt": e.get("updated_at"),
+            }
+            for e in ep_r.json().get("endpoints", [])
+        ]
+
+        return {
+            "project": {
+                "id": project.get("id"),
+                "name": project.get("name"),
+                "region": project.get("region_id"),
+                "pgVersion": project.get("pg_version"),
+                "cpuUsedSec": project.get("cpu_used_sec"),
+                "dataStorageBytesHour": project.get("data_storage_bytes_hour"),
+                "dataTransferBytes": project.get("data_transfer_bytes"),
+                "createdAt": project.get("created_at"),
+                "updatedAt": project.get("updated_at"),
+            },
+            "branches": branches,
+            "endpoints": endpoints,
+        }
+    except _requests.HTTPError as e:
+        return {"error": f"Neon API error: {e.response.status_code if e.response else 'unknown'}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/admin/infra-metrics")
+def admin_infra_metrics(request: Request):
+    _require_owner(request)
+    return {"render": _render_metrics(), "neon": _neon_metrics()}

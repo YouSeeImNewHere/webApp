@@ -402,6 +402,17 @@ final class QuailCashAPI {
         }
     }
 
+    func fetchInfraMetrics() async throws -> InfraMetricsPayload {
+        let request = makeRequest(url: AppConfig.url(path: "/admin/infra-metrics"))
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw QuailCashAPIError.badResponse }
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw QuailCashAPIError.unauthorized }
+            throw QuailCashAPIError.badResponse
+        }
+        return try JSONDecoder.quailCash.decode(InfraMetricsPayload.self, from: data)
+    }
+
     func fetchPendingUsers() async throws -> [PendingUserPayload] {
         let request = makeRequest(url: AppConfig.url(path: "/admin/pending-users"))
         let (data, response) = try await perform(request)

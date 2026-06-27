@@ -77,7 +77,7 @@ final class AppNavigator: ObservableObject {
             return .home
         case .spending:
             return .spending
-        case .map, .mapSettings:
+        case .map, .mapSettings, .adminDashboard:
             return .home
         case .budget:
             return .spending
