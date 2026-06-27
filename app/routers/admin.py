@@ -409,6 +409,16 @@ NEON_API_KEY   = os.getenv("NEON_API_KEY", "")
 NEON_PROJECT_ID = os.getenv("NEON_PROJECT_ID", "")
 
 
+def _render_get(headers: dict, path: str, **kwargs) -> dict | list | None:
+    try:
+        r = _requests.get(f"https://api.render.com/v1{path}", headers=headers, timeout=10, **kwargs)
+        if r.ok:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+
 def _render_metrics() -> dict:
     if not RENDER_API_KEY:
         return {"error": "RENDER_API_KEY not configured"}
@@ -421,26 +431,59 @@ def _render_metrics() -> dict:
         services = []
         for item in services_raw:
             svc = item.get("service", item)
+            svc_id = svc.get("id", "")
+            details = svc.get("serviceDetails", {}) or {}
+            svc_type = svc.get("type", "")
+
+            # Latest deploy
+            latest_deploy = None
+            if svc_id:
+                deploys = _render_get(headers, f"/services/{svc_id}/deploys?limit=1")
+                if deploys and isinstance(deploys, list) and deploys:
+                    d = deploys[0].get("deploy", deploys[0])
+                    latest_deploy = {
+                        "id": d.get("id"),
+                        "status": d.get("status"),
+                        "trigger": d.get("trigger"),
+                        "finishedAt": d.get("finishedAt"),
+                        "commitMessage": (d.get("commit") or {}).get("message"),
+                        "commitId": ((d.get("commit") or {}).get("id") or "")[:7] or None,
+                    }
+
+            # Disk usage (static sites / services expose this)
+            disk = None
+            if details.get("disk"):
+                disk = {
+                    "name": details["disk"].get("name"),
+                    "sizeGB": details["disk"].get("sizeGB"),
+                    "mountPath": details["disk"].get("mountPath"),
+                }
+
             services.append({
-                "id": svc.get("id"),
+                "id": svc_id,
                 "name": svc.get("name"),
-                "type": svc.get("type"),
-                "status": svc.get("suspended", "not_suspended"),
+                "type": svc_type,
+                "suspended": svc.get("suspended", "not_suspended"),
                 "serviceDetails": {
-                    "env": svc.get("serviceDetails", {}).get("env"),
-                    "region": svc.get("serviceDetails", {}).get("region"),
-                    "plan": svc.get("serviceDetails", {}).get("plan"),
-                    "numInstances": svc.get("serviceDetails", {}).get("numInstances"),
-                    "healthCheckPath": svc.get("serviceDetails", {}).get("healthCheckPath"),
+                    "env": details.get("env"),
+                    "region": details.get("region"),
+                    "plan": details.get("plan"),
+                    "numInstances": details.get("numInstances"),
+                    "healthCheckPath": details.get("healthCheckPath"),
+                    "autoDeploy": details.get("autoDeploy"),
+                    "disk": disk,
                 },
+                "latestDeploy": latest_deploy,
                 "updatedAt": svc.get("updatedAt"),
                 "createdAt": svc.get("createdAt"),
-                "dashboardUrl": f"https://dashboard.render.com/web/{svc.get('id', '')}",
             })
 
         return {"services": services}
     except _requests.HTTPError as e:
-        return {"error": f"Render API error: {e.response.status_code if e.response else 'unknown'}"}
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        return {"error": f"Render API {code or 'error'}"}
+    except _requests.exceptions.RequestException as e:
+        return {"error": f"Render network error: {type(e).__name__}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -452,20 +495,33 @@ def _neon_metrics() -> dict:
     project_id = NEON_PROJECT_ID
     try:
         if not project_id:
-            proj_r = _requests.get("https://console.neon.tech/api/v2/projects", headers=headers, timeout=10)
-            proj_r.raise_for_status()
+            proj_r = _requests.get(
+                "https://console.neon.tech/api/v2/projects",
+                headers=headers,
+                params={"limit": 10},
+                timeout=10,
+            )
+            if not proj_r.ok:
+                body = ""
+                try:
+                    body = proj_r.json().get("message") or proj_r.text[:200]
+                except Exception:
+                    body = proj_r.text[:200]
+                return {"error": f"Neon API {proj_r.status_code}: {body}"}
             projects = proj_r.json().get("projects", [])
             if projects:
                 project_id = projects[0]["id"]
             else:
-                return {"error": "No Neon projects found"}
+                return {"error": "No Neon projects found — set NEON_PROJECT_ID"}
 
         proj_r = _requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}", headers=headers, timeout=10)
-        proj_r.raise_for_status()
+        if not proj_r.ok:
+            return {"error": f"Neon project {proj_r.status_code}"}
         project = proj_r.json().get("project", {})
 
         br_r = _requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}/branches", headers=headers, timeout=10)
-        br_r.raise_for_status()
+        if not br_r.ok:
+            return {"error": f"Neon branches {br_r.status_code}"}
         branches = [
             {
                 "id": b.get("id"),
@@ -480,7 +536,8 @@ def _neon_metrics() -> dict:
         ]
 
         ep_r = _requests.get(f"https://console.neon.tech/api/v2/projects/{project_id}/endpoints", headers=headers, timeout=10)
-        ep_r.raise_for_status()
+        if not ep_r.ok:
+            return {"error": f"Neon endpoints {ep_r.status_code}"}
         endpoints = [
             {
                 "id": e.get("id"),
@@ -497,23 +554,89 @@ def _neon_metrics() -> dict:
             for e in ep_r.json().get("endpoints", [])
         ]
 
+        # Recent operations
+        ops_r = _requests.get(
+            f"https://console.neon.tech/api/v2/projects/{project_id}/operations",
+            headers=headers,
+            params={"limit": 10},
+            timeout=10,
+        )
+        recent_ops = []
+        if ops_r.ok:
+            for op in (ops_r.json().get("operations") or []):
+                recent_ops.append({
+                    "id": op.get("id"),
+                    "action": op.get("action"),
+                    "status": op.get("status"),
+                    "error": op.get("error"),
+                    "createdAt": op.get("created_at"),
+                    "updatedAt": op.get("updated_at"),
+                    "totalDurationMs": op.get("total_duration_ms"),
+                })
+
+        # Quota / limits — free-tier projects don't return a quota object,
+        # so we build synthetic limits from what the API does expose plus
+        # known Neon free-tier caps (free_v3 plan).
+        quota = project.get("quota") or {}
+        subscription = (project.get("owner") or {}).get("subscription_type", "")
+        storage_limit_bytes = project.get("branch_logical_size_limit_bytes")  # e.g. 536870912 = 512 MB
+        storage_used_bytes = project.get("synthetic_storage_size")            # actual bytes on disk
+
+        # Known Neon free_v3 monthly caps
+        FREE_COMPUTE_SECONDS = 191.9 * 3600   # 191.9 compute-hours
+        FREE_ACTIVE_SECONDS  = 5 * 30 * 24 * 3600  # not officially published; use 5-month proxy
+        FREE_TRANSFER_BYTES  = 5 * 1024 ** 3  # 5 GB
+
+        def _quota_limit(api_key, free_fallback):
+            v = quota.get(api_key)
+            if v is not None:
+                return v
+            if "free" in subscription:
+                return free_fallback
+            return None
+
+        effective_quota = {
+            "computeTimeSeconds": _quota_limit("compute_time_seconds", FREE_COMPUTE_SECONDS),
+            "activeTimeSeconds":  _quota_limit("active_time_seconds",  FREE_ACTIVE_SECONDS),
+            "dataTransferBytes":  _quota_limit("data_transfer_bytes",  FREE_TRANSFER_BYTES),
+            "writtenDataBytes":   quota.get("written_data_bytes"),
+            "storageLimitBytes":  storage_limit_bytes,
+        }
+
+        default_endpoint_settings = project.get("default_endpoint_settings") or {}
+
         return {
             "project": {
                 "id": project.get("id"),
                 "name": project.get("name"),
                 "region": project.get("region_id"),
                 "pgVersion": project.get("pg_version"),
+                "subscriptionType": subscription,
                 "cpuUsedSec": project.get("cpu_used_sec"),
                 "dataStorageBytesHour": project.get("data_storage_bytes_hour"),
+                "storageBytesUsed": storage_used_bytes,
                 "dataTransferBytes": project.get("data_transfer_bytes"),
+                "writtenDataBytes": project.get("written_data_bytes"),
+                "activeTimeSeconds": project.get("active_time_seconds"),
+                "computeTimeSeconds": project.get("compute_time_seconds"),
                 "createdAt": project.get("created_at"),
                 "updatedAt": project.get("updated_at"),
+                "quota": effective_quota,
+                "defaultEndpointSettings": {
+                    "autoscalingLimitMinCu": default_endpoint_settings.get("autoscaling_limit_min_cu"),
+                    "autoscalingLimitMaxCu": default_endpoint_settings.get("autoscaling_limit_max_cu"),
+                    "suspendTimeoutSeconds": default_endpoint_settings.get("suspend_timeout_seconds"),
+                } if default_endpoint_settings else None,
             },
             "branches": branches,
             "endpoints": endpoints,
+            "recentOperations": recent_ops,
         }
     except _requests.HTTPError as e:
-        return {"error": f"Neon API error: {e.response.status_code if e.response else 'unknown'}"}
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        return {"error": f"Neon API {code or 'error'}"}
+    except _requests.exceptions.RequestException as e:
+        return {"error": f"Neon network error: {type(e).__name__}"}
     except Exception as e:
         return {"error": str(e)}
 

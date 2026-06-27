@@ -17,9 +17,9 @@ struct RouteMapPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
+            showsStandaloneBar: true,
             onLeadingTap: { navigator.show(.mapSettings) },
-            onTrailingTap: { navigator.show(.notifications) },
-            onSelectTab: { _ in }
+            onTrailingTap: { navigator.show(.notifications) }
         ) {
             RouteMapContent(vm: vm, palette: palette)
         }
@@ -994,9 +994,9 @@ struct MapSettingsPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
+            showsStandaloneBar: true,
             onLeadingTap: { navigator.goBack() },
-            onTrailingTap: { navigator.show(.notifications) },
-            onSelectTab: { _ in }
+            onTrailingTap: { navigator.show(.notifications) }
         ) {
             AppPageScroll {
                 VStack(alignment: .leading, spacing: 16) {

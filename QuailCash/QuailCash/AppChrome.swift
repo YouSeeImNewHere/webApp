@@ -37,6 +37,9 @@ struct AppTopBar: View {
     let palette: QuailThemePalette
     let onLeadingTap: () -> Void
     let onTrailingTap: () -> Void
+    var trailingIcon: String = "bell.fill"
+    var extraTrailingAction: (() -> Void)? = nil
+    var extraTrailingIcon: String = "plus"
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -58,16 +61,29 @@ struct AppTopBar: View {
 
             Spacer(minLength: 8)
 
+            BugReportFAB(palette: palette)
+
+            if let extraAction = extraTrailingAction {
+                Button(action: extraAction) {
+                    Image(systemName: extraTrailingIcon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(palette.chromeIconForeground)
+                        .frame(width: 36, height: 36)
+                        .background(palette.chromeIconBackground, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
+                }
+            }
+
             Button(action: onTrailingTap) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: "bell.fill")
+                    Image(systemName: trailingIcon)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(palette.chromeIconForeground)
                         .frame(width: 36, height: 36)
                         .background(palette.chromeIconBackground, in: Circle())
                         .overlay(Circle().stroke(palette.border, lineWidth: 1))
 
-                    if let badgeValue, badgeValue > 0 {
+                    if trailingIcon == "bell.fill", let badgeValue, badgeValue > 0 {
                         Text(badgeValue > 9 ? "9+" : "\(badgeValue)")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
@@ -78,7 +94,7 @@ struct AppTopBar: View {
                     }
                 }
             }
-            .accessibilityLabel("Notifications")
+            .accessibilityLabel(trailingIcon == "bell.fill" ? "Notifications" : "Action")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -157,6 +173,34 @@ struct AppBottomBar: View {
     }
 }
 
+struct AppStandaloneBar: View {
+    let palette: QuailThemePalette
+    let onHomeTap: () -> Void
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Button(action: onHomeTap) {
+                HStack(spacing: 6) {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Home")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(palette.primaryButtonText)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(palette.primaryButton, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .padding(.vertical, 10)
+        .background(palette.barBackground)
+        .overlay(Rectangle().fill(palette.barDivider).frame(height: 1), alignment: .top)
+    }
+}
+
 struct AppChromeFrame<Content: View>: View {
     @EnvironmentObject private var navigator: AppNavigator
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
@@ -164,9 +208,13 @@ struct AppChromeFrame<Content: View>: View {
     let badgeValue: Int?
     let selectedTab: BottomTab?
     let showsBottomBar: Bool
+    let showsStandaloneBar: Bool
     let onLeadingTap: () -> Void
-    let onTrailingTap: () -> Void
+    let onTrailingTap: (() -> Void)?
     let onSelectTab: (BottomTab) -> Void
+    var trailingIcon: String = "bell.fill"
+    var extraTrailingAction: (() -> Void)? = nil
+    var extraTrailingIcon: String = "plus"
     let content: Content
 
     init(
@@ -174,18 +222,26 @@ struct AppChromeFrame<Content: View>: View {
         badgeValue: Int?,
         selectedTab: BottomTab?,
         showsBottomBar: Bool = true,
+        showsStandaloneBar: Bool = false,
         onLeadingTap: @escaping () -> Void,
-        onTrailingTap: @escaping () -> Void,
-        onSelectTab: @escaping (BottomTab) -> Void,
+        onTrailingTap: (() -> Void)? = nil,
+        onSelectTab: @escaping (BottomTab) -> Void = { _ in },
+        trailingIcon: String = "bell.fill",
+        extraTrailingAction: (() -> Void)? = nil,
+        extraTrailingIcon: String = "plus",
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.badgeValue = badgeValue
         self.selectedTab = selectedTab
         self.showsBottomBar = showsBottomBar
+        self.showsStandaloneBar = showsStandaloneBar
         self.onLeadingTap = onLeadingTap
         self.onTrailingTap = onTrailingTap
         self.onSelectTab = onSelectTab
+        self.trailingIcon = trailingIcon
+        self.extraTrailingAction = extraTrailingAction
+        self.extraTrailingIcon = extraTrailingIcon
         self.content = content()
     }
 
@@ -208,7 +264,10 @@ struct AppChromeFrame<Content: View>: View {
                 badgeValue: badgeValue ?? navigator.unreadCount,
                 palette: palette,
                 onLeadingTap: onLeadingTap,
-                onTrailingTap: onTrailingTap
+                onTrailingTap: onTrailingTap ?? { navigator.show(.notifications) },
+                trailingIcon: trailingIcon,
+                extraTrailingAction: extraTrailingAction,
+                extraTrailingIcon: extraTrailingIcon
             )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -219,6 +278,8 @@ struct AppChromeFrame<Content: View>: View {
                     onSelectTab: onSelectTab,
                     onDashboardTap: { navigator.setRoot(.dashboard) }
                 )
+            } else if showsStandaloneBar {
+                AppStandaloneBar(palette: palette, onHomeTap: { navigator.setRoot(.dashboard) })
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

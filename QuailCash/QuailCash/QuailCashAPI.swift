@@ -1790,8 +1790,14 @@ final class QuailCashAPI {
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        let started = Date()
+        let method = request.httpMethod ?? "GET"
+        let path = request.url?.path ?? "?"
         do {
-            return try await session.data(for: request)
+            let result = try await session.data(for: request)
+            let status = (result.1 as? HTTPURLResponse)?.statusCode ?? 0
+            NetworkLogger.shared.log(method: method, path: path, status: status, duration: Date().timeIntervalSince(started))
+            return result
         } catch is CancellationError {
             throw CancellationError()
         } catch let urlError as URLError where urlError.code == .cancelled {
@@ -1799,12 +1805,17 @@ final class QuailCashAPI {
             try await Task.sleep(nanoseconds: 500_000_000)
             try Task.checkCancellation()
             do {
-                return try await session.data(for: request)
+                let result = try await session.data(for: request)
+                let status = (result.1 as? HTTPURLResponse)?.statusCode ?? 0
+                NetworkLogger.shared.log(method: method, path: path, status: status, duration: Date().timeIntervalSince(started))
+                return result
             } catch {
+                NetworkLogger.shared.log(method: method, path: path, status: -1, duration: Date().timeIntervalSince(started), error: error.localizedDescription)
                 print("[QuailCash] QuailCashAPI.transportError=\(error.localizedDescription)")
                 throw QuailCashAPIError.transport(error)
             }
         } catch {
+            NetworkLogger.shared.log(method: method, path: path, status: -1, duration: Date().timeIntervalSince(started), error: error.localizedDescription)
             print("[QuailCash] QuailCashAPI.transportError=\(error.localizedDescription)")
             throw QuailCashAPIError.transport(error)
         }

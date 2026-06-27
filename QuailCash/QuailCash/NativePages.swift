@@ -22,6 +22,8 @@ enum AppRoute: Hashable {
     case map
     case mapSettings
     case adminDashboard
+    case bugLogger
+    case projects
     case settings
     case setupWizard
     case parserWizard
@@ -74,6 +76,10 @@ struct NativePageView: View {
                 MapSettingsPageView()
             case .adminDashboard:
                 AdminDashboardPageView()
+            case .bugLogger:
+                BugLoggerPageView()
+            case .projects:
+                ProjectsPageView()
             case .settings:
                 SettingsHomePageView()
             case .setupWizard:
@@ -217,29 +223,15 @@ struct PageShell<Content: View>: View {
         AppChromeFrame(
             title: title,
             badgeValue: nil,
-            selectedTab: navigator.currentTab,
+            selectedTab: nil,
+            showsBottomBar: false,
+            showsStandaloneBar: true,
             onLeadingTap: { navigator.show(.dashboardSettings) },
-            onTrailingTap: { navigator.show(.notifications) },
-            onSelectTab: handleTabSelect
+            onTrailingTap: { navigator.show(.notifications) }
         ) {
             AppPageScroll(refreshAction: refreshAction) {
                 content
             }
-        }
-    }
-
-    private func handleTabSelect(_ tab: BottomTab) {
-        switch tab {
-        case .home:
-            navigator.popToRoot()
-        case .spending:
-            navigator.show(.spending)
-        case .all:
-            navigator.show(.allTransactions)
-        case .analytics:
-            navigator.show(.analytics)
-        case .recurring:
-            navigator.show(.recurring)
         }
     }
 }
@@ -357,6 +349,22 @@ private struct DashboardPageView: View {
                         icon: "server.rack",
                         accent: Color.purple,
                         onTap: { navigator.show(.adminDashboard) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Quail Bugs",
+                        subtitle: "Screenshot, annotate, and track bugs as you find them.",
+                        icon: "ladybug.fill",
+                        accent: Color.red,
+                        onTap: { navigator.show(.bugLogger) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Quail Projects",
+                        subtitle: "Notes, decisions, budgets, and detailed project planning.",
+                        icon: "folder.fill",
+                        accent: Color.teal,
+                        onTap: { navigator.show(.projects) }
                     )
 
                     DashboardQuickGlanceSection()
@@ -1411,11 +1419,33 @@ private struct NotificationsPageView: View {
     @StateObject private var model = NotificationsPageViewModel()
     @State private var selectedNotification: NotificationDetailPayload?
     @State private var selectedError: AdminErrorNotificationPayload?
+    @EnvironmentObject private var navigator: AppNavigator
+
+    private var isStandaloneContext: Bool {
+        switch navigator.rootRoute {
+        case .map, .adminDashboard: return true
+        default: return false
+        }
+    }
 
     var body: some View {
-        PageShell(title: "Notifications", subtitle: "Unread notifications, errors, and owner actions", refreshAction: {
-            await model.load()
-        }) {
+        AppChromeFrame(
+            title: "Notifications",
+            badgeValue: nil,
+            selectedTab: isStandaloneContext ? nil : navigator.currentTab,
+            showsBottomBar: !isStandaloneContext,
+            onLeadingTap: { navigator.goBack() },
+            onSelectTab: { tab in
+                switch tab {
+                case .home: navigator.popToRoot()
+                case .spending: navigator.show(.spending)
+                case .all: navigator.show(.allTransactions)
+                case .analytics: navigator.show(.analytics)
+                case .recurring: navigator.show(.recurring)
+                }
+            }
+        ) {
+            AppPageScroll(refreshAction: { await model.load() }) {
             Group {
                 if model.isLoading {
                     ProgressView()
@@ -1482,6 +1512,7 @@ private struct NotificationsPageView: View {
                         }
                     }
                 }
+            }
             }
         }
         .task { await model.load() }
