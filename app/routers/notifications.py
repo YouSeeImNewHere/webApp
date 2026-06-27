@@ -24,7 +24,7 @@ router = APIRouter()
 
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "disable_all": False,
-    "ios_push": False,
+    "ios_push": True,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
@@ -217,14 +217,21 @@ def create_notification(
         created_bool = bool(created)
     if created_bool:
         try:
+            prefs = _notification_prefs_for_tenant(tenant_id)
+            ios_push_active = (
+                tenant_id
+                and notification_id
+                and not bool(prefs.get("disable_all"))
+                and bool(prefs.get("ios_push"))
+                and apns_configured()
+            )
             user_key = _resolve_pushover_key_for_tenant(tenant_id)
-            if user_key:
+            if user_key and not ios_push_active:
                 send_pushover(subject or "Notification", body or "", user_key=user_key)
         except Exception:
             pass
         try:
-            prefs = _notification_prefs_for_tenant(tenant_id)
-            if tenant_id and notification_id and not bool(prefs.get("disable_all")) and bool(prefs.get("ios_push")) and apns_configured():
+            if ios_push_active:
                 send_ios_push_to_tenant(
                     tenant_id=int(tenant_id),
                     notification_id=int(notification_id),

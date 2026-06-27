@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Sheet Router
 
@@ -2068,6 +2069,8 @@ struct QuailCarSettingsPageView: View {
     @State private var showProfileEdit = false
     @State private var showMaintenanceTypes = false
     @State private var showInspectionItems = false
+    @State private var showHistoryImport = false
+    @State private var showPairTransactions = false
 
     private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
 
@@ -2109,11 +2112,31 @@ struct QuailCarSettingsPageView: View {
                         ) { }
                     }
 
+                    carSettingsSection(title: "Data") {
+                        carSettingsRow(
+                            icon: "square.and.arrow.down.fill", iconColor: Color(red: 0.20, green: 0.60, blue: 0.40),
+                            title: "Import History CSV",
+                            subtitle: "Load fuel and oil change history from a CSV file"
+                        ) { showHistoryImport = true }
+                        Divider().padding(.leading, 60)
+                        carSettingsRow(
+                            icon: "link", iconColor: Color(red: 0.40, green: 0.55, blue: 0.95),
+                            title: "Pair Transactions",
+                            subtitle: "Link fuel and maintenance records to bank transactions"
+                        ) { showPairTransactions = true }
+                    }
+
                     carSettingsSection(title: "Notifications") {
                         notificationsSection()
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showHistoryImport) {
+            VehicleHistoryImportSheet()
+        }
+        .sheet(isPresented: $showPairTransactions) {
+            VehiclePairTransactionsSheet()
         }
         .sheet(isPresented: $showProfileEdit) {
             VehicleProfileEditSheet(palette: palette)
@@ -2404,6 +2427,440 @@ struct QuailCarNotificationsPageView: View {
             onTrailingTap: { navigator.show(.vehicleSettings) }
         ) {
             AppPageScroll(contentPadding: 14) { VehicleNotificationsContent() }
+        }
+    }
+}
+
+// MARK: - Transaction Pairing
+
+struct VehiclePairTransactionsSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var store = VehicleStore.shared
+
+    @State private var fuel: [QuailCashAPI.VehicleFuelPayload] = []
+    @State private var maintenance: [QuailCashAPI.VehicleMaintenancePayload] = []
+    @State private var selectedKind: String = "fuel"
+    @State private var expandedRecordId: Int? = nil
+    @State private var candidates: [QuailCashAPI.VehicleTxCandidate] = []
+    @State private var loadingCandidates = false
+    @State private var statusMessage = ""
+
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("Kind", selection: $selectedKind) {
+                    Text("Fuel").tag("fuel")
+                    Text("Maintenance").tag("maintenance")
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        let records = selectedKind == "fuel"
+                            ? fuel.map { AnyVehicleRecord(id: $0.id, kind: "fuel", date: $0.date, label: "Fill-up", amount: $0.totalCost, gallons: $0.gallons, linkedMerchant: $0.linkedMerchant, linkedTransactionId: $0.linkedTransactionId) }
+                            : maintenance.map { AnyVehicleRecord(id: $0.id, kind: "maintenance", date: $0.date, label: $0.typeName, amount: $0.cost, gallons: nil, linkedMerchant: $0.linkedMerchant, linkedTransactionId: $0.linkedTransactionId) }
+
+                        if records.isEmpty {
+                            Text("No records found.")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 80)
+                        }
+
+                        ForEach(records) { rec in
+                            VStack(alignment: .leading, spacing: 0) {
+                                Button {
+                                    if expandedRecordId == rec.id {
+                                        expandedRecordId = nil
+                                        candidates = []
+                                    } else {
+                                        expandedRecordId = rec.id
+                                        candidates = []
+                                        Task { await loadCandidates(kind: rec.kind, id: rec.id) }
+                                    }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(rec.label)
+                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                            HStack(spacing: 6) {
+                                                Text(rec.date)
+                                                if let gal = rec.gallons {
+                                                    Text("·")
+                                                    Text(String(format: "%.3f gal", gal))
+                                                }
+                                            }
+                                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if let amt = rec.amount {
+                                            Text(String(format: "$%.2f", amt))
+                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if let merchant = rec.linkedMerchant, !merchant.isEmpty {
+                                            Label(merchant, systemImage: "link")
+                                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(palette.positive)
+                                                .lineLimit(1)
+                                        }
+                                        Image(systemName: expandedRecordId == rec.id ? "chevron.up" : "chevron.down")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 12)
+                                }
+                                .buttonStyle(.plain)
+
+                                if expandedRecordId == rec.id {
+                                    Divider().opacity(0.15)
+                                    if loadingCandidates {
+                                        Text("Loading candidates...")
+                                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                    } else if candidates.isEmpty {
+                                        Text("No transactions found within 7 days.")
+                                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                    } else {
+                                        VStack(spacing: 0) {
+                                            ForEach(candidates) { tx in
+                                                Button {
+                                                    Task { await linkTx(rec: rec, tx: tx) }
+                                                } label: {
+                                                    HStack(spacing: 10) {
+                                                        VStack(alignment: .leading, spacing: 2) {
+                                                            Text(tx.merchant ?? "Unknown")
+                                                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                                            HStack(spacing: 6) {
+                                                                Text(tx.date ?? "")
+                                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                                    .foregroundStyle(.secondary)
+                                                                if let cat = tx.category, !cat.isEmpty {
+                                                                    Text(cat)
+                                                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                                                        .foregroundStyle(.secondary)
+                                                                        .padding(.horizontal, 6)
+                                                                        .padding(.vertical, 2)
+                                                                        .background(.secondary.opacity(0.12), in: Capsule())
+                                                                }
+                                                            }
+                                                        }
+                                                        Spacer()
+                                                        if let amt = tx.amount {
+                                                            Text(String(format: "$%.2f", amt))
+                                                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                                        }
+                                                        Image(systemName: "link.badge.plus")
+                                                            .font(.system(size: 12))
+                                                            .foregroundStyle(palette.accent)
+                                                    }
+                                                    .padding(.horizontal, 14)
+                                                    .padding(.vertical, 10)
+                                                }
+                                                .buttonStyle(.plain)
+                                                Divider().padding(.leading, 14).opacity(0.1)
+                                            }
+                                        }
+                                    }
+                                    if rec.linkedTransactionId != nil {
+                                        Button(role: .destructive) {
+                                            Task { await unlinkTx(rec: rec) }
+                                        } label: {
+                                            Label("Remove Link", systemImage: "link.badge.minus")
+                                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(palette.negative)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 10)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+                        }
+
+                        if !statusMessage.isEmpty {
+                            Text(statusMessage)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Pair Transactions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .task { await loadRecords() }
+        .onChange(of: selectedKind) { _ in expandedRecordId = nil; candidates = [] }
+    }
+
+    private func loadRecords() async {
+        do {
+            fuel = try await QuailCashAPI.shared.fetchVehicleFuel(limit: 500)
+            maintenance = try await QuailCashAPI.shared.fetchVehicleMaintenance(limit: 500)
+        } catch {
+            statusMessage = "Failed to load records."
+        }
+    }
+
+    private func loadCandidates(kind: String, id: Int) async {
+        loadingCandidates = true
+        defer { loadingCandidates = false }
+        do {
+            candidates = try await QuailCashAPI.shared.fetchVehicleTxCandidates(kind: kind, recordId: id)
+        } catch {
+            statusMessage = "Failed to load candidates."
+        }
+    }
+
+    private func linkTx(rec: AnyVehicleRecord, tx: QuailCashAPI.VehicleTxCandidate) async {
+        do {
+            try await QuailCashAPI.shared.linkVehicleTransaction(kind: rec.kind, recordId: rec.id, transactionId: tx.id, merchant: tx.merchant)
+            statusMessage = "Linked to \(tx.merchant ?? "transaction")."
+            expandedRecordId = nil
+            candidates = []
+            await loadRecords()
+        } catch {
+            statusMessage = "Failed to link."
+        }
+    }
+
+    private func unlinkTx(rec: AnyVehicleRecord) async {
+        do {
+            try await QuailCashAPI.shared.unlinkVehicleTransaction(kind: rec.kind, recordId: rec.id)
+            statusMessage = "Link removed."
+            expandedRecordId = nil
+            candidates = []
+            await loadRecords()
+        } catch {
+            statusMessage = "Failed to unlink."
+        }
+    }
+}
+
+private struct AnyVehicleRecord: Identifiable {
+    let id: Int
+    let kind: String
+    let date: String
+    let label: String
+    let amount: Double?
+    let gallons: Double?
+    let linkedMerchant: String?
+    let linkedTransactionId: String?
+}
+
+// MARK: - Vehicle History CSV Importer
+
+struct VehicleHistoryImportSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showFilePicker = false
+    @State private var parsedFuel: [[String: Any]] = []
+    @State private var parsedMaintenance: [[String: Any]] = []
+    @State private var previewText = ""
+    @State private var statusMessage = ""
+    @State private var isImporting = false
+    @State private var isDone = false
+
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Pick your vehicle maintenance CSV file. The importer reads fuel fill-up rows (Date, Mileage, Difference, Gas got, MPG) and oil change history rows automatically.")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+
+                    Button {
+                        showFilePicker = true
+                    } label: {
+                        Label("Choose CSV File", systemImage: "doc.badge.plus")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .foregroundStyle(palette.primaryButtonText)
+                            .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    if !previewText.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Preview")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            Text(previewText)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+
+                        Button {
+                            Task { await runImport() }
+                        } label: {
+                            Text(isImporting ? "Importing..." : "Import \(parsedFuel.count) Fuel + \(parsedMaintenance.count) Maintenance Records")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .frame(maxWidth: .infinity, minHeight: 46)
+                                .foregroundStyle(palette.primaryButtonText)
+                                .background(isDone ? palette.positive : palette.primaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isImporting || isDone)
+                    }
+
+                    if !statusMessage.isEmpty {
+                        Text(statusMessage)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(isDone ? palette.positive : .secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Import Vehicle History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.commaSeparatedText, .text], allowsMultipleSelection: false) { result in
+            guard let url = try? result.get().first else { return }
+            parseCSV(url: url)
+        }
+    }
+
+    private func parseCSV(url: URL) {
+        guard url.startAccessingSecurityScopedResource() else {
+            statusMessage = "Could not access file."
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        guard let raw = try? String(contentsOf: url, encoding: .utf8) else {
+            statusMessage = "Could not read file."
+            return
+        }
+
+        var fuelRecords: [[String: Any]] = []
+        var maintenanceRecords: [[String: Any]] = []
+        let lines = raw.components(separatedBy: .newlines)
+
+        // Fuel section: rows where column 0 looks like a date and column 1 is a mileage integer
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        let dateFormats = ["M/d/yy", "M/d/yyyy"]
+
+        for line in lines {
+            let cols = line.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard cols.count >= 2 else { continue }
+            // Try to parse as a fuel row: date, mileage, difference, gallons, mpg
+            var parsedDate: Date? = nil
+            for fmt in dateFormats {
+                dateFormatter.dateFormat = fmt
+                if let d = dateFormatter.date(from: cols[0]) { parsedDate = d; break }
+            }
+            guard let date = parsedDate else { continue }
+            let mileageStr = cols[1].replacingOccurrences(of: ",", with: "")
+            guard let mileage = Int(mileageStr), mileage > 100000 else { continue }
+
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withFullDate]
+            let dateStr = iso.string(from: date)
+
+            var record: [String: Any] = ["date": dateStr, "mileage": mileage]
+            if cols.count > 2, let diff = Double(cols[2].replacingOccurrences(of: ",", with: "")), diff > 0 {
+                record["miles_since_last"] = diff
+            }
+            if cols.count > 3, let gal = Double(cols[3].replacingOccurrences(of: ",", with: "")), gal > 0 {
+                record["gallons"] = gal
+            }
+            if cols.count > 4, let mpg = Double(cols[4].replacingOccurrences(of: ",", with: "")), mpg > 0 {
+                record["mpg"] = mpg
+            }
+            fuelRecords.append(record)
+        }
+
+        // Oil change section: two-column blocks of "Changed (time), Changed (mi)"
+        // These appear after the fuel rows. Find the first occurrence of that header.
+        var inOilSection = false
+        for line in lines {
+            let cols = line.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if cols.count >= 2 && cols[0].lowercased().contains("changed (time)") && cols[1].lowercased().contains("changed (mi)") {
+                inOilSection = true
+                continue
+            }
+            guard inOilSection, cols.count >= 2, !cols[0].isEmpty else {
+                if inOilSection && cols.allSatisfy({ $0.isEmpty }) { inOilSection = false }
+                continue
+            }
+            var parsedDate: Date? = nil
+            for fmt in dateFormats {
+                dateFormatter.dateFormat = fmt
+                if let d = dateFormatter.date(from: cols[0]) { parsedDate = d; break }
+            }
+            guard let date = parsedDate else { continue }
+            let mileageStr = cols[1].replacingOccurrences(of: ",", with: "")
+            guard let mileage = Int(mileageStr) else { continue }
+
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withFullDate]
+            maintenanceRecords.append(["type_name": "Oil Change", "date": iso.string(from: date), "mileage": mileage])
+        }
+
+        parsedFuel = fuelRecords
+        parsedMaintenance = maintenanceRecords
+        previewText = "\(fuelRecords.count) fuel fill-up rows found.\n\(maintenanceRecords.count) oil change rows found."
+        statusMessage = ""
+        isDone = false
+    }
+
+    private func runImport() async {
+        isImporting = true
+        defer { isImporting = false }
+        do {
+            var messages: [String] = []
+            if !parsedFuel.isEmpty {
+                let n = try await QuailCashAPI.shared.bulkImportVehicleFuel(parsedFuel)
+                messages.append("\(n) fuel records imported.")
+            }
+            if !parsedMaintenance.isEmpty {
+                let n = try await QuailCashAPI.shared.bulkImportVehicleMaintenance(parsedMaintenance)
+                messages.append("\(n) oil changes imported.")
+            }
+            statusMessage = messages.joined(separator: " ")
+            isDone = true
+            await VehicleStore.shared.refresh()
+        } catch {
+            statusMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 }

@@ -108,6 +108,10 @@ def ensure_vehicle_tables():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        cur.execute("ALTER TABLE vehicle_fuel_records ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT")
+        cur.execute("ALTER TABLE vehicle_fuel_records ADD COLUMN IF NOT EXISTS linked_merchant VARCHAR(300)")
+        cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT")
+        cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS linked_merchant VARCHAR(300)")
         conn.commit()
     _tables_ready = True
 
@@ -522,6 +526,146 @@ def delete_inspection(item_id: int):
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Item not found")
     return {"deleted": item_id}
+
+
+# ---------------------------------------------------------------------------
+# Transaction pairing
+# ---------------------------------------------------------------------------
+
+class LinkTransactionBody(BaseModel):
+    kind: str  # "fuel" or "maintenance"
+    record_id: int
+    transaction_id: str
+    merchant: Optional[str] = None
+
+
+@router.get("/vehicle/match-transactions")
+def match_transactions(kind: str, record_id: int):
+    """Return candidate transactions within 7 days after the vehicle record date."""
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+
+    table = "vehicle_fuel_records" if kind == "fuel" else "vehicle_maintenance_records"
+    amount_col = "total_cost" if kind == "fuel" else "cost"
+    rows = query_db(
+        f"SELECT date, {amount_col} AS amount FROM {table} WHERE id = %s AND tenant_id = %s LIMIT 1",
+        (record_id, int(tid)),
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="record_not_found")
+
+    rec_date = rows[0].get("date")
+    rec_amount = float(rows[0].get("amount") or 0)
+
+    import logging as _log
+    _log.getLogger("vehicle").warning("match_transactions: kind=%s record_id=%s date=%s amount=%s tid=%s", kind, record_id, rec_date, rec_amount, tid)
+
+    # Fetch candidate transactions in [rec_date, rec_date + 7 days]
+    candidates = query_db(
+        """
+        WITH base AS (
+            SELECT
+                t.id,
+                COALESCE(NULLIF(TRIM(t.postedDate),'unknown'), NULLIF(TRIM(t.purchaseDate),'unknown')) AS raw_date,
+                t.amount::double precision AS amount,
+                t.merchant,
+                TRIM(t.category) AS category
+            FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.tenant_id = %s AND a.tenant_id = %s AND COALESCE(t.is_ignored, false) = false
+        ),
+        norm AS (
+            SELECT *,
+                CASE
+                    WHEN raw_date IS NULL THEN NULL
+                    WHEN length(raw_date)=8  THEN to_date(raw_date, 'MM/DD/YY')
+                    WHEN length(raw_date)=10 THEN to_date(raw_date, 'MM/DD/YYYY')
+                    ELSE NULL
+                END AS d
+            FROM base
+        )
+        SELECT id, d::text AS date, amount, merchant, LOWER(TRIM(COALESCE(category, ''))) AS category
+        FROM norm
+        WHERE d IS NOT NULL
+          AND d BETWEEN %s AND (%s + INTERVAL '7 days')
+          AND amount > 0
+          AND (
+            LOWER(TRIM(COALESCE(category, ''))) = ''
+            OR LOWER(TRIM(COALESCE(category, ''))) LIKE '%%gas%%'
+            OR LOWER(TRIM(COALESCE(category, ''))) LIKE '%%fuel%%'
+            OR LOWER(TRIM(COALESCE(category, ''))) LIKE '%%auto%%'
+            OR LOWER(TRIM(COALESCE(category, ''))) LIKE '%%vehicle%%'
+            OR LOWER(TRIM(COALESCE(category, ''))) LIKE '%%service station%%'
+            OR LOWER(TRIM(COALESCE(category, ''))) LIKE '%%unknown%%'
+          )
+        ORDER BY ABS(amount - %s) ASC, d ASC
+        LIMIT 30
+        """,
+        (int(tid), int(tid), rec_date, rec_date, rec_amount),
+    )
+
+    _log.getLogger("vehicle").warning("match_transactions: found %d candidates", len(candidates or []))
+    return {"candidates": [_serialize(dict(r)) for r in (candidates or [])]}
+
+
+@router.get("/vehicle/linked-transactions")
+def linked_transactions():
+    """Return all vehicle records that have a linked transaction."""
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+
+    fuel = query_db(
+        "SELECT id, date, total_cost AS amount, linked_transaction_id, linked_merchant FROM vehicle_fuel_records WHERE tenant_id = %s AND linked_transaction_id IS NOT NULL ORDER BY date DESC",
+        (int(tid),),
+    )
+    maint = query_db(
+        "SELECT id, date, cost AS amount, linked_transaction_id, linked_merchant, type_name FROM vehicle_maintenance_records WHERE tenant_id = %s AND linked_transaction_id IS NOT NULL ORDER BY date DESC",
+        (int(tid),),
+    )
+    return {
+        "fuel": [_serialize(dict(r)) for r in (fuel or [])],
+        "maintenance": [_serialize(dict(r)) for r in (maint or [])],
+    }
+
+
+@router.post("/vehicle/link-transaction")
+def link_transaction(body: LinkTransactionBody):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+
+    table = "vehicle_fuel_records" if body.kind == "fuel" else "vehicle_maintenance_records"
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            f"UPDATE {table} SET linked_transaction_id = %s, linked_merchant = %s WHERE id = %s AND tenant_id = %s",
+            (body.transaction_id, (body.merchant or "")[:300], body.record_id, int(tid)),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="record_not_found")
+        conn.commit()
+    return {"ok": True}
+
+
+@router.delete("/vehicle/link-transaction")
+def unlink_transaction(kind: str, record_id: int):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    if not tid:
+        raise HTTPException(status_code=403, detail="tenant_required")
+
+    table = "vehicle_fuel_records" if kind == "fuel" else "vehicle_maintenance_records"
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            f"UPDATE {table} SET linked_transaction_id = NULL, linked_merchant = NULL WHERE id = %s AND tenant_id = %s",
+            (record_id, int(tid)),
+        )
+        conn.commit()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

@@ -1584,10 +1584,13 @@ final class QuailCashAPI {
         var mileage: Int
         var gallons: Double?
         var pricePerGallon: Double?
+        var totalCost: Double?
         var milesSinceLast: Double?
         var mpg: Double?
         var station: String?
         var notes: String?
+        var linkedTransactionId: String?
+        var linkedMerchant: String?
     }
 
     struct VehicleMaintenancePayload: Codable {
@@ -1599,6 +1602,16 @@ final class QuailCashAPI {
         var isShopPerformed: Bool?
         var shopName: String?
         var notes: String?
+        var linkedTransactionId: String?
+        var linkedMerchant: String?
+    }
+
+    struct VehicleTxCandidate: Codable, Identifiable {
+        var id: String
+        var date: String?
+        var amount: Double?
+        var merchant: String?
+        var category: String?
     }
 
     struct VehicleInspectionPayload: Codable {
@@ -1649,6 +1662,54 @@ final class QuailCashAPI {
     func fetchVehicleInspections() async throws -> [VehicleInspectionPayload] {
         let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/inspections")))
         return (try? vehicleDecoder().decode([VehicleInspectionPayload].self, from: data)) ?? []
+    }
+
+    func fetchVehicleTxCandidates(kind: String, recordId: Int) async throws -> [VehicleTxCandidate] {
+        let url = AppConfig.url(path: "/vehicle/match-transactions", queryItems: [
+            URLQueryItem(name: "kind", value: kind),
+            URLQueryItem(name: "record_id", value: "\(recordId)"),
+        ])
+        let data = try await checkedData(for: makeRequest(url: url))
+        struct Wrapper: Codable { var candidates: [VehicleTxCandidate] }
+        do {
+            return try vehicleDecoder().decode(Wrapper.self, from: data).candidates
+        } catch {
+            let raw = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+            print("[QuailCash] fetchVehicleTxCandidates decode error: \(error)\nraw: \(raw)")
+            throw error
+        }
+    }
+
+    func linkVehicleTransaction(kind: String, recordId: Int, transactionId: String, merchant: String?) async throws {
+        let body: [String: Any] = ["kind": kind, "record_id": recordId, "transaction_id": transactionId, "merchant": merchant ?? ""]
+        var req = makeRequest(url: AppConfig.url(path: "/vehicle/link-transaction"), method: "POST", jsonBody: body)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await checkedData(for: req)
+    }
+
+    func unlinkVehicleTransaction(kind: String, recordId: Int) async throws {
+        let req = makeRequest(
+            url: AppConfig.url(path: "/vehicle/link-transaction"),
+            queryItems: [URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "record_id", value: "\(recordId)")],
+            method: "DELETE"
+        )
+        _ = try await checkedData(for: req)
+    }
+
+    func bulkImportVehicleFuel(_ records: [[String: Any]]) async throws -> Int {
+        var req = makeRequest(url: AppConfig.url(path: "/vehicle/fuel/bulk"), method: "POST", jsonBody: ["records": records])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await checkedData(for: req)
+        let obj = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        return (obj["inserted"] as? Int) ?? 0
+    }
+
+    func bulkImportVehicleMaintenance(_ records: [[String: Any]]) async throws -> Int {
+        var req = makeRequest(url: AppConfig.url(path: "/vehicle/maintenance/bulk"), method: "POST", jsonBody: ["records": records])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await checkedData(for: req)
+        let obj = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        return (obj["inserted"] as? Int) ?? 0
     }
 
     func fetchVehicleIssues() async throws -> [VehicleIssueAPIPayload] {

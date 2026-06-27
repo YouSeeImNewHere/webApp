@@ -19,6 +19,8 @@ enum AppRoute: Hashable {
     case vehicleSettings
     case vehicleNotifications
     case spending
+    case map
+    case mapSettings
     case settings
     case setupWizard
     case parserWizard
@@ -65,6 +67,10 @@ struct NativePageView: View {
                 QuailCarNotificationsPageView()
             case .spending:
                 NativeSpendingPageView()
+            case .map:
+                RouteMapPageView()
+            case .mapSettings:
+                MapSettingsPageView()
             case .settings:
                 SettingsHomePageView()
             case .setupWizard:
@@ -332,6 +338,14 @@ private struct DashboardPageView: View {
                         icon: "figure.strengthtraining.traditional",
                         accent: palette.positive,
                         onTap: { navigator.setRoot(.fitness) }
+                    )
+
+                    dashboardLauncherCard(
+                        title: "Quail Maps",
+                        subtitle: "Route planning with smart detour suggestions along the way.",
+                        icon: "map.fill",
+                        accent: Color.blue,
+                        onTap: { navigator.setRoot(.map) }
                     )
 
                     DashboardQuickGlanceSection()
@@ -1120,6 +1134,7 @@ private struct FinanceNotificationsContent: View {
     @State private var statusMessage = ""
     @State private var isSaving = false
     @State private var isSendingTest = false
+    @State private var probeResult = ""
 
     private let rows: [(key: String, title: String, subtitle: String)] = [
         ("disable_all", "Disable all", "Turn off all notifications."),
@@ -1133,6 +1148,7 @@ private struct FinanceNotificationsContent: View {
         ("subscription_creep", "Subscription creep", "Spot recurring subscription growth."),
         ("high_spend_cooldown", "High spend cooldown", "Nudge cooldown after large spend."),
         ("small_win_reinforcement", "Small win reinforcement", "Positive reinforcement for progress."),
+        ("ios_push", "iPhone push notifications", "Send notifications directly to this iPhone via APNs."),
         ("user_signup_pending", "User signup pending", "Admin notification for pending signups."),
         ("cron_error", "Cron error", "Alert on scheduled job failures."),
     ]
@@ -1162,6 +1178,18 @@ private struct FinanceNotificationsContent: View {
                                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
                         }
                         .buttonStyle(.plain).disabled(isSendingTest).padding(.top, 4)
+                        Button { Task { await probeEnvs() } } label: {
+                            Text("Probe Environments")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .frame(maxWidth: .infinity, minHeight: 42)
+                                .foregroundStyle(palette.secondaryButtonText)
+                                .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain).padding(.top, 4)
+                        if !probeResult.isEmpty {
+                            Text(probeResult).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -1243,6 +1271,20 @@ private struct FinanceNotificationsContent: View {
         isSendingTest = true; defer { isSendingTest = false }
         do { try await QuailCashAPI.shared.sendIOSTestPush(); statusMessage = "Test push sent." }
         catch { statusMessage = error.localizedDescription.isEmpty ? "Failed to send test push." : error.localizedDescription }
+    }
+
+    private func probeEnvs() async {
+        probeResult = "Probing..."
+        do {
+            var req = URLRequest(url: AppConfig.url(path: "/notifications/ios/test-both-envs"))
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            if let token = AuthStore.token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+            let (data, _) = try await URLSession.shared.data(for: req)
+            probeResult = String(data: data, encoding: .utf8) ?? "no response"
+        } catch {
+            probeResult = error.localizedDescription
+        }
     }
 }
 

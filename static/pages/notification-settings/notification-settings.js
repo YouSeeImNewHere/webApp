@@ -14,6 +14,7 @@ const NOTIF_TOGGLES = [
   { id: "notifSmallWinReinforcementToggle", key: "small_win_reinforcement" },
   { id: "notifUserSignupPendingToggle", key: "user_signup_pending" },
   { id: "notifCronErrorToggle", key: "cron_error" },
+  { id: "notifIosPushToggle", key: "ios_push" },
 ];
 
 function syncDisableAllUi() {

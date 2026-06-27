@@ -68,17 +68,17 @@ final class AppNavigator: ObservableObject {
 
     private func tab(for route: AppRoute) -> BottomTab {
         switch route {
-        case .dashboard:
+        case .dashboard, .dashboardSettings:
             return .home
         case .home:
-            return .home
-        case .dashboard, .dashboardSettings:
             return .home
         case .fitness, .fitnessSettings, .fitnessNotifications, .fitnessGoals,
              .vehicle, .vehicleSettings, .vehicleNotifications:
             return .home
         case .spending:
             return .spending
+        case .map, .mapSettings:
+            return .home
         case .budget:
             return .spending
         case .allTransactions:
