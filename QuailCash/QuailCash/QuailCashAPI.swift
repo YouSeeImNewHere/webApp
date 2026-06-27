@@ -32,8 +32,9 @@ final class QuailCashAPI {
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 60
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 120
+        configuration.waitsForConnectivity = true
         session = URLSession(configuration: configuration)
     }
 
@@ -1793,6 +1794,16 @@ final class QuailCashAPI {
             return try await session.data(for: request)
         } catch is CancellationError {
             throw CancellationError()
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // URLSession can cancel on first attempt during app launch on real device; retry once
+            try await Task.sleep(nanoseconds: 500_000_000)
+            try Task.checkCancellation()
+            do {
+                return try await session.data(for: request)
+            } catch {
+                print("[QuailCash] QuailCashAPI.transportError=\(error.localizedDescription)")
+                throw QuailCashAPIError.transport(error)
+            }
         } catch {
             print("[QuailCash] QuailCashAPI.transportError=\(error.localizedDescription)")
             throw QuailCashAPIError.transport(error)

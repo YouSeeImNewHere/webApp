@@ -49,26 +49,33 @@ class EmailParseEventsClearBody(BaseModel):
     user_email: str | None = None
 
 
+def _is_mobile_authed(request: Request) -> bool:
+    return bool(getattr(request.state, "mobile_authed", False))
+
+
 def _is_owner_request(request: Request) -> bool:
     preview_header = str(request.headers.get("x-non-admin-preview") or "").strip().lower()
     if preview_header in {"1", "true", "yes", "on"}:
         return False
     if not MULTI_TENANT_ENABLED:
         return True
+    # Accept email from mobile token or browser session
+    state_email = str(getattr(request.state, "google_email", "") or "").strip().lower()
     session_email = (request.session.get("google_email") or "").strip().lower()
+    effective_email = state_email or session_email
     owner_email = (OWNER_GOOGLE_EMAIL or "").strip().lower()
-    return bool(owner_email) and session_email == owner_email
+    return bool(owner_email) and effective_email == owner_email
 
 
 def _require_owner(request: Request) -> None:
-    if not bool(request.session.get("authed")):
+    if not bool(request.session.get("authed")) and not _is_mobile_authed(request):
         raise HTTPException(status_code=401, detail="unauthorized")
     if not _is_owner_request(request):
         raise HTTPException(status_code=403, detail="forbidden")
 
 
 def _require_authed(request: Request) -> None:
-    if not bool(request.session.get("authed")):
+    if not bool(request.session.get("authed")) and not _is_mobile_authed(request):
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
