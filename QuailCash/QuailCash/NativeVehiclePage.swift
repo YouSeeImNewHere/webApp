@@ -891,6 +891,10 @@ private struct VehicleProfileEditSheet: View {
                     sheetIntField("Current Mileage", value: $profile.currentMileage, palette: palette)
                 }
 
+                sheetSection("Fuel") {
+                    sheetDoubleField("Tank Capacity (gal)", value: $profile.tankCapacityGallons, palette: palette)
+                }
+
                 sheetSection("Engine Oil") {
                     sheetField("Oil Type (e.g. 5W-30)", value: $profile.oilType, palette: palette)
                     sheetDoubleField("Capacity w/ Filter (qt)", value: $profile.oilCapacityWithFilter, palette: palette)
@@ -910,6 +914,14 @@ private struct VehicleProfileEditSheet: View {
             Button {
                 store.profile = profile
                 store.save()
+                let snap = QuailCashAPI.VehicleProfilePayload(
+                    make: profile.make, model: profile.model, year: profile.year,
+                    vin: profile.vin, licensePlate: profile.licensePlate,
+                    currentMileage: profile.currentMileage, oilType: profile.oilType,
+                    tankCapacityGallons: profile.tankCapacityGallons > 0 ? profile.tankCapacityGallons : nil,
+                    notes: nil
+                )
+                Task { try? await QuailCashAPI.shared.saveVehicleProfile(snap) }
                 dismiss()
             } label: {
                 Text("Save")
@@ -2759,86 +2771,111 @@ struct VehicleHistoryImportSheet: View {
         }
     }
 
+    // Proper CSV line parser — handles quoted fields containing commas (e.g. "156,288")
+    private func csvFields(_ line: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        var inQuotes = false
+        for ch in line {
+            if ch == "\"" { inQuotes.toggle() }
+            else if ch == "," && !inQuotes { result.append(current.trimmingCharacters(in: .whitespaces)); current = "" }
+            else { current.append(ch) }
+        }
+        result.append(current.trimmingCharacters(in: .whitespaces))
+        return result
+    }
+
     private func parseCSV(url: URL) {
-        guard url.startAccessingSecurityScopedResource() else {
-            statusMessage = "Could not access file."
-            return
-        }
+        guard url.startAccessingSecurityScopedResource() else { statusMessage = "Could not access file."; return }
         defer { url.stopAccessingSecurityScopedResource() }
-        guard let raw = try? String(contentsOf: url, encoding: .utf8) else {
-            statusMessage = "Could not read file."
-            return
+        let raw: String
+        if let s = try? String(contentsOf: url, encoding: .utf8) { raw = s }
+        else if let s = try? String(contentsOf: url, encoding: .isoLatin1) { raw = s }
+        else { statusMessage = "Could not read file."; return }
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        let fmts = ["M/d/yy", "M/d/yyyy"]
+        func parseDate(_ s: String) -> Date? {
+            for fmt in fmts { df.dateFormat = fmt; if let d = df.date(from: s) { return d } }
+            return nil
         }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withFullDate]
+
+        // Section tracking
+        enum Section { case fuel, fluidMaintenance, oilHistory, airFilterHistory, other }
+        var section: Section = .other
+        var timeBasedCount = 0
 
         var fuelRecords: [[String: Any]] = []
         var maintenanceRecords: [[String: Any]] = []
-        let lines = raw.components(separatedBy: .newlines)
 
-        // Fuel section: rows where column 0 looks like a date and column 1 is a mileage integer
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        let dateFormats = ["M/d/yy", "M/d/yyyy"]
+        for line in raw.components(separatedBy: .newlines) {
+            let cols = csvFields(line)
+            guard !cols.isEmpty else { continue }
+            let c0 = cols[0].trimmingCharacters(in: .whitespaces)
+            let c1 = cols.count > 1 ? cols[1].trimmingCharacters(in: .whitespaces) : ""
 
-        for line in lines {
-            let cols = line.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            guard cols.count >= 2 else { continue }
-            // Try to parse as a fuel row: date, mileage, difference, gallons, mpg
-            var parsedDate: Date? = nil
-            for fmt in dateFormats {
-                dateFormatter.dateFormat = fmt
-                if let d = dateFormatter.date(from: cols[0]) { parsedDate = d; break }
-            }
-            guard let date = parsedDate else { continue }
-            let mileageStr = cols[1].replacingOccurrences(of: ",", with: "")
-            guard let mileage = Int(mileageStr), mileage > 100000 else { continue }
-
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withFullDate]
-            let dateStr = iso.string(from: date)
-
-            var record: [String: Any] = ["date": dateStr, "mileage": mileage]
-            if cols.count > 2, let diff = Double(cols[2].replacingOccurrences(of: ",", with: "")), diff > 0 {
-                record["miles_since_last"] = diff
-            }
-            if cols.count > 3, let gal = Double(cols[3].replacingOccurrences(of: ",", with: "")), gal > 0 {
-                record["gallons"] = gal
-            }
-            if cols.count > 4, let mpg = Double(cols[4].replacingOccurrences(of: ",", with: "")), mpg > 0 {
-                record["mpg"] = mpg
-            }
-            fuelRecords.append(record)
-        }
-
-        // Oil change section: two-column blocks of "Changed (time), Changed (mi)"
-        // These appear after the fuel rows. Find the first occurrence of that header.
-        var inOilSection = false
-        for line in lines {
-            let cols = line.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            if cols.count >= 2 && cols[0].lowercased().contains("changed (time)") && cols[1].lowercased().contains("changed (mi)") {
-                inOilSection = true
+            // Section header detection
+            let c0l = c0.lowercased(); let c1l = c1.lowercased()
+            if c0l == "dates" || c0l == "date" { section = .fuel; continue }
+            if c0.isEmpty && c1l == "monthly check" { section = .fluidMaintenance; continue }
+            if c0.isEmpty && c1l == "changed (mi)" { section = .other; continue } // parts table — no dates, skip
+            if c0l.contains("changed (time)") && c1l.contains("changed (mi)") {
+                timeBasedCount += 1
+                section = timeBasedCount == 1 ? .oilHistory : .airFilterHistory
                 continue
             }
-            guard inOilSection, cols.count >= 2, !cols[0].isEmpty else {
-                if inOilSection && cols.allSatisfy({ $0.isEmpty }) { inOilSection = false }
+
+            switch section {
+            case .fuel:
+                guard cols.count >= 2, !c0.isEmpty else { continue }
+                guard let date = parseDate(c0) else { continue }
+                let mileage = Int(c1.replacingOccurrences(of: ",", with: "")) ?? 0
+                guard mileage > 1000 else { continue }
+                var rec: [String: Any] = ["date": iso.string(from: date), "mileage": mileage]
+                if cols.count > 2, let v = Double(cols[2].replacingOccurrences(of: ",", with: "")), v > 0 { rec["miles_since_last"] = v }
+                if cols.count > 3, let v = Double(cols[3].replacingOccurrences(of: ",", with: "")), v > 0 { rec["gallons"] = v }
+                if cols.count > 4, let v = Double(cols[4].replacingOccurrences(of: ",", with: "")), v > 0 { rec["mpg"] = v }
+                fuelRecords.append(rec)
+
+            case .fluidMaintenance:
+                // cols: [name, monthly_check_bool, changed_mi, changed_time, freq_mi, freq_time, overdue]
+                guard cols.count >= 4, !c0.isEmpty, c0l != "engine oil" || true else { continue }
+                guard let date = parseDate(cols[3]) else { continue }
+                let mileage = Int(cols[2].replacingOccurrences(of: ",", with: "")) ?? 0
+                guard mileage > 0 else { continue }
+                maintenanceRecords.append(["type_name": c0, "date": iso.string(from: date), "mileage": mileage])
+
+            case .oilHistory:
+                guard cols.count >= 2, !c0.isEmpty else { continue }
+                guard let date = parseDate(c0) else { continue }
+                guard let mileage = Int(c1.replacingOccurrences(of: ",", with: "")), mileage > 0 else { continue }
+                maintenanceRecords.append(["type_name": "Oil Change", "date": iso.string(from: date), "mileage": mileage])
+
+            case .airFilterHistory:
+                guard cols.count >= 2, !c0.isEmpty else { continue }
+                guard let date = parseDate(c0) else { continue }
+                guard let mileage = Int(c1.replacingOccurrences(of: ",", with: "")), mileage > 0 else { continue }
+                maintenanceRecords.append(["type_name": "Air Filter", "date": iso.string(from: date), "mileage": mileage])
+
+            case .other:
                 continue
             }
-            var parsedDate: Date? = nil
-            for fmt in dateFormats {
-                dateFormatter.dateFormat = fmt
-                if let d = dateFormatter.date(from: cols[0]) { parsedDate = d; break }
-            }
-            guard let date = parsedDate else { continue }
-            let mileageStr = cols[1].replacingOccurrences(of: ",", with: "")
-            guard let mileage = Int(mileageStr) else { continue }
-
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withFullDate]
-            maintenanceRecords.append(["type_name": "Oil Change", "date": iso.string(from: date), "mileage": mileage])
         }
 
         parsedFuel = fuelRecords
         parsedMaintenance = maintenanceRecords
-        previewText = "\(fuelRecords.count) fuel fill-up rows found.\n\(maintenanceRecords.count) oil change rows found."
+        var preview = "\(fuelRecords.count) fuel fill-up rows found."
+        if !maintenanceRecords.isEmpty {
+            let byType = Dictionary(grouping: maintenanceRecords) { $0["type_name"] as? String ?? "?" }
+            let summary = byType.map { "\($0.value.count)× \($0.key)" }.sorted().joined(separator: ", ")
+            preview += "\n\(maintenanceRecords.count) maintenance records found: \(summary)"
+        } else {
+            preview += "\n0 maintenance records found."
+        }
+        previewText = preview
         statusMessage = ""
         isDone = false
     }

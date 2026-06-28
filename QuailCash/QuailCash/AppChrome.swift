@@ -40,6 +40,8 @@ struct AppTopBar: View {
     var trailingIcon: String = "bell.fill"
     var extraTrailingAction: (() -> Void)? = nil
     var extraTrailingIcon: String = "plus"
+    var extraTrailingAction2: (() -> Void)? = nil
+    var extraTrailingIcon2: String = "bookmark.fill"
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -63,6 +65,16 @@ struct AppTopBar: View {
 
             BugReportFAB(palette: palette)
 
+            if let extraAction2 = extraTrailingAction2 {
+                Button(action: extraAction2) {
+                    Image(systemName: extraTrailingIcon2)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(palette.chromeIconForeground)
+                        .frame(width: 36, height: 36)
+                        .background(palette.chromeIconBackground, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
+                }
+            }
             if let extraAction = extraTrailingAction {
                 Button(action: extraAction) {
                     Image(systemName: extraTrailingIcon)
@@ -173,6 +185,50 @@ struct AppBottomBar: View {
     }
 }
 
+struct MapReturnBar: View {
+    let palette: QuailThemePalette
+    let onMapTap: () -> Void
+    let onHomeTap: () -> Void
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Button(action: onMapTap) {
+                HStack(spacing: 6) {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Map")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(palette.primaryButtonText)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(palette.primaryButton, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Button(action: onHomeTap) {
+                HStack(spacing: 6) {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Home")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(palette.chromeIconForeground)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(palette.chromeIconBackground, in: Capsule())
+                .overlay(Capsule().stroke(palette.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .padding(.vertical, 10)
+        .background(palette.barBackground)
+        .overlay(Rectangle().fill(palette.barDivider).frame(height: 1), alignment: .top)
+    }
+}
+
 struct AppStandaloneBar: View {
     let palette: QuailThemePalette
     let onHomeTap: () -> Void
@@ -215,6 +271,8 @@ struct AppChromeFrame<Content: View>: View {
     var trailingIcon: String = "bell.fill"
     var extraTrailingAction: (() -> Void)? = nil
     var extraTrailingIcon: String = "plus"
+    var extraTrailingAction2: (() -> Void)? = nil
+    var extraTrailingIcon2: String = "bookmark.fill"
     let content: Content
 
     init(
@@ -229,6 +287,8 @@ struct AppChromeFrame<Content: View>: View {
         trailingIcon: String = "bell.fill",
         extraTrailingAction: (() -> Void)? = nil,
         extraTrailingIcon: String = "plus",
+        extraTrailingAction2: (() -> Void)? = nil,
+        extraTrailingIcon2: String = "bookmark.fill",
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
@@ -242,6 +302,8 @@ struct AppChromeFrame<Content: View>: View {
         self.trailingIcon = trailingIcon
         self.extraTrailingAction = extraTrailingAction
         self.extraTrailingIcon = extraTrailingIcon
+        self.extraTrailingAction2 = extraTrailingAction2
+        self.extraTrailingIcon2 = extraTrailingIcon2
         self.content = content()
     }
 
@@ -267,7 +329,9 @@ struct AppChromeFrame<Content: View>: View {
                 onTrailingTap: onTrailingTap ?? { navigator.show(.notifications) },
                 trailingIcon: trailingIcon,
                 extraTrailingAction: extraTrailingAction,
-                extraTrailingIcon: extraTrailingIcon
+                extraTrailingIcon: extraTrailingIcon,
+                extraTrailingAction2: extraTrailingAction2,
+                extraTrailingIcon2: extraTrailingIcon2
             )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

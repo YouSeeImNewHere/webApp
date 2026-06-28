@@ -108,10 +108,29 @@ def ensure_vehicle_tables():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        cur.execute("ALTER TABLE vehicle_profiles ADD COLUMN IF NOT EXISTS tank_capacity_gallons DECIMAL(6,3)")
         cur.execute("ALTER TABLE vehicle_fuel_records ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT")
         cur.execute("ALTER TABLE vehicle_fuel_records ADD COLUMN IF NOT EXISTS linked_merchant VARCHAR(300)")
         cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT")
         cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS linked_merchant VARCHAR(300)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS map_trips (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                started_at TIMESTAMPTZ NOT NULL,
+                ended_at TIMESTAMPTZ NOT NULL,
+                origin_name TEXT DEFAULT '',
+                destination_name TEXT DEFAULT '',
+                distance_miles DECIMAL(10,3),
+                duration_seconds INTEGER,
+                transport_type VARCHAR(50) DEFAULT 'automobile',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_map_trips_tenant_date
+                ON map_trips(tenant_id, started_at DESC)
+        """)
         conn.commit()
     _tables_ready = True
 
@@ -133,6 +152,7 @@ class VehicleProfileIn(BaseModel):
     transmission_fluid_capacity: Optional[float] = None
     coolant_type: Optional[str] = ""
     current_mileage: Optional[int] = 0
+    tank_capacity_gallons: Optional[float] = None
     notes: Optional[str] = ""
 
 class FuelRecordIn(BaseModel):
@@ -180,6 +200,18 @@ class InspectionItemIn(BaseModel):
     last_checked_date: Optional[date] = None
     is_built_in: bool = False
 
+class TripIn(BaseModel):
+    started_at: datetime
+    ended_at: datetime
+    origin_name: Optional[str] = ""
+    destination_name: Optional[str] = ""
+    distance_miles: Optional[float] = None
+    duration_seconds: Optional[int] = None
+    transport_type: Optional[str] = "automobile"
+
+class MileageUpdateIn(BaseModel):
+    current_mileage: int
+
 
 # ---------------------------------------------------------------------------
 # Vehicle profile
@@ -205,8 +237,8 @@ def upsert_vehicle_profile(body: VehicleProfileIn):
                 tenant_id, make, model, year, vin, license_plate,
                 oil_type, oil_capacity_with_filter, oil_capacity_without_filter,
                 transmission_fluid_type, transmission_fluid_capacity,
-                coolant_type, current_mileage, notes, updated_at
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                coolant_type, current_mileage, tank_capacity_gallons, notes, updated_at
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
             ON CONFLICT (tenant_id) DO UPDATE SET
                 make = EXCLUDED.make,
                 model = EXCLUDED.model,
@@ -220,6 +252,7 @@ def upsert_vehicle_profile(body: VehicleProfileIn):
                 transmission_fluid_capacity = EXCLUDED.transmission_fluid_capacity,
                 coolant_type = EXCLUDED.coolant_type,
                 current_mileage = EXCLUDED.current_mileage,
+                tank_capacity_gallons = EXCLUDED.tank_capacity_gallons,
                 notes = EXCLUDED.notes,
                 updated_at = NOW()
             RETURNING *
@@ -227,7 +260,7 @@ def upsert_vehicle_profile(body: VehicleProfileIn):
             tid, body.make, body.model, body.year, body.vin, body.license_plate,
             body.oil_type, body.oil_capacity_with_filter, body.oil_capacity_without_filter,
             body.transmission_fluid_type, body.transmission_fluid_capacity,
-            body.coolant_type, body.current_mileage, body.notes,
+            body.coolant_type, body.current_mileage, body.tank_capacity_gallons, body.notes,
         ))
         return _serialize(cur.fetchone())
 
@@ -526,6 +559,75 @@ def delete_inspection(item_id: int):
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Item not found")
     return {"deleted": item_id}
+
+
+# ---------------------------------------------------------------------------
+# Map trips
+# ---------------------------------------------------------------------------
+
+@router.post("/vehicle/trips")
+def log_trip(body: TripIn):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute("""
+            INSERT INTO map_trips (
+                tenant_id, started_at, ended_at, origin_name, destination_name,
+                distance_miles, duration_seconds, transport_type
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *
+        """, (
+            tid, body.started_at, body.ended_at, body.origin_name, body.destination_name,
+            body.distance_miles, body.duration_seconds, body.transport_type,
+        ))
+        return _serialize(cur.fetchone())
+
+
+@router.get("/vehicle/trips")
+def list_trips(limit: int = 100, offset: int = 0):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    rows = query_db("""
+        SELECT * FROM map_trips WHERE tenant_id = %s
+        ORDER BY started_at DESC LIMIT %s OFFSET %s
+    """, (tid, limit, offset))
+    total = query_db("SELECT COUNT(*) AS n FROM map_trips WHERE tenant_id = %s", (tid,))
+    return {"trips": [_serialize(r) for r in rows], "total": total[0]["n"]}
+
+
+@router.get("/vehicle/trips/stats")
+def trip_stats():
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    rows = query_db("""
+        SELECT
+            COUNT(*) AS total_trips,
+            COALESCE(SUM(distance_miles), 0) AS total_miles,
+            COALESCE(AVG(distance_miles), 0) AS avg_miles,
+            COALESCE(SUM(CASE WHEN started_at >= NOW() - INTERVAL '7 days' THEN distance_miles ELSE 0 END), 0) AS miles_this_week,
+            COALESCE(SUM(CASE WHEN started_at >= DATE_TRUNC('month', NOW()) THEN distance_miles ELSE 0 END), 0) AS miles_this_month,
+            COALESCE(COUNT(CASE WHEN started_at >= DATE_TRUNC('month', NOW()) THEN 1 END), 0) AS trips_this_month
+        FROM map_trips WHERE tenant_id = %s
+    """, (tid,))
+    return _serialize(rows[0]) if rows else {}
+
+
+@router.patch("/vehicle/profile/mileage")
+def update_mileage(body: MileageUpdateIn):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute("""
+            INSERT INTO vehicle_profiles (tenant_id, current_mileage, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (tenant_id) DO UPDATE SET
+                current_mileage = EXCLUDED.current_mileage,
+                updated_at = NOW()
+            RETURNING current_mileage
+        """, (tid, body.current_mileage))
+        conn.commit()
+        row = cur.fetchone()
+    return {"current_mileage": row["current_mileage"]}
 
 
 # ---------------------------------------------------------------------------

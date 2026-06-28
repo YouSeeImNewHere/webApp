@@ -39,6 +39,7 @@ struct VehicleProfile: Codable {
     var transmissionFluidCapacity: Double = 0.0
     var coolantType: String = ""
     var currentMileage: Int = 0
+    var tankCapacityGallons: Double = 0
 
     var displayName: String {
         let parts = [String(year), make, model].filter { !$0.isEmpty }
@@ -326,8 +327,9 @@ final class VehicleStore: ObservableObject {
             if let v = p.year                      { profile.year = v }
             if let v = p.vin,           !v.isEmpty { profile.vin = v }
             if let v = p.licensePlate,  !v.isEmpty { profile.licensePlate = v }
-            if let v = p.currentMileage            { profile.currentMileage = v }
-            if let v = p.oilType,       !v.isEmpty { profile.oilType = v }
+            if let v = p.currentMileage              { profile.currentMileage = v }
+            if let v = p.oilType,       !v.isEmpty  { profile.oilType = v }
+            if let v = p.tankCapacityGallons, v > 0 { profile.tankCapacityGallons = v }
         }
 
         if let payloads = try? await QuailCashAPI.shared.fetchVehicleFuel(), !payloads.isEmpty {
@@ -412,7 +414,11 @@ final class VehicleStore: ObservableObject {
 
     func addFuelRecord(_ r: FuelRecord) {
         fuelRecords.append(r)
-        if r.mileage > profile.currentMileage { profile.currentMileage = r.mileage }
+        if r.mileage > profile.currentMileage {
+            profile.currentMileage = r.mileage
+            let newMileage = r.mileage
+            Task { try? await QuailCashAPI.shared.updateVehicleMileage(newMileage) }
+        }
         save()
     }
 

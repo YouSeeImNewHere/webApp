@@ -853,6 +853,16 @@ def _month_budget_home(
     # Base spend goal (before budgeting)
     base_goal = total_income - savings_goal
     spend_goal = base_goal
+
+    # Deduct active financing installments from spendable budget
+    if tid:
+        try:
+            from app.routers.financing import get_active_monthly_financing_total
+            financing_deduction = get_active_monthly_financing_total(int(tid), year, month)
+            base_goal = base_goal - financing_deduction
+        except Exception:
+            pass
+
     # 4) Group budgets (allocations) — reduce free safe-to-spend, but DON'T double-count spend
     groups = _get_budget_groups_for_month(year, month)
 

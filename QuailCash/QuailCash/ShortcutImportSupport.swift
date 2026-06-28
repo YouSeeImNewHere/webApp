@@ -672,5 +672,16 @@ struct QuailCashAppShortcuts: AppShortcutsProvider {
             shortTitle: "Process CSV Queue",
             systemImageName: "play.circle"
         )
+        AppShortcut(
+            intent: LogFuelFillupIntent(),
+            phrases: [
+                "Log gas fill-up in \(.applicationName)",
+                "Record gas in \(.applicationName)",
+                "Log fuel in \(.applicationName)",
+                "Add fill-up to \(.applicationName)"
+            ],
+            shortTitle: "Log Gas Fill-Up",
+            systemImageName: "fuelpump.fill"
+        )
     }
 }

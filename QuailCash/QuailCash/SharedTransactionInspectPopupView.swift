@@ -73,6 +73,7 @@ struct SharedTransactionInspectPopupView: View {
     @State private var actionStatus: String = ""
     @State private var showDeleteConfirm = false
     @State private var showInvertConfirm = false
+    @State private var showFinanceSheet = false
     @State private var isSaving = false
 
     private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }

@@ -5,6 +5,7 @@ import Combine
 struct NativeBudgetPageView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var model = BudgetPageViewModel()
+    @StateObject private var financingStore = FinancingStore.shared
     @State private var groupEditor: BudgetGroupDraft?
     @State private var fundEditor: FundDraft?
     @State private var fundAdjustment: FundAdjustmentDraft?
@@ -19,17 +20,26 @@ struct NativeBudgetPageView: View {
             onSelectTab: selectTab
         ) {
             AppPageScroll(refreshAction: {
-                await model.load()
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { await model.load() }
+                    group.addTask { await financingStore.refresh() }
+                }
             }) {
                 monthSummaryCard
                 budgetGroupsCard
                 sinkingFundsCard
+                if !financingStore.plans.isEmpty {
+                    financedTransactionsCard
+                }
                 spentCategoriesCard
                 trendCard
                 roundupsCard
             }
         }
-        .task { model.startIfNeeded() }
+        .task {
+            model.startIfNeeded()
+            await financingStore.refresh()
+        }
         .sheet(item: $groupEditor) { draft in
             BudgetGroupEditorSheet(
                 draft: draft,
@@ -225,6 +235,31 @@ struct NativeBudgetPageView: View {
                             onDelete: { Task { await model.deleteFund(fund) } }
                         )
                     }
+                }
+            }
+        }
+        .padding(14)
+        .budgetCard()
+    }
+
+    private var financedTransactionsCard: some View {
+        let palette = QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Financed", systemImage: "creditcard.fill")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                Spacer()
+                let totalMonthly = financingStore.activePlans.reduce(0) { $0 + $1.monthlyPayment }
+                if totalMonthly > 0 {
+                    Text("\(formatBudgetMoney(totalMonthly))/mo")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.purple)
+                }
+            }
+
+            ForEach(financingStore.plans) { plan in
+                FinancingPlanRow(plan: plan, palette: palette) {
+                    Task { await financingStore.deletePlan(plan) }
                 }
             }
         }
@@ -945,4 +980,58 @@ private func budgetMiniKV(_ label: String, _ value: String, tone: Color = .prima
             .font(.system(size: 13, weight: .bold, design: .rounded))
             .foregroundStyle(tone)
     }
+}
+
+
+// MARK: - Financing plan row
+
+private struct FinancingPlanRow: View {
+    let plan: FinancingPlan
+    let palette: QuailThemePalette
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(plan.label)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text(plan.isComplete ? "Paid off" : "\(plan.monthsRemaining) months left • \(formatBudgetMoney(plan.monthlyPayment))/mo")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(formatBudgetMoney(plan.amountPaid)) / \(formatBudgetMoney(plan.totalAmount))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(plan.isComplete ? .green : .secondary)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(palette.border)
+                        .frame(height: 6)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(plan.isComplete ? Color.green : Color.purple)
+                        .frame(width: geo.size.width * plan.progressFraction, height: 6)
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(10)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contextMenu {
+            Button(role: .destructive) { onDelete() } label: {
+                Label("Remove plan", systemImage: "trash")
+            }
+        }
+    }
+}
+
+private func formatBudgetMoney(_ v: Double) -> String {
+    let f = NumberFormatter()
+    f.numberStyle = .currency
+    f.currencyCode = "USD"
+    f.maximumFractionDigits = 0
+    return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
 }

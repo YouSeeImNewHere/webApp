@@ -21,6 +21,8 @@ enum AppRoute: Hashable {
     case spending
     case map
     case mapSettings
+    case mapTripAnalytics
+    case savedPlaces
     case adminDashboard
     case bugLogger
     case projects
@@ -74,6 +76,10 @@ struct NativePageView: View {
                 RouteMapPageView()
             case .mapSettings:
                 MapSettingsPageView()
+            case .mapTripAnalytics:
+                MapTripAnalyticsPageView()
+            case .savedPlaces:
+                SavedPlacesPageView()
             case .adminDashboard:
                 AdminDashboardPageView()
             case .bugLogger:

@@ -1374,6 +1374,7 @@ private struct NativeTransactionInspectView: View {
     @State private var actionStatus: String = ""
     @State private var showDeleteConfirm = false
     @State private var showInvertConfirm = false
+    @State private var showFinanceSheet = false
 
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
@@ -1423,6 +1424,8 @@ private struct NativeTransactionInspectView: View {
 
                         NativeCard(title: "Actions", centered: true) {
                             VStack(spacing: 8) {
+                                Button("Finance this purchase") { showFinanceSheet = true }
+                                    .buttonStyle(NativeSecondaryButtonStyle())
                                 Button("Invert amount") { showInvertConfirm = true }
                                     .buttonStyle(NativeSecondaryButtonStyle())
                                 Button("Toggle ignore") { Task { await toggleIgnore() } }
@@ -1454,6 +1457,13 @@ private struct NativeTransactionInspectView: View {
         .confirmationDialog("Invert this transaction amount?", isPresented: $showInvertConfirm, titleVisibility: .visible) {
             Button("Invert", role: .destructive) { Task { await invertTx() } }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $showFinanceSheet) {
+            FinancePurchaseSheet(
+                suggestedLabel: detail?.merchant ?? transaction.merchant ?? "Purchase",
+                suggestedAmount: abs(detail?.amount ?? transaction.amount ?? 0),
+                transactionId: transaction.id
+            )
         }
     }
 
@@ -2236,5 +2246,107 @@ private struct NativeMergeRecurringModal: View {
             .navigationTitle("Merge recurring patterns")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Close") { dismiss() } } }
         }
+    }
+}
+
+// MARK: - Finance Purchase Sheet
+
+struct FinancePurchaseSheet: View {
+    let suggestedLabel: String
+    let suggestedAmount: Double
+    let transactionId: String
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var store = FinancingStore.shared
+    @State private var label: String = ""
+    @State private var amountText: String = ""
+    @State private var months: Int = 12
+    @State private var isSaving = false
+
+    private let monthOptions = [3, 6, 9, 12, 18, 24, 36, 48, 60]
+
+    private var totalAmount: Double { Double(amountText) ?? suggestedAmount }
+    private var monthly: Double { months > 0 ? totalAmount / Double(months) : 0 }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Purchase") {
+                    TextField("Label", text: $label)
+                    HStack {
+                        Text("Total amount")
+                        Spacer()
+                        TextField("0.00", text: $amountText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+
+                Section("Financing") {
+                    Picker("Months", selection: $months) {
+                        ForEach(monthOptions, id: \.self) { m in
+                            Text("\(m) months").tag(m)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 120)
+                }
+
+                Section("Summary") {
+                    HStack {
+                        Text("Monthly payment")
+                        Spacer()
+                        Text(formatMoney(monthly))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.purple)
+                    }
+                    HStack {
+                        Text("Total")
+                        Spacer()
+                        Text(formatMoney(totalAmount))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Your safe to spend will be reduced by \(formatMoney(monthly))/month for \(months) months.")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Finance Purchase")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Confirm") {
+                            Task {
+                                isSaving = true
+                                await store.createPlan(
+                                    label: label.isEmpty ? suggestedLabel : label,
+                                    totalAmount: totalAmount,
+                                    totalMonths: months,
+                                    transactionId: transactionId
+                                )
+                                isSaving = false
+                                dismiss()
+                            }
+                        }
+                        .disabled(totalAmount <= 0)
+                    }
+                }
+            }
+            .onAppear {
+                label = suggestedLabel
+                amountText = String(format: "%.2f", suggestedAmount)
+            }
+        }
+    }
+
+    private func formatMoney(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        return f.string(from: NSNumber(value: v)) ?? "$\(v)"
     }
 }

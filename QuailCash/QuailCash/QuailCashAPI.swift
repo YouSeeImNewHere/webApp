@@ -1587,6 +1587,7 @@ final class QuailCashAPI {
         var licensePlate: String?
         var currentMileage: Int?
         var oilType: String?
+        var tankCapacityGallons: Double?
         var notes: String?
     }
 
@@ -1708,6 +1709,52 @@ final class QuailCashAPI {
         _ = try await checkedData(for: req)
     }
 
+    func saveVehicleProfile(_ p: VehicleProfilePayload) async throws {
+        var body: [String: Any] = [
+            "make": p.make ?? "", "model": p.model ?? "", "vin": p.vin ?? "",
+            "license_plate": p.licensePlate ?? "", "oil_type": p.oilType ?? "",
+            "current_mileage": p.currentMileage ?? 0, "notes": p.notes ?? ""
+        ]
+        if let y = p.year { body["year"] = y }
+        if let v = p.tankCapacityGallons { body["tank_capacity_gallons"] = v }
+        var req = makeRequest(url: AppConfig.url(path: "/vehicle/profile"), method: "PUT", jsonBody: body)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await checkedData(for: req)
+    }
+
+    func updateVehicleMileage(_ miles: Int) async throws {
+        var req = makeRequest(url: AppConfig.url(path: "/vehicle/profile/mileage"), method: "PATCH", jsonBody: ["current_mileage": miles])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await checkedData(for: req)
+    }
+
+    func logMapTrip(originName: String, destinationName: String, distanceMiles: Double, durationSeconds: Int, transportType: String, startedAt: Date, endedAt: Date) async throws {
+        let iso = ISO8601DateFormatter()
+        let body: [String: Any] = [
+            "origin_name": originName,
+            "destination_name": destinationName,
+            "distance_miles": distanceMiles,
+            "duration_seconds": durationSeconds,
+            "transport_type": transportType,
+            "started_at": iso.string(from: startedAt),
+            "ended_at": iso.string(from: endedAt),
+        ]
+        var req = makeRequest(url: AppConfig.url(path: "/vehicle/trips"), method: "POST", jsonBody: body)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await checkedData(for: req)
+    }
+
+    func fetchMapTrips(limit: Int = 100) async throws -> [[String: Any]] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/trips", queryItems: [URLQueryItem(name: "limit", value: "\(limit)")])))
+        let obj = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        return (obj["trips"] as? [[String: Any]]) ?? []
+    }
+
+    func fetchMapTripStats() async throws -> [String: Any] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/vehicle/trips/stats")))
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     func bulkImportVehicleFuel(_ records: [[String: Any]]) async throws -> Int {
         var req = makeRequest(url: AppConfig.url(path: "/vehicle/fuel/bulk"), method: "POST", jsonBody: ["records": records])
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1722,6 +1769,73 @@ final class QuailCashAPI {
         let data = try await checkedData(for: req)
         let obj = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         return (obj["inserted"] as? Int) ?? 0
+    }
+
+    // MARK: Saved Places
+
+    func fetchSavedPlaceLists() async throws -> [[String: Any]] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/saved-places/lists")))
+        return (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+    }
+
+    func createSavedPlaceList(name: String, emoji: String, color: String) async throws -> [String: Any] {
+        var req = makeRequest(url: AppConfig.url(path: "/saved-places/lists"), method: "POST",
+                              jsonBody: ["name": name, "emoji": emoji, "color": color])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await checkedData(for: req)
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    func updateSavedPlaceList(_ id: Int, name: String, emoji: String, color: String) async throws {
+        var req = makeRequest(url: AppConfig.url(path: "/saved-places/lists/\(id)"), method: "PATCH",
+                              jsonBody: ["name": name, "emoji": emoji, "color": color])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await checkedData(for: req)
+    }
+
+    func deleteSavedPlaceList(_ id: Int) async throws {
+        _ = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/saved-places/lists/\(id)"), method: "DELETE"))
+    }
+
+    func fetchSavedPlaces(listId: Int) async throws -> [[String: Any]] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/saved-places/lists/\(listId)/places")))
+        return (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+    }
+
+    func savePlace(listId: Int, name: String, address: String, latitude: Double?, longitude: Double?, notes: String) async throws -> [String: Any] {
+        var body: [String: Any] = ["list_id": listId, "name": name, "address": address, "notes": notes]
+        if let lat = latitude { body["latitude"] = lat }
+        if let lon = longitude { body["longitude"] = lon }
+        var req = makeRequest(url: AppConfig.url(path: "/saved-places/places"), method: "POST", jsonBody: body)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await checkedData(for: req)
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    func deleteSavedPlace(_ id: Int) async throws {
+        _ = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/saved-places/places/\(id)"), method: "DELETE"))
+    }
+
+    // MARK: - Financing
+
+    func fetchFinancingPlans() async throws -> [FinancingPlan] {
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/financing/plans")))
+        return (try? JSONDecoder().decode([FinancingPlan].self, from: data)) ?? []
+    }
+
+    func createFinancingPlan(label: String, totalAmount: Double, totalMonths: Int, transactionId: String?) async throws -> FinancingPlan {
+        var body: [String: Any] = ["label": label, "total_amount": totalAmount, "total_months": totalMonths]
+        if let tid = transactionId { body["transaction_id"] = tid }
+        let data = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/financing/plans"), method: "POST", jsonBody: body))
+        return try JSONDecoder().decode(FinancingPlan.self, from: data)
+    }
+
+    func recordFinancingPayment(planId: Int) async throws {
+        _ = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/financing/plans/\(planId)/pay"), method: "POST"))
+    }
+
+    func deleteFinancingPlan(planId: Int) async throws {
+        _ = try await checkedData(for: makeRequest(url: AppConfig.url(path: "/financing/plans/\(planId)"), method: "DELETE"))
     }
 
     func fetchVehicleIssues() async throws -> [VehicleIssueAPIPayload] {

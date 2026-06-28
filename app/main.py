@@ -55,6 +55,8 @@ from app.routers import (
     reports,
     garmin,
     vehicle,
+    saved_places,
+    financing,
 )
 
 
@@ -283,6 +285,8 @@ def create_app() -> FastAPI:
         ensure_home_snapshot_cache_pg()
         ensure_admin_error_events_table_pg()
         ensure_email_parse_events_table_pg()
+        saved_places.ensure_saved_places_tables()
+        financing.ensure_financing_tables()
         initialize_tenancy()
         try:
             r = get_redis()
@@ -329,6 +333,8 @@ def create_app() -> FastAPI:
     app.include_router(transactions.router)
     app.include_router(page_payloads.router)
     app.include_router(admin.router)
+    app.include_router(saved_places.router)
+    app.include_router(financing.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)
     app.include_router(reports.router)

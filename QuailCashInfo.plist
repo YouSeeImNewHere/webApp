@@ -43,7 +43,7 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Quail Fitness saves completed workouts and body weight to Apple Health so they appear in your activity rings and stay in sync across devices.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Make the data more accurate</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
