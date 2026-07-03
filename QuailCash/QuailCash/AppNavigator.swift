@@ -68,26 +68,25 @@ final class AppNavigator: ObservableObject {
 
     private func tab(for route: AppRoute) -> BottomTab {
         switch route {
-        case .dashboard, .dashboardSettings:
+        // QuailCash finance pages — keep whichever tab is "current" for sub-pages
+        case .home, .dashboard, .dashboardSettings,
+             .settings, .setupWizard, .parserWizard, .incomeWizard,
+             .notificationSettings, .notifications,
+             .bankInfo, .csvImport, .importQueue, .ruleBuilder:
             return .home
-        case .home:
-            return .home
-        case .fitness, .fitnessSettings, .fitnessNotifications, .fitnessGoals,
-             .vehicle, .vehicleSettings, .vehicleNotifications:
-            return .home
-        case .spending:
+        case .spending, .budget:
             return .spending
-        case .map, .mapSettings, .mapTripAnalytics, .savedPlaces, .adminDashboard, .bugLogger, .projects:
-            return .home
-        case .budget:
-            return .spending
-        case .allTransactions:
+        case .allTransactions, .category, .account:
             return .all
         case .analytics:
             return .analytics
         case .recurring:
             return .recurring
-        case .settings, .setupWizard, .parserWizard, .incomeWizard, .notificationSettings, .notifications, .bankInfo, .csvImport, .importQueue, .ruleBuilder, .category, .account:
+        // Non-finance apps — these have their own bars, tab highlight irrelevant
+        case .fitness, .fitnessSettings, .fitnessNotifications, .fitnessGoals,
+             .vehicle, .vehicleSettings, .vehicleNotifications,
+             .map, .mapSettings, .mapTripAnalytics, .savedPlaces,
+             .adminDashboard, .bugLogger, .projects:
             return .home
         }
     }

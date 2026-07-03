@@ -103,6 +103,54 @@ struct BugReport: Codable, Identifiable {
     }
 }
 
+// MARK: - Text Bug Note (checklist-style)
+
+struct TextBugNote: Codable, Identifiable {
+    var id: UUID = UUID()
+    var text: String
+    var isResolved: Bool = false
+    var createdAt: Date = Date()
+}
+
+final class TextBugStore: ObservableObject {
+    static let shared = TextBugStore()
+    @Published var notes: [TextBugNote] = []
+    private let key = "quail.bugs.textNotes"
+
+    init() { load() }
+
+    func load() {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([TextBugNote].self, from: data) else { return }
+        notes = decoded
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(notes) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    func add(text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        notes.insert(TextBugNote(text: t), at: 0)
+        save()
+    }
+
+    func toggle(_ note: TextBugNote) {
+        if let i = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[i].isResolved.toggle()
+            save()
+        }
+    }
+
+    func delete(_ note: TextBugNote) {
+        notes.removeAll { $0.id == note.id }
+        save()
+    }
+
+    var openCount: Int { notes.filter { !$0.isResolved }.count }
+}
+
 // MARK: - Store
 
 final class BugReportStore: ObservableObject {
@@ -183,6 +231,7 @@ struct BugLoggerPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var store = BugReportStore.shared
+    @StateObject private var textStore = TextBugStore.shared
     @State private var showingNewBug = false
     @State private var capturedScreenshot: UIImage?
     @State private var selectedReport: BugReport?
@@ -195,12 +244,14 @@ struct BugLoggerPageView: View {
 
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
+        let totalOpen = store.reports.filter { $0.status == .open }.count + textStore.openCount
         AppChromeFrame(
             title: "Quail Bugs",
-            badgeValue: store.reports.filter { $0.status == .open }.count,
+            badgeValue: totalOpen,
             selectedTab: nil,
             showsBottomBar: false,
-            showsStandaloneBar: true,
+            showsStandaloneBar: false,
+            showsDashboardBar: true,
             onLeadingTap: { navigator.goBack() },
             onTrailingTap: {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -211,40 +262,41 @@ struct BugLoggerPageView: View {
         ) {
             AppPageScroll {
                 VStack(spacing: 14) {
-                    // Status filter chips
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            FilterChip(label: "All", active: filterStatus == nil, palette: palette) {
-                                filterStatus = nil
-                            }
-                            ForEach(BugStatus.allCases, id: \.rawValue) { s in
-                                FilterChip(
-                                    label: s.label,
-                                    count: store.reports.filter { $0.status == s }.count,
-                                    active: filterStatus == s,
-                                    color: s.color,
-                                    palette: palette
-                                ) { filterStatus = filterStatus == s ? nil : s }
+                    // Quick text bug entry
+                    TextBugChecklistCard(palette: palette)
+
+                    // Status filter chips for screenshot bugs
+                    if !store.reports.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                FilterChip(label: "All", active: filterStatus == nil, palette: palette) { filterStatus = nil }
+                                ForEach(BugStatus.allCases, id: \.rawValue) { s in
+                                    FilterChip(
+                                        label: s.label,
+                                        count: store.reports.filter { $0.status == s }.count,
+                                        active: filterStatus == s,
+                                        color: s.color,
+                                        palette: palette
+                                    ) { filterStatus = filterStatus == s ? nil : s }
+                                }
                             }
                         }
                     }
 
-                    if filtered.isEmpty {
+                    if !filtered.isEmpty {
+                        VStack(spacing: 10) {
+                            ForEach(filtered) { report in
+                                BugRowView(report: report, palette: palette) { selectedReport = report }
+                            }
+                        }
+                    } else if store.reports.isEmpty && textStore.notes.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 36)).foregroundStyle(.green)
-                            Text(filterStatus == nil ? "No bugs logged yet." : "No \(filterStatus!.label.lowercased()) bugs.")
+                            Text("No bugs logged yet.")
                                 .font(.system(size: 14, design: .rounded)).foregroundStyle(.secondary)
                         }
-                        .frame(maxWidth: .infinity).padding(.top, 40)
-                    } else {
-                        VStack(spacing: 10) {
-                            ForEach(filtered) { report in
-                                BugRowView(report: report, palette: palette) {
-                                    selectedReport = report
-                                }
-                            }
-                        }
+                        .frame(maxWidth: .infinity).padding(.top, 20)
                     }
                 }
             }
@@ -264,6 +316,75 @@ struct BugLoggerPageView: View {
             }
             .presentationDetents([.large])
         }
+    }
+}
+
+private struct TextBugChecklistCard: View {
+    let palette: QuailThemePalette
+    @StateObject private var store = TextBugStore.shared
+    @State private var newText = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Input row
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle").font(.system(size: 16)).foregroundStyle(.secondary)
+                TextField("Note a bug without a screenshot…", text: $newText)
+                    .font(.system(size: 13, design: .rounded))
+                    .focused($focused)
+                    .onSubmit { addNote() }
+                if !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button(action: addNote) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 20)).foregroundStyle(.red)
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+
+            if !store.notes.isEmpty {
+                Divider().padding(.horizontal, 12)
+                ForEach(Array(store.notes.enumerated()), id: \.element.id) { idx, note in
+                    TextBugNoteRow(note: note, palette: palette)
+                    if idx < store.notes.count - 1 { Divider().padding(.leading, 36) }
+                }
+            }
+        }
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private func addNote() {
+        store.add(text: newText)
+        newText = ""
+        focused = false
+    }
+}
+
+private struct TextBugNoteRow: View {
+    let note: TextBugNote
+    let palette: QuailThemePalette
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button { TextBugStore.shared.toggle(note) } label: {
+                Image(systemName: note.isResolved ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(note.isResolved ? .green : .secondary)
+            }.buttonStyle(.plain)
+
+            Text(note.text)
+                .font(.system(size: 13, design: .rounded))
+                .foregroundStyle(note.isResolved ? .secondary : .primary)
+                .strikethrough(note.isResolved, color: .secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button { TextBugStore.shared.delete(note) } label: {
+                Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
     }
 }
 
@@ -297,27 +418,58 @@ private struct FilterChip: View {
     }
 }
 
+// Shared thumbnail cache — keyed by filename, stores downsampled UIImage
+private final class ThumbnailCache {
+    static let shared = ThumbnailCache()
+    private var cache: [String: UIImage] = [:]
+    private let queue = DispatchQueue(label: "quail.bugs.thumbcache")
+
+    func thumbnail(for filename: String, completion: @escaping (UIImage?) -> Void) {
+        queue.async {
+            if let cached = self.cache[filename] {
+                DispatchQueue.main.async { completion(cached) }
+                return
+            }
+            let thumb = BugReportStore.shared.loadImage(filename: filename)
+                .map { $0.downsample(to: CGSize(width: 112, height: 88)) }
+            if let thumb { self.cache[filename] = thumb }
+            DispatchQueue.main.async { completion(thumb) }
+        }
+    }
+}
+
+private extension UIImage {
+    func downsample(to size: CGSize) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in self.draw(in: CGRect(origin: .zero, size: size)) }
+    }
+}
+
 private struct BugRowView: View {
     let report: BugReport
     let palette: QuailThemePalette
     let onTap: () -> Void
+    @State private var thumbnail: UIImage?
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                // Thumbnail
-                if let filename = report.screenshotFilename,
-                   let img = BugReportStore.shared.loadImage(filename: filename) {
-                    Image(uiImage: img)
-                        .resizable().scaledToFill()
-                        .frame(width: 56, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                } else {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(palette.elevatedSurface)
-                        .frame(width: 56, height: 44)
-                        .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
-                }
+                // Thumbnail — loaded async, never blocks main thread
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(palette.elevatedSurface)
+                    .frame(width: 56, height: 44)
+                    .overlay {
+                        if let img = thumbnail {
+                            Image(uiImage: img)
+                                .resizable().scaledToFill()
+                                .clipped()
+                        } else if report.screenshotFilename != nil {
+                            ProgressView().scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "text.bubble").foregroundStyle(.secondary).font(.system(size: 14))
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(report.title.isEmpty ? "Untitled Bug" : report.title)
@@ -347,6 +499,10 @@ private struct BugRowView: View {
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .task(id: report.screenshotFilename) {
+            guard let filename = report.screenshotFilename else { return }
+            ThumbnailCache.shared.thumbnail(for: filename) { thumbnail = $0 }
+        }
     }
 }
 

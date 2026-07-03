@@ -6,8 +6,24 @@ import Combine
 
 struct QuickNote: Codable, Identifiable {
     let id: UUID
+    var title: String
     var text: String
     var createdAt: Date
+
+    // Backward-compatible init for notes without title
+    init(id: UUID = UUID(), title: String = "", text: String, createdAt: Date = Date()) {
+        self.id = id; self.title = title; self.text = text; self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        text = try c.decode(String.self, forKey: .text)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+    }
+
+    enum CodingKeys: String, CodingKey { case id, title, text, createdAt }
 }
 
 final class QuickNoteStore: ObservableObject {
@@ -27,9 +43,9 @@ final class QuickNoteStore: ObservableObject {
         if let data = try? JSONEncoder().encode(notes) { UserDefaults.standard.set(data, forKey: key) }
     }
 
-    func add(text: String) {
+    func add(title: String, text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        notes.insert(QuickNote(id: UUID(), text: text, createdAt: Date()), at: 0)
+        notes.insert(QuickNote(title: title, text: text), at: 0)
         save()
     }
 
@@ -38,35 +54,84 @@ final class QuickNoteStore: ObservableObject {
     }
 
     func delete(at offsets: IndexSet) { notes.remove(atOffsets: offsets); save() }
+    func delete(_ note: QuickNote) {
+        notes.removeAll { $0.id == note.id }; save()
+    }
+}
+
+// MARK: - Checklists
+
+struct ChecklistItem: Codable, Identifiable {
+    var id: UUID = UUID()
+    var text: String
+    var isChecked: Bool = false
+}
+
+struct Checklist: Codable, Identifiable {
+    var id: UUID = UUID()
+    var title: String
+    var items: [ChecklistItem] = []
+    var createdAt: Date = Date()
+
+    var completedCount: Int { items.filter(\.isChecked).count }
+    var totalCount: Int { items.count }
+}
+
+final class ChecklistStore: ObservableObject {
+    static let shared = ChecklistStore()
+    @Published var checklists: [Checklist] = []
+    private let key = "quail.projects.checklists"
+
+    init() { load() }
+
+    func load() {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([Checklist].self, from: data) else { return }
+        checklists = decoded
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(checklists) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    func add(title: String) {
+        checklists.insert(Checklist(title: title.isEmpty ? "Checklist" : title), at: 0)
+        save()
+    }
+
+    func update(_ list: Checklist) {
+        if let i = checklists.firstIndex(where: { $0.id == list.id }) { checklists[i] = list; save() }
+    }
+
+    func delete(_ list: Checklist) {
+        checklists.removeAll { $0.id == list.id }; save()
+    }
 }
 
 private struct QuickNotesSection: View {
     @ObservedObject private var store = QuickNoteStore.shared
     let palette: QuailThemePalette
-    @State private var newText = ""
+    @State private var showNewSheet = false
+    @State private var editingNote: QuickNote?
     @State private var isExpanded = true
-    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.yellow)
-                    Text("Quick Notes")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                    Image(systemName: "note.text").font(.system(size: 13, weight: .semibold)).foregroundStyle(.yellow)
+                    Text("Quick Notes").font(.system(size: 14, weight: .bold, design: .rounded))
                     if !store.notes.isEmpty {
-                        Text("\(store.notes.count)")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
+                        Text("\(store.notes.count)").font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 2)
                             .background(palette.elevatedSurface, in: Capsule())
                     }
                     Spacer()
+                    Button { showNewSheet = true } label: {
+                        Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.primaryButton)
+                    }.buttonStyle(.plain)
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                 }
@@ -74,96 +139,280 @@ private struct QuickNotesSection: View {
             }
             .buttonStyle(.plain)
 
-            if isExpanded {
+            if isExpanded && !store.notes.isEmpty {
                 Divider().padding(.horizontal, 12)
-
-                // Input row
-                HStack(spacing: 8) {
-                    TextField("Add a note or idea…", text: $newText, axis: .vertical)
-                        .font(.system(size: 13, design: .rounded))
-                        .lineLimit(1...4)
-                        .focused($inputFocused)
-                        .onSubmit { commitNote() }
-                    if !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button(action: commitNote) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 22))
-                                .foregroundStyle(palette.primaryButton)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-
-                if !store.notes.isEmpty {
-                    Divider().padding(.horizontal, 12)
-                    ForEach(Array(store.notes.enumerated()), id: \.element.id) { idx, note in
-                        QuickNoteRow(note: note, palette: palette)
-                        if idx < store.notes.count - 1 {
-                            Divider().padding(.leading, 36)
-                        }
-                    }
+                ForEach(Array(store.notes.enumerated()), id: \.element.id) { idx, note in
+                    QuickNoteRow(note: note, palette: palette) { editingNote = note }
+                    if idx < store.notes.count - 1 { Divider().padding(.leading, 12) }
                 }
             }
         }
         .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
-    }
-
-    private func commitNote() {
-        store.add(text: newText)
-        newText = ""
-        inputFocused = false
+        .sheet(isPresented: $showNewSheet) { QuickNoteEditorSheet(palette: palette, existing: nil) }
+        .sheet(item: $editingNote) { note in QuickNoteEditorSheet(palette: palette, existing: note) }
     }
 }
 
 private struct QuickNoteRow: View {
-    @State var note: QuickNote
+    let note: QuickNote
     let palette: QuailThemePalette
-    @State private var isEditing = false
-    @State private var editText = ""
-    @FocusState private var focused: Bool
+    let onEdit: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 6))
-                .foregroundStyle(.secondary)
-                .padding(.top, 6)
-                .frame(width: 20)
-
-            if isEditing {
-                TextField("Note", text: $editText, axis: .vertical)
-                    .font(.system(size: 13, design: .rounded))
-                    .lineLimit(1...6)
-                    .focused($focused)
-                    .onSubmit { commitEdit() }
-                    .onAppear { focused = true }
-                Button(action: commitEdit) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green).font(.system(size: 20))
+            VStack(alignment: .leading, spacing: 2) {
+                if !note.title.isEmpty {
+                    Text(note.title).font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(.primary)
                 }
-                .buttonStyle(.plain)
-            } else {
-                Text(note.text)
-                    .font(.system(size: 13, design: .rounded))
+                Text(note.text).font(.system(size: 13, design: .rounded)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .onTapGesture { editText = note.text; isEditing = true }
-                Button {
-                    QuickNoteStore.shared.delete(at: IndexSet([QuickNoteStore.shared.notes.firstIndex(where: { $0.id == note.id }) ?? 0]))
-                } label: {
-                    Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+            Spacer(minLength: 8)
+            Button { onEdit() } label: {
+                Image(systemName: "pencil").font(.system(size: 12)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain)
+            Button { QuickNoteStore.shared.delete(note) } label: {
+                Image(systemName: "xmark").font(.system(size: 11)).foregroundStyle(.secondary)
+            }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .contentShape(Rectangle())
+        .onTapGesture { onEdit() }
+    }
+}
+
+private struct QuickNoteEditorSheet: View {
+    let palette: QuailThemePalette
+    let existing: QuickNote?
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var text = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Title (optional)") {
+                    TextField("e.g. Shopping list", text: $title)
                 }
-                .buttonStyle(.plain)
+                Section("Note") {
+                    TextField("Write your note here…", text: $text, axis: .vertical)
+                        .lineLimit(4...12)
+                }
+            }
+            .navigationTitle(existing == nil ? "New Note" : "Edit Note")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        if var e = existing {
+                            e.title = title; e.text = text
+                            QuickNoteStore.shared.update(e)
+                        } else {
+                            QuickNoteStore.shared.add(title: title, text: text)
+                        }
+                        dismiss()
+                    }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear {
+                title = existing?.title ?? ""
+                text = existing?.text ?? ""
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 7)
+    }
+}
+
+// MARK: - Checklists Section
+
+private struct ChecklistsSection: View {
+    @ObservedObject private var store = ChecklistStore.shared
+    let palette: QuailThemePalette
+    @State private var showNewSheet = false
+    @State private var editingList: Checklist?
+    @State private var isExpanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "checklist").font(.system(size: 13, weight: .semibold)).foregroundStyle(.green)
+                    Text("Checklists").font(.system(size: 14, weight: .bold, design: .rounded))
+                    if !store.checklists.isEmpty {
+                        Text("\(store.checklists.count)").font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(palette.elevatedSurface, in: Capsule())
+                    }
+                    Spacer()
+                    Button { showNewSheet = true } label: {
+                        Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.primaryButton)
+                    }.buttonStyle(.plain)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .padding(12)
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded && !store.checklists.isEmpty {
+                Divider().padding(.horizontal, 12)
+                ForEach(Array(store.checklists.enumerated()), id: \.element.id) { idx, list in
+                    ChecklistSummaryRow(list: list, palette: palette) { editingList = list }
+                    if idx < store.checklists.count - 1 { Divider().padding(.leading, 12) }
+                }
+            }
+        }
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+        .sheet(isPresented: $showNewSheet) {
+            ChecklistEditorSheet(palette: palette, existing: nil)
+        }
+        .sheet(item: $editingList) { list in
+            ChecklistEditorSheet(palette: palette, existing: list)
+        }
+    }
+}
+
+private struct ChecklistSummaryRow: View {
+    let list: Checklist
+    let palette: QuailThemePalette
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(list.title).font(.system(size: 13, weight: .semibold, design: .rounded))
+                    if list.totalCount > 0 {
+                        HStack(spacing: 6) {
+                            // Progress bar
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 3).fill(palette.border).frame(height: 4)
+                                    RoundedRectangle(cornerRadius: 3).fill(Color.green)
+                                        .frame(width: geo.size.width * (list.totalCount > 0 ? Double(list.completedCount) / Double(list.totalCount) : 0), height: 4)
+                                }
+                            }.frame(height: 4)
+                            Text("\(list.completedCount)/\(list.totalCount)")
+                                .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("No items yet").font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if list.completedCount == list.totalCount && list.totalCount > 0 {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                } else {
+                    Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) { ChecklistStore.shared.delete(list) } label: {
+                Label("Delete checklist", systemImage: "trash")
+            }
+        }
+    }
+}
+
+struct ChecklistEditorSheet: View {
+    let palette: QuailThemePalette
+    var existing: Checklist?
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var items: [ChecklistItem] = []
+    @State private var newItemText = ""
+    @FocusState private var newItemFocused: Bool
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Title") {
+                    TextField("Checklist title", text: $title)
+                }
+                Section {
+                    ForEach($items) { $item in
+                        HStack(spacing: 10) {
+                            Button {
+                                item.isChecked.toggle()
+                            } label: {
+                                Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(item.isChecked ? .green : .secondary)
+                                    .font(.system(size: 18))
+                            }.buttonStyle(.plain)
+                            TextField("Item", text: $item.text)
+                                .font(.system(size: 14, design: .rounded))
+                                .strikethrough(item.isChecked, color: .secondary)
+                                .foregroundStyle(item.isChecked ? .secondary : .primary)
+                        }
+                    }
+                    .onDelete { items.remove(atOffsets: $0) }
+                    .onMove { items.move(fromOffsets: $0, toOffset: $1) }
+
+                    HStack(spacing: 10) {
+                        Image(systemName: "plus.circle").foregroundStyle(.secondary).font(.system(size: 18))
+                        TextField("Add item…", text: $newItemText)
+                            .focused($newItemFocused)
+                            .onSubmit { addItem() }
+                    }
+                } header: {
+                    HStack {
+                        Text("Items")
+                        Spacer()
+                        if items.filter(\.isChecked).count > 0 {
+                            Button("Clear completed") {
+                                items.removeAll(where: \.isChecked)
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(existing == nil ? "New Checklist" : title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) { EditButton() }
+            }
+            .onAppear {
+                title = existing?.title ?? ""
+                items = existing?.items ?? []
+            }
+        }
     }
 
-    private func commitEdit() {
-        note.text = editText
-        QuickNoteStore.shared.update(note)
-        isEditing = false
+    private func addItem() {
+        let t = newItemText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        items.append(ChecklistItem(text: t))
+        newItemText = ""
+        newItemFocused = true
+    }
+
+    private func save() {
+        if newItemText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { addItem() }
+        if var e = existing {
+            e.title = title; e.items = items
+            ChecklistStore.shared.update(e)
+        } else {
+            var list = Checklist(title: title)
+            list.items = items
+            ChecklistStore.shared.checklists.insert(list, at: 0)
+            ChecklistStore.shared.save()
+        }
+        dismiss()
     }
 }
 
@@ -227,14 +476,41 @@ enum ProjectItemType: String, Codable, CaseIterable {
     }
 }
 
+struct DecisionTask: Codable, Identifiable {
+    let id: UUID
+    var title: String
+    var isDone: Bool
+}
+
 struct DecisionOption: Codable, Identifiable {
     let id: UUID
     var title: String
     var notes: String
     var pros: [String]
     var cons: [String]
+    var tasks: [DecisionTask]
     var estimatedCost: Double?
     var isSelected: Bool
+
+    init(id: UUID, title: String, notes: String = "", pros: [String] = [], cons: [String] = [], tasks: [DecisionTask] = [], estimatedCost: Double? = nil, isSelected: Bool = false) {
+        self.id = id; self.title = title; self.notes = notes
+        self.pros = pros; self.cons = cons; self.tasks = tasks
+        self.estimatedCost = estimatedCost; self.isSelected = isSelected
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        notes = (try? c.decode(String.self, forKey: .notes)) ?? ""
+        pros = (try? c.decode([String].self, forKey: .pros)) ?? []
+        cons = (try? c.decode([String].self, forKey: .cons)) ?? []
+        tasks = (try? c.decode([DecisionTask].self, forKey: .tasks)) ?? []
+        estimatedCost = try? c.decode(Double.self, forKey: .estimatedCost)
+        isSelected = (try? c.decode(Bool.self, forKey: .isSelected)) ?? false
+    }
+
+    enum CodingKeys: String, CodingKey { case id, title, notes, pros, cons, tasks, estimatedCost, isSelected }
 }
 
 struct ProjectItem: Codable, Identifiable {
@@ -282,7 +558,7 @@ extension Project {
         func decision(_ title: String, options: [String]) -> ProjectItem {
             ProjectItem(
                 id: UUID(), type: .decision, title: title, body: "",
-                options: options.map { DecisionOption(id: UUID(), title: $0, notes: "", pros: [], cons: [], estimatedCost: nil, isSelected: false) },
+                options: options.map { DecisionOption(id: UUID(), title: $0, notes: "", pros: [], cons: [], tasks: [], estimatedCost: nil, isSelected: false) },
                 amount: nil, amountLabel: "Estimated", url: "", imageFilename: nil, createdAt: Date()
             )
         }
@@ -428,7 +704,8 @@ struct ProjectsPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
-            showsStandaloneBar: true,
+            showsStandaloneBar: false,
+            showsDashboardBar: true,
             onLeadingTap: { navigator.goBack() },
             onTrailingTap: { showingNew = true },
             trailingIcon: "plus"
@@ -436,6 +713,7 @@ struct ProjectsPageView: View {
             AppPageScroll {
                 VStack(spacing: 12) {
                     QuickNotesSection(palette: palette)
+                    ChecklistsSection(palette: palette)
 
                     if !store.projects.isEmpty {
                         HStack {
@@ -1127,7 +1405,7 @@ private struct AddItemSheet: View {
 
     private func addOption() {
         guard !newOptionTitle.isEmpty else { return }
-        options.append(DecisionOption(id: UUID(), title: newOptionTitle, notes: "", pros: [], cons: [], estimatedCost: nil, isSelected: false))
+        options.append(DecisionOption(id: UUID(), title: newOptionTitle, notes: "", pros: [], cons: [], tasks: [], estimatedCost: nil, isSelected: false))
         newOptionTitle = ""
     }
 
@@ -1202,6 +1480,32 @@ private struct NoteItemView: View {
             .font(.system(size: 14, design: .rounded)).lineLimit(5...)
             .padding(12)
             .background(palette.surface, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct AddOptionTaskRow: View {
+    let onAdd: (String) -> Void
+    @State private var text = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus.circle").font(.system(size: 15)).foregroundStyle(.secondary)
+            TextField("Add task…", text: $text)
+                .font(.system(size: 12, design: .rounded))
+                .onSubmit { submit() }
+            if !text.isEmpty {
+                Button { submit() } label: {
+                    Image(systemName: "return").font(.system(size: 11)).foregroundStyle(.blue)
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func submit() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onAdd(trimmed)
+        text = ""
     }
 }
 
@@ -1299,6 +1603,37 @@ private struct DecisionItemView: View {
                                     .font(.system(size: 12, design: .rounded))
                                     .multilineTextAlignment(.trailing)
                             }
+
+                            // Tasks / requirements list
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("TASKS").font(.system(size: 9, weight: .bold, design: .rounded)).foregroundStyle(.secondary)
+                                ForEach($opt.tasks) { $task in
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            task.isDone.toggle()
+                                        } label: {
+                                            Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                                                .font(.system(size: 15))
+                                                .foregroundStyle(task.isDone ? .green : .secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        TextField("Task", text: $task.title)
+                                            .font(.system(size: 12, design: .rounded))
+                                            .strikethrough(task.isDone, color: .secondary)
+                                            .foregroundStyle(task.isDone ? .secondary : .primary)
+                                        Button {
+                                            opt.tasks.removeAll { $0.id == task.id }
+                                        } label: {
+                                            Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                // Add task row
+                                AddOptionTaskRow { title in
+                                    opt.tasks.append(DecisionTask(id: UUID(), title: title, isDone: false))
+                                }
+                            }
                         }
                         .padding(.horizontal, 12).padding(.bottom, 10)
                     }
@@ -1316,13 +1651,13 @@ private struct DecisionItemView: View {
                     .font(.system(size: 13, design: .rounded))
                     .onSubmit {
                         if !newOptionTitle.isEmpty {
-                            item.options.append(DecisionOption(id: UUID(), title: newOptionTitle, notes: "", pros: [], cons: [], estimatedCost: nil, isSelected: false))
+                            item.options.append(DecisionOption(id: UUID(), title: newOptionTitle, notes: "", pros: [], cons: [], tasks: [], estimatedCost: nil, isSelected: false))
                             newOptionTitle = ""
                         }
                     }
                 Button {
                     if !newOptionTitle.isEmpty {
-                        item.options.append(DecisionOption(id: UUID(), title: newOptionTitle, notes: "", pros: [], cons: [], estimatedCost: nil, isSelected: false))
+                        item.options.append(DecisionOption(id: UUID(), title: newOptionTitle, notes: "", pros: [], cons: [], tasks: [], estimatedCost: nil, isSelected: false))
                         newOptionTitle = ""
                     }
                 } label: {

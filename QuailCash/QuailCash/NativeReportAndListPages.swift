@@ -1072,33 +1072,27 @@ struct NativeAllTransactionsPageView: View {
     @State private var selectedTransaction: TransactionItem?
 
     var body: some View {
-        ZStack {
-            PageShell(title: "All", subtitle: "") {
-                VStack(alignment: .leading, spacing: 12) {
-                    filterCard
-                    if model.addPanelOpen { addTransactionCard }
-                    transactionList
-                    loadMoreButton
-                    if !model.statusText.isEmpty {
-                        Text(model.statusText)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
+        PageShell(title: "All", subtitle: "") {
+            VStack(alignment: .leading, spacing: 12) {
+                filterCard
+                if model.addPanelOpen { addTransactionCard }
+                transactionList
+                loadMoreButton
+                if !model.statusText.isEmpty {
+                    Text(model.statusText)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
                 }
             }
-            if let tx = selectedTransaction {
-                SharedTransactionInspectPopupView(
-                    transaction: tx,
-                    onDismiss: {
-                        selectedTransaction = nil
-                    },
-                    onRefresh: {
-                        Task { await model.loadPage(force: true, replace: true) }
-                    }
-                )
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 18)
-            }
+        }
+        .sheet(item: $selectedTransaction) { tx in
+            SharedTransactionInspectPopupView(
+                transaction: tx,
+                onDismiss: { selectedTransaction = nil },
+                onRefresh: { Task { await model.loadPage(force: true, replace: true) } }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .task {
             await model.loadFilterOptions()

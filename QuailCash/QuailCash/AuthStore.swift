@@ -5,6 +5,9 @@ enum AuthStore {
     private static let emailKey = "quail.mobile.api.email"
     private static let tenantIDKey = "quail.mobile.api.tenant_id"
 
+    // Shared with widget extension via App Group
+    static let sharedDefaults = UserDefaults(suiteName: "group.quail.shared")
+
     static var token: String? {
         get {
             let value = UserDefaults.standard.string(forKey: tokenKey) ?? ""
@@ -12,6 +15,7 @@ enum AuthStore {
         }
         set {
             UserDefaults.standard.setValue(newValue ?? "", forKey: tokenKey)
+            sharedDefaults?.setValue(newValue ?? "", forKey: tokenKey)
         }
     }
 
@@ -39,5 +43,6 @@ enum AuthStore {
         token = nil
         email = nil
         tenantID = nil
+        sharedDefaults?.removeObject(forKey: tokenKey)
     }
 }

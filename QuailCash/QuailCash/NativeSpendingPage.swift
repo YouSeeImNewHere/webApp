@@ -11,11 +11,11 @@ struct NativeSpendingPageView: View {
         AppChromeFrame(
             title: "Spending",
             badgeValue: nil,
-            selectedTab: nil,
-            showsBottomBar: false,
-            showsStandaloneBar: true,
+            selectedTab: .spending,
+            showsBottomBar: true,
             onLeadingTap: { navigator.show(.settings) },
-            onTrailingTap: { navigator.show(.notifications) }
+            onTrailingTap: { navigator.show(.notifications) },
+            onSelectTab: selectTab
         ) {
             AppPageScroll(refreshAction: {
                 await model.reload()

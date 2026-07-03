@@ -257,6 +257,75 @@ struct AppStandaloneBar: View {
     }
 }
 
+struct AppDashboardBar: View {
+    let palette: QuailThemePalette
+    let onDashboardTap: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(palette.barDivider).frame(height: 1)
+            Button(action: onDashboardTap) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Dashboard")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(palette.primaryButtonText)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, 6)
+                .background(palette.primaryButton)
+            }
+            .buttonStyle(.plain)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(palette.barBackground)
+    }
+}
+
+struct AppDualBar: View {
+    let palette: QuailThemePalette
+    let onHomeTap: () -> Void
+    let onDashboardTap: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(palette.barDivider).frame(height: 1)
+            HStack(spacing: 0) {
+                Button(action: onHomeTap) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.left")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Home")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(palette.chromeIconForeground)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 6)
+                    .background(palette.barBackground)
+                }
+                .buttonStyle(.plain)
+                Rectangle().fill(palette.barDivider).frame(width: 1, height: 44)
+                Button(action: onDashboardTap) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Dashboard")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(palette.chromeIconForeground)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 6)
+                    .background(palette.barBackground)
+                }
+                .buttonStyle(.plain)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .background(palette.barBackground)
+    }
+}
+
 struct AppChromeFrame<Content: View>: View {
     @EnvironmentObject private var navigator: AppNavigator
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
@@ -265,6 +334,8 @@ struct AppChromeFrame<Content: View>: View {
     let selectedTab: BottomTab?
     let showsBottomBar: Bool
     let showsStandaloneBar: Bool
+    let showsDashboardBar: Bool
+    let showsDualBar: Bool
     let onLeadingTap: () -> Void
     let onTrailingTap: (() -> Void)?
     let onSelectTab: (BottomTab) -> Void
@@ -279,8 +350,10 @@ struct AppChromeFrame<Content: View>: View {
         title: String,
         badgeValue: Int?,
         selectedTab: BottomTab?,
-        showsBottomBar: Bool = true,
+        showsBottomBar: Bool = false,
         showsStandaloneBar: Bool = false,
+        showsDashboardBar: Bool = false,
+        showsDualBar: Bool = false,
         onLeadingTap: @escaping () -> Void,
         onTrailingTap: (() -> Void)? = nil,
         onSelectTab: @escaping (BottomTab) -> Void = { _ in },
@@ -296,6 +369,8 @@ struct AppChromeFrame<Content: View>: View {
         self.selectedTab = selectedTab
         self.showsBottomBar = showsBottomBar
         self.showsStandaloneBar = showsStandaloneBar
+        self.showsDashboardBar = showsDashboardBar
+        self.showsDualBar = showsDualBar
         self.onLeadingTap = onLeadingTap
         self.onTrailingTap = onTrailingTap
         self.onSelectTab = onSelectTab
@@ -342,6 +417,13 @@ struct AppChromeFrame<Content: View>: View {
                     onSelectTab: onSelectTab,
                     onDashboardTap: { navigator.setRoot(.dashboard) }
                 )
+            } else if showsDualBar {
+                AppDualBar(palette: palette,
+                           onHomeTap: { navigator.goBack() },
+                           onDashboardTap: { navigator.setRoot(.dashboard) })
+            } else if showsDashboardBar {
+                AppDashboardBar(palette: palette,
+                                onDashboardTap: { navigator.setRoot(.dashboard) })
             } else if showsStandaloneBar {
                 AppStandaloneBar(palette: palette, onHomeTap: { navigator.setRoot(.dashboard) })
             }

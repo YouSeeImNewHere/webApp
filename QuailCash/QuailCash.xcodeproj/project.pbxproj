@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		204F78169836C13F798012E4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 966529BA79825CD72DF4EB2E /* Foundation.framework */; };
 		6271927C8415803376FE8596 /* QuailCashWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = E33FC56F32D578D9196A4468 /* QuailCashWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		639FE9702FF1FB50001A9DCE /* TestRoute.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 639FE96F2FF1FB50001A9DCE /* TestRoute.gpx */; };
 		A49BFE466ED33856726ED22C /* WidgetAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDD83CF75386049900F83B67 /* WidgetAPI.swift */; };
 		FD8327052F4E2780D5920B26 /* QuailCashWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B2EA5ADC8781BEDAFE8B78 /* QuailCashWidgets.swift */; };
 /* End PBXBuildFile section */
@@ -40,6 +41,8 @@
 /* Begin PBXFileReference section */
 		50B2EA5ADC8781BEDAFE8B78 /* QuailCashWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuailCashWidgets.swift; sourceTree = "<group>"; };
 		633B49E02FD3D29A00FA777B /* QuailCash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuailCash.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		639FE8E02FF1B79B001A9DCE /* QuailCashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuailCashWidgets.entitlements; sourceTree = "<group>"; };
+		639FE96F2FF1FB50001A9DCE /* TestRoute.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = TestRoute.gpx; sourceTree = "<group>"; };
 		966529BA79825CD72DF4EB2E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		BDD83CF75386049900F83B67 /* WidgetAPI.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetAPI.swift; sourceTree = "<group>"; };
 		E33FC56F32D578D9196A4468 /* QuailCashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuailCashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -83,6 +86,7 @@
 		1CB46DBC4242A27E8365DEC1 /* QuailCashWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				639FE8E02FF1B79B001A9DCE /* QuailCashWidgets.entitlements */,
 				50B2EA5ADC8781BEDAFE8B78 /* QuailCashWidgets.swift */,
 				BDD83CF75386049900F83B67 /* WidgetAPI.swift */,
 			);
@@ -92,6 +96,7 @@
 		633B49D72FD3D29A00FA777B = {
 			isa = PBXGroup;
 			children = (
+				639FE96F2FF1FB50001A9DCE /* TestRoute.gpx */,
 				633B49E22FD3D29A00FA777B /* QuailCash */,
 				633B49E12FD3D29A00FA777B /* Products */,
 				1CB46DBC4242A27E8365DEC1 /* QuailCashWidgets */,
@@ -198,6 +203,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				639FE9702FF1FB50001A9DCE /* TestRoute.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -425,6 +431,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = QuailCashWidgets/QuailCashWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2P4NLYPB9F;
@@ -458,6 +465,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = QuailCashWidgets/QuailCashWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2P4NLYPB9F;

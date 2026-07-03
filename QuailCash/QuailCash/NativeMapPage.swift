@@ -19,7 +19,8 @@ struct RouteMapPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
-            showsStandaloneBar: true,
+            showsStandaloneBar: false,
+            showsDashboardBar: !vm.isCarMode,
             onLeadingTap: { navigator.show(.mapSettings) },
             onTrailingTap: { navigator.show(.notifications) },
             extraTrailingAction: { navigator.show(.mapTripAnalytics) },
@@ -45,10 +46,23 @@ private struct RouteMapContent: View {
             Map(position: $vm.cameraPosition) {
                 // Current location
                 if let loc = vm.userLocation {
-                    Annotation("You", coordinate: loc, anchor: .bottom) {
-                        Image(systemName: "location.circle.fill")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(.blue)
+                    Annotation("You", coordinate: loc, anchor: .center) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 22, height: 22)
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 8, height: 8)
+                            if vm.userCourse >= 0 {
+                                // Heading cone
+                                Image(systemName: "location.north.fill")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .rotationEffect(.degrees(vm.userCourse))
+                            }
+                        }
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                     }
                 }
                 // Destination pin
@@ -61,11 +75,25 @@ private struct RouteMapContent: View {
                     Marker(detour.name, systemImage: detour.category.systemImage, coordinate: detour.coordinate)
                         .tint(detour.category.color)
                 }
-                // Explore result pins
+                // Explore result pins — use Annotation+Button so taps are reliable
                 ForEach(Array(vm.exploreResults.enumerated()), id: \.offset) { _, item in
                     let isSelected = vm.selectedPlace === item
-                    Marker(item.name ?? "Place", coordinate: item.placemark.coordinate)
-                        .tint(isSelected ? .blue : (vm.exploreCategory?.color ?? .red))
+                    let color: Color = isSelected ? .blue : (vm.exploreCategory?.color ?? .red)
+                    Annotation(item.name ?? "Place", coordinate: item.placemark.coordinate, anchor: .bottom) {
+                        Button { vm.selectedPlace = item } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(color)
+                                    .frame(width: isSelected ? 36 : 28, height: isSelected ? 36 : 28)
+                                    .shadow(color: color.opacity(0.4), radius: 4, y: 2)
+                                Image(systemName: vm.exploreCategory?.icon ?? "mappin")
+                                    .font(.system(size: isSelected ? 16 : 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                            .animation(.spring(response: 0.25), value: isSelected)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 // Route polylines (all legs)
                 ForEach(Array(vm.routeSegments.enumerated()), id: \.offset) { _, seg in
@@ -111,12 +139,18 @@ private struct RouteMapContent: View {
                 MapUserLocationButton()
                 MapCompass()
             }
+            .onMapCameraChange(frequency: .onEnd) { ctx in
+                // #3 — If navigating and camera changed due to user gesture, enter scroll mode
+                if vm.isNavigating { vm.userIsScrolling = true }
+                // Track map center for explore search
+                vm.mapViewCenter = ctx.camera.centerCoordinate
+            }
             .ignoresSafeArea(edges: .all)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // tap captured by overlay below
 
-            // Transparent tap interceptor — only active in isochrone mode
-            if vm.isochroneMode && !vm.isLoadingIsochrones {
+            // Transparent tap interceptor — active in isochrone mode only when unlocked
+            if vm.isochroneMode && !vm.isLoadingIsochrones && !vm.isochroneLocked {
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
@@ -136,7 +170,11 @@ private struct RouteMapContent: View {
                     .padding(.bottom, 8)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if vm.isNavigating {
-                NavigationOverlay(vm: vm, palette: palette)
+                if vm.isCarMode {
+                    CarModeView(vm: vm)
+                } else {
+                    NavigationOverlay(vm: vm, palette: palette)
+                }
             } else {
                 // Bottom panel
                 RoutePanel(vm: vm, palette: palette)
@@ -160,19 +198,22 @@ private struct RouteMapContent: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            // Isochrone toggle — top right floating button
-            Button { withAnimation(.spring(response: 0.3)) { vm.toggleIsochroneMode() } } label: {
-                Image(systemName: vm.isochroneMode ? "clock.fill" : "clock")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(vm.isochroneMode ? .white : palette.chromeIconForeground)
-                    .frame(width: 38, height: 38)
-                    .background(vm.isochroneMode ? Color.purple : palette.chromeIconBackground, in: Circle())
-                    .overlay(Circle().stroke(palette.border, lineWidth: 1))
-                    .shadow(radius: 4)
+            // Isochrone toggle — hidden while navigating
+            if !vm.isNavigating {
+                Button { withAnimation(.spring(response: 0.3)) { vm.toggleIsochroneMode() } } label: {
+                    Image(systemName: vm.isochroneMode ? "clock.fill" : "clock")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(vm.isochroneMode ? .white : palette.chromeIconForeground)
+                        .frame(width: 38, height: 38)
+                        .background(vm.isochroneMode ? Color.purple : palette.chromeIconBackground, in: Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
+                        .shadow(radius: 4)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .padding(.trailing, 12)
+                .transition(.scale.combined(with: .opacity))
             }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-            .padding(.trailing, 12)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: vm.selectedPlace != nil)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: vm.isochroneMode)
@@ -186,6 +227,243 @@ private struct RouteMapContent: View {
                 .presentationDetents([.medium, .large])
         }
         } // MapReader
+    }
+}
+
+// MARK: - Car Mode
+
+private struct CarModeView: View {
+    @ObservedObject var vm: RouteMapViewModel
+
+    private var currentInstruction: String {
+        guard let route = vm.activeRoute, vm.currentStepIndex < route.steps.count else {
+            return "Arrived"
+        }
+        return route.steps[vm.currentStepIndex].instructions
+    }
+
+    private var nextInstruction: String? {
+        guard let route = vm.activeRoute,
+              vm.currentStepIndex + 1 < route.steps.count else { return nil }
+        return route.steps[vm.currentStepIndex + 1].instructions
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let isLandscape = geo.size.width > geo.size.height
+            if isLandscape {
+                landscapeBody
+            } else {
+                portraitBody
+            }
+        }
+    }
+
+    private var portraitBody: some View {
+        VStack(spacing: 0) {
+            // Top — current maneuver banner
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 20) {
+                    carManeuverIcon(for: currentInstruction)
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 64, height: 64)
+                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(currentInstruction)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
+                        if vm.distanceToNextStep > 0 {
+                            Text("in \(formatDistance(vm.distanceToNextStep))")
+                                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.yellow)
+                        }
+                    }
+                    Spacer()
+                }
+
+                if let next = nextInstruction {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.turn.up.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.6))
+                        Text("Then: \(next)")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.black.opacity(0.82))
+
+            Spacer()
+
+            // Arrived button
+            if vm.showArrivedButton {
+                Button { vm.endNavigation() } label: {
+                    Label("I've Arrived", systemImage: "mappin.circle.fill")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .background(Color.green, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Bottom bar — ETA / destination / controls
+            HStack(alignment: .center, spacing: 0) {
+                if let eta = vm.navigationETA {
+                    VStack(spacing: 2) {
+                        Text(eta, format: .dateTime.hour().minute())
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("ETA")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                Rectangle().fill(Color.white.opacity(0.2)).frame(width: 1, height: 44)
+
+                VStack(spacing: 2) {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text(vm.destinationName.isEmpty ? "Destination" : vm.destinationName)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity)
+
+                Rectangle().fill(Color.white.opacity(0.2)).frame(width: 1, height: 44)
+
+                HStack(spacing: 14) {
+                    Button { vm.isCarMode = false } label: {
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.18), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { vm.endNavigation() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.red.opacity(0.85), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(.black.opacity(0.82))
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.showArrivedButton)
+    }
+
+    // Landscape: left panel (maneuver + ETA) + map fills right
+    private var landscapeBody: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                // Maneuver
+                VStack(alignment: .leading, spacing: 12) {
+                    carManeuverIcon(for: currentInstruction)
+                        .font(.system(size: 48, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 64, height: 64)
+                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    Text(currentInstruction)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+
+                    if vm.distanceToNextStep > 0 {
+                        Text("in \(formatDistance(vm.distanceToNextStep))")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.yellow)
+                    }
+
+                    if let next = nextInstruction {
+                        Divider().background(Color.white.opacity(0.2))
+                        Text("Then: \(next)")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(2)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(.black.opacity(0.82))
+
+                // ETA + controls
+                VStack(spacing: 10) {
+                    if let eta = vm.navigationETA {
+                        VStack(spacing: 2) {
+                            Text(eta, format: .dateTime.hour().minute())
+                                .font(.system(size: 32, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text("ETA")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.55))
+                        }
+                    }
+                    HStack(spacing: 12) {
+                        Button { vm.isCarMode = false } label: {
+                            Image(systemName: "map.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.18), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        Button { vm.endNavigation() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.red.opacity(0.85), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity)
+                .background(.black.opacity(0.9))
+            }
+            .frame(width: 220)
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.showArrivedButton)
+    }
+
+    private func carManeuverIcon(for instruction: String) -> Image {
+        let lower = instruction.lowercased()
+        if lower.contains("left") { return Image(systemName: "arrow.turn.up.left") }
+        if lower.contains("right") { return Image(systemName: "arrow.turn.up.right") }
+        if lower.contains("u-turn") || lower.contains("uturn") { return Image(systemName: "arrow.uturn.left") }
+        if lower.contains("merge") { return Image(systemName: "arrow.merge") }
+        if lower.contains("exit") || lower.contains("ramp") { return Image(systemName: "arrow.turn.down.right") }
+        if lower.contains("roundabout") || lower.contains("rotary") { return Image(systemName: "arrow.clockwise") }
+        if lower.contains("arriv") { return Image(systemName: "mappin.circle.fill") }
+        return Image(systemName: "arrow.up")
     }
 }
 
@@ -205,36 +483,33 @@ private struct RoutePanel: View {
     @ObservedObject var vm: RouteMapViewModel
     let palette: QuailThemePalette
     @State private var isCollapsed = false
-    @GestureState private var dragOffset: CGFloat = 0
 
     private var panelHeight: CGFloat {
-        let base: CGFloat
-        if isCollapsed { base = 90 }
-        else if vm.mapMode == .explore { base = vm.exploreResults.isEmpty ? 320 : 520 }
-        else { base = vm.destinationName.isEmpty ? 220 : 560 }
-        return max(90, base - max(0, dragOffset))
+        if isCollapsed { return 56 }
+        if vm.mapMode == .explore { return vm.exploreResults.isEmpty ? 320 : 520 }
+        return vm.destinationName.isEmpty ? 220 : 560
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Drag handle
+            // Drag handle — gesture ONLY on this capsule so it never intercepts map scrolls (#6)
             Capsule()
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 36, height: 4)
                 .padding(.top, 10)
                 .padding(.bottom, 8)
+                .contentShape(Rectangle().size(CGSize(width: 100, height: 32)).offset(x: -32, y: -8))
                 .gesture(
-                    DragGesture()
-                        .updating($dragOffset) { value, state, _ in state = value.translation.height }
+                    DragGesture(minimumDistance: 10, coordinateSpace: .local)
                         .onEnded { value in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                if value.translation.height > 60 { isCollapsed = true }
-                                else if value.translation.height < -40 { isCollapsed = false }
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                if value.translation.height > 40 { isCollapsed = true }
+                                else if value.translation.height < -20 { isCollapsed = false }
                             }
                         }
                 )
                 .onTapGesture {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isCollapsed.toggle() }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isCollapsed.toggle() }
                 }
 
             // Completed trip banner
@@ -638,6 +913,33 @@ private struct ExplorePanel: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.border, lineWidth: 1))
             .padding(.horizontal, 14)
 
+            // Search center toggle
+            HStack(spacing: 0) {
+                ForEach([RouteMapViewModel.ExploreSearchCenter.mapView, .currentLocation], id: \.self) { mode in
+                    let label = mode == .mapView ? "Map view" : "My location"
+                    let icon  = mode == .mapView ? "map"        : "location.fill"
+                    Button {
+                        vm.exploreSearchCenter = mode
+                        if !query.isEmpty { vm.searchPlaces(query: query) }
+                        else if let cat = vm.exploreCategory { vm.searchCategory(cat) }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                            Text(label).font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(vm.exploreSearchCenter == mode ? .white : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(vm.exploreSearchCenter == mode ? Color.blue : Color.clear, in: Capsule())
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(3)
+            .background(palette.elevatedSurface, in: Capsule())
+            .overlay(Capsule().stroke(palette.border, lineWidth: 1))
+            .padding(.horizontal, 14)
+            .animation(.spring(response: 0.25), value: vm.exploreSearchCenter)
+
             // Category chips
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -751,13 +1053,30 @@ private struct PlaceRow: View {
     }
 }
 
+
+private struct TomTomOpeningHours {
+    struct TimeRange {
+        let open: String
+        let close: String
+    }
+    struct DaySchedule {
+        let day: String
+        let ranges: [TimeRange]
+    }
+    let schedule: [DaySchedule]
+    let isOpenNow: Bool?
+}
+
 private struct PlaceDetailCard: View {
     let item: MKMapItem
     let palette: QuailThemePalette
     let onDirections: () -> Void
     let onDismiss: () -> Void
 
+    @AppStorage("quail.map.24hrTime") private var use24hr: Bool = false
     @State private var showSaveSheet = false
+    @State private var openingHours: TomTomOpeningHours? = nil
+    @State private var hoursLoading = false
 
     private static let gasBrands: Set<String> = [
         "shell","chevron","arco","76","bp","exxon","mobil","valero",
@@ -832,6 +1151,49 @@ private struct PlaceDetailCard: View {
                 }
             }
 
+            // Opening hours
+            if hoursLoading {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("Loading hours…")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            } else if let hours = openingHours {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(hours.isOpenNow == true ? .green : .red)
+                        Text(hours.isOpenNow == true ? "Open now" : "Closed")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(hours.isOpenNow == true ? .green : .red)
+                    }
+                    ForEach(hours.schedule, id: \.day) { day in
+                        HStack {
+                            Text(day.day)
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .leading)
+                            if day.ranges.isEmpty {
+                                Text("Closed")
+                                    .font(.system(size: 11, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    ForEach(day.ranges, id: \.open) { r in
+                                        Text("\(r.open) – \(r.close)")
+                                            .font(.system(size: 11, design: .rounded))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+            }
+
             HStack(spacing: 8) {
                 Button(action: onDirections) {
                     Label("Directions", systemImage: "arrow.triangle.turn.up.right.circle.fill")
@@ -855,6 +1217,10 @@ private struct PlaceDetailCard: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 12, y: -4)
         .padding(.horizontal, 4).padding(.bottom, 4)
+        .task(id: item.name) {
+            await fetchHours()
+        }
+        .onChange(of: use24hr) { _ in Task { await fetchHours() } }
         .sheet(isPresented: $showSaveSheet) {
             SaveToListSheet(
                 placeName: item.name ?? "Place",
@@ -863,6 +1229,103 @@ private struct PlaceDetailCard: View {
                 longitude: item.placemark.coordinate.longitude
             )
         }
+    }
+
+    private func fetchHours() async {
+        hoursLoading = true
+        openingHours = nil
+        let coord = item.placemark.coordinate
+        let name = (item.name ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let searchURL = "https://api.tomtom.com/search/2/search/\(name).json?key=\(tomTomKey)&lat=\(coord.latitude)&lon=\(coord.longitude)&radius=100&limit=1&relatedPois=off&openingHours=nextSevenDays"
+        guard let url = URL(string: searchURL),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]],
+              let first = results.first,
+              let poi = first["poi"] as? [String: Any],
+              let rawHours = poi["openingHours"] as? [String: Any]
+        else { hoursLoading = false; return }
+        openingHours = parseOpeningHours(rawHours)
+        hoursLoading = false
+    }
+
+    private func parseOpeningHours(_ raw: [String: Any]) -> TomTomOpeningHours? {
+        // TomTom date/time fields are nested objects: {"year":2024,"month":1,"day":15}
+        // and {"hour":9,"minute":0} — not strings.
+        guard let timeRanges = raw["timeRanges"] as? [[String: Any]] else {
+            return TomTomOpeningHours(schedule: [], isOpenNow: nil)
+        }
+        let cal = Calendar.current
+        let now = Date()
+        let dayAbbrs = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+        // weekdayAbbr: 1=Sun→Su, 2=Mon→Mo ... 7=Sat→Sa
+        let weekdayMap = ["Su","Mo","Tu","We","Th","Fr","Sa"]
+
+        struct ParsedRange {
+            let weekdayAbbr: String
+            let openH: Int; let openM: Int
+            let closeH: Int; let closeM: Int
+            let date: Date
+        }
+
+        var parsed: [ParsedRange] = []
+
+        // TomTom actual shape: startTime: { date: "2026-06-28", hour: 11, minute: 0 }
+        for entry in timeRanges {
+            guard let startObj  = entry["startTime"] as? [String: Any],
+                  let endObj    = entry["endTime"]   as? [String: Any],
+                  let dateStr   = startObj["date"]   as? String,
+                  let openH     = startObj["hour"]   as? Int,
+                  let openM     = startObj["minute"] as? Int,
+                  let closeH    = endObj["hour"]     as? Int,
+                  let closeM    = endObj["minute"]   as? Int
+            else { continue }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            guard let date = formatter.date(from: dateStr) else { continue }
+            let weekday = cal.component(.weekday, from: date)
+            let abbr = weekdayMap[(weekday - 1) % 7]
+            parsed.append(ParsedRange(weekdayAbbr: abbr, openH: openH, openM: openM,
+                                      closeH: closeH, closeM: closeM, date: date))
+        }
+
+        // Determine isOpenNow from today's ranges
+        let todayWeekday = cal.component(.weekday, from: now)
+        let todayAbbr = weekdayMap[(todayWeekday - 1) % 7]
+        let nowH = cal.component(.hour, from: now)
+        let nowM = cal.component(.minute, from: now)
+        let nowMins = nowH * 60 + nowM
+        let isOpenNow: Bool? = parsed.filter { $0.weekdayAbbr == todayAbbr }.isEmpty ? false :
+            parsed.filter { $0.weekdayAbbr == todayAbbr }
+                  .contains { nowMins >= $0.openH * 60 + $0.openM && nowMins < $0.closeH * 60 + $0.closeM }
+
+        // Group by weekday abbr, preserving unique days seen in next 7 days
+        var dayMap: [String: [TomTomOpeningHours.TimeRange]] = [:]
+        for p in parsed {
+            let r = TomTomOpeningHours.TimeRange(open: formatHourMin(p.openH, p.openM, use24hr: use24hr),
+                                                  close: formatHourMin(p.closeH, p.closeM, use24hr: use24hr))
+            // Only keep first occurrence of each weekday (next 7 days may repeat)
+            if dayMap[p.weekdayAbbr] == nil {
+                dayMap[p.weekdayAbbr] = [r]
+            } else {
+                dayMap[p.weekdayAbbr]!.append(r)
+            }
+        }
+
+        let fullSchedule: [TomTomOpeningHours.DaySchedule] = dayAbbrs.map { abbr in
+            TomTomOpeningHours.DaySchedule(day: abbr, ranges: dayMap[abbr] ?? [])
+        }
+        return TomTomOpeningHours(schedule: fullSchedule, isOpenNow: isOpenNow)
+    }
+
+    private func formatHourMin(_ h: Int, _ m: Int, use24hr: Bool) -> String {
+        if use24hr {
+            return String(format: "%02d:%02d", h, m)
+        }
+        let suffix = h >= 12 ? "PM" : "AM"
+        let hour = h == 0 ? 12 : (h > 12 ? h - 12 : h)
+        return String(format: "%d:%02d\(suffix)", hour, m)
     }
 }
 
@@ -1295,7 +1758,22 @@ private struct NavigationOverlay: View {
 
             Spacer()
 
-            // Bottom bar — ETA + end button
+            // #1 — Arrived button when near destination
+            if vm.showArrivedButton {
+                Button { vm.endNavigation() } label: {
+                    Label("I've Arrived", systemImage: "mappin.circle.fill")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // Bottom bar — ETA + re-center + end button
             HStack(spacing: 16) {
                 if let eta = vm.navigationETA {
                     VStack(alignment: .leading, spacing: 2) {
@@ -1307,6 +1785,28 @@ private struct NavigationOverlay: View {
                     }
                 }
                 Spacer()
+                // #3 — Re-center button appears when user has scrolled away
+                if vm.userIsScrolling {
+                    Button {
+                        vm.userIsScrolling = false
+                    } label: {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.blue)
+                            .padding(10)
+                            .background(.regularMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale.combined(with: .opacity))
+                }
+                Button { vm.isCarMode = true } label: {
+                    Image(systemName: "car.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(11)
+                        .background(Color.indigo, in: Circle())
+                }
+                .buttonStyle(.plain)
                 Button { vm.endNavigation() } label: {
                     Text("End")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -1325,6 +1825,8 @@ private struct NavigationOverlay: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.showArrivedButton)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.userIsScrolling)
     }
 
     private func maneuverIcon(for instruction: String) -> Image {
@@ -1626,6 +2128,7 @@ private struct DetourResultRow: View {
 final class RouteMapViewModel: ObservableObject {
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published var userLocation: CLLocationCoordinate2D?
+    @Published var userCourse: Double = -1  // -1 = no valid heading
     @Published var originName: String = ""
     @Published var originCoordinate: CLLocationCoordinate2D?
     @Published var destinationName: String = ""
@@ -1660,6 +2163,9 @@ final class RouteMapViewModel: ObservableObject {
     @Published var exploreResults: [MKMapItem] = []
     @Published var isExploring = false
     @Published var selectedPlace: MKMapItem? = nil
+    enum ExploreSearchCenter: Hashable { case mapView, currentLocation }
+    @Published var exploreSearchCenter: ExploreSearchCenter = .mapView
+    @Published var mapViewCenter: CLLocationCoordinate2D? = nil  // updated via onMapCameraChange
 
     // Traffic
     @Published var routeTraffic: TrafficCongestion = .unknown
@@ -1679,6 +2185,7 @@ final class RouteMapViewModel: ObservableObject {
     // Isochrone / travel-time heat map
     @Published var isochroneMode = false
     @Published var isochroneCenter: CLLocationCoordinate2D? = nil
+    @Published var isochroneLocked = false   // when true, tap moves no longer reposition the pin
     @Published var isochroneTransport: IsochroneTransport = .drive
     @Published var isochronePolygons: [(minutes: Int, coords: [CLLocationCoordinate2D])] = []
     @Published var isLoadingIsochrones = false
@@ -1797,6 +2304,7 @@ final class RouteMapViewModel: ObservableObject {
     func toggleIsochroneMode() {
         isochroneMode.toggle()
         if !isochroneMode {
+            isochroneLocked = false
             isochroneCenter = nil
             isochronePolygons = []
         } else {
@@ -1806,12 +2314,17 @@ final class RouteMapViewModel: ObservableObject {
 
     // Navigation
     @Published var isNavigating = false
+    @Published var isCarMode = false
     @Published var currentStepIndex = 0
     @Published var distanceToNextStep: Double = 0
     @Published var navigationETA: Date?
     @Published var completedTripMiles: Double? = nil
     @Published var completedTripDestination: String = ""
+    @Published var showArrivedButton = false   // #1 — near-destination button
+    @Published var userIsScrolling = false      // #3 — allow free scroll
     private var navigationStartedAt: Date = Date()
+    private var totalDistanceRemaining: Double = 0   // #5 — distance-based ETA
+    private var lastCameraUpdateTime: Date = .distantPast  // #4 — throttle camera
 
     private var locationDelegate: LocationDelegate?
     private let locationManager = CLLocationManager()
@@ -1820,6 +2333,7 @@ final class RouteMapViewModel: ObservableObject {
     private var baseRouteTravelTime: Double = 0
     private let speechSynth = AVSpeechSynthesizer()
     private var lastSpokenStepIndex = -1
+    private var lastProcessedLocation: CLLocation?
 
     enum SearchTarget { case origin, destination }
 
@@ -1838,17 +2352,25 @@ final class RouteMapViewModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.userLocation = location.coordinate
+                self.userCourse = location.course
                 if self.originCoordinate == nil, self.originName.isEmpty {
                     self.cameraPosition = .region(MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 5000, longitudinalMeters: 5000))
                 }
                 if self.isNavigating {
+                    // Skip stale/duplicate GPS readings (age >5s or moved <3m)
+                    if location.timestamp.timeIntervalSinceNow < -5 { return }
+                    if let prev = self.lastProcessedLocation,
+                       location.distance(from: prev) < 3 { return }
+                    self.lastProcessedLocation = location
                     self.updateNavigationProgress(location: location)
                 }
             }
         }
         locationDelegate = delegate
         locationManager.delegate = delegate
-        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        // Low-power default when not navigating; startNavigation() ramps up
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        locationManager.distanceFilter = kCLDistanceFilterNone
     }
 
     func requestLocation() {
@@ -1999,7 +2521,7 @@ final class RouteMapViewModel: ObservableObject {
         searchTask = Task {
             let req = MKLocalSearch.Request()
             req.naturalLanguageQuery = query
-            if let region = regionForSearch() { req.region = region }
+            req.region = exploreRegion()
             req.resultTypes = .pointOfInterest
             if let results = try? await MKLocalSearch(request: req).start(), !Task.isCancelled {
                 exploreResults = results.mapItems
@@ -2008,6 +2530,17 @@ final class RouteMapViewModel: ObservableObject {
             } else if !Task.isCancelled {
                 isExploring = false
             }
+        }
+    }
+
+    func exploreRegion() -> MKCoordinateRegion {
+        switch exploreSearchCenter {
+        case .currentLocation:
+            let center = userLocation ?? mapViewCenter ?? CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+            return MKCoordinateRegion(center: center, latitudinalMeters: 5000, longitudinalMeters: 5000)
+        case .mapView:
+            let center = mapViewCenter ?? userLocation ?? CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+            return MKCoordinateRegion(center: center, latitudinalMeters: 10000, longitudinalMeters: 10000)
         }
     }
 
@@ -2058,13 +2591,27 @@ final class RouteMapViewModel: ObservableObject {
     }
 
     func startNavigation() {
-        guard activeRoute != nil else { return }
+        guard let route = activeRoute else { return }
         isNavigating = true
         currentStepIndex = 0
         lastSpokenStepIndex = -1
         navigationStartedAt = Date()
         completedTripMiles = nil
-        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        showArrivedButton = false
+        userIsScrolling = false
+        totalDistanceRemaining = route.distance
+        lastCameraUpdateTime = .distantPast
+        // Clear any explore/detour filters that were active before starting
+        activeDetourCategories = []
+        inlineDetourResults = [:]
+        exploreResults = []
+        exploreCategory = nil
+        selectedPlace = nil
+        // Accuracy sufficient for turn-by-turn without pegging the GPS radio
+        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        locationManager.distanceFilter = 8          // only fire when moved ≥8m
+        locationManager.activityType = .automotiveNavigation
+        locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.startUpdatingLocation()
         updateETA()
     }
@@ -2072,9 +2619,12 @@ final class RouteMapViewModel: ObservableObject {
     func endNavigation() {
         let endedAt = Date()
         isNavigating = false
+        isCarMode = false
         speechSynth.stopSpeaking(at: .immediate)
         locationManager.stopUpdatingLocation()
         locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        locationManager.distanceFilter = kCLDistanceFilterNone
+        locationManager.activityType = .other
         locationManager.requestLocation()
 
         guard let route = activeRoute else { return }
@@ -2133,27 +2683,59 @@ final class RouteMapViewModel: ObservableObject {
             currentStepIndex += 1
         }
 
-        // Follow camera
+        // #1 — Show "Arrived" button when within 50m of destination
+        if let destCoord = destinationCoordinate {
+            let destLoc = CLLocation(latitude: destCoord.latitude, longitude: destCoord.longitude)
+            let distToDest = location.distance(from: destLoc)
+            showArrivedButton = distToDest < 50
+            if distToDest < 20 { endNavigation(); return }
+        }
+
+        // #5 — ETA: subtract distance covered from total using actual speed
+        let speed = location.speed > 0.5 ? location.speed : (transportType == .automobile ? 11.0 : 1.4)
+        // shrink remaining distance by how far we've moved since last update
+        // (use step completion as a proxy — when we finish a step deduct its distance)
+        updateETA(speed: speed)
+
+        // #4 — Throttle camera to max once per second to eliminate jitter
+        // #3 — Don't move camera if user is scrolling
+        guard !userIsScrolling else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastCameraUpdateTime) >= 0.8 else { return }
+        lastCameraUpdateTime = now
+
+        // #2 — Use MapCamera with heading so the route direction is always "up"
         let heading = location.course >= 0 ? location.course : 0
-        let offset = 0.0008
+        // Look-ahead point so destination is visible above current location
+        let offset = 0.0006
         let rad = heading * .pi / 180
         let aheadLat = location.coordinate.latitude + offset * cos(rad)
         let aheadLon = location.coordinate.longitude + offset * sin(rad)
-        cameraPosition = .region(MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: aheadLat, longitude: aheadLon),
-            span: MKCoordinateSpan(latitudeDelta: 0.006, longitudeDelta: 0.006)
-        ))
-
-        updateETA()
+        withAnimation(.easeInOut(duration: 0.8)) {
+            cameraPosition = .camera(MapCamera(
+                centerCoordinate: CLLocationCoordinate2D(latitude: aheadLat, longitude: aheadLon),
+                distance: 600,
+                heading: heading,
+                pitch: 30
+            ))
+        }
     }
 
-    private func updateETA() {
-        guard let route = activeRoute, route.steps.count > 0 else { return }
-        let stepsDone = Double(currentStepIndex)
-        let totalSteps = Double(route.steps.count)
-        let fraction = 1.0 - (stepsDone / totalSteps)
-        let secondsRemaining = route.expectedTravelTime * max(0.0, fraction)
-        navigationETA = Date().addingTimeInterval(max(10, secondsRemaining))
+    private func updateETA(speed: Double = 11.0) {
+        guard let route = activeRoute else { return }
+        // Sum remaining step distances from current step onward
+        var distLeft: Double = distanceToNextStep
+        if currentStepIndex + 1 < route.steps.count {
+            for i in (currentStepIndex + 1)..<route.steps.count {
+                distLeft += route.steps[i].distance
+            }
+        }
+        totalDistanceRemaining = distLeft
+        // Use current speed for time estimate; fall back to route average speed
+        let avgSpeed = route.distance > 0 ? route.distance / route.expectedTravelTime : speed
+        let effectiveSpeed = max(speed, avgSpeed * 0.6)  // don't let slow GPS under-estimate too badly
+        let secondsRemaining = distLeft / effectiveSpeed
+        navigationETA = Date().addingTimeInterval(max(5, secondsRemaining))
     }
 
     func selectRoute(index: Int) {
@@ -2616,6 +3198,7 @@ final class SavedLocationsStore: ObservableObject {
 
 struct MapSettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @AppStorage("quail.map.24hrTime") private var use24hr: Bool = false
     @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var store = SavedLocationsStore.shared
     @State private var showingAdd = false
@@ -2628,12 +3211,34 @@ struct MapSettingsPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
-            showsStandaloneBar: true,
+            showsStandaloneBar: false,
+            showsDualBar: true,
             onLeadingTap: { navigator.goBack() },
             onTrailingTap: { navigator.show(.notifications) }
         ) {
             AppPageScroll {
                 VStack(alignment: .leading, spacing: 16) {
+
+                    // Time format
+                    Text("Display")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("24-hour time")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text(use24hr ? "e.g. 17:00 – 23:00" : "e.g. 5:00PM – 11:00PM")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $use24hr).labelsHidden()
+                    }
+                    .padding(14)
+                    .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
+
                     HStack {
                         Text("Saved Locations")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -2975,14 +3580,32 @@ private struct IsochronePanel: View {
                     }
                     Spacer()
                 }
-                Button {
-                    vm.isochroneCenter = nil
-                    vm.isochronePolygons = []
-                } label: {
-                    Label("Clear pin", systemImage: "mappin.slash")
-                        .font(.system(size: 12, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }.buttonStyle(.plain)
+
+                HStack(spacing: 12) {
+                    // Lock/unlock pin button
+                    Button {
+                        withAnimation(.spring(response: 0.25)) { vm.isochroneLocked.toggle() }
+                    } label: {
+                        Label(
+                            vm.isochroneLocked ? "Pin locked" : "Lock pin",
+                            systemImage: vm.isochroneLocked ? "lock.fill" : "lock.open"
+                        )
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(vm.isochroneLocked ? .white : .purple)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(vm.isochroneLocked ? Color.purple : Color.purple.opacity(0.12), in: Capsule())
+                    }.buttonStyle(.plain)
+
+                    Button {
+                        vm.isochroneCenter = nil
+                        vm.isochronePolygons = []
+                        vm.isochroneLocked = false
+                    } label: {
+                        Label("Clear", systemImage: "mappin.slash")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }.buttonStyle(.plain)
+                }
             }
         }
         .padding(14)
@@ -3006,7 +3629,8 @@ struct MapTripAnalyticsPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
-            showsStandaloneBar: true,
+            showsStandaloneBar: false,
+            showsDualBar: true,
             onLeadingTap: { navigator.goBack() },
             onTrailingTap: { navigator.show(.notifications) }
         ) {

@@ -17,15 +17,7 @@ struct ImportBatchAttributes: ActivityAttributes {
     var batchName: String
 }
 
-struct QuailCashWidgetConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "QuailCash Widget"
-    static var description = IntentDescription("Paste the widget token from Settings -> Widgets.")
-
-    @Parameter(title: "Widget Token")
-    var widgetToken: String?
-}
-
-struct QuailCashWidgetEntry: TimelineEntry {
+struct QuailWidgetEntry: TimelineEntry {
     let date: Date
     let payload: WidgetSummaryPayload
     let state: WidgetEntryState
@@ -38,47 +30,62 @@ enum WidgetEntryState: String {
     case failed
 }
 
-struct QuailCashWidgetProvider: AppIntentTimelineProvider {
-    func placeholder(in context: Context) -> QuailCashWidgetEntry {
-        QuailCashWidgetEntry(date: .now, payload: .preview, state: .live)
+private func sharedToken() -> String? {
+    let defaults = UserDefaults(suiteName: "group.quail.shared")
+    let value = defaults?.string(forKey: "quail.mobile.api.token") ?? ""
+    return value.isEmpty ? nil : value
+}
+
+struct QuailWidgetProvider: TimelineProvider {
+    func placeholder(in context: Context) -> QuailWidgetEntry {
+        QuailWidgetEntry(date: .now, payload: .preview, state: .live)
     }
 
-    func snapshot(for configuration: QuailCashWidgetConfigurationIntent, in context: Context) async -> QuailCashWidgetEntry {
-        let token = (configuration.widgetToken ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else {
-            return QuailCashWidgetEntry(date: .now, payload: .preview, state: .tokenMissing)
+    func getSnapshot(in context: Context, completion: @escaping (QuailWidgetEntry) -> Void) {
+        guard let token = sharedToken() else {
+            completion(QuailWidgetEntry(date: .now, payload: .preview, state: .tokenMissing))
+            return
         }
-        do {
-            let payload = try await WidgetAPI.fetchSummary(widgetToken: token)
-            return QuailCashWidgetEntry(date: .now, payload: payload, state: payload.entryState)
-        } catch {
-            return QuailCashWidgetEntry(date: .now, payload: .preview, state: .failed)
+        Task {
+            let entry: QuailWidgetEntry
+            do {
+                let payload = try await WidgetAPI.fetchSummary(widgetToken: token)
+                entry = QuailWidgetEntry(date: .now, payload: payload, state: payload.entryState)
+            } catch {
+                entry = QuailWidgetEntry(date: .now, payload: .preview, state: .failed)
+            }
+            completion(entry)
         }
     }
 
-    func timeline(for configuration: QuailCashWidgetConfigurationIntent, in context: Context) async -> Timeline<QuailCashWidgetEntry> {
-        let token = (configuration.widgetToken ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else {
-            let entry = QuailCashWidgetEntry(date: .now, payload: .preview, state: .tokenMissing)
-            return Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(60 * 30)))
+    func getTimeline(in context: Context, completion: @escaping (Timeline<QuailWidgetEntry>) -> Void) {
+        guard let token = sharedToken() else {
+            let entry = QuailWidgetEntry(date: .now, payload: .preview, state: .tokenMissing)
+            completion(Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(60 * 30))))
+            return
         }
-        do {
-            let payload = try await WidgetAPI.fetchSummary(widgetToken: token)
-            let entry = QuailCashWidgetEntry(date: .now, payload: payload, state: payload.entryState)
-            return Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(60 * 15)))
-        } catch {
-            let entry = QuailCashWidgetEntry(date: .now, payload: .preview, state: .failed)
-            return Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(60 * 15)))
+        Task {
+            let entry: QuailWidgetEntry
+            let policy: TimelineReloadPolicy
+            do {
+                let payload = try await WidgetAPI.fetchSummary(widgetToken: token)
+                entry = QuailWidgetEntry(date: .now, payload: payload, state: payload.entryState)
+                policy = .after(.now.addingTimeInterval(60 * 15))
+            } catch {
+                entry = QuailWidgetEntry(date: .now, payload: .preview, state: .failed)
+                policy = .after(.now.addingTimeInterval(60 * 15))
+            }
+            completion(Timeline(entries: [entry], policy: policy))
         }
     }
 }
 
-struct QuailCashHomeWidget: Widget {
-    let kind: String = "QuailCashHomeWidget"
+struct QuailHomeWidget: Widget {
+    let kind: String = "QuailHomeWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: QuailCashWidgetConfigurationIntent.self, provider: QuailCashWidgetProvider()) { entry in
-            QuailCashWidgetView(entry: entry)
+        StaticConfiguration(kind: kind, provider: QuailWidgetProvider()) { entry in
+            QuailWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
                     LinearGradient(
                         colors: [Color(red: 0.10, green: 0.11, blue: 0.13), Color(red: 0.15, green: 0.16, blue: 0.19)],
@@ -87,16 +94,16 @@ struct QuailCashHomeWidget: Widget {
                     )
                 }
         }
-        .configurationDisplayName("Finance Overview")
+        .configurationDisplayName("Quail Finance")
         .description("Safe to spend, daily limit, credit usage, and alerts.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryInline, .accessoryCircular, .accessoryRectangular])
         .contentMarginsDisabled()
     }
 }
 
-struct QuailCashWidgetView: View {
+struct QuailWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: QuailCashWidgetEntry
+    let entry: QuailWidgetEntry
 
     var body: some View {
         switch family {
@@ -122,7 +129,7 @@ struct QuailCashWidgetView: View {
 }
 
 private struct QuailCashMediumWidget: View {
-    let entry: QuailCashWidgetEntry
+    let entry: QuailWidgetEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -174,7 +181,7 @@ private struct QuailCashMediumWidget: View {
 }
 
 private struct QuailCashLargeWidget: View {
-    let entry: QuailCashWidgetEntry
+    let entry: QuailWidgetEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -230,7 +237,7 @@ private struct QuailCashLargeWidget: View {
 }
 
 private struct QuailCashSmallWidget: View {
-    let entry: QuailCashWidgetEntry
+    let entry: QuailWidgetEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -268,7 +275,7 @@ private struct QuailCashSmallWidget: View {
 }
 
 private struct QuailCashRectangularWidget: View {
-    let entry: QuailCashWidgetEntry
+    let entry: QuailWidgetEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -510,7 +517,7 @@ struct QuailCashImportLiveActivityWidget: Widget {
 @main
 struct QuailCashWidgetsBundle: WidgetBundle {
     var body: some Widget {
-        QuailCashHomeWidget()
+        QuailHomeWidget()
         QuailCashImportLiveActivityWidget()
     }
 }

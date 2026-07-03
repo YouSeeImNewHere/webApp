@@ -17,6 +17,7 @@ struct SavedPlacesPageView: View {
             selectedTab: nil,
             showsBottomBar: false,
             showsStandaloneBar: false,
+            showsDualBar: true,
             onLeadingTap: { navigator.goBack() },
             onTrailingTap: { showNewListSheet = true },
             trailingIcon: "plus"

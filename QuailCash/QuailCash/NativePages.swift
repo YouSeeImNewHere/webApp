@@ -229,15 +229,25 @@ struct PageShell<Content: View>: View {
         AppChromeFrame(
             title: title,
             badgeValue: nil,
-            selectedTab: nil,
-            showsBottomBar: false,
-            showsStandaloneBar: true,
-            onLeadingTap: { navigator.show(.dashboardSettings) },
-            onTrailingTap: { navigator.show(.notifications) }
+            selectedTab: navigator.currentTab,
+            showsBottomBar: true,
+            onLeadingTap: { navigator.show(.settings) },
+            onTrailingTap: { navigator.show(.notifications) },
+            onSelectTab: { tab in navigateTab(tab) }
         ) {
             AppPageScroll(refreshAction: refreshAction) {
                 content
             }
+        }
+    }
+
+    private func navigateTab(_ tab: BottomTab) {
+        switch tab {
+        case .home: navigator.setRoot(.home)
+        case .spending: navigator.show(.spending)
+        case .all: navigator.show(.allTransactions)
+        case .analytics: navigator.show(.analytics)
+        case .recurring: navigator.show(.recurring)
         }
     }
 }
@@ -291,15 +301,35 @@ private final class DashboardAuthModel: ObservableObject {
     }
 }
 
+private struct DashboardApp {
+    let title: String
+    let icon: String
+    let accent: Color
+    let onTap: () -> Void
+}
+
 private struct DashboardPageView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @StateObject private var authModel = DashboardAuthModel()
 
+    private var apps: [DashboardApp] {
+        let palette = QuailTheme.palette(for: themeSelection)
+        return [
+            DashboardApp(title: "Cash",     icon: "creditcard.fill",                       accent: palette.accent,    onTap: { navigator.setRoot(.home) }),
+            DashboardApp(title: "Car",      icon: "car.fill",                              accent: .orange,           onTap: { navigator.setRoot(.vehicle) }),
+            DashboardApp(title: "Fitness",  icon: "figure.strengthtraining.traditional",   accent: palette.positive,  onTap: { navigator.setRoot(.fitness) }),
+            DashboardApp(title: "Maps",     icon: "map.fill",                              accent: .blue,             onTap: { navigator.setRoot(.map) }),
+            DashboardApp(title: "Admin",    icon: "server.rack",                           accent: .purple,           onTap: { navigator.show(.adminDashboard) }),
+            DashboardApp(title: "Bugs",     icon: "ladybug.fill",                          accent: .red,              onTap: { navigator.show(.bugLogger) }),
+            DashboardApp(title: "Projects", icon: "folder.fill",                           accent: .teal,             onTap: { navigator.show(.projects) }),
+        ]
+    }
+
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
         AppChromeFrame(
-            title: "Dashboard",
+            title: "Quail",
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
@@ -307,75 +337,25 @@ private struct DashboardPageView: View {
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: { _ in }
         ) {
-            AppPageScroll(contentPadding: 14) {
-                VStack(alignment: .leading, spacing: 10) {
-                    if authModel.isSignedIn == false {
-                        signInCard(palette: palette)
-                    }
-
-                    Text("Launch the part of the app you want to use.")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-
-                    dashboardLauncherCard(
-                        title: "Quail Cash",
-                        subtitle: "Budget, spending, accounts, recurring, and reporting.",
-                        icon: "creditcard.fill",
-                        accent: palette.accent,
-                        onTap: { navigator.setRoot(.home) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Quail Car",
-                        subtitle: "Mileage, maintenance, inspections, and operating costs.",
-                        icon: "car.fill",
-                        accent: Color.orange,
-                        onTap: { navigator.setRoot(.vehicle) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Quail Fitness",
-                        subtitle: "Workouts, body metrics, progressions, and recovery.",
-                        icon: "figure.strengthtraining.traditional",
-                        accent: palette.positive,
-                        onTap: { navigator.setRoot(.fitness) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Quail Maps",
-                        subtitle: "Route planning with smart detour suggestions along the way.",
-                        icon: "map.fill",
-                        accent: Color.blue,
-                        onTap: { navigator.setRoot(.map) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Quail Admin",
-                        subtitle: "Render services and Neon database health at a glance.",
-                        icon: "server.rack",
-                        accent: Color.purple,
-                        onTap: { navigator.show(.adminDashboard) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Quail Bugs",
-                        subtitle: "Screenshot, annotate, and track bugs as you find them.",
-                        icon: "ladybug.fill",
-                        accent: Color.red,
-                        onTap: { navigator.show(.bugLogger) }
-                    )
-
-                    dashboardLauncherCard(
-                        title: "Quail Projects",
-                        subtitle: "Notes, decisions, budgets, and detailed project planning.",
-                        icon: "folder.fill",
-                        accent: Color.teal,
-                        onTap: { navigator.show(.projects) }
-                    )
-
-                    DashboardQuickGlanceSection()
+            VStack(spacing: 24) {
+                if authModel.isSignedIn == false {
+                    signInBanner(palette: palette).padding(.horizontal, 16).padding(.top, 8)
                 }
+
+                // Horizontal quick-glance strip
+                DashboardGlanceStrip()
+
+                // App icon grid
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4), spacing: 28) {
+                    ForEach(apps, id: \.title) { app in
+                        AppIconButton(app: app)
+                    }
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
             }
+            .padding(.top, 8)
         }
         .sheet(isPresented: $authModel.showAuthSheet) {
             AuthSessionView(
@@ -388,84 +368,59 @@ private struct DashboardPageView: View {
         .task { await authModel.checkAuth() }
     }
 
-    private func signInCard(palette: QuailThemePalette) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "person.crop.circle.badge.exclamationmark")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(palette.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("You're not signed in")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("Sign in to access Quail Cash and sync your data.")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            Button {
-                authModel.showAuthSheet = true
-            } label: {
-                Text("Sign In")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .foregroundStyle(palette.primaryButtonText)
-            }
-            .buttonStyle(.plain)
+    private func signInBanner(palette: QuailThemePalette) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(palette.accent)
+            Text("Not signed in")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Spacer()
+            Button("Sign In") { authModel.showAuthSheet = true }
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primaryButtonText)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(palette.primaryButton, in: Capsule())
         }
-        .padding(16)
-        .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.accent.opacity(0.4), lineWidth: 1))
+        .padding(12)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.accent.opacity(0.3), lineWidth: 1))
     }
+}
 
-    private func dashboardLauncherCard(
-        title: String,
-        subtitle: String,
-        icon: String,
-        accent: Color,
-        onTap: @escaping () -> Void
-    ) -> some View {
-        let palette = QuailTheme.palette(for: themeSelection)
-        return Button(action: onTap) {
-            HStack(alignment: .center, spacing: 14) {
+private struct AppIconButton: View {
+    let app: DashboardApp
+
+    var body: some View {
+        Button(action: app.onTap) {
+            VStack(spacing: 8) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(accent.opacity(0.16))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(accent)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(app.accent.gradient)
+                        .frame(width: 62, height: 62)
+                        .shadow(color: app.accent.opacity(0.35), radius: 6, y: 3)
+                    Image(systemName: app.icon)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                Text(app.title)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
-
 }
 
-private struct DashboardQuickGlanceSection: View {
+// MARK: - Horizontal glance strip
+
+private func relativeShort(_ date: Date) -> String {
+    let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
+    return f.localizedString(for: date, relativeTo: Date())
+}
+
+private struct DashboardGlanceStrip: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @ObservedObject private var fit = FitnessStore.shared
     @ObservedObject private var car = VehicleStore.shared
@@ -473,65 +428,57 @@ private struct DashboardQuickGlanceSection: View {
 
     var body: some View {
         let palette = QuailTheme.palette(for: themeSelection)
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Quick Glance")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-
-            glanceCard(icon: "creditcard.fill", title: "Quail Cash",
-                       color: palette.accent, rows: financeRows, palette: palette)
-            glanceCard(icon: "car.fill", title: "Quail Car",
-                       color: .orange, rows: carRows, palette: palette)
-            glanceCard(icon: "figure.strengthtraining.traditional", title: "Quail Fitness",
-                       color: palette.positive, rows: fitnessRows, palette: palette)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                glanceCard(icon: "creditcard.fill", title: "Cash", color: palette.accent, rows: financeRows(palette: palette), palette: palette)
+                glanceCard(icon: "car.fill", title: "Car", color: .orange, rows: carRows, palette: palette)
+                glanceCard(icon: "figure.strengthtraining.traditional", title: "Fitness", color: palette.positive, rows: fitnessRows, palette: palette)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
         }
-        .padding(16)
-        .background(palette.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.border, lineWidth: 1))
         .task { await cash.load() }
     }
 
     private func glanceCard(icon: String, title: String, color: Color, rows: [(String, String)], palette: QuailThemePalette) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(color)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(color)
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
-                    .tracking(0.4)
+                    .tracking(0.5)
             }
-            VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 ForEach(rows, id: \.0) { label, value in
-                    HStack(alignment: .firstTextBaseline) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(label)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
+                        Spacer(minLength: 4)
                         Text(value)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .lineLimit(1)
                     }
                 }
             }
         }
-        .padding(12)
-        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+        .padding(14)
+        .frame(width: 200)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
-    private var financeRows: [(String, String)] {
+    private func financeRows(palette: QuailThemePalette) -> [(String, String)] {
         let spendText: String = {
             guard let s = cash.safeToSpend else { return "—" }
             return s < 0 ? "-\(moneyValue(abs(s)))" : moneyValue(s)
         }()
-        let billsText = cash.billsRemaining.map { moneyValue($0) } ?? "—"
         let days = cash.daysLeft
         return [
             ("Safe to spend", spendText),
-            ("Month closes", days == 0 ? "Today" : "in \(days) day\(days == 1 ? "" : "s")"),
-            ("Bills remaining", billsText),
+            ("Month closes", days == 0 ? "Today" : "in \(days)d"),
+            ("Bills remaining", cash.billsRemaining.map { moneyValue($0) } ?? "—"),
         ]
     }
 
@@ -539,45 +486,26 @@ private struct DashboardQuickGlanceSection: View {
         let mileage = car.profile.currentMileage
         let lastFuel = car.fuelRecords.max(by: { $0.date < $1.date })
         let openCount = car.openIssues.count
-        let dueCount = car.inspectionItems.filter { $0.isDue }.count
-
-        var rows: [(String, String)] = []
-        rows.append(("Odometer", mileage > 0 ? "\(mileage.formatted()) mi" : "—"))
-        rows.append(("Last fillup", lastFuel.map { relativeShort($0.date) } ?? "No records"))
-        if openCount > 0 {
-            rows.append(("Open issues", "\(openCount)"))
-        } else if dueCount > 0 {
-            rows.append(("Inspections due", "\(dueCount)"))
-        } else {
-            rows.append(("Status", "All clear"))
-        }
-        return rows
-    }
-
-    private var fitnessRows: [(String, String)] {
-        let cal = Calendar.current
-        let now = Date()
-        let sorted = fit.sessions.sorted { $0.date > $1.date }
-        let weekCount = sorted.filter { cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }.count
-        let totalSetsThisWeek = sorted
-            .filter { cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }
-            .reduce(0) { $0 + $1.totalSets }
-        let lastDate = sorted.first?.date
-        let activeGoals = fit.goals.filter { $0.targetDate > now }.count
-
         return [
-            ("This week", weekCount == 0 ? "Rest week" : "\(weekCount) session\(weekCount == 1 ? "" : "s"), \(totalSetsThisWeek) sets"),
-            ("Last workout", lastDate.map { relativeShort($0) } ?? "—"),
-            ("Active goals", activeGoals == 0 ? "None" : "\(activeGoals)"),
+            ("Odometer", mileage > 0 ? "\(mileage.formatted()) mi" : "—"),
+            ("Last fillup", lastFuel.map { relativeShort($0.date) } ?? "—"),
+            ("Issues", openCount == 0 ? "None" : "\(openCount) open"),
         ]
     }
 
-    private func relativeShort(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+    private var fitnessRows: [(String, String)] {
+        let cal = Calendar.current; let now = Date()
+        let sorted = fit.sessions.sorted { $0.date > $1.date }
+        let weekCount = sorted.filter { cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }.count
+        let lastDate = sorted.first?.date
+        return [
+            ("This week", weekCount == 0 ? "Rest" : "\(weekCount) session\(weekCount == 1 ? "" : "s")"),
+            ("Last workout", lastDate.map { relativeShort($0) } ?? "—"),
+            ("Active goals", "\(fit.goals.filter { $0.targetDate > now }.count)"),
+        ]
     }
 }
+
 
 private struct DashboardModulePlaceholderPageView: View {
     @EnvironmentObject private var navigator: AppNavigator
@@ -639,11 +567,42 @@ private struct DashboardModulePlaceholderPageView: View {
 
 // MARK: - Dashboard Settings Page
 
+@MainActor
+private func dashboardSingleTab(palette: QuailThemePalette) -> some View {
+    _DashboardSingleTab(palette: palette)
+}
+
+private struct _DashboardSingleTab: View {
+    let palette: QuailThemePalette
+    @EnvironmentObject private var navigator: AppNavigator
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(palette.barDivider).frame(height: 1)
+            Button {
+                navigator.setRoot(.dashboard)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Dashboard")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(palette.chromeIconForeground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(palette.barBackground)
+            }
+            .buttonStyle(.plain)
+        }
+        .safeAreaPadding(.bottom)
+        .background(palette.barBackground)
+    }
+}
+
 private struct DashboardSettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @EnvironmentObject private var navigator: AppNavigator
-
-    @State private var googleStatusText = "Checking..."
     @State private var showGoogleAuth = false
 
     private let themes: [(String, String)] = [
@@ -676,16 +635,14 @@ private struct DashboardSettingsPageView: View {
                         }
 
                         dsSection(title: "Google Gmail") {
-                            HStack(spacing: 12) {
+                            HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("OAuth connection").font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text(googleStatusText).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                                    Text("Connect your Gmail to enable email transaction parsing.").font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Button { showGoogleAuth = true } label: {
-                                    dsChip(googleStatusText.contains("Connected") ? "Reconnect" : "Connect Google")
-                                }
-                                .buttonStyle(.plain)
+                                Button { showGoogleAuth = true } label: { dsChip("Connect") }
+                                    .buttonStyle(.plain)
                             }
                         }
 
@@ -719,49 +676,19 @@ private struct DashboardSettingsPageView: View {
                     }
                 }
 
-                dashboardAppBar(palette: palette)
+                dashboardSingleTab(palette: palette)
             }
         }
-        .task { await loadGoogle() }
         .sheet(isPresented: $showGoogleAuth) {
             AuthSessionView(
                 startURL: AppConfig.url(path: "/gmail/oauth/start", queryItems: [
                     URLQueryItem(name: "next", value: "/settings")
                 ]),
                 callbackScheme: AppConfig.callbackScheme,
-                onAuthenticated: { Task { await loadGoogle() } },
-                onCancel: {}
+                onAuthenticated: { showGoogleAuth = false },
+                onCancel: { showGoogleAuth = false }
             )
         }
-    }
-
-    private func dashboardAppBar(palette: QuailThemePalette) -> some View {
-        HStack(spacing: 0) {
-            appBarTab(icon: "square.grid.2x2.fill", label: "Dashboard", palette: palette) { navigator.setRoot(.dashboard) }
-            appBarTab(icon: "creditcard.fill", label: "Cash", palette: palette) { navigator.setRoot(.home) }
-            appBarTab(icon: "car.fill", label: "Car", palette: palette) { navigator.setRoot(.vehicle) }
-            appBarTab(icon: "figure.strengthtraining.traditional", label: "Fitness", palette: palette) { navigator.setRoot(.fitness) }
-        }
-        .frame(height: 56)
-        .background(palette.barBackground)
-        .overlay(Rectangle().fill(palette.barDivider).frame(height: 1), alignment: .top)
-        .safeAreaPadding(.bottom)
-    }
-
-    private func appBarTab(icon: String, label: String, palette: QuailThemePalette, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(palette.chromeIconForeground.opacity(0.72))
-                Text(label)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(palette.chromeIconForeground.opacity(0.72))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-        }
-        .buttonStyle(.plain)
     }
 
     private func dsSection<C: View>(title: String, @ViewBuilder content: () -> C) -> some View {
@@ -787,313 +714,251 @@ private struct DashboardSettingsPageView: View {
             .background(palette.primaryButton, in: Capsule(style: .continuous))
     }
 
-    private func loadGoogle() async {
-        do {
-            let out = try await SettingsNetworking.fetch("/gmail/oauth/status", as: SettingsGoogleOAuthStatusPayload.self)
-            googleStatusText = out.connected == true ? (out.email.flatMap { "Connected as \($0)" } ?? "Connected") : "Not connected"
-        } catch {
-            googleStatusText = "Status unavailable"
-        }
-    }
 }
 
 // MARK: - Settings Page
 
 private struct SettingsPageView: View {
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @EnvironmentObject private var navigator: AppNavigator
 
-    @State private var setupProgressText = "Loading setup progress..."
+    @State private var setupProgressText = "Loading…"
     @State private var setupProgressSubtext = ""
-    @State private var cacheVersionsText = "Loading current versions..."
-    @State private var viewModeText = "Loading view mode..."
+    @State private var setupProgressPercent = 0
+    @State private var cacheVersionsText = "Loading…"
     @State private var isOwner = false
     @State private var showAdminPreview = false
-    @State private var layoutStatus = ""
+    @State private var viewModeText = "Loading…"
     @State private var activeInfo: SettingsInfo?
     @State private var isRefreshingCache = false
-    @State private var isLoading = true
-    @State private var setupProgressPercent = 0
+
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
 
     var body: some View {
-        PageShell(title: "App Settings", subtitle: "Cache, rules, setup, and admin tools") {
-            VStack(alignment: .leading, spacing: 12) {
+        PageShell(title: "Settings", subtitle: "") {
+            VStack(alignment: .leading, spacing: 20) {
+
+                // MARK: Notifications
                 settingsSection(title: "Notifications") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .center, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Smart notifications")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text("Spending power, overspending protection, and savings nudges.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            NavigationLink(value: AppRoute.notificationSettings) {
-                                settingsActionChip("Open Page")
-                            }
-                            .buttonStyle(.plain)
+                    settingsRow(
+                        icon: "bell.badge.fill", iconColor: .red,
+                        title: "Smart Notifications",
+                        subtitle: "Spending power, overspending alerts, and savings nudges"
+                    ) { navigator.show(.notificationSettings) }
+                }
+
+                // MARK: Layout & Cache
+                settingsSection(title: "Home") {
+                    settingsRow(
+                        icon: "square.grid.2x2.fill", iconColor: palette.accent,
+                        title: "Customize Layout",
+                        subtitle: "Rearrange and show/hide cards on the home screen"
+                    ) { activeInfo = .homeLayout }
+
+                    Divider().padding(.leading, 60)
+
+                    settingsRow(
+                        icon: "arrow.clockwise", iconColor: .orange,
+                        title: "Refresh Cache",
+                        subtitle: cacheVersionsText
+                    ) { Task { await refreshCache() } }
+                    .overlay(alignment: .trailing) {
+                        if isRefreshingCache {
+                            ProgressView().scaleEffect(0.75).padding(.trailing, 18)
                         }
                     }
                 }
 
-                settingsSection(title: "Home Page Layout") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 8) {
-                            Button {
-                                activeInfo = .homeLayout
-                            } label: { settingsActionChip("Customize Home Layout") }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                layoutStatus = "Layout reset is managed on the home screen."
-                            } label: { settingsActionChip("Reset layout to default") }
-                            .buttonStyle(.plain)
-                        }
-
-                        Text("Tip: tap Customize Home Layout, drag cards/sections around, then press Done.")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-
-                        if !layoutStatus.isEmpty {
-                            Text(layoutStatus)
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Divider().opacity(0.14)
-
-                        HStack(alignment: .center, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Cache refresh")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text("Force rebuild and push latest home and widget values into cache now.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                Task { await refreshCache() }
-                            } label: {
-                                settingsActionChip(isRefreshingCache ? "Refreshing..." : "Cache Refresh")
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isRefreshingCache)
-                        }
-
-                        Text(cacheVersionsText)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
+                // MARK: Widgets
                 settingsSection(title: "Widgets") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .center, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Widget setup")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                Text("Configure iOS widget workflows and preview data.")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button { activeInfo = .widgetSetup } label: {
-                                settingsActionChip("Open Page")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    settingsRow(
+                        icon: "apps.iphone", iconColor: .purple,
+                        title: "iOS Widget Setup",
+                        subtitle: "Configure home screen widget workflows and preview data"
+                    ) { activeInfo = .widgetSetup }
                 }
 
+                // MARK: Setup
                 settingsSection(title: "Initial Setup") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        setupProgressView
-
-                        HStack(spacing: 8) {
-                            Button { activeInfo = .setupWizard } label: { settingsActionChip("Open Wizard") }
-                            Button { activeInfo = .parserWizard } label: { settingsActionChip("Parser Wizard") }
-                            Button { activeInfo = .externalApps } label: { settingsActionChip("External Apps") }
+                    // Progress bar
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(setupProgressText)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Text("\(setupProgressPercent)%")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(setupProgressPercent == 100 ? .green : palette.accent)
                         }
-                        .buttonStyle(.plain)
-
-                        HStack(spacing: 8) {
-                            NavigationLink(value: AppRoute.csvImport) { settingsActionChip("CSV Import") }
-                            NavigationLink(value: AppRoute.bankInfo) { settingsActionChip("Bank Info") }
-                        }
-                        .buttonStyle(.plain)
-
-                        Text(setupProgressSubtext)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                settingsSection(title: "Rules") {
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Category regex rules")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            Text("View matches, test regex, re-apply, disable, or delete rules.")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(palette.border).frame(height: 8)
+                                Capsule()
+                                    .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                                    .frame(width: geo.size.width * CGFloat(min(100, setupProgressPercent)) / 100, height: 8)
+                            }
+                        }.frame(height: 8)
+                        if !setupProgressSubtext.isEmpty {
+                            Text(setupProgressSubtext)
+                                .font(.system(size: 11, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        NavigationLink(value: AppRoute.ruleBuilder) {
-                            settingsActionChip("Open Page")
-                        }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.bottom, 4)
+
+                    Divider().padding(.leading, 0)
+
+                    settingsRow(
+                        icon: "wand.and.stars", iconColor: .indigo,
+                        title: "Setup Wizard",
+                        subtitle: "Walk through the initial budget and account configuration"
+                    ) { activeInfo = .setupWizard }
+
+                    Divider().padding(.leading, 60)
+
+                    settingsRow(
+                        icon: "envelope.badge.fill", iconColor: .teal,
+                        title: "Email Parser Wizard",
+                        subtitle: "Configure automatic transaction parsing from email"
+                    ) { activeInfo = .parserWizard }
+
+                    Divider().padding(.leading, 60)
+
+                    settingsRow(
+                        icon: "square.and.arrow.down.fill", iconColor: .green,
+                        title: "CSV Import",
+                        subtitle: "Import transactions from a bank CSV file"
+                    ) { navigator.show(.csvImport) }
+
+                    Divider().padding(.leading, 60)
+
+                    settingsRow(
+                        icon: "building.columns.fill", iconColor: .blue,
+                        title: "Bank Info",
+                        subtitle: "View and manage connected bank accounts"
+                    ) { navigator.show(.bankInfo) }
+
+                    Divider().padding(.leading, 60)
+
+                    settingsRow(
+                        icon: "apps.iphone.badge.plus", iconColor: .gray,
+                        title: "External Apps",
+                        subtitle: "Connect third-party apps and integrations"
+                    ) { activeInfo = .externalApps }
                 }
 
+                // MARK: Rules
+                settingsSection(title: "Rules") {
+                    settingsRow(
+                        icon: "text.badge.checkmark", iconColor: .cyan,
+                        title: "Category Rules",
+                        subtitle: "View matches, test regex, re-apply, disable, or delete rules"
+                    ) { navigator.show(.ruleBuilder) }
+                }
+
+                // MARK: Admin (owner only)
                 if isOwner {
                     settingsSection(title: "Admin") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .center, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("View mode")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text(viewModeText)
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button {
-                                    showAdminPreview.toggle()
-                                    viewModeText = showAdminPreview ? "Previewing as non-admin." : "Admin view."
-                                } label: {
-                                    settingsActionChip(showAdminPreview ? "Return to Admin View" : "Preview as Non-Admin")
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            Divider().opacity(0.14)
-
-                            HStack(alignment: .center, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Owner admin console")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text("Tenant management, pending user approvals, and tenant data purge.")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button {
-                                    activeInfo = .adminConsole
-                                } label: {
-                                    settingsActionChip("Open Admin Console")
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            Divider().opacity(0.14)
-
-                            HStack(alignment: .center, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Widget setup links")
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text("Open platform-specific widget setup pages directly.")
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                HStack(spacing: 8) {
-                                    Button { activeInfo = .widgetSetup } label: { settingsActionChip("iOS Widgets") }
-                                    Button { activeInfo = .externalApps } label: { settingsActionChip("Android Widgets") }
-                                }
-                                .buttonStyle(.plain)
-                            }
+                        settingsRow(
+                            icon: "eye.fill", iconColor: .secondary,
+                            title: showAdminPreview ? "Return to Admin View" : "Preview as Non-Admin",
+                            subtitle: viewModeText
+                        ) {
+                            showAdminPreview.toggle()
+                            viewModeText = showAdminPreview ? "Previewing as non-admin" : "Admin view"
                         }
+
+                        Divider().padding(.leading, 60)
+
+                        settingsRow(
+                            icon: "shield.lefthalf.filled", iconColor: .red,
+                            title: "Owner Admin Console",
+                            subtitle: "Tenant management, user approvals, and data purge"
+                        ) { activeInfo = .adminConsole }
                     }
                 }
             }
         }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            await loadSettings()
-        }
-        .sheet(item: $activeInfo) { info in
-            SettingsInfoSheetView(info: info)
-        }
+        .task { await loadSettings() }
+        .sheet(item: $activeInfo) { SettingsInfoSheetView(info: $0) }
     }
 
+    // MARK: - Reusable components
+
     private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        let palette = QuailTheme.palette(for: themeSelection)
-        return VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-                .tracking(0.6)
-            VStack(alignment: .leading, spacing: 12) {
+                .tracking(0.5)
+                .padding(.leading, 4)
+            VStack(spacing: 0) {
                 content()
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
         }
     }
 
-    private var setupProgressView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(setupProgressText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                Spacer()
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule(style: .continuous)
-                        .fill(Color.black.opacity(0.08))
-                        .frame(height: 10)
-                    Capsule(style: .continuous)
-                        .fill(LinearGradient(colors: [Color.green, Color.mint], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(0, geo.size.width * CGFloat(max(0, min(100, setupProgressPercent))) / 100.0), height: 10)
+    private func settingsRow(icon: String, iconColor: Color, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(iconColor.opacity(0.15))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(iconColor)
                 }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tertiary)
             }
-            .frame(height: 10)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
-    private func settingsActionChip(_ title: String) -> some View {
-        let palette = QuailTheme.palette(for: themeSelection)
-        return Text(title)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .foregroundStyle(palette.primaryButtonText)
-            .background(palette.primaryButton, in: Capsule(style: .continuous))
-    }
+    // MARK: - Data loading
 
     private func loadSettings() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            let setupOut = try await SettingsNetworking.fetch("/settings/initial-setup-status", as: SettingsInitialSetupPayload.self)
-            setupProgressPercent = setupOut.percent ?? 0
-            let counts = setupOut.counts
-            setupProgressText = "\(setupProgressPercent)% complete (\(counts?.requirementsDone ?? 0)/\(counts?.requirementsTotal ?? 0) setup checks)"
-            setupProgressSubtext = "CSV mapping: \(counts?.accountsWithCsvMapping ?? 0)/\(counts?.accountsTotal ?? 0) | Email parser: \(counts?.accountsWithParser ?? 0)/\(counts?.accountsExpectEmail ?? 0)"
-        } catch {
+        async let setupFetch: SettingsInitialSetupPayload? = try? SettingsNetworking.fetch("/settings/initial-setup-status", as: SettingsInitialSetupPayload.self)
+        async let cacheFetch: SettingsCacheVersionsPayload? = try? SettingsNetworking.fetch("/settings/cache-versions", as: SettingsCacheVersionsPayload.self)
+        async let flagsFetch: SettingsViewFlagsPayload? = try? SettingsNetworking.fetch("/settings/view-flags", as: SettingsViewFlagsPayload.self)
+
+        let (setup, cache, flags) = await (setupFetch, cacheFetch, flagsFetch)
+
+        if let s = setup {
+            setupProgressPercent = s.percent ?? 0
+            let c = s.counts
+            setupProgressText = "\(c?.requirementsDone ?? 0) of \(c?.requirementsTotal ?? 0) setup checks complete"
+            setupProgressSubtext = "CSV mapping: \(c?.accountsWithCsvMapping ?? 0)/\(c?.accountsTotal ?? 0) · Email parser: \(c?.accountsWithParser ?? 0)/\(c?.accountsExpectEmail ?? 0)"
+        } else {
             setupProgressText = "Setup progress unavailable"
-            setupProgressSubtext = "Could not load setup completion status."
         }
 
-        do {
-            let cacheOut = try await SettingsNetworking.fetch("/settings/cache-versions", as: SettingsCacheVersionsPayload.self)
-            cacheVersionsText = "Current versions: Home v\(cacheOut.homeSnapshotVersion ?? 0), Widget v\(cacheOut.widgetVersion ?? 0)."
-        } catch {
-            cacheVersionsText = "Current versions unavailable."
+        if let cv = cache {
+            cacheVersionsText = "Home v\(cv.homeSnapshotVersion ?? 0) · Widget v\(cv.widgetVersion ?? 0)"
+        } else {
+            cacheVersionsText = "Tap to refresh cache"
         }
 
-        do {
-            let flagsOut = try await SettingsNetworking.fetch("/settings/view-flags", as: SettingsViewFlagsPayload.self)
-            isOwner = flagsOut.isOwner ?? false
-            viewModeText = isOwner ? "Admin view." : "Non-admin view."
-        } catch {
-            isOwner = false
-            viewModeText = "View mode unavailable."
+        if let f = flags {
+            isOwner = f.isOwner ?? false
+            viewModeText = isOwner ? "Admin view" : "Non-admin view"
         }
     }
 
@@ -1101,11 +966,10 @@ private struct SettingsPageView: View {
         guard !isRefreshingCache else { return }
         isRefreshingCache = true
         defer { isRefreshingCache = false }
-        do {
-            let result = try await SettingsNetworking.fetch("/settings/refresh-home-widget-cache", method: "POST", as: SettingsRefreshCachePayload.self)
-            cacheVersionsText = "Cache refreshed. Home v\(result.homeSnapshotVersion ?? 0), Widget v\(result.widgetVersion ?? 0)."
-        } catch {
-            cacheVersionsText = "Refresh failed: \(error.localizedDescription)"
+        if let result = try? await SettingsNetworking.fetch("/settings/refresh-home-widget-cache", method: "POST", as: SettingsRefreshCachePayload.self) {
+            cacheVersionsText = "Refreshed · Home v\(result.homeSnapshotVersion ?? 0) · Widget v\(result.widgetVersion ?? 0)"
+        } else {
+            cacheVersionsText = "Refresh failed — tap to retry"
         }
     }
 }
@@ -1429,12 +1293,15 @@ private struct NotificationsPageView: View {
 
     private var isStandaloneContext: Bool {
         switch navigator.rootRoute {
-        case .map, .adminDashboard: return true
+        case .map, .adminDashboard, .dashboard: return true
         default: return false
         }
     }
 
+    private var isDashboardContext: Bool { navigator.rootRoute == .dashboard }
+
     var body: some View {
+        let palette = QuailTheme.palette(for: themeSelection)
         AppChromeFrame(
             title: "Notifications",
             badgeValue: nil,
@@ -1451,6 +1318,7 @@ private struct NotificationsPageView: View {
                 }
             }
         ) {
+            VStack(spacing: 0) {
             AppPageScroll(refreshAction: { await model.load() }) {
             Group {
                 if model.isLoading {
@@ -1518,6 +1386,10 @@ private struct NotificationsPageView: View {
                         }
                     }
                 }
+            }
+            }
+            if isDashboardContext {
+                dashboardSingleTab(palette: palette)
             }
             }
         }
@@ -2964,11 +2836,13 @@ private struct CategoryPageView: View {
             .presentationDetents([.medium, .large])
         }
         .sheet(item: $activeTransaction) { tx in
-            TransactionInspectSheetView(
+            SharedTransactionInspectPopupView(
                 transaction: tx,
                 onDismiss: { activeTransaction = nil },
                 onRefresh: { Task { await model.reload() } }
             )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 

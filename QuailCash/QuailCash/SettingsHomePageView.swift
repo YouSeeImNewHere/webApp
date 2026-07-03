@@ -13,7 +13,6 @@ struct SettingsHomePageView: View {
     @AppStorage("quail.home.layout.customized") private var homeLayoutCustomized: Bool = false
 
     @StateObject private var model = SettingsHomeViewModel()
-    @State private var showGoogleAuth = false
     @State private var activeSheet: SettingsSheet?
     @State private var backfillDaysText = "7"
     @State private var backfillIncludeProcessed = true
@@ -39,202 +38,183 @@ struct SettingsHomePageView: View {
             title: "Settings",
             badgeValue: nil,
             selectedTab: navigator.currentTab,
+            showsBottomBar: true,
             onLeadingTap: { navigator.popToRoot() },
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: { tab in
                 switch tab {
-                case .home:
-                    navigator.popToRoot()
-                case .spending:
-                    navigator.show(.spending)
-                case .all:
-                    navigator.show(.allTransactions)
-                case .analytics:
-                    navigator.show(.analytics)
-                case .recurring:
-                    navigator.show(.recurring)
+                case .home: navigator.popToRoot()
+                case .spending: navigator.show(.spending)
+                case .all: navigator.show(.allTransactions)
+                case .analytics: navigator.show(.analytics)
+                case .recurring: navigator.show(.recurring)
                 }
             }
         ) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 20) {
+
+                    // MARK: Appearance
                     settingsSection(title: "Appearance") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .bottom, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Color scheme")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    Picker("Color scheme", selection: $themeSelection) {
-                                        ForEach(themes, id: \.0) { theme in
-                                            Text(theme.1).tag(theme.0)
-                                        }
-                                    }
-                                    .pickerStyle(.menu)
-                                    .tint(palette.secondaryButtonText)
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 40)
-                                    .background(palette.secondaryButton, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
-                                }
-                                Spacer(minLength: 0)
+                        HStack(spacing: 14) {
+                            settingsIconBadge("paintbrush.fill", color: palette.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Color scheme")
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                Text("Controls the app's visual theme")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
                             }
-                            settingsMuted("Tip: System follows your device theme.")
+                            Spacer()
+                            Picker("", selection: $themeSelection) {
+                                ForEach(themes, id: \.0) { Text($1).tag($0) }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(palette.accent)
                         }
+                        .padding(.horizontal, 14).padding(.vertical, 12)
                     }
 
-                    settingsSection(title: "Google Gmail") {
-                        settingsSplitRow(
-                            title: "OAuth connection",
-                            subtitle: model.googleStatusText,
-                            primaryAction: {
-                                showGoogleAuth = true
-                            },
-                            primaryLabel: model.googleStatusText.hasPrefix("Connected") ? "Connect Google" : "Connect Google"
-                        )
-                    }
-
+                    // MARK: Notifications
                     settingsSection(title: "Notifications") {
-                        settingsSplitRow(
-                            title: "Smart notifications",
-                            subtitle: "Spending power, overspending protection, and savings nudges.",
-                            primaryAction: { navigator.show(.notificationSettings) },
-                            primaryLabel: "Open Page"
-                        )
+                        settingsRow(icon: "bell.badge.fill", color: .red,
+                            title: "Smart Notifications",
+                            subtitle: "Spending power, overspending alerts, and savings nudges"
+                        ) { navigator.show(.notificationSettings) }
                     }
 
-                    settingsSection(title: "Home Page Layout") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 8) {
-                                Button {
-                                    activeSheet = .homeLayout
-                                } label: {
-                                    settingsPrimaryButton("Customize Home Layout", width: 164)
-                                }
-                                .buttonStyle(.plain)
-                                Button {
-                                    homeLayoutCustomized = false
-                                    model.layoutStatus = "Layout reset to default."
-                                } label: {
-                                    settingsSecondaryButton("Reset layout to default", width: 164)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            settingsMuted("Tip: tap Customize Home Layout, drag cards/sections around, then press Done.")
-                            if !model.layoutStatus.isEmpty {
-                                settingsMuted(model.layoutStatus)
-                            }
-                            Divider().opacity(0.18)
-                            settingsSplitRow(
-                                title: "Cache refresh",
-                                subtitle: "Force rebuild and push latest home and widget values into cache now.",
-                                primaryAction: { Task { await model.refreshCache() } },
-                                primaryLabel: model.isRefreshingCache ? "Refreshing..." : "Cache Refresh",
-                                primaryDisabled: model.isRefreshingCache
-                            )
-                            settingsMuted(model.cacheVersionsText)
-                        }
+                    // MARK: Home
+                    settingsSection(title: "Home") {
+                        settingsRow(icon: "square.grid.2x2.fill", color: palette.accent,
+                            title: "Customize Layout",
+                            subtitle: "Rearrange and show/hide cards on the home screen"
+                        ) { activeSheet = .homeLayout }
+
+                        Divider().padding(.leading, 60)
+
+                        settingsRow(icon: "arrow.clockwise", color: .orange,
+                            title: "Refresh Cache",
+                            subtitle: model.isRefreshingCache ? "Refreshing…" : model.cacheVersionsText
+                        ) { Task { await model.refreshCache() } }
                     }
 
+                    // MARK: Widgets
                     settingsSection(title: "Widgets") {
-                        settingsSplitRow(
-                            title: "Widget setup",
-                            subtitle: "Open iPhone widget setup.",
-                            primaryAction: { activeSheet = .widgetSetup(.ios) },
-                            primaryLabel: "Open Page"
-                        )
+                        settingsRow(icon: "apps.iphone", color: .purple,
+                            title: "iOS Widget Setup",
+                            subtitle: "Configure home screen widget workflows"
+                        ) { activeSheet = .widgetSetup(.ios) }
                     }
 
+                    // MARK: Initial Setup
                     settingsSection(title: "Initial Setup") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            setupProgressView
-                            Divider().opacity(0.18)
-                            settingsSplitRow(title: "Setup wizard", subtitle: "Open the onboarding wizard anytime.", primaryDestination: .setupWizard, primaryLabel: "Open Wizard")
-                            Divider().opacity(0.18)
-                            settingsSplitRow(title: "Parser wizard", subtitle: "Create and maintain live parser rules.", primaryDestination: .parserWizard, primaryLabel: "Open Wizard")
-                            Divider().opacity(0.18)
-                            settingsSplitRow(title: "Import queue", subtitle: "Review Shortcut-driven CSV imports and any files that need attention.", primaryDestination: .importQueue, primaryLabel: "Open Page")
-                            Divider().opacity(0.18)
-                            settingsSplitRow(title: "External apps", subtitle: "Install required mobile apps for widgets and push notifications.", primaryAction: { activeSheet = .externalApps }, primaryLabel: "Open Page")
-                            Divider().opacity(0.18)
-                            backfillPanel
-                            Divider().opacity(0.18)
-                            settingsSplitRow(title: "Income wizard", subtitle: "Set up LES, salary, or hourly income settings on a dedicated page.", primaryDestination: .incomeWizard, primaryLabel: "Open Page")
-                            settingsMuted(model.setupProgressSubtext)
-                        }
-                    }
-
-                    settingsSection(title: "Rules") {
-                        settingsSplitRow(
-                            title: "Category regex rules",
-                            subtitle: "View matches, test regex, re-apply, disable, or delete rules.",
-                            primaryDestination: .ruleBuilder,
-                            primaryLabel: "Open Page"
-                        )
-                    }
-
-                    settingsSection(title: "Admin") {
-                        VStack(alignment: .leading, spacing: 0) {
-                            settingsSplitRow(
-                                title: "View mode",
-                                subtitle: model.viewModeText,
-                                primaryAction: {
-                                    model.nonAdminPreview.toggle()
-                                    model.viewModeText = model.nonAdminPreview ? "Previewing as non-admin." : "Admin view."
-                                },
-                                primaryLabel: model.nonAdminPreview ? "Return to Admin View" : "Preview as Non-Admin"
-                            )
-
-                            if !model.nonAdminPreview {
-                                Divider().opacity(0.18)
-                                settingsSplitRow(
-                                    title: "Owner admin console",
-                                    subtitle: "Tenant management, pending user approvals, and tenant data purge.",
-                                    primaryAction: { activeSheet = .adminConsole },
-                                    primaryLabel: "Open Admin Console"
-                                )
-                                Divider().opacity(0.18)
-                                HStack(alignment: .center, spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Widget setup links")
-                                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                                        settingsMuted("Open platform-specific widget setup pages directly.")
-                                    }
-                                    Spacer(minLength: 12)
-                                    HStack(spacing: 8) {
-                                        Button { activeSheet = .widgetSetup(.ios) } label: { settingsPrimaryButton("iOS Widgets", width: 120) }
-                                            .buttonStyle(.plain)
-                                        Button { activeSheet = .widgetSetup(.android) } label: { settingsPrimaryButton("Android Widgets", width: 120) }
-                                            .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.vertical, 12)
+                        // Progress bar
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(model.setupProgressText)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Spacer()
+                                Text("\(model.setupProgressPercent)%")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundStyle(model.setupProgressPercent == 100 ? .green : palette.accent)
                             }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(palette.border).frame(height: 8)
+                                    Capsule()
+                                        .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                                        .frame(width: geo.size.width * CGFloat(min(100, model.setupProgressPercent)) / 100, height: 8)
+                                }
+                            }.frame(height: 8)
+                            if !model.setupProgressSubtext.isEmpty {
+                                Text(model.setupProgressSubtext)
+                                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 6)
+
+                        Divider()
+
+                        settingsRow(icon: "wand.and.stars", color: .indigo,
+                            title: "Setup Wizard",
+                            subtitle: "Walk through the initial budget and account configuration"
+                        ) { navigator.show(.setupWizard) }
+
+                        Divider().padding(.leading, 60)
+
+                        settingsRow(icon: "envelope.badge.fill", color: .teal,
+                            title: "Email Parser Wizard",
+                            subtitle: "Create and maintain live email parser rules"
+                        ) { navigator.show(.parserWizard) }
+
+                        Divider().padding(.leading, 60)
+
+                        settingsRow(icon: "tray.and.arrow.down.fill", color: .green,
+                            title: "Import Queue",
+                            subtitle: "Review Shortcut-driven CSV imports awaiting processing"
+                        ) { navigator.show(.importQueue) }
+
+                        Divider().padding(.leading, 60)
+
+                        settingsRow(icon: "dollarsign.circle.fill", color: .mint,
+                            title: "Income Wizard",
+                            subtitle: "Set up LES, salary, or hourly income settings"
+                        ) { navigator.show(.incomeWizard) }
+
+                        Divider().padding(.leading, 60)
+
+                        settingsRow(icon: "apps.iphone.badge.plus", color: .gray,
+                            title: "External Apps",
+                            subtitle: "Install required apps for widgets and push notifications"
+                        ) { activeSheet = .externalApps }
+
+                        Divider().padding(.leading, 60)
+
+                        // Backfill — kept inline, collapsed into a row that expands
+                        backfillPanel.padding(.horizontal, 14).padding(.vertical, 10)
+                    }
+
+                    // MARK: Rules
+                    settingsSection(title: "Rules") {
+                        settingsRow(icon: "text.badge.checkmark", color: .cyan,
+                            title: "Category Rules",
+                            subtitle: "View matches, test regex, re-apply, disable, or delete rules"
+                        ) { navigator.show(.ruleBuilder) }
+                    }
+
+                    // MARK: Admin
+                    settingsSection(title: "Admin") {
+                        settingsRow(
+                            icon: model.nonAdminPreview ? "eye.slash.fill" : "eye.fill",
+                            color: .secondary,
+                            title: model.nonAdminPreview ? "Return to Admin View" : "Preview as Non-Admin",
+                            subtitle: model.viewModeText
+                        ) {
+                            model.nonAdminPreview.toggle()
+                            model.viewModeText = model.nonAdminPreview ? "Previewing as non-admin" : "Admin view"
+                        }
+
+                        if !model.nonAdminPreview {
+                            Divider().padding(.leading, 60)
+                            settingsRow(icon: "shield.lefthalf.filled", color: .red,
+                                title: "Owner Admin Console",
+                                subtitle: "Tenant management, user approvals, and data purge"
+                            ) { activeSheet = .adminConsole }
+
+                            Divider().padding(.leading, 60)
+                            settingsRow(icon: "apps.iphone", color: .purple,
+                                title: "Widget Setup Links",
+                                subtitle: "Open platform-specific widget setup pages directly"
+                            ) { activeSheet = .widgetSetup(.ios) }
                         }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 14)
                 .padding(.top, 12)
-                .padding(.bottom, 18)
+                .padding(.bottom, 24)
             }
         }
-        .task {
-            await model.load()
-        }
-        .sheet(isPresented: $showGoogleAuth) {
-            AuthSessionView(
-                startURL: AppConfig.url(path: "/gmail/oauth/start", queryItems: [
-                    URLQueryItem(name: "next", value: "/settings")
-                ]),
-                callbackScheme: AppConfig.callbackScheme,
-                onAuthenticated: {
-                    Task {
-                        await model.reloadGoogleStatus()
-                        await model.loadUnreadCount()
-                    }
-                },
-                onCancel: {}
-            )
-        }
+        .task { await model.load() }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .homeLayout:
@@ -243,7 +223,7 @@ struct SettingsHomePageView: View {
                 WidgetSetupSheet(platform: platform)
             case .initialSetup:
                 InitialSetupSheet(
-                    onConnectGoogle: { showGoogleAuth = true },
+                    onConnectGoogle: { },
                     onOpenNotifications: { navigator.show(.notifications) },
                     onOpenBankInfo: { navigator.show(.bankInfo) },
                     onOpenCsvImport: { navigator.show(.csvImport) },
@@ -393,16 +373,48 @@ struct SettingsHomePageView: View {
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
-            settingsCard(content: content)
-        }
-    }
-
-    private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(14)
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder
+    private func settingsRow(icon: String, color: Color, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                settingsIconBadge(icon, color: color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settingsIconBadge(_ icon: String, color: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(color.opacity(0.18))
+                .frame(width: 36, height: 36)
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(color)
+        }
     }
 
     private func settingsMuted(_ text: String) -> some View {

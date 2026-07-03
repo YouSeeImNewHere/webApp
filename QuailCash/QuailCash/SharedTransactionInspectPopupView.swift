@@ -103,6 +103,13 @@ struct SharedTransactionInspectPopupView: View {
             Button("Invert", role: .destructive) { Task { await invertAmount() } }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $showFinanceSheet) {
+            FinancePurchaseSheet(
+                suggestedLabel: detail?.merchant ?? transaction.merchant,
+                suggestedAmount: abs(detail?.amount ?? transaction.amount),
+                transactionId: transaction.id
+            )
+        }
     }
 
     private var header: some View {
@@ -170,8 +177,7 @@ struct SharedTransactionInspectPopupView: View {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "  ")
-        let idText = "id \(detail?.id ?? transaction.id)"
-        let parts = [amount, bankCard, idText].filter { !$0.isEmpty }
+        let parts = [amount, bankCard].filter { !$0.isEmpty }
         return parts.joined(separator: "  •  ")
     }
 
@@ -181,13 +187,24 @@ struct SharedTransactionInspectPopupView: View {
     }
 
     private var txGrid: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let status = (detail?.status ?? transaction.status ?? "posted").lowercased()
+        let isPosted = status == "posted"
+        // Purchase date: when the charge happened
+        let purchaseDate = detail?.purchaseDate
+            ?? transaction.dateISO
+            ?? transaction.date
+            ?? transaction.postedDate
+            ?? "—"
+        // Posted date: only meaningful once settled
+        let postedDate = isPosted
+            ? (detail?.postedDate ?? transaction.postedDate ?? "—")
+            : "—"
+        return VStack(alignment: .leading, spacing: 10) {
             txKV(label: "merchant", value: transactionTitle)
             txKV(label: "amount", value: nativeMoneyValue(detail?.amount ?? transaction.amount), valueColor: sharedTransactionAmountColor(detail?.amount ?? transaction.amount))
-            txKV(label: "status", value: detail?.status ?? transaction.status ?? "posted")
-            txKV(label: "time", value: detail?.postedDate ?? transaction.dateISO ?? transaction.date ?? "—")
-            txKV(label: "purchase date", value: detail?.purchaseDate ?? "—")
-            txKV(label: "posted date", value: detail?.postedDate ?? transaction.postedDate ?? transaction.dateISO ?? "—")
+            txKV(label: "status", value: status)
+            txKV(label: "purchase date", value: purchaseDate)
+            txKV(label: "posted date", value: postedDate)
             txKV(label: "bank", value: detail?.bank ?? transaction.bank ?? "—")
             txKV(label: "card", value: detail?.card ?? transaction.card ?? "—")
             txKV(label: "account type", value: detail?.accountType ?? transaction.accountType ?? "—")
@@ -256,6 +273,8 @@ struct SharedTransactionInspectPopupView: View {
                 Button("Delete") { showDeleteConfirm = true }
                     .buttonStyle(SharedTransactionHeaderActionStyle(primary: true))
             }
+            Button("Finance this purchase") { showFinanceSheet = true }
+                .buttonStyle(SharedTransactionHeaderActionStyle(primary: false))
         }
     }
 

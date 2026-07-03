@@ -293,13 +293,27 @@ struct FitnessMilestone: Codable, Identifiable {
     var notes: String = ""
 }
 
+// MARK: - Sleep Breakdown
+
+struct SleepBreakdown {
+    var core: Double = 0   // hours
+    var deep: Double = 0
+    var rem: Double = 0
+    var total: Double { core + deep + rem }
+}
+
 // MARK: - Health Snapshot
 
 struct HealthSnapshot {
     var restingHR: Double?
     var hrv: Double?
     var sleepHours: Double?
+    var sleepBreakdown: SleepBreakdown?
     var todaySteps: Int = 0
+    var activeCalories: Double?
+    var vo2Max: Double?
+    var rhrHistory: [(Date, Double)] = []
+    var weightHistory: [(Date, Double)] = []
 
     enum Readiness {
         case great, good, moderate, rest
@@ -340,10 +354,11 @@ struct HealthSnapshot {
         if let rhr = restingHR {
             if rhr <= 60 { score += 2 } else if rhr <= 70 { score += 1 }
         }
-        if let sleep = sleepHours {
+        let effectiveSleep = sleepBreakdown?.total ?? sleepHours
+        if let sleep = effectiveSleep {
             if sleep >= 7 { score += 2 } else if sleep >= 5.5 { score += 1 }
         }
-        if hrv == nil && restingHR == nil && sleepHours == nil { return .good }
+        if hrv == nil && restingHR == nil && sleepHours == nil && sleepBreakdown == nil { return .good }
         switch score {
         case 5...: return .great
         case 3...: return .good
@@ -584,6 +599,8 @@ final class FitnessStore: ObservableObject {
             HKQuantityType(.heartRateVariabilitySDNN),
             HKQuantityType(.stepCount),
             HKQuantityType(.bodyMass),
+            HKQuantityType(.vo2Max),
+            HKQuantityType(.activeEnergyBurned),
             HKCategoryType(.sleepAnalysis),
         ]
         let writeTypes: Set<HKSampleType> = [
@@ -600,17 +617,27 @@ final class FitnessStore: ObservableObject {
 
     func refreshHealthData() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        async let rhr    = fetchLatestQuantity(.restingHeartRate, unit: .count().unitDivided(by: .minute()))
-        async let hrv    = fetchLatestQuantity(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli))
-        async let sleep  = fetchLastNightSleep()
-        async let steps  = fetchTodaySteps()
-        async let weight = fetchLatestQuantity(.bodyMass, unit: .gramUnit(with: .kilo))
-        let (rhrVal, hrvVal, sleepVal, stepsVal, weightVal) = await (rhr, hrv, sleep, steps, weight)
+        async let rhr        = fetchLatestQuantity(.restingHeartRate, unit: .count().unitDivided(by: .minute()))
+        async let hrv        = fetchLatestQuantity(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli))
+        async let sleepBreak = fetchLastNightSleep()
+        async let steps      = fetchTodaySteps()
+        async let weight     = fetchLatestQuantity(.bodyMass, unit: .gramUnit(with: .kilo))
+        async let calories   = fetchTodayActiveCalories()
+        async let vo2        = fetchLatestVO2Max()
+        async let rhrHist    = fetchRHRHistory(days: 30)
+        async let weightHist = fetchWeightHistory(days: 90)
+        let (rhrVal, hrvVal, sleepVal, stepsVal, weightVal, calVal, vo2Val, rhrHistVal, weightHistVal) =
+            await (rhr, hrv, sleepBreak, steps, weight, calories, vo2, rhrHist, weightHist)
         healthSnapshot = HealthSnapshot(
             restingHR: rhrVal,
             hrv: hrvVal,
-            sleepHours: sleepVal,
-            todaySteps: stepsVal
+            sleepHours: sleepVal?.total,
+            sleepBreakdown: sleepVal,
+            todaySteps: stepsVal,
+            activeCalories: calVal,
+            vo2Max: vo2Val,
+            rhrHistory: rhrHistVal,
+            weightHistory: weightHistVal
         )
         if let kg = weightVal {
             latestBodyMassKg = kg
@@ -639,18 +666,87 @@ final class FitnessStore: ObservableObject {
         }
     }
 
-    private func fetchLastNightSleep() async -> Double? {
+    private func fetchLastNightSleep() async -> SleepBreakdown? {
         await withCheckedContinuation { continuation in
             let type = HKCategoryType(.sleepAnalysis)
             let start = Calendar.current.date(byAdding: .hour, value: -24, to: Date()) ?? Date()
             let pred = HKQuery.predicateForSamples(withStart: start, end: Date())
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-            let query = HKSampleQuery(sampleType: type, predicate: pred, limit: 20, sortDescriptors: [sort]) { _, samples, _ in
-                let asleepValues: [HKCategoryValueSleepAnalysis] = [.asleepCore, .asleepDeep, .asleepREM]
-                let hours = (samples as? [HKCategorySample])?
-                    .filter { asleepValues.map(\.rawValue).contains($0.value) }
-                    .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) / 3600 }
-                continuation.resume(returning: hours.flatMap { $0 > 0 ? $0 : nil })
+            let query = HKSampleQuery(sampleType: type, predicate: pred, limit: 100, sortDescriptors: [sort]) { _, samples, _ in
+                guard let categorySamples = samples as? [HKCategorySample] else {
+                    continuation.resume(returning: nil); return
+                }
+                var breakdown = SleepBreakdown()
+                for sample in categorySamples {
+                    let hours = sample.endDate.timeIntervalSince(sample.startDate) / 3600
+                    switch HKCategoryValueSleepAnalysis(rawValue: sample.value) {
+                    case .asleepCore:  breakdown.core += hours
+                    case .asleepDeep:  breakdown.deep += hours
+                    case .asleepREM:   breakdown.rem  += hours
+                    default: break
+                    }
+                }
+                continuation.resume(returning: breakdown.total > 0 ? breakdown : nil)
+            }
+            hkStore.execute(query)
+        }
+    }
+
+    private func fetchTodayActiveCalories() async -> Double? {
+        await withCheckedContinuation { continuation in
+            let type = HKQuantityType(.activeEnergyBurned)
+            let start = Calendar.current.startOfDay(for: Date())
+            let pred = HKQuery.predicateForSamples(withStart: start, end: Date())
+            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: pred, options: .cumulativeSum) { _, stats, _ in
+                let val = stats?.sumQuantity()?.doubleValue(for: .kilocalorie())
+                continuation.resume(returning: val.flatMap { $0 > 0 ? $0 : nil })
+            }
+            hkStore.execute(query)
+        }
+    }
+
+    private func fetchLatestVO2Max() async -> Double? {
+        await withCheckedContinuation { continuation in
+            let type = HKQuantityType(.vo2Max)
+            let unit = HKUnit(from: "ml/kg*min")
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                let val = (samples?.first as? HKQuantitySample)?.quantity.doubleValue(for: unit)
+                continuation.resume(returning: val)
+            }
+            hkStore.execute(query)
+        }
+    }
+
+    private func fetchRHRHistory(days: Int) async -> [(Date, Double)] {
+        await withCheckedContinuation { continuation in
+            let type = HKQuantityType(.restingHeartRate)
+            let start = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+            let pred = HKQuery.predicateForSamples(withStart: start, end: Date())
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            let unit = HKUnit.count().unitDivided(by: .minute())
+            let query = HKSampleQuery(sampleType: type, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                let results = (samples as? [HKQuantitySample])?.map { s in
+                    (s.startDate, s.quantity.doubleValue(for: unit))
+                } ?? []
+                continuation.resume(returning: results)
+            }
+            hkStore.execute(query)
+        }
+    }
+
+    private func fetchWeightHistory(days: Int) async -> [(Date, Double)] {
+        await withCheckedContinuation { continuation in
+            let type = HKQuantityType(.bodyMass)
+            let start = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+            let pred = HKQuery.predicateForSamples(withStart: start, end: Date())
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            let unit = HKUnit.gramUnit(with: .kilo)
+            let query = HKSampleQuery(sampleType: type, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                let results = (samples as? [HKQuantitySample])?.map { s in
+                    (s.startDate, s.quantity.doubleValue(for: unit))
+                } ?? []
+                continuation.resume(returning: results)
             }
             hkStore.execute(query)
         }

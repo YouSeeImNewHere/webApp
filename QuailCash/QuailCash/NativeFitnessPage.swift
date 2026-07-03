@@ -124,6 +124,7 @@ struct FitnessPageView: View {
             AppPageScroll(contentPadding: 14) {
                 VStack(alignment: .leading, spacing: 14) {
                     readinessCard
+                    healthMetricsSection
                     startWorkoutCard
                     routinesSection
                     if !store.recentSessions().isEmpty {
@@ -229,6 +230,353 @@ struct FitnessPageView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
+    }
+
+    // MARK: - Health Metrics Section
+
+    private var healthMetricsSection: some View {
+        let snap = store.healthSnapshot
+        return VStack(alignment: .leading, spacing: 14) {
+            sleepCard(snap: snap)
+            todayActivityCard(snap: snap)
+            if snap.rhrHistory.count >= 2 {
+                trendChartCard(
+                    title: "Resting HR — 30 days",
+                    points: snap.rhrHistory,
+                    unitLabel: "bpm",
+                    lineColor: Color(red: 0.90, green: 0.25, blue: 0.30)
+                )
+            }
+            weightTrendCard(snap: snap)
+            vo2MaxCard(snap: snap)
+        }
+    }
+
+    // MARK: Sleep Card
+
+    private func sleepCard(snap: HealthSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Sleep")
+            VStack(alignment: .leading, spacing: 12) {
+                if let breakdown = snap.sleepBreakdown {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(String(format: "%.1f", breakdown.total))
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                        Text("hrs")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 2)
+                        Spacer()
+                        Image(systemName: "moon.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color(red: 0.55, green: 0.35, blue: 0.90))
+                    }
+                    // Segmented bar
+                    GeometryReader { geo in
+                        HStack(spacing: 2) {
+                            let total = max(breakdown.total, 0.01)
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color(red: 0.35, green: 0.55, blue: 0.95))
+                                .frame(width: geo.size.width * CGFloat(breakdown.core / total))
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color(red: 0.55, green: 0.25, blue: 0.85))
+                                .frame(width: geo.size.width * CGFloat(breakdown.deep / total))
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color(red: 0.20, green: 0.75, blue: 0.45))
+                                .frame(width: geo.size.width * CGFloat(breakdown.rem / total))
+                        }
+                    }
+                    .frame(height: 10)
+                    .clipShape(Capsule())
+                    HStack(spacing: 0) {
+                        sleepStageStat(label: "Core", hours: breakdown.core, color: Color(red: 0.35, green: 0.55, blue: 0.95))
+                        Divider().frame(height: 28)
+                        sleepStageStat(label: "Deep", hours: breakdown.deep, color: Color(red: 0.55, green: 0.25, blue: 0.85))
+                        Divider().frame(height: 28)
+                        sleepStageStat(label: "REM", hours: breakdown.rem, color: Color(red: 0.20, green: 0.75, blue: 0.45))
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        Image(systemName: "moon.zzz.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Color(red: 0.55, green: 0.35, blue: 0.90).opacity(0.5))
+                        Text("No sleep data from last night")
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(16)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    private func sleepStageStat(label: String, hours: Double, color: Color) -> some View {
+        VStack(spacing: 3) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(String(format: "%.1fh", hours))
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    // MARK: Today Activity Card
+
+    private func todayActivityCard(snap: HealthSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Today")
+            HStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.95, green: 0.45, blue: 0.10))
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(snap.activeCalories.map { "\(Int($0))" } ?? "—")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                        Text("kcal").font(.system(size: 10, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                    Text("Active Cal").font(.system(size: 10, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                Divider().frame(height: 44)
+                VStack(spacing: 6) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.25, green: 0.75, blue: 0.45))
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(snap.todaySteps > 0 ? "\(snap.todaySteps)" : "—")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                        Text("steps").font(.system(size: 10, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                    Text("Steps").font(.system(size: 10, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+            }
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    // MARK: Trend Chart (reusable for RHR and Weight)
+
+    private func trendChartCard(title: String, points: [(Date, Double)], unitLabel: String, lineColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(title)
+            VStack(alignment: .leading, spacing: 8) {
+                if points.count >= 2 {
+                    let values = points.map(\.1)
+                    let minVal = values.min() ?? 0
+                    let maxVal = max(values.max() ?? 1, minVal + 1)
+                    HStack(alignment: .top, spacing: 6) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(String(format: "%.0f", maxVal))
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(String(format: "%.0f", minVal))
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 30, height: 120)
+                        GeometryReader { geo in
+                            ZStack {
+                                lineChartPath(points: points, minVal: minVal, maxVal: maxVal, size: geo.size)
+                                    .stroke(lineColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                // Dot at last point
+                                let last = points.last!
+                                let allDates = points.map(\.0)
+                                let minDate = allDates.min()!.timeIntervalSinceReferenceDate
+                                let maxDate = allDates.max()!.timeIntervalSinceReferenceDate
+                                let xFrac = maxDate > minDate
+                                    ? CGFloat((last.0.timeIntervalSinceReferenceDate - minDate) / (maxDate - minDate))
+                                    : 1.0
+                                let yFrac = CGFloat(1.0 - (last.1 - minVal) / max(maxVal - minVal, 0.01))
+                                Circle()
+                                    .fill(lineColor)
+                                    .frame(width: 7, height: 7)
+                                    .position(x: xFrac * geo.size.width, y: yFrac * geo.size.height)
+                            }
+                        }
+                        .frame(height: 120)
+                    }
+                    HStack {
+                        Text("\(unitLabel)")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                        Text(String(format: "Latest: %.0f \(unitLabel)", points.last?.1 ?? 0))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Not enough data yet")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                }
+            }
+            .padding(16)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    private func lineChartPath(points: [(Date, Double)], minVal: Double, maxVal: Double, size: CGSize) -> Path {
+        let allDates = points.map { $0.0.timeIntervalSinceReferenceDate }
+        let minDate = allDates.min() ?? 0
+        let maxDate = allDates.max() ?? 1
+        let dateRange = max(maxDate - minDate, 1)
+        let valRange = max(maxVal - minVal, 0.01)
+        return Path { path in
+            for (i, point) in points.enumerated() {
+                let x = CGFloat((point.0.timeIntervalSinceReferenceDate - minDate) / dateRange) * size.width
+                let y = CGFloat(1.0 - (point.1 - minVal) / valRange) * size.height
+                if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                else { path.addLine(to: CGPoint(x: x, y: y)) }
+            }
+        }
+    }
+
+    // MARK: Weight Trend Card
+
+    private var showWeightSheet: Bool { false } // placeholder; sheet triggered via activeSheet
+
+    private func weightTrendCard(snap: HealthSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Body Weight — 90 days")
+            VStack(alignment: .leading, spacing: 8) {
+                if snap.weightHistory.count >= 2 {
+                    let points = snap.weightHistory
+                    let values = points.map(\.1)
+                    let minVal = values.min() ?? 0
+                    let maxVal = max(values.max() ?? 1, minVal + 1)
+                    HStack(alignment: .top, spacing: 6) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(String(format: "%.0f", maxVal))
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(String(format: "%.0f", minVal))
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 30, height: 120)
+                        GeometryReader { geo in
+                            ZStack {
+                                lineChartPath(points: points, minVal: minVal, maxVal: maxVal, size: geo.size)
+                                    .stroke(palette.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                let last = points.last!
+                                let allDates = points.map(\.0)
+                                let minDate = allDates.min()!.timeIntervalSinceReferenceDate
+                                let maxDate = allDates.max()!.timeIntervalSinceReferenceDate
+                                let xFrac = maxDate > minDate
+                                    ? CGFloat((last.0.timeIntervalSinceReferenceDate - minDate) / (maxDate - minDate))
+                                    : 1.0
+                                let yFrac = CGFloat(1.0 - (last.1 - minVal) / max(maxVal - minVal, 0.01))
+                                Circle()
+                                    .fill(palette.accent)
+                                    .frame(width: 7, height: 7)
+                                    .position(x: xFrac * geo.size.width, y: yFrac * geo.size.height)
+                            }
+                        }
+                        .frame(height: 120)
+                    }
+                    HStack {
+                        if let latest = snap.weightHistory.last?.1 {
+                            Text(String(format: "Latest: %.1f kg", latest))
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            activeSheet = .bodyweightEntry { kg in
+                                Task { await store.saveBodyMass(kg) }
+                            }
+                        } label: {
+                            Text("Log Weight")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(palette.accent)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(palette.accent.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    HStack {
+                        Text("No weight data yet")
+                            .font(.system(size: 13, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            activeSheet = .bodyweightEntry { kg in
+                                Task { await store.saveBodyMass(kg) }
+                            }
+                        } label: {
+                            Text("Log Weight")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(palette.accent)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(palette.accent.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(16)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    // MARK: VO2 Max Card
+
+    private func vo2MaxCard(snap: HealthSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Cardio Fitness")
+            HStack(spacing: 16) {
+                Image(systemName: "lungs.fill")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.95))
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(snap.vo2Max.map { String(format: "%.1f", $0) } ?? "—")
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                        if snap.vo2Max != nil {
+                            Text("ml/kg/min")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("VO\u{2082} Max (Apple Health)")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(16)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    // MARK: Section Header Helper
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(.secondary)
+            .padding(.leading, 4)
     }
 
     // MARK: - Start Workout

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="QuailMaps">
+  <trk>
+    <name>SF Test Route - Market St to Embarcadero</name>
+    <trkseg>
+      <trkpt lat="37.7838" lon="-122.4072"><time>2024-01-01T00:00:00Z</time></trkpt>
+      <trkpt lat="37.7840" lon="-122.4060"><time>2024-01-01T00:00:03Z</time></trkpt>
+      <trkpt lat="37.7842" lon="-122.4048"><time>2024-01-01T00:00:06Z</time></trkpt>
+      <trkpt lat="37.7844" lon="-122.4036"><time>2024-01-01T00:00:09Z</time></trkpt>
+      <trkpt lat="37.7846" lon="-122.4024"><time>2024-01-01T00:00:12Z</time></trkpt>
+      <trkpt lat="37.7848" lon="-122.4012"><time>2024-01-01T00:00:15Z</time></trkpt>
+      <trkpt lat="37.7850" lon="-122.4000"><time>2024-01-01T00:00:18Z</time></trkpt>
+      <trkpt lat="37.7852" lon="-122.3988"><time>2024-01-01T00:00:21Z</time></trkpt>
+      <trkpt lat="37.7854" lon="-122.3976"><time>2024-01-01T00:00:24Z</time></trkpt>
+      <trkpt lat="37.7856" lon="-122.3964"><time>2024-01-01T00:00:27Z</time></trkpt>
+      <trkpt lat="37.7858" lon="-122.3952"><time>2024-01-01T00:00:30Z</time></trkpt>
+      <trkpt lat="37.7860" lon="-122.3940"><time>2024-01-01T00:00:33Z</time></trkpt>
+      <trkpt lat="37.7870" lon="-122.3930"><time>2024-01-01T00:00:36Z</time></trkpt>
+      <trkpt lat="37.7880" lon="-122.3922"><time>2024-01-01T00:00:39Z</time></trkpt>
+      <trkpt lat="37.7890" lon="-122.3916"><time>2024-01-01T00:00:42Z</time></trkpt>
+      <trkpt lat="37.7900" lon="-122.3913"><time>2024-01-01T00:00:45Z</time></trkpt>
+      <trkpt lat="37.7905" lon="-122.3910"><time>2024-01-01T00:00:48Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

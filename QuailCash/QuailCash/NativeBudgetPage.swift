@@ -14,7 +14,8 @@ struct NativeBudgetPageView: View {
         AppChromeFrame(
             title: "Budget",
             badgeValue: nil,
-            selectedTab: nil,
+            selectedTab: .spending,
+            showsBottomBar: true,
             onLeadingTap: { navigator.show(.settings) },
             onTrailingTap: { navigator.show(.notifications) },
             onSelectTab: selectTab

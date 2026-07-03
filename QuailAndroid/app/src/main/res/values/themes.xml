@@ -1,0 +1,9 @@
+<resources>
+    <!-- Content is drawn entirely by Compose (QuailAndroidTheme); this
+         manifest-level theme only covers the brief window background
+         shown before the first Compose frame. -->
+    <style name="Theme.QuailAndroid" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/quail_background</item>
+        <item name="android:colorPrimary">@color/quail_accent</item>
+    </style>
+</resources>

@@ -182,7 +182,8 @@ struct AdminDashboardPageView: View {
             badgeValue: nil,
             selectedTab: nil,
             showsBottomBar: false,
-            showsStandaloneBar: true,
+            showsStandaloneBar: false,
+            showsDashboardBar: true,
             onLeadingTap: { navigator.goBack() },
             onTrailingTap: { Task { await vm.load() } }
         ) {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- AuthStore uses Jetpack DataStore, which persists under files/datastore/,
+         not SharedPreferences — exclude the auth token from backup/restore. -->
+    <exclude domain="file" path="datastore/quail_auth.preferences_pb" />
+</full-backup-content>

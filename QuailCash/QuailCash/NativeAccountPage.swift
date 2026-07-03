@@ -614,12 +614,10 @@ struct NativeAccountPageView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedTransaction) { tx in
-            TransactionInspectSheetView(
+            SharedTransactionInspectPopupView(
                 transaction: tx,
                 onDismiss: { selectedTransaction = nil },
-                onRefresh: {
-                    Task { await model.reloadTransactions(); await model.reloadChart() }
-                }
+                onRefresh: { Task { await model.reloadTransactions(); await model.reloadChart() } }
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)

@@ -4,6 +4,8 @@ import Combine
 import Charts
 import UniformTypeIdentifiers
 import UIKit
+import CoreLocation
+import UserNotifications
 
 private func homeThemePalette() -> QuailThemePalette {
     QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
@@ -22,6 +24,7 @@ struct HomeView: View {
             title: "Quail Cash",
             badgeValue: notificationBadgeValue,
             selectedTab: navigator.currentTab,
+            showsBottomBar: true,
             onLeadingTap: { navigate(.settings) },
             onTrailingTap: { navigate(.notifications) },
             onSelectTab: selectTab
@@ -78,6 +81,12 @@ struct HomeView: View {
                     model.cancelAuthentication()
                 }
             )
+        }
+        .sheet(isPresented: $model.showPermissionsOnboarding) {
+            PermissionsOnboardingSheet(isPresented: $model.showPermissionsOnboarding)
+                .presentationDetents([.height(420)])
+                .presentationDragIndicator(.hidden)
+                .interactiveDismissDisabled(true)
         }
         .sheet(item: $activeSheet) { sheet in
             HomeSheetHost(
@@ -699,6 +708,13 @@ private struct UpcomingTransactionsCard: View {
         return summaries
             .sorted { lhs, rhs in lhs.total > rhs.total }
             .map { ($0.label, $0.amount, $0.color) }
+    }
+
+    private struct CategorySummary {
+        let label: String
+        let amount: String
+        let color: Color
+        let total: Double
     }
 
     private func categoryLabel(for event: UpcomingEventPayload) -> String {
@@ -1591,6 +1607,7 @@ final class HomeViewModel: ObservableObject {
     @Published var home: HomePayload?
     @Published var extraSaved: Double?
     @Published var showAuthSheet = false
+    @Published var showPermissionsOnboarding = false
     @Published var isLoading = false
     @Published var needsAuthentication = false
     @Published var errorMessage: String?
@@ -1662,6 +1679,9 @@ final class HomeViewModel: ObservableObject {
     func finishAuthentication() {
         print("[QuailCash] HomeViewModel.finishAuthentication()")
         showAuthSheet = false
+        if !UserDefaults.standard.bool(forKey: "quail.permissions.completed") {
+            showPermissionsOnboarding = true
+        }
         Task { await reload() }
     }
 
@@ -3128,7 +3148,7 @@ private struct HomeSheetHost: View {
     var body: some View {
         switch sheet {
         case .transaction(let tx):
-            TransactionInspectSheetView(transaction: tx, onDismiss: onDismiss, onRefresh: onRefresh)
+            SharedTransactionInspectPopupView(transaction: tx, onDismiss: onDismiss, onRefresh: onRefresh)
         case .bankInfo:
             BankInfoSheetView(onDismiss: onDismiss, onRefresh: onRefresh)
         case .csvImport:
@@ -5724,9 +5744,150 @@ private struct HomeHeaderActionStyle: ButtonStyle {
             .foregroundStyle(primary ? palette.primaryButtonText : palette.secondaryButtonText)
     }
 }
-    private struct CategorySummary {
-        let label: String
-        let amount: String
-        let color: Color
-        let total: Double
+
+// MARK: - Permissions Onboarding Sheet
+
+private struct PermissionsOnboardingSheet: View {
+    @Binding var isPresented: Bool
+    @AppStorage("quail.permissions.completed") private var permissionsCompleted = false
+    @State private var step: Int = 0
+
+    private struct StepInfo {
+        let icon: String
+        let iconColor: Color
+        let title: String
+        let body: String
+        let buttonLabel: String
     }
+
+    private let steps: [StepInfo] = [
+        StepInfo(
+            icon: "location.fill",
+            iconColor: .blue,
+            title: "Location Access",
+            body: "Used for turn-by-turn navigation, nearby place search, and traffic data in Quail Maps.",
+            buttonLabel: "Grant Location"
+        ),
+        StepInfo(
+            icon: "bell.badge.fill",
+            iconColor: .red,
+            title: "Push Notifications",
+            body: "Get spending alerts, budget nudges, and important account updates.",
+            buttonLabel: "Grant Notifications"
+        ),
+        StepInfo(
+            icon: "heart.fill",
+            iconColor: .pink,
+            title: "Health Access",
+            body: "Powers sleep tracking, heart rate, steps, and readiness score in Quail Fitness.",
+            buttonLabel: "Grant Health Access"
+        )
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 24)
+
+            let info = steps[step]
+
+            ZStack {
+                Circle()
+                    .fill(info.iconColor.opacity(0.15))
+                    .frame(width: 90, height: 90)
+                Image(systemName: info.icon)
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundStyle(info.iconColor)
+            }
+            .animation(.spring(), value: step)
+
+            Spacer(minLength: 20)
+
+            Text(info.title)
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+                .animation(.spring(), value: step)
+
+            Spacer(minLength: 10)
+
+            Text(info.body)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+                .animation(.spring(), value: step)
+
+            Spacer(minLength: 28)
+
+            Button(action: grantAction) {
+                Text(info.buttonLabel)
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal, 28)
+
+            Button(action: skipAction) {
+                Text("Skip")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 10)
+
+            Spacer(minLength: 20)
+
+            stepDots
+
+            Spacer(minLength: 16)
+        }
+        .animation(.spring(), value: step)
+    }
+
+    private var stepDots: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<steps.count, id: \.self) { i in
+                Circle()
+                    .fill(i == step ? Color.accentColor : Color.secondary.opacity(0.35))
+                    .frame(width: i == step ? 10 : 7, height: i == step ? 10 : 7)
+                    .animation(.spring(), value: step)
+            }
+        }
+    }
+
+    private func grantAction() {
+        switch step {
+        case 0:
+            CLLocationManager().requestWhenInUseAuthorization()
+            advance()
+        case 1:
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in
+                DispatchQueue.main.async { advance() }
+            }
+        case 2:
+            Task {
+                await FitnessStore.shared.requestHealthKitAuthorization()
+                await MainActor.run { finish() }
+            }
+        default:
+            advance()
+        }
+    }
+
+    private func skipAction() {
+        if step < steps.count - 1 {
+            advance()
+        } else {
+            finish()
+        }
+    }
+
+    private func advance() {
+        withAnimation(.spring()) { step += 1 }
+    }
+
+    private func finish() {
+        permissionsCompleted = true
+        UserDefaults.standard.set(true, forKey: "quail.permissions.completed")
+        isPresented = false
+    }
+}
