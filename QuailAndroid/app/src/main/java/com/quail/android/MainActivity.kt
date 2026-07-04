@@ -21,6 +21,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.quail.android.data.fitness.FitnessDatabase
+import com.quail.android.data.fitness.FitnessRepository
 import com.quail.android.data.network.NetworkModule
 import com.quail.android.data.repository.AuthStore
 import com.quail.android.data.repository.HomeRepository
@@ -31,6 +33,9 @@ import com.quail.android.ui.screens.budget.BudgetScreen
 import com.quail.android.ui.screens.budget.BudgetViewModel
 import com.quail.android.ui.screens.dashboard.DashboardScreen
 import com.quail.android.ui.screens.dashboard.DashboardViewModel
+import com.quail.android.ui.screens.fitness.FitnessActiveWorkoutScreen
+import com.quail.android.ui.screens.fitness.FitnessScreen
+import com.quail.android.ui.screens.fitness.FitnessViewModel
 import com.quail.android.ui.screens.home.HomeScreen
 import com.quail.android.ui.screens.home.HomeViewModel
 import com.quail.android.ui.screens.home.NetWorthChartViewModel
@@ -41,7 +46,11 @@ import com.quail.android.ui.screens.settings.DashboardSettingsScreen
 import com.quail.android.ui.screens.settings.NotificationPrefsScreen
 import com.quail.android.ui.screens.settings.SettingsScreen
 import com.quail.android.ui.screens.settings.SettingsViewModel
+import com.quail.android.ui.screens.vehicle.VehicleFuelHistoryScreen
+import com.quail.android.ui.screens.vehicle.VehicleNotificationsScreen
+import com.quail.android.ui.screens.vehicle.VehicleProceduresScreen
 import com.quail.android.ui.screens.vehicle.VehicleScreen
+import com.quail.android.ui.screens.vehicle.VehicleSettingsScreen
 import com.quail.android.ui.screens.vehicle.VehicleViewModel
 import com.quail.android.ui.theme.QuailAndroidTheme
 import kotlinx.coroutines.flow.first
@@ -51,6 +60,12 @@ private const val ROUTE_LOGIN = "login"
 private const val ROUTE_DASHBOARD = "dashboard"
 private const val ROUTE_HOME = "home"
 private const val ROUTE_VEHICLE = "vehicle"
+private const val ROUTE_VEHICLE_PROCEDURES = "vehicle_procedures"
+private const val ROUTE_VEHICLE_FUEL_HISTORY = "vehicle_fuel_history"
+private const val ROUTE_VEHICLE_SETTINGS = "vehicle_settings"
+private const val ROUTE_VEHICLE_NOTIFICATIONS = "vehicle_notifications"
+private const val ROUTE_FITNESS = "fitness"
+private const val ROUTE_FITNESS_ACTIVE_WORKOUT = "fitness_active_workout"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_DASHBOARD_SETTINGS = "dashboard_settings"
@@ -149,6 +164,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
     val api = remember { NetworkModule.create(authStore) }
     val repository = remember { HomeRepository(api) }
     val vehicleLocalStore = remember { VehicleLocalStore.getInstance(context) }
+    val fitnessRepository = remember { FitnessRepository(api, FitnessDatabase.getInstance(context), context) }
     val onSignOut: () -> Unit = {
         scope.launch {
             authStore.clear()
@@ -165,8 +181,28 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 viewModel = viewModel,
                 onOpenCash = { navController.navigate(ROUTE_HOME) },
                 onOpenCar = { navController.navigate(ROUTE_VEHICLE) },
+                onOpenFitness = { navController.navigate(ROUTE_FITNESS) },
                 onOpenSettings = { navController.navigate(ROUTE_DASHBOARD_SETTINGS) },
                 onOpenAdmin = { navController.navigate(ROUTE_ADMIN) },
+            )
+        }
+
+        composable(ROUTE_FITNESS) {
+            val viewModel: FitnessViewModel = viewModel(factory = FitnessViewModel.Factory(fitnessRepository))
+            FitnessScreen(
+                viewModel = viewModel,
+                onStartWorkout = { navController.navigate(ROUTE_FITNESS_ACTIVE_WORKOUT) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_FITNESS_ACTIVE_WORKOUT) { backStackEntry ->
+            val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(ROUTE_FITNESS) }
+            val viewModel: FitnessViewModel = viewModel(parentEntry, factory = FitnessViewModel.Factory(fitnessRepository))
+            FitnessActiveWorkoutScreen(
+                viewModel = viewModel,
+                onFinished = { navController.popBackStack() },
+                onCancelled = { navController.popBackStack() },
             )
         }
 
@@ -174,6 +210,54 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
             val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
             VehicleScreen(
                 viewModel = viewModel,
+                onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
+                onOpenFuelHistory = { navController.navigate(ROUTE_VEHICLE_FUEL_HISTORY) },
+                onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
+                onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_VEHICLE_PROCEDURES) {
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            VehicleProceduresScreen(
+                viewModel = viewModel,
+                onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
+                onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
+                onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_VEHICLE_FUEL_HISTORY) {
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            VehicleFuelHistoryScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(ROUTE_VEHICLE_SETTINGS) {
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            VehicleSettingsScreen(
+                viewModel = viewModel,
+                localStore = vehicleLocalStore,
+                onBack = { navController.popBackStack() },
+                onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
+                onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
+                onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_VEHICLE_NOTIFICATIONS) {
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            VehicleNotificationsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
+                onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
+                onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }

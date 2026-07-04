@@ -1,6 +1,5 @@
 package com.quail.android.ui.screens.vehicle
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +51,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quail.android.data.model.CorrectiveRecord
@@ -75,7 +73,7 @@ import java.util.Locale
 private val currencyFormat: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 private val QuailWarnOrange = Color(0xFFF28C1A)
 
-private fun MaintenanceColor.toColor(): Color = when (this) {
+fun MaintenanceColor.toColor(): Color = when (this) {
     MaintenanceColor.ORANGE -> QuailWarnOrange
     MaintenanceColor.BLUE -> Color(0xFF66A0F2)
     MaintenanceColor.RED -> QuailBadRed
@@ -86,7 +84,7 @@ private fun MaintenanceColor.toColor(): Color = when (this) {
     MaintenanceColor.GRAY -> QuailTextDim
 }
 
-private fun MaintenanceTypeDefinition.icon(): ImageVector = when (name) {
+fun MaintenanceTypeDefinition.icon(): ImageVector = when (name) {
     "Oil Change" -> Icons.Filled.Opacity
     "Tire Rotation" -> Icons.Filled.Circle
     "Brake Pads" -> Icons.Filled.Warning
@@ -114,14 +112,35 @@ sealed interface VehicleSheet {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VehicleScreen(viewModel: VehicleViewModel, onOpenDashboard: () -> Unit) {
+fun VehicleScreen(
+    viewModel: VehicleViewModel,
+    onOpenProcedures: () -> Unit,
+    onOpenFuelHistory: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenDashboard: () -> Unit,
+) {
     val uiState by viewModel.uiState.collectAsState()
     var activeSheet by remember { mutableStateOf<VehicleSheet?>(null) }
-    val context = LocalContext.current
 
     Scaffold(
-        topBar = { VehicleTopBar(context) },
-        bottomBar = { VehicleBottomBar(onOpenDashboard) },
+        topBar = {
+            VehicleTopBar(
+                title = "Quail Car",
+                leadingIcon = Icons.Filled.Settings,
+                onLeadingClick = onOpenSettings,
+                trailingIcon = Icons.Filled.Notifications,
+                onTrailingClick = onOpenNotifications,
+            )
+        },
+        bottomBar = {
+            VehicleBottomBar(
+                selectedTab = VehicleTab.HOME,
+                onSelectHome = {},
+                onSelectProcedures = onOpenProcedures,
+                onOpenDashboard = onOpenDashboard,
+            )
+        },
     ) { padding ->
         when (val state = uiState) {
             is VehicleUiState.Loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -144,6 +163,7 @@ fun VehicleScreen(viewModel: VehicleViewModel, onOpenDashboard: () -> Unit) {
                         data = state.data,
                         onOpenSheet = { activeSheet = it },
                         onCheckInspection = { viewModel.checkInspection(it) },
+                        onOpenFuelHistory = onOpenFuelHistory,
                     )
                 }
             }
@@ -156,49 +176,57 @@ fun VehicleScreen(viewModel: VehicleViewModel, onOpenDashboard: () -> Unit) {
 }
 
 @Composable
-private fun VehicleTopBar(context: android.content.Context) {
+fun VehicleTopBar(
+    title: String,
+    leadingIcon: ImageVector,
+    onLeadingClick: () -> Unit,
+    trailingIcon: ImageVector,
+    onTrailingClick: () -> Unit,
+) {
     Surface(color = QuailSurface) {
         Box(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp).height(40.dp),
         ) {
             TopCircleButton(
-                icon = Icons.Filled.Settings,
+                icon = leadingIcon,
                 modifier = Modifier.align(Alignment.CenterStart),
-            ) { Toast.makeText(context, "Vehicle settings isn't built yet", Toast.LENGTH_SHORT).show() }
+                onClick = onLeadingClick,
+            )
 
-            Text("Quail Car", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.Center))
+            Text(title, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.Center))
 
             TopCircleButton(
-                icon = Icons.Filled.Notifications,
+                icon = trailingIcon,
                 modifier = Modifier.align(Alignment.CenterEnd),
-            ) { Toast.makeText(context, "Vehicle notifications aren't built yet", Toast.LENGTH_SHORT).show() }
+                onClick = onTrailingClick,
+            )
         }
     }
 }
 
 @Composable
-private fun TopCircleButton(icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun TopCircleButton(icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(onClick = onClick, color = QuailSurfaceRaised, shape = CircleShape, modifier = modifier.height(40.dp).width(40.dp)) {
         Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = QuailText) }
     }
 }
 
+enum class VehicleTab { HOME, PROCEDURES }
+
 @Composable
-private fun VehicleBottomBar(onOpenDashboard: () -> Unit) {
+fun VehicleBottomBar(
+    selectedTab: VehicleTab?,
+    onSelectHome: () -> Unit,
+    onSelectProcedures: () -> Unit,
+    onOpenDashboard: () -> Unit,
+) {
     Surface(color = QuailSurface) {
         Row(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(12.dp)) {
-                Column(
-                    modifier = Modifier.width(84.dp).padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(Icons.Filled.Home, contentDescription = "Home", tint = QuailText)
-                    Text("Home", color = QuailText, style = MaterialTheme.typography.labelSmall)
-                }
-            }
+            VehicleBottomBarTab("Home", Icons.Filled.Home, selected = selectedTab == VehicleTab.HOME, onClick = onSelectHome)
+            VehicleBottomBarTab("Procedures", Icons.Filled.Description, selected = selectedTab == VehicleTab.PROCEDURES, onClick = onSelectProcedures)
             Surface(onClick = onOpenDashboard, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(12.dp)) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -213,7 +241,30 @@ private fun VehicleBottomBar(onOpenDashboard: () -> Unit) {
 }
 
 @Composable
-private fun VehicleContent(data: VehicleData, onOpenSheet: (VehicleSheet) -> Unit, onCheckInspection: (Int) -> Unit) {
+private fun VehicleBottomBarTab(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) QuailSurfaceRaised else Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.width(84.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(icon, contentDescription = label, tint = if (selected) QuailText else QuailTextDim)
+            Text(label, color = if (selected) QuailText else QuailTextDim, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun VehicleContent(
+    data: VehicleData,
+    onOpenSheet: (VehicleSheet) -> Unit,
+    onCheckInspection: (Int) -> Unit,
+    onOpenFuelHistory: () -> Unit,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
@@ -222,15 +273,14 @@ private fun VehicleContent(data: VehicleData, onOpenSheet: (VehicleSheet) -> Uni
         item { ProfileCard(data, onOpenSheet) }
         item { MaintenanceSection(data, onOpenSheet) }
         item { InspectionsSection(data, onCheckInspection) }
-        item { FuelSection(data, onOpenSheet) }
+        item { FuelSection(data, onOpenSheet, onOpenFuelHistory) }
         item { TiresSection(data, onOpenSheet) }
         item { IssuesSection(data, onOpenSheet) }
-        item { ProceduresSection(data, onOpenSheet) }
     }
 }
 
 @Composable
-private fun SectionHeader(title: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
+fun SectionHeader(title: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(title, color = QuailTextDim, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         if (actionLabel != null && onAction != null) {
@@ -246,7 +296,7 @@ private fun SectionHeader(title: String, actionLabel: String? = null, onAction: 
 }
 
 @Composable
-private fun EmptyCard(text: String, actionLabel: String, onAction: () -> Unit) {
+fun EmptyCard(text: String, actionLabel: String, onAction: () -> Unit) {
     Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
@@ -445,7 +495,7 @@ private fun InspectionGroup(
     }
 }
 
-private fun isInspectionDue(item: com.quail.android.data.model.VehicleInspectionItem): Boolean {
+fun isInspectionDue(item: com.quail.android.data.model.VehicleInspectionItem): Boolean {
     val last = item.lastCheckedDate ?: return true
     val date = runCatching { java.time.LocalDate.parse(last) }.getOrNull() ?: return true
     val days = java.time.temporal.ChronoUnit.DAYS.between(date, java.time.LocalDate.now())
@@ -455,7 +505,7 @@ private fun isInspectionDue(item: com.quail.android.data.model.VehicleInspection
 // ---- Fuel ----
 
 @Composable
-private fun FuelSection(data: VehicleData, onOpenSheet: (VehicleSheet) -> Unit) {
+private fun FuelSection(data: VehicleData, onOpenSheet: (VehicleSheet) -> Unit, onOpenFuelHistory: () -> Unit) {
     val mpg = averageMpg(data.fuelRecords)
     Column {
         SectionHeader("Fuel & Mileage", actionLabel = "+ Log Fill-Up") { onOpenSheet(VehicleSheet.RecordFuel) }
@@ -477,6 +527,18 @@ private fun FuelSection(data: VehicleData, onOpenSheet: (VehicleSheet) -> Unit) 
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         recent.forEach { FuelRow(it) }
+                    }
+                }
+
+                if (data.fuelRecords.isNotEmpty()) {
+                    Surface(onClick = onOpenFuelHistory, color = Color.Transparent, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        Text(
+                            "View Full History",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
             }
@@ -637,35 +699,3 @@ private fun CorrectiveRow(rec: CorrectiveRecord) {
     }
 }
 
-// ---- Procedures ----
-
-@Composable
-private fun ProceduresSection(data: VehicleData, onOpenSheet: (VehicleSheet) -> Unit) {
-    Column {
-        SectionHeader("DIY Procedures", actionLabel = "+ New") { onOpenSheet(VehicleSheet.EditProcedure(null)) }
-        if (data.procedures.isEmpty()) {
-            EmptyCard("No procedures saved", "Write a Procedure") { onOpenSheet(VehicleSheet.EditProcedure(null)) }
-        } else {
-            Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    data.procedures.forEachIndexed { idx, proc ->
-                        Surface(onClick = { onOpenSheet(VehicleSheet.EditProcedure(proc)) }, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Icon(Icons.Filled.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(proc.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                                    Text("${proc.steps.size} steps · ${proc.tools.size} tools", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                        if (idx < data.procedures.size - 1) androidx.compose.material3.HorizontalDivider(color = QuailSurfaceRaised)
-                    }
-                }
-            }
-        }
-    }
-}

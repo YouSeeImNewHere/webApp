@@ -63,7 +63,7 @@ private data class DashboardTile(
 private val TILES = listOf(
     DashboardTile("Cash", Icons.Filled.AttachMoney, enabled = true),
     DashboardTile("Car", Icons.Filled.DirectionsCar, enabled = true),
-    DashboardTile("Fitness", Icons.Filled.FitnessCenter, enabled = false),
+    DashboardTile("Fitness", Icons.Filled.FitnessCenter, enabled = true),
     DashboardTile("Maps", Icons.Filled.Map, enabled = false),
     DashboardTile("Admin", Icons.Filled.AdminPanelSettings, enabled = true),
     DashboardTile("Bugs", Icons.Filled.BugReport, enabled = false),
@@ -76,6 +76,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     onOpenCash: () -> Unit,
     onOpenCar: () -> Unit,
+    onOpenFitness: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAdmin: () -> Unit,
 ) {
@@ -118,6 +119,7 @@ fun DashboardScreen(
                             when {
                                 tile.label == "Cash" && tile.enabled -> onOpenCash()
                                 tile.label == "Car" && tile.enabled -> onOpenCar()
+                                tile.label == "Fitness" && tile.enabled -> onOpenFitness()
                                 tile.label == "Admin" && tile.enabled -> onOpenAdmin()
                                 else -> Toast.makeText(context, "${tile.label} isn't built yet", Toast.LENGTH_SHORT).show()
                             }

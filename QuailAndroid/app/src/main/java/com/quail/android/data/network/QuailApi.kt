@@ -7,10 +7,21 @@ import com.quail.android.data.model.CategoryRuleApplyJobResponse
 import com.quail.android.data.model.CategoryRuleCreateRequest
 import com.quail.android.data.model.CategoryRuleCreateResponse
 import com.quail.android.data.model.ChartPoint
+import com.quail.android.data.model.BodyweightRecord
+import com.quail.android.data.model.BodyweightUpsertRequest
 import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.FinancingPlanCreateRequest
 import com.quail.android.data.model.FinancingPlanResponse
+import com.quail.android.data.model.GoalRecord
+import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.HomePayload
+import com.quail.android.data.model.MilestoneRecord
+import com.quail.android.data.model.MilestoneUpsertRequest
+import com.quail.android.data.model.RoutineRecord
+import com.quail.android.data.model.RoutineUpsertRequest
+import com.quail.android.data.model.WorkoutSessionListResponse
+import com.quail.android.data.model.WorkoutSessionRecord
+import com.quail.android.data.model.WorkoutSessionUpsertRequest
 import com.quail.android.data.model.AndroidPushDeviceBody
 import com.quail.android.data.model.AndroidPushDeviceResponse
 import com.quail.android.data.model.AndroidPushTestBody
@@ -351,4 +362,51 @@ interface QuailApi {
 
     @POST("vehicle/inspections/{id}/check")
     suspend fun checkVehicleInspection(@Path("id") id: Int): VehicleInspectionItem
+
+    // ---- Fitness (Quail Fitness) ----
+
+    @GET("fitness/sessions")
+    suspend fun getWorkoutSessions(@Query("limit") limit: Int = 200): WorkoutSessionListResponse
+
+    @POST("fitness/sessions")
+    suspend fun upsertWorkoutSession(@Body request: WorkoutSessionUpsertRequest): WorkoutSessionRecord
+
+    @DELETE("fitness/sessions/{id}")
+    suspend fun deleteWorkoutSession(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/routines")
+    suspend fun getRoutines(): List<RoutineRecord>
+
+    @POST("fitness/routines")
+    suspend fun upsertRoutine(@Body request: RoutineUpsertRequest): RoutineRecord
+
+    @DELETE("fitness/routines/{id}")
+    suspend fun deleteRoutine(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/goals")
+    suspend fun getGoals(): List<GoalRecord>
+
+    @POST("fitness/goals")
+    suspend fun upsertGoal(@Body request: GoalUpsertRequest): GoalRecord
+
+    @DELETE("fitness/goals/{id}")
+    suspend fun deleteGoal(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/milestones")
+    suspend fun getMilestones(): List<MilestoneRecord>
+
+    @POST("fitness/milestones")
+    suspend fun upsertMilestone(@Body request: MilestoneUpsertRequest): MilestoneRecord
+
+    @DELETE("fitness/milestones/{id}")
+    suspend fun deleteMilestone(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/bodyweight")
+    suspend fun getBodyweightLogs(@Query("limit") limit: Int = 200): List<BodyweightRecord>
+
+    @POST("fitness/bodyweight")
+    suspend fun upsertBodyweight(@Body request: BodyweightUpsertRequest): BodyweightRecord
+
+    @DELETE("fitness/bodyweight/{id}")
+    suspend fun deleteBodyweight(@Path("id") id: Int): OkResponse
 }

@@ -76,3 +76,23 @@ fun averageMpg(fuelRecords: List<VehicleFuelRecord>, last: Int = 20): Double? {
     if (totalGallons <= 0 || totalMiles <= 0) return null
     return totalMiles / totalGallons
 }
+
+data class FuelHistoryEntry(
+    val record: VehicleFuelRecord,
+    val milesDriven: Int?,
+    val tankMpg: Double?,
+)
+
+/** One row per fill-up, newest first, each with its own miles-driven and MPG
+ * computed against the next-older fill-up by mileage — same per-pair math as
+ * averageMpg(), just surfaced per tank instead of rolled into one average. */
+fun fuelHistoryEntries(fuelRecords: List<VehicleFuelRecord>): List<FuelHistoryEntry> {
+    val sorted = fuelRecords.sortedWith(compareByDescending<VehicleFuelRecord> { it.date }.thenByDescending { it.mileage })
+    return sorted.mapIndexed { idx, record ->
+        val older = sorted.getOrNull(idx + 1)
+        val miles = older?.let { record.mileage - it.mileage }?.takeIf { it > 0 }
+        val gallons = record.gallons
+        val mpg = if (miles != null && gallons != null && gallons > 0) miles / gallons else null
+        FuelHistoryEntry(record, miles, mpg)
+    }
+}
