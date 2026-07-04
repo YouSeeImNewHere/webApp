@@ -3,14 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.quailcash.android"
+    namespace = "com.quail.android"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.quailcash.android"
+        applicationId = "com.quail.android"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -40,6 +41,8 @@ android {
 }
 
 dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
+    implementation("com.google.firebase:firebase-messaging")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

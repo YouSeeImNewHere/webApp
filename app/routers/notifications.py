@@ -404,8 +404,8 @@ def send_ios_push_test(body: IOSPushTestBody, request: Request):
     if device_count <= 0:
         raise HTTPException(status_code=409, detail="ios_push_device_not_registered")
 
-    title = str((body.title or "").strip() or "QuailCash Test Notification")
-    message = str((body.body or "").strip() or "This is a test push from QuailCash.")
+    title = str((body.title or "").strip() or "Quail Test Notification")
+    message = str((body.body or "").strip() or "This is a test push from Quail.")
     result = send_ios_push_to_tenant(
         tenant_id=int(tid),
         notification_id=0,
@@ -439,7 +439,7 @@ def send_ios_push_test_both_envs(request: Request):
     token = str((rows[0] or {}).get("token") or "").strip()
     db_env = str((rows[0] or {}).get("environment") or "").strip()
     provider_token = _build_provider_token()
-    payload = {"aps": {"alert": {"title": "QuailCash env probe", "body": "env test"}, "sound": "default"}, "kind": "env_probe"}
+    payload = {"aps": {"alert": {"title": "Quail env probe", "body": "env test"}, "sound": "default"}, "kind": "env_probe"}
     prod_ok, _ = _send_single_apns_push(token=token, environment="production", provider_token=provider_token, payload=payload)
     sand_ok, _ = _send_single_apns_push(token=token, environment="sandbox", provider_token=provider_token, payload=payload)
     return {"token_prefix": token[:8], "token_len": len(token), "db_env": db_env, "production_ok": prod_ok, "sandbox_ok": sand_ok}

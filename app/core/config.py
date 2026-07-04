@@ -29,7 +29,7 @@ MULTI_TENANT_ENABLED = (os.getenv("MULTI_TENANT_ENABLED", "false") or "").lower(
 OWNER_GOOGLE_EMAIL = (os.getenv("OWNER_GOOGLE_EMAIL", "") or "").strip().lower()
 APNS_KEY_ID = (os.getenv("APNS_KEY_ID", "") or "").strip()
 APNS_TEAM_ID = (os.getenv("APNS_TEAM_ID", "") or "").strip()
-APNS_TOPIC = (os.getenv("APNS_TOPIC", "quailCash.QuailCash") or "").strip()
+APNS_TOPIC = (os.getenv("APNS_TOPIC", "com.quail.ios") or "").strip()
 APNS_AUTH_KEY_PATH = (os.getenv("APNS_AUTH_KEY_PATH", "") or "").strip()
 APNS_AUTH_KEY_P8 = (os.getenv("APNS_AUTH_KEY_P8", "") or "").strip()
 APNS_USE_SANDBOX = (os.getenv("APNS_USE_SANDBOX", "true" if os.getenv("ENV", "").lower() != "prod" else "false") or "").lower() in ("1", "true", "yes")

@@ -814,7 +814,7 @@ def _mobile_auth_callback_url(request: Request) -> str:
     callback = str(request.query_params.get("callback") or "").strip()
     if callback and "://" not in callback:
         callback = ""
-    return callback or "quailcash://auth"
+    return callback or "quail://auth"
 
 
 def _oidc_cache_has(token: str) -> bool:
@@ -1112,7 +1112,7 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
     mobile_callback = str(request.query_params.get("callback") or "").strip()
-    is_mobile = mobile_callback.startswith("quailcash://")
+    is_mobile = mobile_callback.startswith("quail://")
     if is_mobile:
         state = _mint_mobile_oauth_state()
     else:
