@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -18,6 +20,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quail.android.data.model.BankAccount
 import com.quail.android.data.model.ExtraSavedDay
 import com.quail.android.data.model.IncomeBasisPaycheck
 import com.quail.android.data.model.MonthBudget
@@ -70,6 +75,8 @@ sealed interface HomeSheet {
     data object SpentSoFar : HomeSheet
     data class VerifyBalance(val accountId: Int, val accountName: String) : HomeSheet
     data class TransactionDetail(val id: String) : HomeSheet
+    data object BankInfo : HomeSheet
+    data class AccountAudit(val account: BankAccount) : HomeSheet
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,6 +89,8 @@ fun HomeSheetHost(sheet: HomeSheet, viewModel: HomeViewModel, onDismiss: () -> U
             is HomeSheet.SpentSoFar -> SpentSoFarSheetContent(viewModel)
             is HomeSheet.VerifyBalance -> VerifyBalanceSheetContent(sheet, viewModel, onDismiss)
             is HomeSheet.TransactionDetail -> TransactionDetailSheetContent(sheet.id, viewModel, onDismiss)
+            is HomeSheet.BankInfo -> BankInfoSheetContent(viewModel)
+            is HomeSheet.AccountAudit -> AccountAuditSheetContent(sheet.account)
         }
     }
 }
@@ -138,7 +147,7 @@ private fun ActionPill(label: String, enabled: Boolean = true, destructive: Bool
 
 @Composable
 private fun IncomeSheetContent(budget: MonthBudget) {
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         SheetTitle("Income")
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             LabeledRow("Expected this month", currency.format(budget.expectedIncome))
@@ -177,7 +186,7 @@ private fun PaycheckRow(paycheck: IncomeBasisPaycheck) {
 @Composable
 private fun ExtraSavedSheetContent(viewModel: HomeViewModel) {
     val state by viewModel.extraSavedState.collectAsState()
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         SheetTitle("Extra saved")
         when (val s = state) {
             is ExtraSavedUiState.Idle, is ExtraSavedUiState.Loading -> SheetLoading()
@@ -221,7 +230,7 @@ private fun ExtraSavedDayRow(day: ExtraSavedDay) {
 @Composable
 private fun SpentSoFarSheetContent(viewModel: HomeViewModel) {
     val state by viewModel.spentSoFarState.collectAsState()
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         SheetTitle("Spent so far")
         when (val s = state) {
             is SpentSoFarUiState.Idle, is SpentSoFarUiState.Loading -> SheetLoading()
@@ -328,7 +337,7 @@ private fun VerifyBalanceSheetContent(sheet: HomeSheet.VerifyBalance, viewModel:
         if (state is VerifyBalanceUiState.Success) onDismiss()
     }
 
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         SheetTitle("Verify balance")
         Text(sheet.accountName, color = QuailTextDim, modifier = Modifier.padding(bottom = 16.dp))
         Surface(
@@ -388,7 +397,7 @@ private fun TransactionDetailSheetContent(id: String, viewModel: HomeViewModel, 
         if (state is TransactionDetailUiState.Deleted) onDismiss()
     }
 
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         when (val s = state) {
             is TransactionDetailUiState.Idle, is TransactionDetailUiState.Loading -> {
                 SheetTitle("Transaction")
@@ -593,5 +602,185 @@ private fun DetailKV(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("$label:", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
         Text(value, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+// ---- Bank info ----
+
+@Composable
+private fun BankInfoSheetContent(viewModel: HomeViewModel) {
+    val state by viewModel.bankInfoState.collectAsState()
+    LaunchedEffect(Unit) { viewModel.loadBankInfo() }
+
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+        SheetTitle("Bank info")
+        when (val s = state) {
+            is BankInfoUiState.Idle, is BankInfoUiState.Loading -> SheetLoading()
+            is BankInfoUiState.Error -> SheetError(s.message)
+            is BankInfoUiState.Success -> BankInfoBody(s, viewModel)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BankInfoBody(state: BankInfoUiState.Success, viewModel: HomeViewModel) {
+    val info = state.info
+    val choices = remember(info) {
+        info.accounts.map { it.accountId to "${it.bank.orEmpty()} — ${it.name.orEmpty()} (APY)" } +
+            info.creditCards.map { it.cardId to "${it.bank.orEmpty()} — ${it.name.orEmpty()} (APR)" }
+    }
+    var selectedId by remember(choices) { mutableStateOf(choices.firstOrNull()?.first ?: 0) }
+    var ratePercent by remember { mutableStateOf("") }
+    var effectiveDate by remember { mutableStateOf(LocalDate.now()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf("") }
+
+    Text("Set a new rate", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
+
+    BankInfoDropdown(
+        label = "Account",
+        value = selectedId,
+        options = choices,
+        onSelect = { selectedId = it },
+    )
+    OutlinedTextField(
+        value = ratePercent,
+        onValueChange = { ratePercent = it },
+        label = { Text("Rate (%) e.g. 3.54") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    )
+    Surface(
+        onClick = { showDatePicker = true },
+        color = QuailSurfaceRaised,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Effective date", color = QuailTextDim)
+            Text(effectiveDate.toString(), fontWeight = FontWeight.SemiBold)
+        }
+    }
+    OutlinedTextField(
+        value = note,
+        onValueChange = { note = it },
+        label = { Text("Note (optional)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    )
+
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp)) {
+        Surface(
+            onClick = {
+                val rate = ratePercent.toDoubleOrNull()
+                if (selectedId != 0 && rate != null) {
+                    viewModel.saveInterestRate(selectedId, rate, effectiveDate.toString(), note.ifBlank { null })
+                }
+            },
+            color = MaterialTheme.colorScheme.primary,
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
+                if (state.isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                } else {
+                    Text("Save rate", fontWeight = FontWeight.Bold, color = Color.Black)
+                }
+            }
+        }
+        state.saveMessage?.let {
+            Text(it, color = QuailTextDim, modifier = Modifier.padding(start = 12.dp), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+
+    if (info.accounts.isNotEmpty()) {
+        HorizontalDivider(modifier = Modifier.padding(vertical = 18.dp))
+        Text("Accounts", fontWeight = FontWeight.Bold)
+        Text("Savings & checking", color = QuailTextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            info.accounts.forEach { account ->
+                Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LabeledRow("${account.bank.orEmpty()} — ${account.name.orEmpty()}", account.apy?.let { "%.2f%%".format(it) } ?: "—")
+                        LabeledRow("Type", account.type?.uppercase() ?: "—")
+                        account.notes?.takeIf { it.isNotBlank() }?.let { LabeledRow("Notes", it) }
+                    }
+                }
+            }
+        }
+    }
+
+    if (info.creditCards.isNotEmpty()) {
+        HorizontalDivider(modifier = Modifier.padding(vertical = 18.dp))
+        Text("Credit cards", fontWeight = FontWeight.Bold)
+        Text("APR, limits & rewards", color = QuailTextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            info.creditCards.forEach { card ->
+                Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LabeledRow("${card.bank.orEmpty()} — ${card.name.orEmpty()}", card.apr?.let { "%.2f%%".format(it) } ?: "—")
+                        card.creditLimit?.let { LabeledRow("Limit", currency.format(it)) }
+                        card.benefits.forEach { benefit ->
+                            LabeledRow(
+                                benefit.categories.joinToString(", ").ifBlank { "Cash back" },
+                                "%.2f%%".format(benefit.cashbackPercent),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = effectiveDate.toUtcMillis())
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { effectiveDate = it.toLocalDateUtc() }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+@Composable
+private fun BankInfoDropdown(label: String, value: Int, options: List<Pair<Int, String>>, onSelect: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val displayLabel = options.firstOrNull { it.first == value }?.second ?: label
+    Box(Modifier.fillMaxWidth()) {
+        Surface(onClick = { expanded = true }, color = QuailSurfaceRaised, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text(label, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                Text(displayLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (optionId, optionLabel) ->
+                DropdownMenuItem(text = { Text(optionLabel) }, onClick = { onSelect(optionId); expanded = false })
+            }
+        }
+    }
+}
+
+// ---- Account audit ----
+
+@Composable
+private fun AccountAuditSheetContent(account: BankAccount) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+        SheetTitle("Account audit")
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            LabeledRow("Account", account.name ?: "—")
+            LabeledRow("Balance", currency.format(account.total))
+            LabeledRow("CSV", account.lastCsvUploadAt ?: "—")
+            LabeledRow("Verified", account.lastManualVerifiedAt ?: "—")
+            LabeledRow("Credit limit", account.creditLimit?.let { currency.format(it) } ?: "—")
+        }
     }
 }

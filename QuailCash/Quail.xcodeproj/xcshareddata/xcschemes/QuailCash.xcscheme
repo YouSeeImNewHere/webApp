@@ -59,7 +59,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "QUAIL_API_BASE_URL"
-            value = "http://127.0.0.1:8000"
+            value = "https://homelab.taileb5ffb.ts.net"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

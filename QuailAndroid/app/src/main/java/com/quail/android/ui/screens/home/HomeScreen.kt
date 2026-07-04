@@ -87,6 +87,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private val currencyFormat: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 
@@ -139,6 +140,7 @@ fun HomeScreen(
         viewModel.clearSpentSoFar()
         viewModel.clearTransactionDetail()
         viewModel.clearVerifyBalance()
+        viewModel.clearBankInfo()
     }
 
     Scaffold(
@@ -613,7 +615,17 @@ private fun CountPill(count: Int) {
 
 @Composable
 private fun BankTotalsCard(bankTotals: Map<String, BankGroup>, onOpenSheet: (HomeSheet) -> Unit) {
+    val context = LocalContext.current
     ExpandableCard(title = "Bank Totals") {
+        Row(
+            modifier = Modifier.padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            HeaderActionButton("Import CSV/Excel", primary = true) {
+                Toast.makeText(context, "CSV import isn't built yet", Toast.LENGTH_SHORT).show()
+            }
+            HeaderActionButton("Bank Info", primary = false) { onOpenSheet(HomeSheet.BankInfo) }
+        }
         val orderedTypes = ACCOUNT_TYPE_ORDER.filter { bankTotals.containsKey(it) } +
             bankTotals.keys.filter { it !in ACCOUNT_TYPE_ORDER }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -625,6 +637,36 @@ private fun BankTotalsCard(bankTotals: Map<String, BankGroup>, onOpenSheet: (Hom
             }
         }
     }
+}
+
+@Composable
+private fun HeaderActionButton(label: String, primary: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (primary) MaterialTheme.colorScheme.primary else QuailSurfaceRaised,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (primary) Color.Black else QuailText,
+        )
+    }
+}
+
+/** Sum of positive credit_limit values vs. sum of debt (negative `total`,
+ * see accounts.py's bank_totals() "signed raw value" comment) — mirrors
+ * HomeView.swift's creditUsageSummaryPct(). Only shown for the credit
+ * group, and only when at least one account has a limit on file. */
+private fun creditUsageSubtitle(type: String, group: BankGroup): String? {
+    if (type != "credit") return null
+    val totalLimit = group.accounts.mapNotNull { it.creditLimit }.filter { it > 0 }.sum()
+    if (totalLimit <= 0) return null
+    val used = group.accounts.sumOf { maxOf(0.0, -it.total) }
+    val pct = ((used / totalLimit) * 100).roundToInt()
+    return "Limit ${currencyFormat.format(totalLimit)} · $pct% used"
 }
 
 @Composable
@@ -647,7 +689,12 @@ private fun BankTypeSection(type: String, group: BankGroup, onOpenSheet: (HomeSh
                     Text("(${group.accounts.size})", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(currencyFormat.format(group.total), fontWeight = FontWeight.Bold)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(currencyFormat.format(group.total), fontWeight = FontWeight.Bold)
+                        creditUsageSubtitle(type, group)?.let {
+                            Text(it, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                         contentDescription = null,
@@ -670,7 +717,6 @@ private fun BankTypeSection(type: String, group: BankGroup, onOpenSheet: (HomeSh
 
 @Composable
 private fun BankAccountRow(account: BankAccount, onOpenSheet: (HomeSheet) -> Unit) {
-    val context = LocalContext.current
     Surface(color = QuailSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -692,7 +738,7 @@ private fun BankAccountRow(account: BankAccount, onOpenSheet: (HomeSheet) -> Uni
                         onOpenSheet(HomeSheet.VerifyBalance(account.id, account.name ?: "Account"))
                     }
                     SmallPillButton("Audit") {
-                        Toast.makeText(context, "Account audit isn't built yet", Toast.LENGTH_SHORT).show()
+                        onOpenSheet(HomeSheet.AccountAudit(account))
                     }
                 }
             }

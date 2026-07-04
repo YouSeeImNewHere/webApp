@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -779,7 +780,11 @@ def _serialize(row: dict) -> dict:
     for k, v in row.items():
         if isinstance(v, (date, datetime)):
             out[k] = v.isoformat()
-        elif hasattr(v, "__float__"):
+        elif isinstance(v, Decimal):
+            # Plain int columns (id, tenant_id, year, current_mileage, ...) also have
+            # __float__, so a hasattr(v, "__float__") check here would wrongly turn
+            # them into JSON floats (e.g. "id": 1.0) that strict clients can't parse
+            # back into an Int field. Only actual NUMERIC/DECIMAL columns need this.
             out[k] = float(v)
         else:
             out[k] = v

@@ -11,7 +11,7 @@
 		6271927C8415803376FE8596 /* QuailWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = E33FC56F32D578D9196A4468 /* QuailWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		639FE9702FF1FB50001A9DCE /* TestRoute.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 639FE96F2FF1FB50001A9DCE /* TestRoute.gpx */; };
 		A49BFE466ED33856726ED22C /* WidgetAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDD83CF75386049900F83B67 /* WidgetAPI.swift */; };
-		FD8327052F4E2780D5920B26 /* QuailCashWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B2EA5ADC8781BEDAFE8B78 /* QuailCashWidgets.swift */; };
+		FD8327052F4E2780D5920B26 /* QuailWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B2EA5ADC8781BEDAFE8B78 /* QuailWidgets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,7 +39,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		50B2EA5ADC8781BEDAFE8B78 /* QuailCashWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuailCashWidgets.swift; sourceTree = "<group>"; };
+		50B2EA5ADC8781BEDAFE8B78 /* QuailWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuailWidgets.swift; sourceTree = "<group>"; };
 		633B49E02FD3D29A00FA777B /* Quail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Quail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		639FE8E02FF1B79B001A9DCE /* QuailCashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuailCashWidgets.entitlements; sourceTree = "<group>"; };
 		639FE96F2FF1FB50001A9DCE /* TestRoute.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = TestRoute.gpx; sourceTree = "<group>"; };
@@ -87,7 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				639FE8E02FF1B79B001A9DCE /* QuailCashWidgets.entitlements */,
-				50B2EA5ADC8781BEDAFE8B78 /* QuailCashWidgets.swift */,
+				50B2EA5ADC8781BEDAFE8B78 /* QuailWidgets.swift */,
 				BDD83CF75386049900F83B67 /* WidgetAPI.swift */,
 			);
 			path = QuailCashWidgets;
@@ -221,7 +221,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FD8327052F4E2780D5920B26 /* QuailCashWidgets.swift in Sources */,
+				FD8327052F4E2780D5920B26 /* QuailWidgets.swift in Sources */,
 				A49BFE466ED33856726ED22C /* WidgetAPI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -369,14 +369,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = QuailCash/QuailCash.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Quail/QuailCash.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2P4NLYPB9F;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../QuailCashInfo.plist;
+				INFOPLIST_FILE = ../QuailInfo.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -400,14 +400,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = QuailCash/QuailCash.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Quail/QuailCash.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 2P4NLYPB9F;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../QuailCashInfo.plist;
+				INFOPLIST_FILE = ../QuailInfo.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

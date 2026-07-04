@@ -3,6 +3,7 @@ package com.quail.android.ui.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.quail.android.data.model.BankInfoOptions
 import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.SpentSoFarBreakdown
@@ -44,6 +45,13 @@ sealed interface VerifyBalanceUiState {
     data object Success : VerifyBalanceUiState
 }
 
+sealed interface BankInfoUiState {
+    data object Idle : BankInfoUiState
+    data object Loading : BankInfoUiState
+    data class Error(val message: String) : BankInfoUiState
+    data class Success(val info: BankInfoOptions, val isSaving: Boolean = false, val saveMessage: String? = null) : BankInfoUiState
+}
+
 sealed interface SpentSoFarUiState {
     data object Idle : SpentSoFarUiState
     data object Loading : SpentSoFarUiState
@@ -71,6 +79,9 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
 
     private val _spentSoFarState = MutableStateFlow<SpentSoFarUiState>(SpentSoFarUiState.Idle)
     val spentSoFarState: StateFlow<SpentSoFarUiState> = _spentSoFarState.asStateFlow()
+
+    private val _bankInfoState = MutableStateFlow<BankInfoUiState>(BankInfoUiState.Idle)
+    val bankInfoState: StateFlow<BankInfoUiState> = _bankInfoState.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -234,10 +245,36 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
         }
     }
 
+    fun loadBankInfo() {
+        viewModelScope.launch {
+            _bankInfoState.value = BankInfoUiState.Loading
+            try {
+                _bankInfoState.value = BankInfoUiState.Success(repository.getBankInfo())
+            } catch (e: Exception) {
+                _bankInfoState.value = BankInfoUiState.Error(e.message ?: "Couldn't load bank info")
+            }
+        }
+    }
+
+    fun saveInterestRate(accountId: Int, ratePercent: Double, effectiveDate: String?, note: String?) {
+        val current = _bankInfoState.value as? BankInfoUiState.Success ?: return
+        viewModelScope.launch {
+            _bankInfoState.value = current.copy(isSaving = true, saveMessage = null)
+            try {
+                repository.setInterestRate(accountId, ratePercent, effectiveDate, note)
+                _bankInfoState.value = BankInfoUiState.Success(repository.getBankInfo(), saveMessage = "Saved.")
+                refresh()
+            } catch (e: Exception) {
+                _bankInfoState.value = current.copy(isSaving = false, saveMessage = "Save failed.")
+            }
+        }
+    }
+
     fun clearExtraSaved() { _extraSavedState.value = ExtraSavedUiState.Idle }
     fun clearTransactionDetail() { _transactionDetailState.value = TransactionDetailUiState.Idle }
     fun clearVerifyBalance() { _verifyBalanceState.value = VerifyBalanceUiState.Idle }
     fun clearSpentSoFar() { _spentSoFarState.value = SpentSoFarUiState.Idle }
+    fun clearBankInfo() { _bankInfoState.value = BankInfoUiState.Idle }
 
     class Factory(private val repository: HomeRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

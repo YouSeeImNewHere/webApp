@@ -16,6 +16,8 @@ import com.quail.android.data.model.AndroidPushDeviceResponse
 import com.quail.android.data.model.AndroidPushTestBody
 import com.quail.android.data.model.AndroidPushTestResponse
 import com.quail.android.data.model.HomelabMetrics
+import com.quail.android.data.model.InterestRateUpsertRequest
+import com.quail.android.data.model.InterestRateUpsertResponse
 import com.quail.android.data.model.MonthlyReport
 import com.quail.android.data.model.NotificationDetail
 import com.quail.android.data.model.NotificationItem
@@ -40,6 +42,17 @@ import com.quail.android.data.model.TxMetaUpdateRequest
 import com.quail.android.data.model.UnassignedTransaction
 import com.quail.android.data.model.UpcomingEvent
 import com.quail.android.data.model.UpcomingRequest
+import com.quail.android.data.model.VehicleFuelCreateRequest
+import com.quail.android.data.model.VehicleFuelRecord
+import com.quail.android.data.model.VehicleInspectionCreateRequest
+import com.quail.android.data.model.VehicleInspectionItem
+import com.quail.android.data.model.VehicleIssue
+import com.quail.android.data.model.VehicleIssueCreateRequest
+import com.quail.android.data.model.VehicleMaintenanceCreateRequest
+import com.quail.android.data.model.VehicleMaintenanceRecord
+import com.quail.android.data.model.VehicleMileageUpdateRequest
+import com.quail.android.data.model.VehicleProfile
+import com.quail.android.data.model.VehicleProfileUpdateRequest
 import com.quail.android.data.model.VerifyBalanceRequest
 import com.quail.android.data.model.VerifyBalanceResponse
 import com.quail.android.data.network.QuailApi
@@ -174,6 +187,9 @@ class HomeRepository(private val api: QuailApi) {
 
     suspend fun getBankInfo(): BankInfoOptions = api.getBankInfo()
 
+    suspend fun setInterestRate(accountId: Int, ratePercent: Double, effectiveDate: String?, note: String?): InterestRateUpsertResponse =
+        api.setInterestRate(InterestRateUpsertRequest(accountId, ratePercent, effectiveDate, note))
+
     // ---- Analytics ----
 
     suspend fun getMonthlyReport(month: String): MonthlyReport = api.getMonthlyReport(month)
@@ -207,4 +223,38 @@ class HomeRepository(private val api: QuailApi) {
     suspend fun getRoundUps(): RoundUpSettings = api.getRoundUps()
 
     suspend fun setRoundUps(enabled: Boolean): RoundUpSettings = api.setRoundUps(RoundUpSettingsUpdateRequest(enabled))
+
+    // ---- Vehicle (Quail Car) ----
+
+    suspend fun getVehicleProfile(): VehicleProfile = api.getVehicleProfile()
+
+    suspend fun putVehicleProfile(request: VehicleProfileUpdateRequest): VehicleProfile = api.putVehicleProfile(request)
+
+    suspend fun updateVehicleMileage(mileage: Int) { api.updateVehicleMileage(VehicleMileageUpdateRequest(mileage)) }
+
+    suspend fun getVehicleFuel(limit: Int = 200): List<VehicleFuelRecord> = api.getVehicleFuel(limit).records
+
+    suspend fun addVehicleFuel(request: VehicleFuelCreateRequest): VehicleFuelRecord = api.addVehicleFuel(request)
+
+    suspend fun deleteVehicleFuel(id: Int) { api.deleteVehicleFuel(id) }
+
+    suspend fun getVehicleMaintenance(limit: Int = 200): List<VehicleMaintenanceRecord> = api.getVehicleMaintenance(limit).records
+
+    suspend fun addVehicleMaintenance(request: VehicleMaintenanceCreateRequest): VehicleMaintenanceRecord = api.addVehicleMaintenance(request)
+
+    suspend fun deleteVehicleMaintenance(id: Int) { api.deleteVehicleMaintenance(id) }
+
+    suspend fun getVehicleIssues(): List<VehicleIssue> = api.getVehicleIssues()
+
+    suspend fun addVehicleIssue(request: VehicleIssueCreateRequest): VehicleIssue = api.addVehicleIssue(request)
+
+    suspend fun resolveVehicleIssue(id: Int): VehicleIssue = api.resolveVehicleIssue(id)
+
+    suspend fun deleteVehicleIssue(id: Int) { api.deleteVehicleIssue(id) }
+
+    suspend fun getVehicleInspections(): List<VehicleInspectionItem> = api.getVehicleInspections()
+
+    suspend fun addVehicleInspection(request: VehicleInspectionCreateRequest): VehicleInspectionItem = api.addVehicleInspection(request)
+
+    suspend fun checkVehicleInspection(id: Int): VehicleInspectionItem = api.checkVehicleInspection(id)
 }

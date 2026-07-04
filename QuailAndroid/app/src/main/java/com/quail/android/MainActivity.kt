@@ -24,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.quail.android.data.network.NetworkModule
 import com.quail.android.data.repository.AuthStore
 import com.quail.android.data.repository.HomeRepository
+import com.quail.android.data.repository.VehicleLocalStore
 import com.quail.android.ui.screens.admin.AdminScreen
 import com.quail.android.ui.screens.admin.AdminViewModel
 import com.quail.android.ui.screens.budget.BudgetScreen
@@ -40,6 +41,8 @@ import com.quail.android.ui.screens.settings.DashboardSettingsScreen
 import com.quail.android.ui.screens.settings.NotificationPrefsScreen
 import com.quail.android.ui.screens.settings.SettingsScreen
 import com.quail.android.ui.screens.settings.SettingsViewModel
+import com.quail.android.ui.screens.vehicle.VehicleScreen
+import com.quail.android.ui.screens.vehicle.VehicleViewModel
 import com.quail.android.ui.theme.QuailAndroidTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -47,6 +50,7 @@ import kotlinx.coroutines.launch
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_DASHBOARD = "dashboard"
 private const val ROUTE_HOME = "home"
+private const val ROUTE_VEHICLE = "vehicle"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_DASHBOARD_SETTINGS = "dashboard_settings"
@@ -141,8 +145,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppNav(navController: NavHostController, authStore: AuthStore) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val api = remember { NetworkModule.create(authStore) }
     val repository = remember { HomeRepository(api) }
+    val vehicleLocalStore = remember { VehicleLocalStore.getInstance(context) }
     val onSignOut: () -> Unit = {
         scope.launch {
             authStore.clear()
@@ -158,8 +164,17 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
             DashboardScreen(
                 viewModel = viewModel,
                 onOpenCash = { navController.navigate(ROUTE_HOME) },
+                onOpenCar = { navController.navigate(ROUTE_VEHICLE) },
                 onOpenSettings = { navController.navigate(ROUTE_DASHBOARD_SETTINGS) },
                 onOpenAdmin = { navController.navigate(ROUTE_ADMIN) },
+            )
+        }
+
+        composable(ROUTE_VEHICLE) {
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            VehicleScreen(
+                viewModel = viewModel,
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }
 

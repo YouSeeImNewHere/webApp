@@ -16,6 +16,8 @@ import com.quail.android.data.model.AndroidPushDeviceResponse
 import com.quail.android.data.model.AndroidPushTestBody
 import com.quail.android.data.model.AndroidPushTestResponse
 import com.quail.android.data.model.HomelabMetricsResponse
+import com.quail.android.data.model.InterestRateUpsertRequest
+import com.quail.android.data.model.InterestRateUpsertResponse
 import com.quail.android.data.model.MonthBudget
 import com.quail.android.data.model.MonthlyReport
 import com.quail.android.data.model.NotificationDetail
@@ -49,6 +51,20 @@ import com.quail.android.data.model.TxMetaUpdateResponse
 import com.quail.android.data.model.UnassignedTransaction
 import com.quail.android.data.model.UpcomingRequest
 import com.quail.android.data.model.UpcomingResponse
+import com.quail.android.data.model.VehicleFuelCreateRequest
+import com.quail.android.data.model.VehicleFuelListResponse
+import com.quail.android.data.model.VehicleFuelRecord
+import com.quail.android.data.model.VehicleInspectionCreateRequest
+import com.quail.android.data.model.VehicleInspectionItem
+import com.quail.android.data.model.VehicleIssue
+import com.quail.android.data.model.VehicleIssueCreateRequest
+import com.quail.android.data.model.VehicleIssueResolveRequest
+import com.quail.android.data.model.VehicleMaintenanceCreateRequest
+import com.quail.android.data.model.VehicleMaintenanceListResponse
+import com.quail.android.data.model.VehicleMaintenanceRecord
+import com.quail.android.data.model.VehicleMileageUpdateRequest
+import com.quail.android.data.model.VehicleProfile
+import com.quail.android.data.model.VehicleProfileUpdateRequest
 import com.quail.android.data.model.VerifyBalanceRequest
 import com.quail.android.data.model.VerifyBalanceResponse
 import retrofit2.http.Body
@@ -56,6 +72,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -234,6 +251,9 @@ interface QuailApi {
     @GET("bank-info")
     suspend fun getBankInfo(): BankInfoOptions
 
+    @POST("interest-rate")
+    suspend fun setInterestRate(@Body request: InterestRateUpsertRequest): InterestRateUpsertResponse
+
     // ---- Analytics ----
 
     @GET("reports/monthly")
@@ -281,4 +301,54 @@ interface QuailApi {
 
     @POST("settings/round-ups")
     suspend fun setRoundUps(@Body request: RoundUpSettingsUpdateRequest): RoundUpSettings
+
+    // ---- Vehicle (Quail Car) ----
+
+    @GET("vehicle/profile")
+    suspend fun getVehicleProfile(): VehicleProfile
+
+    @PUT("vehicle/profile")
+    suspend fun putVehicleProfile(@Body request: VehicleProfileUpdateRequest): VehicleProfile
+
+    @PATCH("vehicle/profile/mileage")
+    suspend fun updateVehicleMileage(@Body request: VehicleMileageUpdateRequest): OkResponse
+
+    @GET("vehicle/fuel")
+    suspend fun getVehicleFuel(@Query("limit") limit: Int = 200): VehicleFuelListResponse
+
+    @POST("vehicle/fuel")
+    suspend fun addVehicleFuel(@Body request: VehicleFuelCreateRequest): VehicleFuelRecord
+
+    @DELETE("vehicle/fuel/{id}")
+    suspend fun deleteVehicleFuel(@Path("id") id: Int): OkResponse
+
+    @GET("vehicle/maintenance")
+    suspend fun getVehicleMaintenance(@Query("limit") limit: Int = 200): VehicleMaintenanceListResponse
+
+    @POST("vehicle/maintenance")
+    suspend fun addVehicleMaintenance(@Body request: VehicleMaintenanceCreateRequest): VehicleMaintenanceRecord
+
+    @DELETE("vehicle/maintenance/{id}")
+    suspend fun deleteVehicleMaintenance(@Path("id") id: Int): OkResponse
+
+    @GET("vehicle/issues")
+    suspend fun getVehicleIssues(): List<VehicleIssue>
+
+    @POST("vehicle/issues")
+    suspend fun addVehicleIssue(@Body request: VehicleIssueCreateRequest): VehicleIssue
+
+    @POST("vehicle/issues/{id}/resolve")
+    suspend fun resolveVehicleIssue(@Path("id") id: Int, @Body request: VehicleIssueResolveRequest = VehicleIssueResolveRequest()): VehicleIssue
+
+    @DELETE("vehicle/issues/{id}")
+    suspend fun deleteVehicleIssue(@Path("id") id: Int): OkResponse
+
+    @GET("vehicle/inspections")
+    suspend fun getVehicleInspections(): List<VehicleInspectionItem>
+
+    @POST("vehicle/inspections")
+    suspend fun addVehicleInspection(@Body request: VehicleInspectionCreateRequest): VehicleInspectionItem
+
+    @POST("vehicle/inspections/{id}/check")
+    suspend fun checkVehicleInspection(@Path("id") id: Int): VehicleInspectionItem
 }
