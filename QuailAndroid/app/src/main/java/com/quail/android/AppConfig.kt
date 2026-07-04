@@ -41,4 +41,8 @@ object AppConfig {
     fun oauthStartUrl(next: String = "/page/home"): String {
         return "$BASE_URL/gmail/oauth/start?callback=$AUTH_CALLBACK_URL&next=$next"
     }
+
+    // Must match the value in AndroidManifest.xml's
+    // com.google.firebase.messaging.default_notification_channel_id meta-data.
+    const val DEFAULT_NOTIFICATION_CHANNEL_ID = "quail_default"
 }

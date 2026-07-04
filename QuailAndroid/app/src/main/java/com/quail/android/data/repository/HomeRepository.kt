@@ -11,6 +11,8 @@ import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.FinancingPlanCreateRequest
 import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.HomePayload
+import com.quail.android.data.model.AndroidPushDeviceBody
+import com.quail.android.data.model.AndroidPushDeviceResponse
 import com.quail.android.data.model.HomelabMetrics
 import com.quail.android.data.model.MonthlyReport
 import com.quail.android.data.model.NotificationDetail
@@ -125,6 +127,12 @@ class HomeRepository(private val api: QuailApi) {
     suspend fun refreshHomeWidgetCache(): RefreshCacheResponse = api.refreshHomeWidgetCache()
 
     suspend fun getHomelabMetrics(): HomelabMetrics = api.getHomelabMetrics().homelab
+
+    suspend fun registerAndroidPushDevice(token: String, deviceName: String? = null, appVersion: String? = null): AndroidPushDeviceResponse =
+        api.registerAndroidPushDevice(AndroidPushDeviceBody(token = token, deviceName = deviceName, appVersion = appVersion))
+
+    suspend fun deleteAndroidPushDevice(token: String): AndroidPushDeviceResponse =
+        api.deleteAndroidPushDevice(AndroidPushDeviceBody(token = token))
 
     // ---- Recurring ----
 

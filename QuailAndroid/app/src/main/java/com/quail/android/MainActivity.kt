@@ -1,11 +1,16 @@
 package com.quail.android
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -53,20 +58,32 @@ class MainActivity : ComponentActivity() {
     private lateinit var authStore: AuthStore
     private var navController: NavHostController? = null
 
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op either way */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         authStore = AuthStore.getInstance(applicationContext)
 
-        // TEMPORARY: verify FCM is wired up correctly. Remove once push is fully built.
-        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    android.util.Log.d("FCM_TEST", "Token: ${task.result}")
-                } else {
-                    android.util.Log.e("FCM_TEST", "Failed to get token", task.exception)
-                }
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                AppConfig.DEFAULT_NOTIFICATION_CHANNEL_ID,
+                "Quail Alerts",
+                android.app.NotificationManager.IMPORTANCE_HIGH,
+            )
+            getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(channel)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // Covers relaunching while already logged in; handleDeepLink() covers a fresh login.
+        // No-ops silently (caught in registerFcmDeviceIfAvailable) if there's no session yet.
+        registerFcmDeviceIfAvailable()
 
         setContent {
             val nav = rememberNavController()
@@ -97,7 +114,27 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             authStore.save(token, email, tenantId)
             nav.navigate(ROUTE_DASHBOARD) { popUpTo(ROUTE_LOGIN) { inclusive = true } }
+            registerFcmDeviceIfAvailable()
         }
+    }
+
+    /** onNewToken only fires when the FCM token is first minted or rotates —
+     * not on every login — so the token generated before the user ever logs
+     * in would otherwise never reach the backend. Called right after a
+     * successful login to cover that gap. */
+    private fun registerFcmDeviceIfAvailable() {
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+            .addOnCompleteListener { task ->
+                val fcmToken = task.result ?: return@addOnCompleteListener
+                lifecycleScope.launch {
+                    try {
+                        val repository = HomeRepository(NetworkModule.create(authStore))
+                        repository.registerAndroidPushDevice(token = fcmToken, deviceName = Build.MODEL)
+                    } catch (_: Exception) {
+                        // Best-effort; QuailMessagingService.onNewToken will retry on next rotation.
+                    }
+                }
+            }
     }
 }
 

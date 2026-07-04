@@ -33,6 +33,8 @@ APNS_TOPIC = (os.getenv("APNS_TOPIC", "com.quail.ios") or "").strip()
 APNS_AUTH_KEY_PATH = (os.getenv("APNS_AUTH_KEY_PATH", "") or "").strip()
 APNS_AUTH_KEY_P8 = (os.getenv("APNS_AUTH_KEY_P8", "") or "").strip()
 APNS_USE_SANDBOX = (os.getenv("APNS_USE_SANDBOX", "true" if os.getenv("ENV", "").lower() != "prod" else "false") or "").lower() in ("1", "true", "yes")
+FCM_PROJECT_ID = (os.getenv("FCM_PROJECT_ID", "") or "").strip()
+FCM_SERVICE_ACCOUNT_PATH = (os.getenv("FCM_SERVICE_ACCOUNT_PATH", "") or "").strip()
 try:
     SESSION_MAX_AGE_DAYS = max(1, int(os.getenv("SESSION_MAX_AGE_DAYS", "30")))
 except Exception:

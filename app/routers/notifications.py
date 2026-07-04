@@ -18,6 +18,13 @@ from app.core.apns import (
     active_ios_push_device_count_for_user,
     send_ios_push_to_tenant,
 )
+from app.core.fcm import (
+    fcm_configured,
+    register_android_push_device,
+    revoke_android_push_device,
+    active_android_push_device_count_for_user,
+    send_android_push_to_tenant,
+)
 from db import with_db_cursor, query_db
 
 router = APIRouter()
@@ -25,6 +32,7 @@ router = APIRouter()
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "disable_all": False,
     "ios_push": True,
+    "android_push": True,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
@@ -177,6 +185,17 @@ class IOSPushTestBody(BaseModel):
     body: str | None = None
 
 
+class AndroidPushDeviceBody(BaseModel):
+    token: str
+    device_name: str | None = None
+    app_version: str | None = None
+
+
+class AndroidPushTestBody(BaseModel):
+    title: str | None = None
+    body: str | None = None
+
+
 def create_notification(
     *,
     kind: str,
@@ -225,14 +244,32 @@ def create_notification(
                 and bool(prefs.get("ios_push"))
                 and apns_configured()
             )
+            android_push_active = (
+                tenant_id
+                and notification_id
+                and not bool(prefs.get("disable_all"))
+                and bool(prefs.get("android_push"))
+                and fcm_configured()
+            )
             user_key = _resolve_pushover_key_for_tenant(tenant_id)
-            if user_key and not ios_push_active:
+            if user_key and not ios_push_active and not android_push_active:
                 send_pushover(subject or "Notification", body or "", user_key=user_key)
         except Exception:
             pass
         try:
             if ios_push_active:
                 send_ios_push_to_tenant(
+                    tenant_id=int(tenant_id),
+                    notification_id=int(notification_id),
+                    kind=str(kind or ""),
+                    subject=str(subject or "Notification"),
+                    body=str(body or ""),
+                )
+        except Exception:
+            pass
+        try:
+            if android_push_active:
+                send_android_push_to_tenant(
                     tenant_id=int(tenant_id),
                     notification_id=int(notification_id),
                     kind=str(kind or ""),
@@ -415,6 +452,68 @@ def send_ios_push_test(body: IOSPushTestBody, request: Request):
     )
     if int(result.get("sent") or 0) <= 0:
         raise HTTPException(status_code=502, detail="ios_push_send_failed")
+    return {
+        "ok": True,
+        "sent": int(result.get("sent") or 0),
+        "attempted": int(result.get("attempted") or 0),
+    }
+
+
+@router.post("/notifications/android/devices")
+def upsert_android_push_device(body: AndroidPushDeviceBody, request: Request):
+    tid = _require_tenant_id()
+    user = _user_for_session_or_tenant(request, tid)
+    if not tid or not user:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    try:
+        register_android_push_device(
+            tenant_id=int(tid),
+            user_id=int(user.get("id") or 0),
+            token=body.token,
+            device_name=body.device_name,
+            app_version=body.app_version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    count = active_android_push_device_count_for_user(int(user.get("id") or 0))
+    return {"ok": True, "device_count": int(count), "fcm_configured": bool(fcm_configured())}
+
+
+@router.delete("/notifications/android/devices")
+def delete_android_push_device(body: AndroidPushDeviceBody, request: Request):
+    tid = _require_tenant_id()
+    user = _user_for_session_or_tenant(request, tid)
+    if not user:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    changed = revoke_android_push_device(token=body.token, user_id=int(user.get("id") or 0))
+    count = active_android_push_device_count_for_user(int(user.get("id") or 0))
+    return {"ok": True, "revoked": bool(changed), "device_count": int(count)}
+
+
+@router.post("/notifications/android/test")
+def send_android_push_test(body: AndroidPushTestBody, request: Request):
+    prefs, user, tid = _notification_prefs_for_session_request(request)
+    if not user or not tid:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    if not fcm_configured():
+        raise HTTPException(status_code=503, detail="android_push_not_configured")
+    if bool(prefs.get("disable_all")) or not bool(prefs.get("android_push")):
+        raise HTTPException(status_code=409, detail="android_push_disabled")
+    device_count = active_android_push_device_count_for_user(int(user.get("id") or 0))
+    if device_count <= 0:
+        raise HTTPException(status_code=409, detail="android_push_device_not_registered")
+
+    title = str((body.title or "").strip() or "Quail Test Notification")
+    message = str((body.body or "").strip() or "This is a test push from Quail.")
+    result = send_android_push_to_tenant(
+        tenant_id=int(tid),
+        notification_id=0,
+        kind="android_push_test",
+        subject=title,
+        body=message,
+    )
+    if int(result.get("sent") or 0) <= 0:
+        raise HTTPException(status_code=502, detail="android_push_send_failed")
     return {
         "ok": True,
         "sent": int(result.get("sent") or 0),

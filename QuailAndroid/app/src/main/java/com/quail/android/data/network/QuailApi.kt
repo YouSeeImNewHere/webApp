@@ -11,6 +11,8 @@ import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.FinancingPlanCreateRequest
 import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.HomePayload
+import com.quail.android.data.model.AndroidPushDeviceBody
+import com.quail.android.data.model.AndroidPushDeviceResponse
 import com.quail.android.data.model.HomelabMetricsResponse
 import com.quail.android.data.model.MonthBudget
 import com.quail.android.data.model.MonthlyReport
@@ -172,6 +174,12 @@ interface QuailApi {
 
     @GET("admin/homelab-metrics")
     suspend fun getHomelabMetrics(): HomelabMetricsResponse
+
+    @POST("notifications/android/devices")
+    suspend fun registerAndroidPushDevice(@Body body: AndroidPushDeviceBody): AndroidPushDeviceResponse
+
+    @DELETE("notifications/android/devices")
+    suspend fun deleteAndroidPushDevice(@Body body: AndroidPushDeviceBody): AndroidPushDeviceResponse
 
     // ---- Recurring ----
 

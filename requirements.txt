@@ -42,6 +42,7 @@ websockets==15.0.1
 cryptography==46.0.3
 jinja2
 redis[hiredis]==5.2.1
+google-auth==2.35.0
 
 # Optional higher-accuracy local receipt OCR (Python < 3.13 recommended)
 paddleocr==2.7.3; python_version < "3.13"

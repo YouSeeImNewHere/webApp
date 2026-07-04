@@ -3,10 +3,11 @@ package com.quail.android.data.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// Order + labels mirror settings.py's DEFAULT_NOTIFICATION_PREFS (13 keys).
+// Order + labels mirror settings.py's DEFAULT_NOTIFICATION_PREFS (14 keys).
 val NOTIFICATION_PREF_LABELS: List<Pair<String, String>> = listOf(
     "disable_all" to "Disable all notifications",
-    "ios_push" to "Push notifications",
+    "ios_push" to "iOS push notifications",
+    "android_push" to "Push notifications",
     "credit_usage" to "Credit card usage",
     "credit_usage_total" to "Total credit usage",
     "budget_over" to "Over budget",
@@ -28,6 +29,22 @@ data class NotificationSettingsResponse(
     @SerialName("pushover_user_key") val pushoverUserKey: String? = null,
     @SerialName("ios_push_device_count") val iosPushDeviceCount: Int = 0,
     @SerialName("ios_push_configured") val iosPushConfigured: Boolean = false,
+    @SerialName("android_push_device_count") val androidPushDeviceCount: Int = 0,
+    @SerialName("android_push_configured") val androidPushConfigured: Boolean = false,
+)
+
+@Serializable
+data class AndroidPushDeviceBody(
+    val token: String,
+    @SerialName("device_name") val deviceName: String? = null,
+    @SerialName("app_version") val appVersion: String? = null,
+)
+
+@Serializable
+data class AndroidPushDeviceResponse(
+    val ok: Boolean = true,
+    @SerialName("device_count") val deviceCount: Int = 0,
+    @SerialName("revoked") val revoked: Boolean? = null,
 )
 
 @Serializable

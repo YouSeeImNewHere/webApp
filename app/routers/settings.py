@@ -18,6 +18,7 @@ from app.core.roundups import get_roundup_settings, set_roundup_settings
 from app.core.home_snapshot_cache import bump_home_snapshot_version, home_snapshot_version_for_tenant
 from app.core.tenancy import current_tenant_id, get_user_by_email, get_user_pushover_key_by_email
 from app.core.apns import active_ios_push_device_count_for_user, apns_configured
+from app.core.fcm import active_android_push_device_count_for_user, fcm_configured
 from app.core.widget_tokens import issue_widget_token
 from app.core.auth import get_connected_google_email
 
@@ -127,6 +128,7 @@ def _get_backfill_job_for_request(job_id: str, request: Request) -> Dict[str, An
 class NotificationPrefsIn(BaseModel):
     disable_all: Optional[bool] = None
     ios_push: Optional[bool] = None
+    android_push: Optional[bool] = None
     credit_usage: Optional[bool] = None
     credit_usage_total: Optional[bool] = None
     budget_over: Optional[bool] = None
@@ -143,6 +145,7 @@ class NotificationPrefsIn(BaseModel):
 DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "disable_all": False,
     "ios_push": False,
+    "android_push": False,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,
@@ -498,6 +501,8 @@ def get_notification_settings(request: Request):
         "pushover_user_key": (str(user_key) if user_key else None),
         "ios_push_device_count": active_ios_push_device_count_for_user(int(user.get("id") or 0)) if user else 0,
         "ios_push_configured": bool(apns_configured()),
+        "android_push_device_count": active_android_push_device_count_for_user(int(user.get("id") or 0)) if user else 0,
+        "android_push_configured": bool(fcm_configured()),
     }
 
 
@@ -544,6 +549,8 @@ def set_notification_settings(body: NotificationPrefsIn, request: Request):
         "pushover_user_key": (str(user_key) if user_key else None),
         "ios_push_device_count": active_ios_push_device_count_for_user(int(user.get("id") or 0)) if user else 0,
         "ios_push_configured": bool(apns_configured()),
+        "android_push_device_count": active_android_push_device_count_for_user(int(user.get("id") or 0)) if user else 0,
+        "android_push_configured": bool(fcm_configured()),
     }
 
 
