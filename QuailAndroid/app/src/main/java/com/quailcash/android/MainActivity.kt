@@ -19,6 +19,8 @@ import androidx.navigation.compose.rememberNavController
 import com.quailcash.android.data.network.NetworkModule
 import com.quailcash.android.data.repository.AuthStore
 import com.quailcash.android.data.repository.HomeRepository
+import com.quailcash.android.ui.screens.admin.AdminScreen
+import com.quailcash.android.ui.screens.admin.AdminViewModel
 import com.quailcash.android.ui.screens.budget.BudgetScreen
 import com.quailcash.android.ui.screens.budget.BudgetViewModel
 import com.quailcash.android.ui.screens.dashboard.DashboardScreen
@@ -45,6 +47,7 @@ private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_DASHBOARD_SETTINGS = "dashboard_settings"
 private const val ROUTE_NOTIFICATION_SETTINGS = "notification_settings"
 private const val ROUTE_BUDGET = "budget"
+private const val ROUTE_ADMIN = "admin"
 
 class MainActivity : ComponentActivity() {
     private lateinit var authStore: AuthStore
@@ -109,7 +112,13 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 viewModel = viewModel,
                 onOpenCash = { navController.navigate(ROUTE_HOME) },
                 onOpenSettings = { navController.navigate(ROUTE_DASHBOARD_SETTINGS) },
+                onOpenAdmin = { navController.navigate(ROUTE_ADMIN) },
             )
+        }
+
+        composable(ROUTE_ADMIN) {
+            val viewModel: AdminViewModel = viewModel(factory = AdminViewModel.Factory(repository))
+            AdminScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
 
         composable(ROUTE_HOME) {

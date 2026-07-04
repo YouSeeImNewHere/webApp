@@ -13,7 +13,7 @@ enum AppConfig {
         #if targetEnvironment(simulator)
         return "http://127.0.0.1:8000"
         #else
-        return "https://webapp-pe3q.onrender.com"
+        return "https://homelab.taileb5ffb.ts.net"
         #endif
     }
 

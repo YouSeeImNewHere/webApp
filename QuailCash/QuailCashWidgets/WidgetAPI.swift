@@ -1,7 +1,7 @@
 import Foundation
 
 enum WidgetAPI {
-    static let baseURL = URL(string: "https://webapp-pe3q.onrender.com")!
+    static let baseURL = URL(string: "https://homelab.taileb5ffb.ts.net")!
     static let endpointPath = "/widget/summary"
     static let widgetScriptVersion = 3
     static let liveDataMaxAgeMinutes = 20.0

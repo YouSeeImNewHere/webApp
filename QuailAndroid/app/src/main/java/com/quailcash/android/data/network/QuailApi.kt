@@ -11,6 +11,7 @@ import com.quailcash.android.data.model.ExtraSavedDetail
 import com.quailcash.android.data.model.FinancingPlanCreateRequest
 import com.quailcash.android.data.model.FinancingPlanResponse
 import com.quailcash.android.data.model.HomePayload
+import com.quailcash.android.data.model.HomelabMetricsResponse
 import com.quailcash.android.data.model.MonthBudget
 import com.quailcash.android.data.model.MonthlyReport
 import com.quailcash.android.data.model.NotificationDetail
@@ -168,6 +169,9 @@ interface QuailApi {
 
     @POST("settings/refresh-home-widget-cache")
     suspend fun refreshHomeWidgetCache(): RefreshCacheResponse
+
+    @GET("admin/homelab-metrics")
+    suspend fun getHomelabMetrics(): HomelabMetricsResponse
 
     // ---- Recurring ----
 

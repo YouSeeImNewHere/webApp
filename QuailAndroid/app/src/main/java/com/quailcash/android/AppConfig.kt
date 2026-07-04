@@ -4,11 +4,12 @@ import android.os.Build
 
 object AppConfig {
     // Mirrors QuailCash/QuailCash/AppConfig.swift's own
-    // `#if targetEnvironment(simulator)` split: production Render URL on a
-    // real device, local dev backend when running on an emulator. No manual
-    // toggle to remember — building straight to a physical phone always
-    // hits the real server.
-    const val BASE_URL_PROD = "https://webapp-pe3q.onrender.com"
+    // `#if targetEnvironment(simulator)` split: homelab backend on a real
+    // device (Tailscale-private, requires Tailscale connected on-device),
+    // local dev backend when running on an emulator. No manual toggle to
+    // remember — building straight to a physical phone always hits the
+    // real server.
+    const val BASE_URL_PROD = "https://homelab.taileb5ffb.ts.net"
     const val BASE_URL_EMULATOR_LOCAL = "http://10.0.2.2:8000"
 
     // Host machine's LAN IP — only reachable (and only used) if you force

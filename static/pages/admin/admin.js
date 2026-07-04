@@ -27,6 +27,54 @@ function selectedTenant() {
   return TENANTS.find((t) => Number(t.id) === id) || null;
 }
 
+async function loadHomelabMetrics() {
+  const box = byId("homelabMetrics");
+  if (!box) return;
+  box.innerHTML = "";
+  let data;
+  try {
+    data = await apiGetJson("/admin/homelab-metrics", { cache: "no-store" });
+  } catch (err) {
+    box.textContent = "Failed to load homelab metrics.";
+    return;
+  }
+  const m = data?.homelab || {};
+  if (m.error) {
+    box.textContent = `Homelab metrics unavailable: ${m.error}`;
+    return;
+  }
+
+  const rows = [];
+  if (typeof m.cpuUsedPercent === "number") {
+    rows.push(`CPU: ${m.cpuUsedPercent}%`);
+  }
+  if (m.ram) {
+    rows.push(`RAM: ${m.ram.usedMB} / ${m.ram.totalMB} MB (${m.ram.usedPercent ?? "-"}%)`);
+  }
+  if (m.diskRoot) {
+    rows.push(`Disk (/): ${m.diskRoot.usedGB} / ${m.diskRoot.totalGB} GB (${m.diskRoot.usedPercent ?? "-"}%)`);
+  }
+  if (m.network) {
+    rows.push(`Network: in ${m.network.inKbps ?? "-"} / out ${m.network.outKbps ?? "-"} ${m.network.units || ""}`);
+  }
+  if (Array.isArray(m.temperatures) && m.temperatures.length) {
+    for (const t of m.temperatures) {
+      rows.push(`Temp (${t.label}): ${t.celsius}°C`);
+    }
+  }
+
+  if (!rows.length) {
+    box.textContent = "No homelab metrics available.";
+    return;
+  }
+  for (const line of rows) {
+    const row = document.createElement("div");
+    row.className = "admin-error";
+    row.textContent = line;
+    box.appendChild(row);
+  }
+}
+
 async function loadPendingUsers() {
   const box = byId("pendingUsersList");
   if (!box) return;
@@ -290,8 +338,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadAdminErrorFeed();
     await loadEmailParseLogs();
     await loadTenants();
+    await loadHomelabMetrics();
     setStatus("Refreshed.");
   });
+  byId("refreshHomelabBtn")?.addEventListener("click", () => loadHomelabMetrics());
   byId("refreshAdminErrorsBtn")?.addEventListener("click", async () => {
     setStatus("Refreshing admin notifications...");
     await loadAdminErrorFeed();
@@ -340,5 +390,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadAdminErrorFeed();
   await loadTenants();
   await loadEmailParseLogs();
+  await loadHomelabMetrics();
   setStatus("Ready.");
 });

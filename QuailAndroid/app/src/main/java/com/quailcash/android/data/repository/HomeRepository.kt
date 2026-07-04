@@ -11,6 +11,7 @@ import com.quailcash.android.data.model.ExtraSavedDetail
 import com.quailcash.android.data.model.FinancingPlanCreateRequest
 import com.quailcash.android.data.model.FinancingPlanResponse
 import com.quailcash.android.data.model.HomePayload
+import com.quailcash.android.data.model.HomelabMetrics
 import com.quailcash.android.data.model.MonthlyReport
 import com.quailcash.android.data.model.NotificationDetail
 import com.quailcash.android.data.model.NotificationItem
@@ -122,6 +123,8 @@ class HomeRepository(private val api: QuailApi) {
         api.setNotificationSettings(prefs)
 
     suspend fun refreshHomeWidgetCache(): RefreshCacheResponse = api.refreshHomeWidgetCache()
+
+    suspend fun getHomelabMetrics(): HomelabMetrics = api.getHomelabMetrics().homelab
 
     // ---- Recurring ----
 

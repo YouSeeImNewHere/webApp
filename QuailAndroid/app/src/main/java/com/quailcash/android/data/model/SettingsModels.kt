@@ -31,6 +31,48 @@ data class NotificationSettingsResponse(
 )
 
 @Serializable
+data class HomelabRamMetrics(
+    @SerialName("usedMB") val usedMB: Double? = null,
+    @SerialName("totalMB") val totalMB: Double? = null,
+    @SerialName("usedPercent") val usedPercent: Double? = null,
+)
+
+@Serializable
+data class HomelabDiskMetrics(
+    @SerialName("usedGB") val usedGB: Double? = null,
+    @SerialName("totalGB") val totalGB: Double? = null,
+    @SerialName("usedPercent") val usedPercent: Double? = null,
+)
+
+@Serializable
+data class HomelabNetworkMetrics(
+    @SerialName("inKbps") val inKbps: Double? = null,
+    @SerialName("outKbps") val outKbps: Double? = null,
+    val units: String? = null,
+)
+
+@Serializable
+data class HomelabTemperature(
+    val label: String,
+    val celsius: Double,
+)
+
+@Serializable
+data class HomelabMetrics(
+    @SerialName("cpuUsedPercent") val cpuUsedPercent: Double? = null,
+    val ram: HomelabRamMetrics? = null,
+    @SerialName("diskRoot") val diskRoot: HomelabDiskMetrics? = null,
+    val network: HomelabNetworkMetrics? = null,
+    val temperatures: List<HomelabTemperature>? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class HomelabMetricsResponse(
+    val homelab: HomelabMetrics = HomelabMetrics(),
+)
+
+@Serializable
 data class RefreshCacheResponse(
     val ok: Boolean = true,
     @SerialName("tenant_id") val tenantId: Int = 0,

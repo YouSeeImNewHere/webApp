@@ -43,6 +43,7 @@ tmp_kwgt_edit/
 
 backup/
 *.dump
+*.pgdump
 *.json
 
 # Logs
