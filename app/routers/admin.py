@@ -713,8 +713,20 @@ def _homelab_metrics() -> dict:
     for key, chart in data.items():
         if key.startswith("sensors.temperature_") and key.endswith("_input"):
             val = _netdata_dim_value(chart, "input")
-            if val is not None:
-                temps.append({"label": chart.get("name") or key, "celsius": round(val, 1)})
+            if val is None:
+                continue
+            # Chart "name" fields are often identical to the raw key on this
+            # sensors plugin, so build a short human label from the key itself,
+            # e.g. "sensors.temperature_coretemp-isa-0000_temp2_Core_0_input"
+            # -> "coretemp Core 0", "sensors.temperature_pch_cometlake-virtual-0_temp1_input"
+            # -> "pch cometlake temp1".
+            raw = key[len("sensors.temperature_"):-len("_input")]
+            chip = raw.split("-", 1)[0].replace("_", " ")
+            m = re.search(r"_(temp\d+)_?(.*)$", raw)
+            suffix = (m.group(2) if m else "").replace("_", " ").strip()
+            temp_id = m.group(1) if m else ""
+            label = f"{chip} {suffix}".strip() if suffix else f"{chip} {temp_id}".strip()
+            temps.append({"label": label or raw, "celsius": round(val, 1)})
     if temps:
         out["temperatures"] = temps
 

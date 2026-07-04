@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quailcash.android.data.model.HomelabMetrics
 import com.quailcash.android.ui.theme.QuailBadRed
@@ -118,10 +120,13 @@ private fun HomelabMetricsBody(metrics: HomelabMetrics?) {
                     )
                 }
                 metrics.network?.let {
-                    MetricRow("Network", "in ${it.inKbps ?: "-"} / out ${it.outKbps ?: "-"} ${it.units ?: ""}")
+                    MetricRow(
+                        "Network",
+                        "in ${it.inKbps?.let { v -> "%.1f".format(v) } ?: "-"} / out ${it.outKbps?.let { v -> "%.1f".format(v) } ?: "-"} ${it.units ?: ""}",
+                    )
                 }
                 metrics.temperatures?.forEach {
-                    MetricRow("Temp (${it.label})", "${it.celsius}°C")
+                    MetricRow(it.label, "${it.celsius}°C")
                 }
             }
         }
@@ -130,8 +135,24 @@ private fun HomelabMetricsBody(metrics: HomelabMetrics?) {
 
 @Composable
 private fun MetricRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = QuailTextDim, style = MaterialTheme.typography.bodyMedium)
-        Text(value, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            label,
+            color = QuailTextDim,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            value,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
