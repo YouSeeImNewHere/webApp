@@ -14,6 +14,9 @@ class AdminViewModel(private val repository: HomeRepository) : ViewModel() {
     private val _homelabMetrics = MutableStateFlow<HomelabMetrics?>(null)
     val homelabMetrics: StateFlow<HomelabMetrics?> = _homelabMetrics.asStateFlow()
 
+    private val _pushTestStatus = MutableStateFlow<String?>(null)
+    val pushTestStatus: StateFlow<String?> = _pushTestStatus.asStateFlow()
+
     init {
         loadHomelabMetrics()
     }
@@ -25,6 +28,21 @@ class AdminViewModel(private val repository: HomeRepository) : ViewModel() {
                 _homelabMetrics.value = repository.getHomelabMetrics()
             } catch (e: Exception) {
                 _homelabMetrics.value = HomelabMetrics(error = e.message ?: "Unreachable")
+            }
+        }
+    }
+
+    fun sendPushTest() {
+        viewModelScope.launch {
+            _pushTestStatus.value = "Sending..."
+            try {
+                val result = repository.sendAndroidPushTest(
+                    title = "Backend Test",
+                    body = "Sent via our own FCM integration",
+                )
+                _pushTestStatus.value = "Sent ${result.sent}/${result.attempted}"
+            } catch (e: Exception) {
+                _pushTestStatus.value = "Failed: ${e.message ?: "unknown error"}"
             }
         }
     }

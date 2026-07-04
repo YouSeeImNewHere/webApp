@@ -129,6 +129,7 @@ class NotificationPrefsIn(BaseModel):
     disable_all: Optional[bool] = None
     ios_push: Optional[bool] = None
     android_push: Optional[bool] = None
+    homelab_alert: Optional[bool] = None
     credit_usage: Optional[bool] = None
     credit_usage_total: Optional[bool] = None
     budget_over: Optional[bool] = None
@@ -146,6 +147,7 @@ DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "disable_all": False,
     "ios_push": False,
     "android_push": False,
+    "homelab_alert": True,
     "credit_usage": True,
     "credit_usage_total": True,
     "budget_over": True,

@@ -13,6 +13,8 @@ import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.AndroidPushDeviceBody
 import com.quail.android.data.model.AndroidPushDeviceResponse
+import com.quail.android.data.model.AndroidPushTestBody
+import com.quail.android.data.model.AndroidPushTestResponse
 import com.quail.android.data.model.HomelabMetrics
 import com.quail.android.data.model.MonthlyReport
 import com.quail.android.data.model.NotificationDetail
@@ -133,6 +135,9 @@ class HomeRepository(private val api: QuailApi) {
 
     suspend fun deleteAndroidPushDevice(token: String): AndroidPushDeviceResponse =
         api.deleteAndroidPushDevice(AndroidPushDeviceBody(token = token))
+
+    suspend fun sendAndroidPushTest(title: String? = null, body: String? = null): AndroidPushTestResponse =
+        api.sendAndroidPushTest(AndroidPushTestBody(title = title, body = body))
 
     // ---- Recurring ----
 

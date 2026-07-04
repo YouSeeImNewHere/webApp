@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +42,7 @@ import com.quail.android.ui.theme.QuailTextDim
 @Composable
 fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit) {
     val homelabMetrics by viewModel.homelabMetrics.collectAsState()
+    val pushTestStatus by viewModel.pushTestStatus.collectAsState()
 
     Scaffold(
         topBar = {
@@ -70,6 +72,19 @@ fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit) {
             item {
                 AdminSection("Homelab Server") {
                     HomelabMetricsBody(homelabMetrics)
+                }
+            }
+
+            item {
+                AdminSection("Push Notifications") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { viewModel.sendPushTest() }) {
+                            Text("Send Test Push")
+                        }
+                        pushTestStatus?.let {
+                            Text(it, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
         }

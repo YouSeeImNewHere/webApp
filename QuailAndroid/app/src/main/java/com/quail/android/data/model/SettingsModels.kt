@@ -8,6 +8,7 @@ val NOTIFICATION_PREF_LABELS: List<Pair<String, String>> = listOf(
     "disable_all" to "Disable all notifications",
     "ios_push" to "iOS push notifications",
     "android_push" to "Push notifications",
+    "homelab_alert" to "Homelab server alerts",
     "credit_usage" to "Credit card usage",
     "credit_usage_total" to "Total credit usage",
     "budget_over" to "Over budget",
@@ -45,6 +46,19 @@ data class AndroidPushDeviceResponse(
     val ok: Boolean = true,
     @SerialName("device_count") val deviceCount: Int = 0,
     @SerialName("revoked") val revoked: Boolean? = null,
+)
+
+@Serializable
+data class AndroidPushTestBody(
+    val title: String? = null,
+    val body: String? = null,
+)
+
+@Serializable
+data class AndroidPushTestResponse(
+    val ok: Boolean = true,
+    val sent: Int = 0,
+    val attempted: Int = 0,
 )
 
 @Serializable

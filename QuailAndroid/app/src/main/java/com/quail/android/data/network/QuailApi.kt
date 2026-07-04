@@ -13,6 +13,8 @@ import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.AndroidPushDeviceBody
 import com.quail.android.data.model.AndroidPushDeviceResponse
+import com.quail.android.data.model.AndroidPushTestBody
+import com.quail.android.data.model.AndroidPushTestResponse
 import com.quail.android.data.model.HomelabMetricsResponse
 import com.quail.android.data.model.MonthBudget
 import com.quail.android.data.model.MonthlyReport
@@ -180,6 +182,9 @@ interface QuailApi {
 
     @DELETE("notifications/android/devices")
     suspend fun deleteAndroidPushDevice(@Body body: AndroidPushDeviceBody): AndroidPushDeviceResponse
+
+    @POST("notifications/android/test")
+    suspend fun sendAndroidPushTest(@Body body: AndroidPushTestBody): AndroidPushTestResponse
 
     // ---- Recurring ----
 
