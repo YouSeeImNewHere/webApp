@@ -1,0 +1,10 @@
+[Unit]
+Description=Compute today's safe-to-spend and send the daily budget notification
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=trevinjc
+WorkingDirectory=/home/trevinjc/webapp
+EnvironmentFile=/home/trevinjc/webapp/.env
+ExecStart=/home/trevinjc/webapp/.venv/bin/python /home/trevinjc/webapp/scripts/daily_safe_to_spend.py

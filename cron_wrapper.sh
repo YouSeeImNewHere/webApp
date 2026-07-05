@@ -37,7 +37,7 @@ if [ "$EXIT_CODE" -ne 0 ]; then
       -H "X-Notif-Secret: $NOTIF_SECRET" \
       --data-binary @- <<JSON
 {
-  "kind": "cron_fail",
+  "kind": "cron_error",
   "dedupe_key": "$DEDUPE_KEY",
   "subject": "Cron FAILED: $JOB_NAME (exit $EXIT_CODE)",
   "sender": "Render Cron",
