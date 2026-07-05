@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -14,6 +18,85 @@ from db import query_db, with_db_cursor
 router = APIRouter()
 
 _tables_ready = False
+
+# ---------------------------------------------------------------------------
+# Garmin connect (in-app login — replaces the SSH-only setup script)
+# ---------------------------------------------------------------------------
+
+GARMIN_TOKENSTORE_PATH = os.getenv("GARMIN_TOKENSTORE_PATH") or str(Path.home() / ".garminconnect_tokens")
+_GARMIN_MFA_TTL_SECONDS = 600
+# Garmin's MFA resume needs the *same* in-memory client object that started the
+# login (its session/cookies aren't serializable), so we hold it here between
+# the "connect" and "submit MFA code" requests rather than returning it to the
+# client. Fine for a single-user personal deployment; not something to scale
+# to concurrent multi-tenant logins without a real per-session store.
+_pending_garmin_logins: dict[str, tuple[Any, Any, float]] = {}
+
+
+def _prune_expired_garmin_logins() -> None:
+    now = time.time()
+    expired = [k for k, (_, _, ts) in _pending_garmin_logins.items() if now - ts > _GARMIN_MFA_TTL_SECONDS]
+    for k in expired:
+        _pending_garmin_logins.pop(k, None)
+
+
+class GarminConnectIn(BaseModel):
+    email: str
+    password: str
+
+
+class GarminMfaIn(BaseModel):
+    session_id: str
+    mfa_code: str
+
+
+@router.get("/fitness/garmin/status")
+def garmin_status():
+    return {"connected": os.path.exists(GARMIN_TOKENSTORE_PATH)}
+
+
+@router.post("/fitness/garmin/connect")
+def garmin_connect(body: GarminConnectIn):
+    _prune_expired_garmin_logins()
+    try:
+        from garminconnect import Garmin
+    except ImportError:
+        raise HTTPException(status_code=500, detail="garminconnect_not_installed")
+
+    garmin = Garmin(email=body.email, password=body.password, return_on_mfa=True)
+    try:
+        result1, result2 = garmin.login(tokenstore=GARMIN_TOKENSTORE_PATH)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"garmin_login_failed: {e}")
+
+    if result1 == "needs_mfa":
+        session_id = str(uuid.uuid4())
+        _pending_garmin_logins[session_id] = (garmin, result2, time.time())
+        return {"needs_mfa": True, "session_id": session_id}
+
+    return {"needs_mfa": False, "connected": True}
+
+
+@router.post("/fitness/garmin/mfa")
+def garmin_mfa(body: GarminMfaIn):
+    _prune_expired_garmin_logins()
+    pending = _pending_garmin_logins.pop(body.session_id, None)
+    if not pending:
+        raise HTTPException(status_code=400, detail="session_expired_or_unknown")
+    garmin, client_state, _ = pending
+    try:
+        garmin.resume_login(client_state, body.mfa_code)
+        garmin.client.dump(GARMIN_TOKENSTORE_PATH)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"garmin_mfa_failed: {e}")
+    return {"connected": True}
+
+
+@router.delete("/fitness/garmin/connect")
+def garmin_disconnect():
+    if os.path.exists(GARMIN_TOKENSTORE_PATH):
+        os.remove(GARMIN_TOKENSTORE_PATH)
+    return {"connected": False}
 
 
 def ensure_fitness_tables():

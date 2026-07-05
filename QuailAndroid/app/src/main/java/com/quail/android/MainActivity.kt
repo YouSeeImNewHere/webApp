@@ -42,7 +42,10 @@ import com.quail.android.ui.screens.bugs.BugsViewModel
 import com.quail.android.ui.screens.dashboard.DashboardScreen
 import com.quail.android.ui.screens.dashboard.DashboardViewModel
 import com.quail.android.ui.screens.fitness.FitnessActiveWorkoutScreen
+import com.quail.android.ui.screens.fitness.FitnessAnalyticsScreen
+import com.quail.android.ui.screens.fitness.FitnessCalendarScreen
 import com.quail.android.ui.screens.fitness.FitnessScreen
+import com.quail.android.ui.screens.fitness.FitnessSettingsScreen
 import com.quail.android.ui.screens.fitness.FitnessViewModel
 import com.quail.android.ui.screens.home.HomeScreen
 import com.quail.android.ui.screens.home.HomeViewModel
@@ -79,6 +82,9 @@ private const val ROUTE_VEHICLE_SETTINGS = "vehicle_settings"
 private const val ROUTE_VEHICLE_NOTIFICATIONS = "vehicle_notifications"
 private const val ROUTE_FITNESS = "fitness"
 private const val ROUTE_FITNESS_ACTIVE_WORKOUT = "fitness_active_workout"
+private const val ROUTE_FITNESS_SETTINGS = "fitness_settings"
+private const val ROUTE_FITNESS_CALENDAR = "fitness_calendar"
+private const val ROUTE_FITNESS_ANALYTICS = "fitness_analytics"
 private const val ROUTE_BUGS = "bugs"
 private const val ROUTE_PROJECTS = "projects"
 private const val ROUTE_PROJECT_DETAIL = "project_detail/{clientId}"
@@ -234,6 +240,39 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
             FitnessScreen(
                 viewModel = viewModel,
                 onStartWorkout = { navController.navigate(ROUTE_FITNESS_ACTIVE_WORKOUT) },
+                onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
+                onOpenCalendar = { navController.navigate(ROUTE_FITNESS_CALENDAR) },
+                onOpenAnalytics = { navController.navigate(ROUTE_FITNESS_ANALYTICS) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_FITNESS_SETTINGS) {
+            val viewModel: FitnessViewModel = viewModel(factory = FitnessViewModel.Factory(fitnessRepository))
+            FitnessSettingsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(ROUTE_FITNESS_CALENDAR) {
+            val viewModel: FitnessViewModel = viewModel(factory = FitnessViewModel.Factory(fitnessRepository))
+            FitnessCalendarScreen(
+                viewModel = viewModel,
+                onOpenHome = { navController.popBackStack(ROUTE_FITNESS, inclusive = false) },
+                onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
+                onOpenAnalytics = { navController.navigate(ROUTE_FITNESS_ANALYTICS) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_FITNESS_ANALYTICS) {
+            val viewModel: FitnessViewModel = viewModel(factory = FitnessViewModel.Factory(fitnessRepository))
+            FitnessAnalyticsScreen(
+                viewModel = viewModel,
+                onOpenHome = { navController.popBackStack(ROUTE_FITNESS, inclusive = false) },
+                onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
+                onOpenCalendar = { navController.navigate(ROUTE_FITNESS_CALENDAR) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }

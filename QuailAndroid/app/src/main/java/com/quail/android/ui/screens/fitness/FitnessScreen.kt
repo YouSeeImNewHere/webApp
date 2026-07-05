@@ -15,17 +15,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.MonitorWeight
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -70,14 +74,25 @@ sealed interface FitnessSheet {
 fun FitnessScreen(
     viewModel: FitnessViewModel,
     onStartWorkout: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenCalendar: () -> Unit,
+    onOpenAnalytics: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
     val data by viewModel.uiState.collectAsState()
     var activeSheet by remember { mutableStateOf<FitnessSheet?>(null) }
 
     Scaffold(
-        topBar = { FitnessTopBar() },
-        bottomBar = { FitnessBottomBar(onOpenDashboard) },
+        topBar = { FitnessTopBar(onOpenSettings) },
+        bottomBar = {
+            FitnessBottomBar(
+                selectedTab = FitnessTab.HOME,
+                onSelectHome = {},
+                onSelectCalendar = onOpenCalendar,
+                onSelectAnalytics = onOpenAnalytics,
+                onOpenDashboard = onOpenDashboard,
+            )
+        },
     ) { padding ->
         if (data == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -102,24 +117,65 @@ fun FitnessScreen(
 }
 
 @Composable
-private fun FitnessTopBar() {
+fun FitnessTopBar(onOpenSettings: () -> Unit) {
     Surface(color = QuailSurface) {
-        Box(modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(vertical = 8.dp).height(40.dp), contentAlignment = Alignment.Center) {
-            Text("Quail Fitness", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+        Box(modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp).height(40.dp)) {
+            IconButton(onClick = onOpenSettings, modifier = Modifier.align(Alignment.CenterStart)) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings")
+            }
+            Text(
+                "Quail Fitness",
+                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
     }
 }
 
+enum class FitnessTab { HOME, CALENDAR, ANALYTICS }
+
 @Composable
-private fun FitnessBottomBar(onOpenDashboard: () -> Unit) {
+fun FitnessBottomBar(
+    selectedTab: FitnessTab?,
+    onSelectHome: () -> Unit,
+    onSelectCalendar: () -> Unit,
+    onSelectAnalytics: () -> Unit,
+    onOpenDashboard: () -> Unit,
+) {
     Surface(color = QuailSurface) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FitnessBottomBarTab("Home", Icons.Filled.FitnessCenter, selected = selectedTab == FitnessTab.HOME, onClick = onSelectHome, modifier = Modifier.weight(1f))
+            FitnessBottomBarTab("Calendar", Icons.Filled.CalendarMonth, selected = selectedTab == FitnessTab.CALENDAR, onClick = onSelectCalendar, modifier = Modifier.weight(1f))
+            FitnessBottomBarTab("Analytics", Icons.Filled.BarChart, selected = selectedTab == FitnessTab.ANALYTICS, onClick = onSelectAnalytics, modifier = Modifier.weight(1f))
             Surface(onClick = onOpenDashboard, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(12.dp)) {
                 Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Dashboard, contentDescription = null, tint = Color.Black)
                     Text("Dashboard", color = Color.Black, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FitnessBottomBarTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) QuailSurfaceRaised else Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(icon, contentDescription = label, tint = if (selected) MaterialTheme.colorScheme.onSurface else QuailTextDim)
+            Text(label, color = if (selected) MaterialTheme.colorScheme.onSurface else QuailTextDim, style = MaterialTheme.typography.labelSmall)
         }
     }
 }

@@ -5,6 +5,9 @@ import com.quail.android.data.model.BodyweightRecord
 import com.quail.android.data.model.BodyweightUpsertRequest
 import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.CustomExerciseUpsertRequest
+import com.quail.android.data.model.GarminConnectRequest
+import com.quail.android.data.model.GarminConnectResponse
+import com.quail.android.data.model.GarminMfaRequest
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.MilestoneRecord
@@ -196,6 +199,21 @@ class FitnessRepository(
     suspend fun deleteCustomExercise(clientId: String) {
         db.customExerciseDao().markPendingDelete(clientId)
         FitnessSyncScheduler.scheduleSync(context)
+    }
+
+    // ---- Garmin connect (online-only, no offline queue — same as any other
+    // live external-service action) ----
+
+    suspend fun getGarminStatus(): Boolean = api.getGarminStatus().connected
+
+    suspend fun connectGarmin(email: String, password: String): GarminConnectResponse =
+        api.connectGarmin(GarminConnectRequest(email, password))
+
+    suspend fun submitGarminMfa(sessionId: String, mfaCode: String): Boolean =
+        api.submitGarminMfa(GarminMfaRequest(sessionId, mfaCode)).connected
+
+    suspend fun disconnectGarmin() {
+        api.disconnectGarmin()
     }
 
     // ---- Sync worker entry point: push everything pending, best-effort ----

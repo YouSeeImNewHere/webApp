@@ -62,6 +62,15 @@ data class ActiveWorkout(
     val notes: String = "",
 )
 
+sealed interface GarminConnectState {
+    data object Unknown : GarminConnectState
+    data object Disconnected : GarminConnectState
+    data object Connected : GarminConnectState
+    data object Connecting : GarminConnectState
+    data class NeedsMfa(val sessionId: String) : GarminConnectState
+    data class Error(val message: String) : GarminConnectState
+}
+
 class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() {
     val uiState: StateFlow<FitnessData?> = combine(
         combine(repository.sessions, repository.routines, repository.goals, repository.bodyweightLogs, ::SessionsBundle),
@@ -73,6 +82,50 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
 
     private val _activeWorkout = MutableStateFlow<ActiveWorkout?>(null)
     val activeWorkout: StateFlow<ActiveWorkout?> = _activeWorkout
+
+    private val _garminState = MutableStateFlow<GarminConnectState>(GarminConnectState.Unknown)
+    val garminState: StateFlow<GarminConnectState> = _garminState
+
+    fun refreshGarminStatus() {
+        viewModelScope.launch {
+            _garminState.value = runCatching { repository.getGarminStatus() }
+                .fold(
+                    onSuccess = { connected -> if (connected) GarminConnectState.Connected else GarminConnectState.Disconnected },
+                    onFailure = { GarminConnectState.Unknown },
+                )
+        }
+    }
+
+    fun connectGarmin(email: String, password: String) {
+        viewModelScope.launch {
+            _garminState.value = GarminConnectState.Connecting
+            runCatching { repository.connectGarmin(email, password) }
+                .onSuccess { result ->
+                    _garminState.value = when {
+                        result.needsMfa && result.sessionId != null -> GarminConnectState.NeedsMfa(result.sessionId)
+                        result.connected -> GarminConnectState.Connected
+                        else -> GarminConnectState.Error("Login did not complete")
+                    }
+                }
+                .onFailure { e -> _garminState.value = GarminConnectState.Error(e.message ?: "Connection failed") }
+        }
+    }
+
+    fun submitGarminMfa(sessionId: String, code: String) {
+        viewModelScope.launch {
+            _garminState.value = GarminConnectState.Connecting
+            runCatching { repository.submitGarminMfa(sessionId, code) }
+                .onSuccess { connected -> _garminState.value = if (connected) GarminConnectState.Connected else GarminConnectState.Error("Incorrect code") }
+                .onFailure { e -> _garminState.value = GarminConnectState.Error(e.message ?: "Incorrect code") }
+        }
+    }
+
+    fun disconnectGarmin() {
+        viewModelScope.launch {
+            runCatching { repository.disconnectGarmin() }
+            _garminState.value = GarminConnectState.Disconnected
+        }
+    }
 
     fun startWorkout(fromRoutine: RoutineRecord? = null, bodyweightKg: Double? = null) {
         _activeWorkout.value = ActiveWorkout(
@@ -267,6 +320,22 @@ fun currentProgressionStep(path: ProgressionPath, sessions: List<WorkoutSessionR
     val lastId = path.exerciseIds.lastOrNull() ?: return null
     val lastExercise = allExercises.firstOrNull { it.id == lastId } ?: return null
     return lastExercise to (path.exerciseIds.size - 1)
+}
+
+/** Total completed reps (all muscle groups combined) per week, for the last
+ * [weeks] calendar weeks (Mon-Sun), oldest first — used for the Analytics
+ * page's volume-over-time trend. */
+fun weeklyVolumeHistory(sessions: List<WorkoutSessionRecord>, weeks: Int = 8): List<Pair<LocalDate, Int>> {
+    val today = LocalDate.now()
+    return (0 until weeks).map { weekIndex ->
+        val weekStart = today.minusWeeks(weekIndex.toLong()).with(java.time.DayOfWeek.MONDAY)
+        val weekEnd = weekStart.plusDays(6)
+        val total = sessions.filter { session ->
+            val d = runCatching { LocalDate.parse(session.date) }.getOrNull() ?: return@filter false
+            !d.isBefore(weekStart) && !d.isAfter(weekEnd)
+        }.sumOf { session -> session.exercises.sumOf { entry -> entry.sets.filter { it.isCompleted }.sumOf { it.reps ?: 0 } } }
+        weekStart to total
+    }.reversed()
 }
 
 /** Mirrors FitnessStore.swift's weeklyVolume() — total completed reps per

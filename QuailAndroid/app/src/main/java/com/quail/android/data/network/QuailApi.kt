@@ -29,6 +29,11 @@ import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.FinancingPlanCreateRequest
 import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.CustomExerciseUpsertRequest
+import com.quail.android.data.model.GarminConnectRequest
+import com.quail.android.data.model.GarminConnectResponse
+import com.quail.android.data.model.GarminMfaRequest
+import com.quail.android.data.model.GarminMfaResponse
+import com.quail.android.data.model.GarminStatusResponse
 import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
@@ -454,6 +459,18 @@ interface QuailApi {
 
     @DELETE("fitness/custom-exercises/{id}")
     suspend fun deleteCustomExercise(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/garmin/status")
+    suspend fun getGarminStatus(): GarminStatusResponse
+
+    @POST("fitness/garmin/connect")
+    suspend fun connectGarmin(@Body request: GarminConnectRequest): GarminConnectResponse
+
+    @POST("fitness/garmin/mfa")
+    suspend fun submitGarminMfa(@Body request: GarminMfaRequest): GarminMfaResponse
+
+    @DELETE("fitness/garmin/connect")
+    suspend fun disconnectGarmin(): OkResponse
 
     @GET("fitness/bodyweight")
     suspend fun getBodyweightLogs(@Query("limit") limit: Int = 200): List<BodyweightRecord>

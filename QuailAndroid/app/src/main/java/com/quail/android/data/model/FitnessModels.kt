@@ -288,6 +288,27 @@ fun CustomExerciseRecord.toExercise(): Exercise = Exercise(
     customClientId = clientId,
 )
 
+// ---- Garmin connect ----
+
+@Serializable
+data class GarminConnectRequest(val email: String, val password: String)
+
+@Serializable
+data class GarminConnectResponse(
+    @SerialName("needs_mfa") val needsMfa: Boolean = false,
+    @SerialName("session_id") val sessionId: String? = null,
+    val connected: Boolean = false,
+)
+
+@Serializable
+data class GarminMfaRequest(@SerialName("session_id") val sessionId: String, @SerialName("mfa_code") val mfaCode: String)
+
+@Serializable
+data class GarminMfaResponse(val connected: Boolean = false)
+
+@Serializable
+data class GarminStatusResponse(val connected: Boolean = false)
+
 data class ProgressionPath(
     val id: String,
     val name: String,
