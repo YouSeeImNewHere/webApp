@@ -128,8 +128,6 @@ def main() -> None:
         sys.exit(1)
 
     from garminconnect import Garmin
-    from app.core.tenancy import get_owner_tenant_id
-    from app.routers.fitness import ensure_fitness_tables
 
     garmin = Garmin()
     try:
@@ -138,34 +136,40 @@ def main() -> None:
         log(f"Garmin login failed: {e}")
         sys.exit(1)
 
-    tenant_id = get_owner_tenant_id()
-    if not tenant_id:
-        log("No owner tenant configured; nothing to sync into.")
-        return
-
-    end = datetime.now().date()
-    start = end - timedelta(days=LOOKBACK_DAYS)
-    activities = garmin.get_activities_by_date(start.isoformat(), end.isoformat(), "running")
-    log(f"Found {len(activities)} running activities between {start} and {end}.")
-
+    # The DB pool must be open before any code path touches the database —
+    # get_owner_tenant_id() included. It used to run before open_pool(), which
+    # crashed every time this ran outside app_postgres's own startup.
     db.open_pool()
     try:
+        from app.core.tenancy import get_owner_tenant_id
+        from app.routers.fitness import ensure_fitness_tables
+
+        tenant_id = get_owner_tenant_id()
+        if not tenant_id:
+            log("No owner tenant configured; nothing to sync into.")
+            return
+
+        end = datetime.now().date()
+        start = end - timedelta(days=LOOKBACK_DAYS)
+        activities = garmin.get_activities_by_date(start.isoformat(), end.isoformat(), "running")
+        log(f"Found {len(activities)} running activities between {start} and {end}.")
+
         ensure_fitness_tables()
+        health_days_synced = 0
         with db.with_db_cursor() as (conn, cur):
             for activity in activities:
                 upsert_run(cur, int(tenant_id), activity)
             conn.commit()
 
-            health_days_synced = 0
             for i in range(LOOKBACK_DAYS):
                 day = end - timedelta(days=i)
                 if sync_daily_health(garmin, cur, int(tenant_id), day):
                     health_days_synced += 1
             conn.commit()
+
+        log(f"Synced {len(activities)} run(s), {health_days_synced} day(s) of health stats.")
     finally:
         db.close_pool()
-
-    log(f"Synced {len(activities)} run(s), {health_days_synced} day(s) of health stats.")
 
 
 if __name__ == "__main__":

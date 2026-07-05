@@ -10,9 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -139,29 +136,33 @@ fun FitnessCalendarScreen(
                         val daysInMonth = month.lengthOfMonth()
                         val cells = (0 until leadingBlanks).map { null } + (1..daysInMonth).map { month.atDay(it) }
 
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(7),
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        ) {
-                            items(cells) { day ->
-                                Box(modifier = Modifier.aspectRatio(1f).padding(3.dp), contentAlignment = Alignment.Center) {
-                                    if (day != null) {
-                                        val hasWorkout = day in dates
-                                        val isToday = day == LocalDate.now()
-                                        Surface(
-                                            color = if (hasWorkout) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                            shape = CircleShape,
-                                            modifier = Modifier.fillMaxSize(),
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text(
-                                                    "${day.dayOfMonth}",
-                                                    color = if (hasWorkout) Color.Black else if (isToday) MaterialTheme.colorScheme.primary else QuailTextDim,
-                                                    fontWeight = if (hasWorkout || isToday) FontWeight.Bold else FontWeight.Normal,
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                )
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            cells.chunked(7).forEach { week ->
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    week.forEach { day ->
+                                        Box(modifier = Modifier.weight(1f).aspectRatio(1f).padding(3.dp), contentAlignment = Alignment.Center) {
+                                            if (day != null) {
+                                                val hasWorkout = day in dates
+                                                val isToday = day == LocalDate.now()
+                                                Surface(
+                                                    color = if (hasWorkout) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                                    shape = CircleShape,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            "${day.dayOfMonth}",
+                                                            color = if (hasWorkout) Color.Black else if (isToday) MaterialTheme.colorScheme.primary else QuailTextDim,
+                                                            fontWeight = if (hasWorkout || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
+                                    }
+                                    repeat(7 - week.size) {
+                                        Box(modifier = Modifier.weight(1f).aspectRatio(1f))
                                     }
                                 }
                             }
