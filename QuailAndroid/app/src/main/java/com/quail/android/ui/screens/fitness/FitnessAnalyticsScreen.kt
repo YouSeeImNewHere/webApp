@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quail.android.data.model.exerciseById
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim

@@ -80,6 +80,7 @@ fun FitnessScreen(
     onOpenDashboard: () -> Unit,
 ) {
     val data by viewModel.uiState.collectAsState()
+    val garminHealth by viewModel.garminHealth.collectAsState()
     var activeSheet by remember { mutableStateOf<FitnessSheet?>(null) }
 
     Scaffold(
@@ -97,17 +98,25 @@ fun FitnessScreen(
         if (data == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
-            FitnessContent(
-                data = data!!,
-                padding = padding,
-                onStartWorkout = onStartWorkout,
-                onOpenSheet = { activeSheet = it },
-                onDeleteSession = viewModel::deleteSession,
-                onDeleteRoutine = viewModel::deleteRoutine,
-                onDeleteGoal = viewModel::deleteGoal,
-                onDeleteMilestone = viewModel::deleteMilestone,
-                onStartFromRoutine = { routine -> viewModel.startWorkout(fromRoutine = routine); onStartWorkout() },
-            )
+            var isRefreshing by remember { mutableStateOf(false) }
+            androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.refresh(); isRefreshing = false },
+                modifier = Modifier.fillMaxSize().padding(padding),
+            ) {
+                FitnessContent(
+                    data = data!!,
+                    latestHealth = garminHealth.firstOrNull(),
+                    padding = PaddingValues(0.dp),
+                    onStartWorkout = onStartWorkout,
+                    onOpenSheet = { activeSheet = it },
+                    onDeleteSession = viewModel::deleteSession,
+                    onDeleteRoutine = viewModel::deleteRoutine,
+                    onDeleteGoal = viewModel::deleteGoal,
+                    onDeleteMilestone = viewModel::deleteMilestone,
+                    onStartFromRoutine = { routine -> viewModel.startWorkout(fromRoutine = routine); onStartWorkout() },
+                )
+            }
         }
     }
 
@@ -195,6 +204,7 @@ private fun SectionHeader(title: String, actionLabel: String? = null, onAction: 
 @Composable
 private fun FitnessContent(
     data: FitnessData,
+    latestHealth: com.quail.android.data.model.GarminDailyHealthRecord?,
     padding: PaddingValues,
     onStartWorkout: () -> Unit,
     onOpenSheet: (FitnessSheet) -> Unit,
@@ -210,6 +220,9 @@ private fun FitnessContent(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item { StartWorkoutCard(data, onStartWorkout) }
+        if (latestHealth != null) {
+            item { HealthMetricsSection(latestHealth) }
+        }
         item { BodyweightCard(data, onOpenSheet) }
         item { ProgressionsSection(data) }
         item { WeeklyVolumeSection(data) }
@@ -244,6 +257,89 @@ private fun StartWorkoutCard(data: FitnessData, onStartWorkout: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+private fun formatHoursMinutes(seconds: Int?): String? {
+    if (seconds == null || seconds <= 0) return null
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
+}
+
+@Composable
+private fun HealthMetricsSection(health: com.quail.android.data.model.GarminDailyHealthRecord) {
+    Column {
+        SectionHeader("Health (Garmin — ${health.date})")
+        Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    HealthStat("Resting HR", health.restingHeartRate?.let { "$it bpm" } ?: "—")
+                    HealthStat("VO2 Max", health.vo2Max?.let { "%.1f".format(it) } ?: "—")
+                    HealthStat("Calories", health.totalCalories?.let { "$it" } ?: "—")
+                    HealthStat("Stress", health.averageStressLevel?.let { "$it" } ?: "—")
+                }
+
+                if (health.totalSteps != null) {
+                    Column(Modifier.padding(top = 16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Steps", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                health.dailyStepGoal?.let { goal -> "${health.totalSteps} / $goal" } ?: "${health.totalSteps}",
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        LinearProgressIndicator(
+                            progress = { (health.totalSteps.toFloat() / (health.dailyStepGoal ?: health.totalSteps).toFloat().coerceAtLeast(1f)).coerceAtMost(1f) },
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = QuailSurfaceRaised,
+                        )
+                    }
+                }
+
+                if (health.totalSleepSeconds != null) {
+                    Column(Modifier.padding(top = 16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Sleep", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                            Text(formatHoursMinutes(health.totalSleepSeconds) ?: "—", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOfNotNull(
+                                formatHoursMinutes(health.sleepDeepSeconds)?.let { "Deep $it" },
+                                formatHoursMinutes(health.sleepLightSeconds)?.let { "Light $it" },
+                                formatHoursMinutes(health.sleepRemSeconds)?.let { "REM $it" },
+                                formatHoursMinutes(health.sleepAwakeSeconds)?.let { "Awake $it" },
+                            ).forEach { label ->
+                                Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(999.dp)) {
+                                    Text(label, color = QuailTextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (health.bodyBatteryHighest != null || health.bodyBatteryLowest != null) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Body Battery", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            "${health.bodyBatteryLowest ?: "—"} – ${health.bodyBatteryHighest ?: "—"}",
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthStat(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+        Text(label, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
     }
 }
 

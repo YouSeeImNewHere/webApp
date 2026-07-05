@@ -65,9 +65,66 @@ def upsert_run(cur, tenant_id: int, activity: dict) -> None:
     )
 
 
+def sync_daily_health(garmin, cur, tenant_id: int, day) -> bool:
+    """Pulls one day's stats/sleep/max-metrics and upserts whatever fields
+    Garmin actually returns for that day. Individual calls are wrapped so one
+    missing metric (e.g. no VO2 max reading that day) doesn't block the rest."""
+    from app.routers.fitness import upsert_garmin_daily_health
+
+    day_str = day.isoformat()
+    fields: dict = {}
+
+    try:
+        stats = garmin.get_stats(day_str) or {}
+        fields["resting_heart_rate"] = stats.get("restingHeartRate")
+        fields["min_heart_rate"] = stats.get("minHeartRate")
+        fields["max_heart_rate"] = stats.get("maxHeartRate")
+        fields["total_steps"] = stats.get("totalSteps")
+        fields["daily_step_goal"] = stats.get("dailyStepGoal")
+        total_kcal = stats.get("totalKilocalories")
+        active_kcal = stats.get("activeKilocalories")
+        fields["total_calories"] = round(total_kcal) if total_kcal else None
+        fields["active_calories"] = round(active_kcal) if active_kcal else None
+        fields["average_stress_level"] = stats.get("averageStressLevel")
+        fields["floors_ascended"] = stats.get("floorsAscended")
+        fields["body_battery_highest"] = stats.get("bodyBatteryHighestValue")
+        fields["body_battery_lowest"] = stats.get("bodyBatteryLowestValue")
+    except Exception as e:
+        log(f"get_stats failed for {day_str}: {e}")
+
+    try:
+        sleep = garmin.get_sleep_data(day_str) or {}
+        dto = sleep.get("dailySleepDTO") or {}
+        fields["sleep_deep_seconds"] = dto.get("deepSleepSeconds")
+        fields["sleep_light_seconds"] = dto.get("lightSleepSeconds")
+        fields["sleep_rem_seconds"] = dto.get("remSleepSeconds")
+        fields["sleep_awake_seconds"] = dto.get("awakeSleepSeconds")
+    except Exception as e:
+        log(f"get_sleep_data failed for {day_str}: {e}")
+
+    try:
+        max_metrics = garmin.get_max_metrics(day_str)
+        vo2 = None
+        if isinstance(max_metrics, list) and max_metrics:
+            generic = (max_metrics[0] or {}).get("generic") or {}
+            vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
+        elif isinstance(max_metrics, dict):
+            generic = max_metrics.get("generic") or {}
+            vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
+        fields["vo2_max"] = vo2
+    except Exception as e:
+        log(f"get_max_metrics failed for {day_str}: {e}")
+
+    if not any(v is not None for v in fields.values()):
+        return False
+
+    upsert_garmin_daily_health(cur, tenant_id, day_str, fields)
+    return True
+
+
 def main() -> None:
     if not os.path.exists(TOKENSTORE_PATH):
-        log(f"No Garmin session found at {TOKENSTORE_PATH} — run scripts/garmin_login_setup.py once first.")
+        log(f"No Garmin session found at {TOKENSTORE_PATH} — connect via Fitness Settings in the app first.")
         sys.exit(1)
 
     from garminconnect import Garmin
@@ -98,10 +155,17 @@ def main() -> None:
             for activity in activities:
                 upsert_run(cur, int(tenant_id), activity)
             conn.commit()
+
+            health_days_synced = 0
+            for i in range(LOOKBACK_DAYS):
+                day = end - timedelta(days=i)
+                if sync_daily_health(garmin, cur, int(tenant_id), day):
+                    health_days_synced += 1
+            conn.commit()
     finally:
         db.close_pool()
 
-    log(f"Synced {len(activities)} run(s).")
+    log(f"Synced {len(activities)} run(s), {health_days_synced} day(s) of health stats.")
 
 
 if __name__ == "__main__":

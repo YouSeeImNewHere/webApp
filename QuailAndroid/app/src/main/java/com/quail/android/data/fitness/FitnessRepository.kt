@@ -7,6 +7,7 @@ import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.CustomExerciseUpsertRequest
 import com.quail.android.data.model.GarminConnectRequest
 import com.quail.android.data.model.GarminConnectResponse
+import com.quail.android.data.model.GarminDailyHealthRecord
 import com.quail.android.data.model.GarminMfaRequest
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
@@ -215,6 +216,8 @@ class FitnessRepository(
     suspend fun disconnectGarmin() {
         api.disconnectGarmin()
     }
+
+    suspend fun getGarminDailyHealth(days: Int = 14): List<GarminDailyHealthRecord> = api.getGarminDailyHealth(days)
 
     // ---- Sync worker entry point: push everything pending, best-effort ----
 

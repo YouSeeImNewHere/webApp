@@ -8,6 +8,7 @@ import com.quail.android.data.model.BodyweightRecord
 import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.DEFAULT_EXERCISES
 import com.quail.android.data.model.Exercise
+import com.quail.android.data.model.GarminDailyHealthRecord
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.MilestoneRecord
 import com.quail.android.data.model.MuscleGroup
@@ -86,6 +87,19 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
     private val _garminState = MutableStateFlow<GarminConnectState>(GarminConnectState.Unknown)
     val garminState: StateFlow<GarminConnectState> = _garminState
 
+    private val _garminHealth = MutableStateFlow<List<GarminDailyHealthRecord>>(emptyList())
+    val garminHealth: StateFlow<List<GarminDailyHealthRecord>> = _garminHealth
+
+    init {
+        refreshGarminHealth()
+    }
+
+    fun refreshGarminHealth() {
+        viewModelScope.launch {
+            runCatching { repository.getGarminDailyHealth() }.onSuccess { _garminHealth.value = it }
+        }
+    }
+
     fun refreshGarminStatus() {
         viewModelScope.launch {
             _garminState.value = runCatching { repository.getGarminStatus() }
@@ -125,6 +139,18 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
             runCatching { repository.disconnectGarmin() }
             _garminState.value = GarminConnectState.Disconnected
         }
+    }
+
+    /** Pull-to-refresh entry point — uiState is already a live Room flow, so
+     * this just eagerly pushes any pending local edits and pulls the latest
+     * from the server (Garmin runs, other devices' edits) instead of waiting
+     * for the periodic background sync. */
+    fun refresh() {
+        viewModelScope.launch {
+            runCatching { repository.pushPending() }
+            runCatching { repository.pullFromServer() }
+        }
+        refreshGarminHealth()
     }
 
     fun startWorkout(fromRoutine: RoutineRecord? = null, bodyweightKg: Double? = null) {

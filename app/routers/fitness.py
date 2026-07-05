@@ -74,6 +74,10 @@ def garmin_connect(body: GarminConnectIn):
         _pending_garmin_logins[session_id] = (garmin, result2, time.time())
         return {"needs_mfa": True, "session_id": session_id}
 
+    # login(return_on_mfa=True) never dumps tokens itself on a clean, no-MFA
+    # success — that auto-save only happens in the non-return_on_mfa branch —
+    # so we have to persist them ourselves here.
+    garmin.client.dump(GARMIN_TOKENSTORE_PATH)
     return {"needs_mfa": False, "connected": True}
 
 
@@ -205,6 +209,35 @@ def ensure_fitness_tables():
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(tenant_id, client_id)
             )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fitness_garmin_daily_health (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                resting_heart_rate INTEGER,
+                min_heart_rate INTEGER,
+                max_heart_rate INTEGER,
+                total_steps INTEGER,
+                daily_step_goal INTEGER,
+                total_calories INTEGER,
+                active_calories INTEGER,
+                vo2_max DECIMAL(5,2),
+                sleep_deep_seconds INTEGER,
+                sleep_light_seconds INTEGER,
+                sleep_rem_seconds INTEGER,
+                sleep_awake_seconds INTEGER,
+                body_battery_highest INTEGER,
+                body_battery_lowest INTEGER,
+                average_stress_level INTEGER,
+                floors_ascended DECIMAL(6,2),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, date)
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_fitness_garmin_daily_health_tenant_date
+                ON fitness_garmin_daily_health(tenant_id, date DESC)
         """)
         conn.commit()
     _tables_ready = True
@@ -628,6 +661,63 @@ def delete_custom_exercise(record_id: int):
             raise HTTPException(status_code=404, detail="Record not found")
         conn.commit()
     return {"deleted": record_id}
+
+
+# ---------------------------------------------------------------------------
+# Garmin daily health (steps, resting HR, sleep, calories, VO2 max, ...)
+# ---------------------------------------------------------------------------
+
+@router.get("/fitness/garmin/daily-health")
+def list_garmin_daily_health(days: int = 14):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM fitness_garmin_daily_health WHERE tenant_id = %s ORDER BY date DESC LIMIT %s",
+        (tid, days),
+    )
+    return [_serialize(r) for r in rows]
+
+
+def upsert_garmin_daily_health(cur, tenant_id: int, day: str, fields: dict) -> None:
+    """Called from scripts/garmin_sync_runs.py — tables must already exist
+    (ensure_fitness_tables() is called once at the top of that script)."""
+    cur.execute(
+        """
+        INSERT INTO fitness_garmin_daily_health (
+            tenant_id, date, resting_heart_rate, min_heart_rate, max_heart_rate,
+            total_steps, daily_step_goal, total_calories, active_calories, vo2_max,
+            sleep_deep_seconds, sleep_light_seconds, sleep_rem_seconds, sleep_awake_seconds,
+            body_battery_highest, body_battery_lowest, average_stress_level, floors_ascended
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (tenant_id, date) DO UPDATE SET
+            resting_heart_rate = COALESCE(EXCLUDED.resting_heart_rate, fitness_garmin_daily_health.resting_heart_rate),
+            min_heart_rate = COALESCE(EXCLUDED.min_heart_rate, fitness_garmin_daily_health.min_heart_rate),
+            max_heart_rate = COALESCE(EXCLUDED.max_heart_rate, fitness_garmin_daily_health.max_heart_rate),
+            total_steps = COALESCE(EXCLUDED.total_steps, fitness_garmin_daily_health.total_steps),
+            daily_step_goal = COALESCE(EXCLUDED.daily_step_goal, fitness_garmin_daily_health.daily_step_goal),
+            total_calories = COALESCE(EXCLUDED.total_calories, fitness_garmin_daily_health.total_calories),
+            active_calories = COALESCE(EXCLUDED.active_calories, fitness_garmin_daily_health.active_calories),
+            vo2_max = COALESCE(EXCLUDED.vo2_max, fitness_garmin_daily_health.vo2_max),
+            sleep_deep_seconds = COALESCE(EXCLUDED.sleep_deep_seconds, fitness_garmin_daily_health.sleep_deep_seconds),
+            sleep_light_seconds = COALESCE(EXCLUDED.sleep_light_seconds, fitness_garmin_daily_health.sleep_light_seconds),
+            sleep_rem_seconds = COALESCE(EXCLUDED.sleep_rem_seconds, fitness_garmin_daily_health.sleep_rem_seconds),
+            sleep_awake_seconds = COALESCE(EXCLUDED.sleep_awake_seconds, fitness_garmin_daily_health.sleep_awake_seconds),
+            body_battery_highest = COALESCE(EXCLUDED.body_battery_highest, fitness_garmin_daily_health.body_battery_highest),
+            body_battery_lowest = COALESCE(EXCLUDED.body_battery_lowest, fitness_garmin_daily_health.body_battery_lowest),
+            average_stress_level = COALESCE(EXCLUDED.average_stress_level, fitness_garmin_daily_health.average_stress_level),
+            floors_ascended = COALESCE(EXCLUDED.floors_ascended, fitness_garmin_daily_health.floors_ascended)
+        """,
+        (
+            tenant_id, day,
+            fields.get("resting_heart_rate"), fields.get("min_heart_rate"), fields.get("max_heart_rate"),
+            fields.get("total_steps"), fields.get("daily_step_goal"),
+            fields.get("total_calories"), fields.get("active_calories"), fields.get("vo2_max"),
+            fields.get("sleep_deep_seconds"), fields.get("sleep_light_seconds"),
+            fields.get("sleep_rem_seconds"), fields.get("sleep_awake_seconds"),
+            fields.get("body_battery_highest"), fields.get("body_battery_lowest"),
+            fields.get("average_stress_level"), fields.get("floors_ascended"),
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

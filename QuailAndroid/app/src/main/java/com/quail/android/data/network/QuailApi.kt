@@ -31,6 +31,7 @@ import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.CustomExerciseUpsertRequest
 import com.quail.android.data.model.GarminConnectRequest
 import com.quail.android.data.model.GarminConnectResponse
+import com.quail.android.data.model.GarminDailyHealthRecord
 import com.quail.android.data.model.GarminMfaRequest
 import com.quail.android.data.model.GarminMfaResponse
 import com.quail.android.data.model.GarminStatusResponse
@@ -471,6 +472,9 @@ interface QuailApi {
 
     @DELETE("fitness/garmin/connect")
     suspend fun disconnectGarmin(): OkResponse
+
+    @GET("fitness/garmin/daily-health")
+    suspend fun getGarminDailyHealth(@Query("days") days: Int = 14): List<GarminDailyHealthRecord>
 
     @GET("fitness/bodyweight")
     suspend fun getBodyweightLogs(@Query("limit") limit: Int = 200): List<BodyweightRecord>

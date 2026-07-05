@@ -309,6 +309,33 @@ data class GarminMfaResponse(val connected: Boolean = false)
 @Serializable
 data class GarminStatusResponse(val connected: Boolean = false)
 
+@Serializable
+data class GarminDailyHealthRecord(
+    val id: Int = 0,
+    val date: String = "",
+    @SerialName("resting_heart_rate") val restingHeartRate: Int? = null,
+    @SerialName("min_heart_rate") val minHeartRate: Int? = null,
+    @SerialName("max_heart_rate") val maxHeartRate: Int? = null,
+    @SerialName("total_steps") val totalSteps: Int? = null,
+    @SerialName("daily_step_goal") val dailyStepGoal: Int? = null,
+    @SerialName("total_calories") val totalCalories: Int? = null,
+    @SerialName("active_calories") val activeCalories: Int? = null,
+    @SerialName("vo2_max") val vo2Max: Double? = null,
+    @SerialName("sleep_deep_seconds") val sleepDeepSeconds: Int? = null,
+    @SerialName("sleep_light_seconds") val sleepLightSeconds: Int? = null,
+    @SerialName("sleep_rem_seconds") val sleepRemSeconds: Int? = null,
+    @SerialName("sleep_awake_seconds") val sleepAwakeSeconds: Int? = null,
+    @SerialName("body_battery_highest") val bodyBatteryHighest: Int? = null,
+    @SerialName("body_battery_lowest") val bodyBatteryLowest: Int? = null,
+    @SerialName("average_stress_level") val averageStressLevel: Int? = null,
+    @SerialName("floors_ascended") val floorsAscended: Double? = null,
+) {
+    val totalSleepSeconds: Int? get() {
+        val parts = listOfNotNull(sleepDeepSeconds, sleepLightSeconds, sleepRemSeconds, sleepAwakeSeconds)
+        return if (parts.isEmpty()) null else parts.sum()
+    }
+}
+
 data class ProgressionPath(
     val id: String,
     val name: String,
