@@ -102,18 +102,34 @@ def sync_daily_health(garmin, cur, tenant_id: int, day) -> bool:
     except Exception as e:
         log(f"get_sleep_data failed for {day_str}: {e}")
 
+    # VO2 max: Garmin only ever has an estimate once the watch has logged a
+    # qualifying outdoor GPS run, so this is commonly null/empty for accounts
+    # without recent tracked runs — that's expected, not a parsing bug.
+    vo2 = None
     try:
-        max_metrics = garmin.get_max_metrics(day_str)
-        vo2 = None
-        if isinstance(max_metrics, list) and max_metrics:
-            generic = (max_metrics[0] or {}).get("generic") or {}
-            vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
-        elif isinstance(max_metrics, dict):
-            generic = max_metrics.get("generic") or {}
-            vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
-        fields["vo2_max"] = vo2
+        status = garmin.get_training_status(day_str) or {}
+        raw = status.get("mostRecentVO2Max")
+        if isinstance(raw, dict):
+            generic = raw.get("generic") if isinstance(raw.get("generic"), dict) else raw
+            vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue") or generic.get("value")
+        elif isinstance(raw, (int, float)):
+            vo2 = raw
     except Exception as e:
-        log(f"get_max_metrics failed for {day_str}: {e}")
+        log(f"get_training_status failed for {day_str}: {e}")
+
+    if vo2 is None:
+        try:
+            max_metrics = garmin.get_max_metrics(day_str)
+            entries = max_metrics if isinstance(max_metrics, list) else [max_metrics] if isinstance(max_metrics, dict) else []
+            for entry in entries:
+                generic = (entry or {}).get("generic") or {}
+                vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
+                if vo2 is not None:
+                    break
+        except Exception as e:
+            log(f"get_max_metrics failed for {day_str}: {e}")
+
+    fields["vo2_max"] = vo2
 
     if not any(v is not None for v in fields.values()):
         return False
