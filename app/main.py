@@ -56,6 +56,8 @@ from app.routers import (
     garmin,
     vehicle,
     fitness,
+    bugs,
+    projects,
     saved_places,
     financing,
 )
@@ -342,6 +344,8 @@ def create_app() -> FastAPI:
     app.include_router(garmin.router)
     app.include_router(vehicle.router)
     app.include_router(fitness.router)
+    app.include_router(bugs.router)
+    app.include_router(projects.router)
     if _env_enabled("ENABLE_RECEIPTS_ROUTES", "1"):
         from app.routers import receipts
 

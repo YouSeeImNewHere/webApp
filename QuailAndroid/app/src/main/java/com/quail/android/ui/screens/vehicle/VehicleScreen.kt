@@ -262,7 +262,7 @@ private fun VehicleBottomBarTab(label: String, icon: ImageVector, selected: Bool
 private fun VehicleContent(
     data: VehicleData,
     onOpenSheet: (VehicleSheet) -> Unit,
-    onCheckInspection: (Int) -> Unit,
+    onCheckInspection: (String) -> Unit,
     onOpenFuelHistory: () -> Unit,
 ) {
     LazyColumn(
@@ -441,7 +441,7 @@ private fun StatusPill(status: VehicleMaintenanceStatus) {
 // ---- Inspections ----
 
 @Composable
-private fun InspectionsSection(data: VehicleData, onCheckInspection: (Int) -> Unit) {
+private fun InspectionsSection(data: VehicleData, onCheckInspection: (String) -> Unit) {
     val weekly = data.inspections.filter { it.periodicityDays <= 7 }
     val monthly = data.inspections.filter { it.periodicityDays > 7 }
     Column {
@@ -455,7 +455,7 @@ private fun InspectionsSection(data: VehicleData, onCheckInspection: (Int) -> Un
 private fun InspectionGroup(
     title: String,
     items: List<com.quail.android.data.model.VehicleInspectionItem>,
-    onCheckInspection: (Int) -> Unit,
+    onCheckInspection: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = modifier.fillMaxWidth()) {
@@ -468,7 +468,7 @@ private fun InspectionGroup(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    IconButton(onClick = { onCheckInspection(item.id) }) {
+                    IconButton(onClick = { item.clientId?.let(onCheckInspection) }) {
                         Icon(
                             if (isDue) Icons.Filled.Circle else Icons.Filled.CheckCircle,
                             contentDescription = null,

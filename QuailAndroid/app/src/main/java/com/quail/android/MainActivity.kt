@@ -21,16 +21,24 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.quail.android.data.bugs.BugsDatabase
+import com.quail.android.data.bugs.BugsRepository
 import com.quail.android.data.fitness.FitnessDatabase
 import com.quail.android.data.fitness.FitnessRepository
 import com.quail.android.data.network.NetworkModule
+import com.quail.android.data.projects.ProjectsDatabase
+import com.quail.android.data.projects.ProjectsRepository
 import com.quail.android.data.repository.AuthStore
 import com.quail.android.data.repository.HomeRepository
 import com.quail.android.data.repository.VehicleLocalStore
+import com.quail.android.data.vehicle.VehicleOfflineDatabase
+import com.quail.android.data.vehicle.VehicleOfflineRepository
 import com.quail.android.ui.screens.admin.AdminScreen
 import com.quail.android.ui.screens.admin.AdminViewModel
 import com.quail.android.ui.screens.budget.BudgetScreen
 import com.quail.android.ui.screens.budget.BudgetViewModel
+import com.quail.android.ui.screens.bugs.BugsScreen
+import com.quail.android.ui.screens.bugs.BugsViewModel
 import com.quail.android.ui.screens.dashboard.DashboardScreen
 import com.quail.android.ui.screens.dashboard.DashboardViewModel
 import com.quail.android.ui.screens.fitness.FitnessActiveWorkoutScreen
@@ -42,6 +50,9 @@ import com.quail.android.ui.screens.home.NetWorthChartViewModel
 import com.quail.android.ui.screens.login.LoginScreen
 import com.quail.android.ui.screens.notifications.NotificationsScreen
 import com.quail.android.ui.screens.notifications.NotificationsViewModel
+import com.quail.android.ui.screens.projects.ProjectDetailScreen
+import com.quail.android.ui.screens.projects.ProjectsScreen
+import com.quail.android.ui.screens.projects.ProjectsViewModel
 import com.quail.android.ui.screens.settings.DashboardSettingsScreen
 import com.quail.android.ui.screens.settings.NotificationPrefsScreen
 import com.quail.android.ui.screens.settings.SettingsScreen
@@ -66,6 +77,9 @@ private const val ROUTE_VEHICLE_SETTINGS = "vehicle_settings"
 private const val ROUTE_VEHICLE_NOTIFICATIONS = "vehicle_notifications"
 private const val ROUTE_FITNESS = "fitness"
 private const val ROUTE_FITNESS_ACTIVE_WORKOUT = "fitness_active_workout"
+private const val ROUTE_BUGS = "bugs"
+private const val ROUTE_PROJECTS = "projects"
+private const val ROUTE_PROJECT_DETAIL = "project_detail/{clientId}"
 private const val ROUTE_NOTIFICATIONS = "notifications"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_DASHBOARD_SETTINGS = "dashboard_settings"
@@ -164,7 +178,10 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
     val api = remember { NetworkModule.create(authStore) }
     val repository = remember { HomeRepository(api) }
     val vehicleLocalStore = remember { VehicleLocalStore.getInstance(context) }
+    val vehicleOfflineRepository = remember { VehicleOfflineRepository(api, VehicleOfflineDatabase.getInstance(context), context) }
     val fitnessRepository = remember { FitnessRepository(api, FitnessDatabase.getInstance(context), context) }
+    val bugsRepository = remember { BugsRepository(api, BugsDatabase.getInstance(context), context) }
+    val projectsRepository = remember { ProjectsRepository(api, ProjectsDatabase.getInstance(context), context) }
     val onSignOut: () -> Unit = {
         scope.launch {
             authStore.clear()
@@ -182,9 +199,32 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenCash = { navController.navigate(ROUTE_HOME) },
                 onOpenCar = { navController.navigate(ROUTE_VEHICLE) },
                 onOpenFitness = { navController.navigate(ROUTE_FITNESS) },
+                onOpenBugs = { navController.navigate(ROUTE_BUGS) },
+                onOpenProjects = { navController.navigate(ROUTE_PROJECTS) },
                 onOpenSettings = { navController.navigate(ROUTE_DASHBOARD_SETTINGS) },
                 onOpenAdmin = { navController.navigate(ROUTE_ADMIN) },
             )
+        }
+
+        composable(ROUTE_BUGS) {
+            val viewModel: BugsViewModel = viewModel(factory = BugsViewModel.Factory(bugsRepository))
+            BugsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+
+        composable(ROUTE_PROJECTS) {
+            val viewModel: ProjectsViewModel = viewModel(factory = ProjectsViewModel.Factory(projectsRepository))
+            ProjectsScreen(
+                viewModel = viewModel,
+                onOpenProject = { clientId -> navController.navigate("project_detail/$clientId") },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(ROUTE_PROJECT_DETAIL) { backStackEntry ->
+            val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(ROUTE_PROJECTS) }
+            val viewModel: ProjectsViewModel = viewModel(parentEntry, factory = ProjectsViewModel.Factory(projectsRepository))
+            val clientId = backStackEntry.arguments?.getString("clientId").orEmpty()
+            ProjectDetailScreen(viewModel = viewModel, clientId = clientId, onBack = { navController.popBackStack() })
         }
 
         composable(ROUTE_FITNESS) {
@@ -207,7 +247,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
             VehicleScreen(
                 viewModel = viewModel,
                 onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
@@ -219,7 +259,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE_PROCEDURES) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
             VehicleProceduresScreen(
                 viewModel = viewModel,
                 onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
@@ -230,7 +270,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE_FUEL_HISTORY) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
             VehicleFuelHistoryScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
@@ -238,7 +278,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE_SETTINGS) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
             VehicleSettingsScreen(
                 viewModel = viewModel,
                 localStore = vehicleLocalStore,
@@ -251,7 +291,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE_NOTIFICATIONS) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleLocalStore))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
             VehicleNotificationsScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },

@@ -66,8 +66,8 @@ private val TILES = listOf(
     DashboardTile("Fitness", Icons.Filled.FitnessCenter, enabled = true),
     DashboardTile("Maps", Icons.Filled.Map, enabled = false),
     DashboardTile("Admin", Icons.Filled.AdminPanelSettings, enabled = true),
-    DashboardTile("Bugs", Icons.Filled.BugReport, enabled = false),
-    DashboardTile("Projects", Icons.Filled.Assignment, enabled = false),
+    DashboardTile("Bugs", Icons.Filled.BugReport, enabled = true),
+    DashboardTile("Projects", Icons.Filled.Assignment, enabled = true),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,6 +77,8 @@ fun DashboardScreen(
     onOpenCash: () -> Unit,
     onOpenCar: () -> Unit,
     onOpenFitness: () -> Unit,
+    onOpenBugs: () -> Unit,
+    onOpenProjects: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAdmin: () -> Unit,
 ) {
@@ -120,6 +122,8 @@ fun DashboardScreen(
                                 tile.label == "Cash" && tile.enabled -> onOpenCash()
                                 tile.label == "Car" && tile.enabled -> onOpenCar()
                                 tile.label == "Fitness" && tile.enabled -> onOpenFitness()
+                                tile.label == "Bugs" && tile.enabled -> onOpenBugs()
+                                tile.label == "Projects" && tile.enabled -> onOpenProjects()
                                 tile.label == "Admin" && tile.enabled -> onOpenAdmin()
                                 else -> Toast.makeText(context, "${tile.label} isn't built yet", Toast.LENGTH_SHORT).show()
                             }

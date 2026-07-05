@@ -1,9 +1,25 @@
 package com.quail.android.data.network
 
 import com.quail.android.data.model.BankInfoOptions
+import com.quail.android.data.model.CorrectiveRecordRecord
+import com.quail.android.data.model.CorrectiveRecordUpsertRequest
+import com.quail.android.data.model.TireSetRecord
+import com.quail.android.data.model.TireSetUpsertRequest
+import com.quail.android.data.model.VehicleProcedureRecord
+import com.quail.android.data.model.VehicleProcedureUpsertRequest
+import com.quail.android.data.model.BugNoteRecord
+import com.quail.android.data.model.BugNoteUpsertRequest
+import com.quail.android.data.model.BugReportRecord
+import com.quail.android.data.model.BugReportUpsertRequest
 import com.quail.android.data.model.BudgetGroupUpsertRequest
 import com.quail.android.data.model.BudgetGroupUpsertResponse
 import com.quail.android.data.model.CategoryRuleApplyJobResponse
+import com.quail.android.data.model.ProjectChecklistRecord
+import com.quail.android.data.model.ProjectChecklistUpsertRequest
+import com.quail.android.data.model.ProjectQuickNoteRecord
+import com.quail.android.data.model.ProjectQuickNoteUpsertRequest
+import com.quail.android.data.model.ProjectRecord
+import com.quail.android.data.model.ProjectUpsertRequest
 import com.quail.android.data.model.CategoryRuleCreateRequest
 import com.quail.android.data.model.CategoryRuleCreateResponse
 import com.quail.android.data.model.ChartPoint
@@ -363,6 +379,33 @@ interface QuailApi {
     @POST("vehicle/inspections/{id}/check")
     suspend fun checkVehicleInspection(@Path("id") id: Int): VehicleInspectionItem
 
+    @GET("vehicle/tires")
+    suspend fun getTireSets(): List<TireSetRecord>
+
+    @POST("vehicle/tires")
+    suspend fun upsertTireSet(@Body request: TireSetUpsertRequest): TireSetRecord
+
+    @DELETE("vehicle/tires/{id}")
+    suspend fun deleteTireSet(@Path("id") id: Int): OkResponse
+
+    @GET("vehicle/corrective")
+    suspend fun getCorrectiveRecords(): List<CorrectiveRecordRecord>
+
+    @POST("vehicle/corrective")
+    suspend fun upsertCorrectiveRecord(@Body request: CorrectiveRecordUpsertRequest): CorrectiveRecordRecord
+
+    @DELETE("vehicle/corrective/{id}")
+    suspend fun deleteCorrectiveRecord(@Path("id") id: Int): OkResponse
+
+    @GET("vehicle/procedures")
+    suspend fun getVehicleProcedures(): List<VehicleProcedureRecord>
+
+    @POST("vehicle/procedures")
+    suspend fun upsertVehicleProcedure(@Body request: VehicleProcedureUpsertRequest): VehicleProcedureRecord
+
+    @DELETE("vehicle/procedures/{id}")
+    suspend fun deleteVehicleProcedure(@Path("id") id: Int): OkResponse
+
     // ---- Fitness (Quail Fitness) ----
 
     @GET("fitness/sessions")
@@ -409,4 +452,53 @@ interface QuailApi {
 
     @DELETE("fitness/bodyweight/{id}")
     suspend fun deleteBodyweight(@Path("id") id: Int): OkResponse
+
+    // ---- Bugs (Quail Bugs) ----
+
+    @GET("bugs/reports")
+    suspend fun getBugReports(): List<BugReportRecord>
+
+    @POST("bugs/reports")
+    suspend fun upsertBugReport(@Body request: BugReportUpsertRequest): BugReportRecord
+
+    @DELETE("bugs/reports/{id}")
+    suspend fun deleteBugReport(@Path("id") id: Int): OkResponse
+
+    @GET("bugs/notes")
+    suspend fun getBugNotes(): List<BugNoteRecord>
+
+    @POST("bugs/notes")
+    suspend fun upsertBugNote(@Body request: BugNoteUpsertRequest): BugNoteRecord
+
+    @DELETE("bugs/notes/{id}")
+    suspend fun deleteBugNote(@Path("id") id: Int): OkResponse
+
+    // ---- Projects (Quail Projects) ----
+
+    @GET("projects")
+    suspend fun getProjects(): List<ProjectRecord>
+
+    @POST("projects")
+    suspend fun upsertProject(@Body request: ProjectUpsertRequest): ProjectRecord
+
+    @DELETE("projects/{id}")
+    suspend fun deleteProject(@Path("id") id: Int): OkResponse
+
+    @GET("projects/quick-notes")
+    suspend fun getProjectQuickNotes(): List<ProjectQuickNoteRecord>
+
+    @POST("projects/quick-notes")
+    suspend fun upsertProjectQuickNote(@Body request: ProjectQuickNoteUpsertRequest): ProjectQuickNoteRecord
+
+    @DELETE("projects/quick-notes/{id}")
+    suspend fun deleteProjectQuickNote(@Path("id") id: Int): OkResponse
+
+    @GET("projects/checklists")
+    suspend fun getProjectChecklists(): List<ProjectChecklistRecord>
+
+    @POST("projects/checklists")
+    suspend fun upsertProjectChecklist(@Body request: ProjectChecklistUpsertRequest): ProjectChecklistRecord
+
+    @DELETE("projects/checklists/{id}")
+    suspend fun deleteProjectChecklist(@Path("id") id: Int): OkResponse
 }

@@ -194,7 +194,7 @@ private fun CarSettingsSection(title: String, content: @Composable () -> Unit) {
             color = QuailTextDim,
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 4.dp, bottom = 6.dp),
+            modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 6.dp),
         )
         Surface(color = QuailSurface, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
             Column { content() }

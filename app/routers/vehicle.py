@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, List
@@ -114,6 +115,30 @@ def ensure_vehicle_tables():
         cur.execute("ALTER TABLE vehicle_fuel_records ADD COLUMN IF NOT EXISTS linked_merchant VARCHAR(300)")
         cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS linked_transaction_id TEXT")
         cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS linked_merchant VARCHAR(300)")
+        # client_id lets the Android app queue these writes offline and retry
+        # them idempotently once connectivity returns (see VehicleOfflineRepository.kt).
+        # Nullable + partial unique index so pre-existing rows (created before
+        # this column existed) aren't affected.
+        cur.execute("ALTER TABLE vehicle_fuel_records ADD COLUMN IF NOT EXISTS client_id TEXT")
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_fuel_client_id
+                ON vehicle_fuel_records(tenant_id, client_id) WHERE client_id IS NOT NULL
+        """)
+        cur.execute("ALTER TABLE vehicle_maintenance_records ADD COLUMN IF NOT EXISTS client_id TEXT")
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_maint_client_id
+                ON vehicle_maintenance_records(tenant_id, client_id) WHERE client_id IS NOT NULL
+        """)
+        cur.execute("ALTER TABLE vehicle_issues ADD COLUMN IF NOT EXISTS client_id TEXT")
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_issues_client_id
+                ON vehicle_issues(tenant_id, client_id) WHERE client_id IS NOT NULL
+        """)
+        cur.execute("ALTER TABLE vehicle_inspection_items ADD COLUMN IF NOT EXISTS client_id TEXT")
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_inspection_client_id
+                ON vehicle_inspection_items(tenant_id, client_id) WHERE client_id IS NOT NULL
+        """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS map_trips (
                 id SERIAL PRIMARY KEY,
@@ -131,6 +156,61 @@ def ensure_vehicle_tables():
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_map_trips_tenant_date
                 ON map_trips(tenant_id, started_at DESC)
+        """)
+        # Tires, corrective repairs, and DIY procedures were local-only on both
+        # platforms (see VehicleStore.swift / the old DataStore-only
+        # VehicleLocalStore.kt) — these tables give them real backend sync too.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vehicle_tire_sets (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                brand TEXT DEFAULT '',
+                model TEXT DEFAULT '',
+                size TEXT DEFAULT '',
+                install_date DATE,
+                install_mileage INTEGER DEFAULT 0,
+                required_pressure_front INTEGER DEFAULT 35,
+                required_pressure_rear INTEGER DEFAULT 35,
+                pressure_checks JSONB NOT NULL DEFAULT '[]',
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, client_id)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vehicle_corrective_records (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                date DATE NOT NULL,
+                mileage INTEGER DEFAULT 0,
+                description TEXT DEFAULT '',
+                reason TEXT DEFAULT '',
+                parts_replaced JSONB NOT NULL DEFAULT '[]',
+                cost DECIMAL(10,2),
+                resolved_issue BOOLEAN DEFAULT FALSE,
+                linked_issue_id INTEGER,
+                notes TEXT DEFAULT '',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, client_id)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vehicle_procedures (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                related_type_name TEXT DEFAULT '',
+                tools JSONB NOT NULL DEFAULT '[]',
+                parts JSONB NOT NULL DEFAULT '[]',
+                steps JSONB NOT NULL DEFAULT '[]',
+                notes TEXT DEFAULT '',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, client_id)
+            )
         """)
         conn.commit()
     _tables_ready = True
@@ -157,6 +237,7 @@ class VehicleProfileIn(BaseModel):
     notes: Optional[str] = ""
 
 class FuelRecordIn(BaseModel):
+    client_id: Optional[str] = None
     date: date
     mileage: int
     miles_since_last: Optional[float] = None
@@ -173,6 +254,7 @@ class FuelRecordBulkIn(BaseModel):
     records: List[FuelRecordIn]
 
 class MaintenanceRecordIn(BaseModel):
+    client_id: Optional[str] = None
     type_name: str
     date: date
     mileage: int
@@ -185,17 +267,21 @@ class MaintenanceBulkIn(BaseModel):
     records: List[MaintenanceRecordIn]
 
 class IssueIn(BaseModel):
+    client_id: Optional[str] = None
     title: str
     description: Optional[str] = ""
     severity: Optional[str] = "medium"
     mileage_noticed: Optional[int] = None
     date_noticed: Optional[date] = None
+    is_resolved: bool = False
+    resolved_date: Optional[date] = None
     notes: Optional[str] = ""
 
 class IssueResolveIn(BaseModel):
     resolved_date: Optional[date] = None
 
 class InspectionItemIn(BaseModel):
+    client_id: Optional[str] = None
     name: str
     periodicity_days: int = 30
     last_checked_date: Optional[date] = None
@@ -212,6 +298,42 @@ class TripIn(BaseModel):
 
 class MileageUpdateIn(BaseModel):
     current_mileage: int
+
+
+class TireSetIn(BaseModel):
+    client_id: str
+    brand: Optional[str] = ""
+    model: Optional[str] = ""
+    size: Optional[str] = ""
+    install_date: Optional[date] = None
+    install_mileage: int = 0
+    required_pressure_front: int = 35
+    required_pressure_rear: int = 35
+    pressure_checks: List[dict] = []
+    is_active: bool = True
+
+
+class CorrectiveRecordIn(BaseModel):
+    client_id: str
+    date: date
+    mileage: int = 0
+    description: Optional[str] = ""
+    reason: Optional[str] = ""
+    parts_replaced: List[str] = []
+    cost: Optional[float] = None
+    resolved_issue: bool = False
+    linked_issue_id: Optional[int] = None
+    notes: Optional[str] = ""
+
+
+class VehicleProcedureIn(BaseModel):
+    client_id: str
+    title: str
+    related_type_name: Optional[str] = ""
+    tools: List[str] = []
+    parts: List[str] = []
+    steps: List[dict] = []
+    notes: Optional[str] = ""
 
 
 # ---------------------------------------------------------------------------
@@ -291,13 +413,25 @@ def add_fuel_record(body: FuelRecordIn):
     with with_db_cursor() as (conn, cur):
         cur.execute("""
             INSERT INTO vehicle_fuel_records (
-                tenant_id, date, mileage, miles_since_last, gallons,
+                tenant_id, client_id, date, mileage, miles_since_last, gallons,
                 price_per_gallon, total_cost, mpg, tank_percent,
                 is_full_fillup, station, notes
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (tenant_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
+                date = EXCLUDED.date,
+                mileage = EXCLUDED.mileage,
+                miles_since_last = EXCLUDED.miles_since_last,
+                gallons = EXCLUDED.gallons,
+                price_per_gallon = EXCLUDED.price_per_gallon,
+                total_cost = EXCLUDED.total_cost,
+                mpg = EXCLUDED.mpg,
+                tank_percent = EXCLUDED.tank_percent,
+                is_full_fillup = EXCLUDED.is_full_fillup,
+                station = EXCLUDED.station,
+                notes = EXCLUDED.notes
             RETURNING *
         """, (
-            tid, body.date, body.mileage, body.miles_since_last, body.gallons,
+            tid, body.client_id, body.date, body.mileage, body.miles_since_last, body.gallons,
             body.price_per_gallon, body.total_cost, body.mpg, body.tank_percent,
             body.is_full_fillup, body.station, body.notes,
         ))
@@ -392,12 +526,20 @@ def add_maintenance(body: MaintenanceRecordIn):
     with with_db_cursor() as (conn, cur):
         cur.execute("""
             INSERT INTO vehicle_maintenance_records (
-                tenant_id, type_name, date, mileage, cost,
+                tenant_id, client_id, type_name, date, mileage, cost,
                 is_shop_performed, shop_name, notes
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (tenant_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
+                type_name = EXCLUDED.type_name,
+                date = EXCLUDED.date,
+                mileage = EXCLUDED.mileage,
+                cost = EXCLUDED.cost,
+                is_shop_performed = EXCLUDED.is_shop_performed,
+                shop_name = EXCLUDED.shop_name,
+                notes = EXCLUDED.notes
             RETURNING *
         """, (
-            tid, body.type_name, body.date, body.mileage, body.cost,
+            tid, body.client_id, body.type_name, body.date, body.mileage, body.cost,
             body.is_shop_performed, body.shop_name, body.notes,
         ))
         return _serialize(cur.fetchone())
@@ -460,13 +602,22 @@ def add_issue(body: IssueIn):
     with with_db_cursor() as (conn, cur):
         cur.execute("""
             INSERT INTO vehicle_issues (
-                tenant_id, title, description, severity,
-                mileage_noticed, date_noticed, notes
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                tenant_id, client_id, title, description, severity,
+                mileage_noticed, date_noticed, is_resolved, resolved_date, notes
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (tenant_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                severity = EXCLUDED.severity,
+                mileage_noticed = EXCLUDED.mileage_noticed,
+                date_noticed = EXCLUDED.date_noticed,
+                is_resolved = EXCLUDED.is_resolved,
+                resolved_date = EXCLUDED.resolved_date,
+                notes = EXCLUDED.notes
             RETURNING *
         """, (
-            tid, body.title, body.description, body.severity,
-            body.mileage_noticed, body.date_noticed, body.notes,
+            tid, body.client_id, body.title, body.description, body.severity,
+            body.mileage_noticed, body.date_noticed, body.is_resolved, body.resolved_date, body.notes,
         ))
         return _serialize(cur.fetchone())
 
@@ -524,10 +675,15 @@ def add_inspection(body: InspectionItemIn):
     with with_db_cursor() as (conn, cur):
         cur.execute("""
             INSERT INTO vehicle_inspection_items (
-                tenant_id, name, periodicity_days, last_checked_date, is_built_in
-            ) VALUES (%s,%s,%s,%s,%s)
+                tenant_id, client_id, name, periodicity_days, last_checked_date, is_built_in
+            ) VALUES (%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (tenant_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
+                name = EXCLUDED.name,
+                periodicity_days = EXCLUDED.periodicity_days,
+                last_checked_date = EXCLUDED.last_checked_date,
+                is_built_in = EXCLUDED.is_built_in
             RETURNING *
-        """, (tid, body.name, body.periodicity_days, body.last_checked_date, body.is_built_in))
+        """, (tid, body.client_id, body.name, body.periodicity_days, body.last_checked_date, body.is_built_in))
         return _serialize(cur.fetchone())
 
 
@@ -560,6 +716,192 @@ def delete_inspection(item_id: int):
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Item not found")
     return {"deleted": item_id}
+
+
+# ---------------------------------------------------------------------------
+# Tire sets
+# ---------------------------------------------------------------------------
+
+@router.get("/vehicle/tires")
+def list_tire_sets():
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM vehicle_tire_sets WHERE tenant_id = %s ORDER BY created_at DESC",
+        (tid,),
+    )
+    return [_serialize(r) for r in rows]
+
+
+@router.post("/vehicle/tires")
+def upsert_tire_set(body: TireSetIn):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO vehicle_tire_sets (
+                tenant_id, client_id, brand, model, size, install_date, install_mileage,
+                required_pressure_front, required_pressure_rear, pressure_checks, is_active
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET
+                brand = EXCLUDED.brand,
+                model = EXCLUDED.model,
+                size = EXCLUDED.size,
+                install_date = EXCLUDED.install_date,
+                install_mileage = EXCLUDED.install_mileage,
+                required_pressure_front = EXCLUDED.required_pressure_front,
+                required_pressure_rear = EXCLUDED.required_pressure_rear,
+                pressure_checks = EXCLUDED.pressure_checks,
+                is_active = EXCLUDED.is_active
+            RETURNING *
+            """,
+            (
+                tid, body.client_id, body.brand, body.model, body.size, body.install_date, body.install_mileage,
+                body.required_pressure_front, body.required_pressure_rear, json.dumps(body.pressure_checks), body.is_active,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _serialize(row)
+
+
+@router.delete("/vehicle/tires/{record_id}")
+def delete_tire_set(record_id: int):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM vehicle_tire_sets WHERE id = %s AND tenant_id = %s",
+            (record_id, tid),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Record not found")
+        conn.commit()
+    return {"deleted": record_id}
+
+
+# ---------------------------------------------------------------------------
+# Corrective records (repairs)
+# ---------------------------------------------------------------------------
+
+@router.get("/vehicle/corrective")
+def list_corrective_records():
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM vehicle_corrective_records WHERE tenant_id = %s ORDER BY date DESC",
+        (tid,),
+    )
+    return [_serialize(r) for r in rows]
+
+
+@router.post("/vehicle/corrective")
+def upsert_corrective_record(body: CorrectiveRecordIn):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO vehicle_corrective_records (
+                tenant_id, client_id, date, mileage, description, reason,
+                parts_replaced, cost, resolved_issue, linked_issue_id, notes
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET
+                date = EXCLUDED.date,
+                mileage = EXCLUDED.mileage,
+                description = EXCLUDED.description,
+                reason = EXCLUDED.reason,
+                parts_replaced = EXCLUDED.parts_replaced,
+                cost = EXCLUDED.cost,
+                resolved_issue = EXCLUDED.resolved_issue,
+                linked_issue_id = EXCLUDED.linked_issue_id,
+                notes = EXCLUDED.notes
+            RETURNING *
+            """,
+            (
+                tid, body.client_id, body.date, body.mileage, body.description, body.reason,
+                json.dumps(body.parts_replaced), body.cost, body.resolved_issue, body.linked_issue_id, body.notes,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _serialize(row)
+
+
+@router.delete("/vehicle/corrective/{record_id}")
+def delete_corrective_record(record_id: int):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM vehicle_corrective_records WHERE id = %s AND tenant_id = %s",
+            (record_id, tid),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Record not found")
+        conn.commit()
+    return {"deleted": record_id}
+
+
+# ---------------------------------------------------------------------------
+# DIY procedures
+# ---------------------------------------------------------------------------
+
+@router.get("/vehicle/procedures")
+def list_procedures():
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM vehicle_procedures WHERE tenant_id = %s ORDER BY updated_at DESC",
+        (tid,),
+    )
+    return [_serialize(r) for r in rows]
+
+
+@router.post("/vehicle/procedures")
+def upsert_procedure(body: VehicleProcedureIn):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO vehicle_procedures (
+                tenant_id, client_id, title, related_type_name, tools, parts, steps, notes, updated_at
+            ) VALUES (%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,NOW())
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                related_type_name = EXCLUDED.related_type_name,
+                tools = EXCLUDED.tools,
+                parts = EXCLUDED.parts,
+                steps = EXCLUDED.steps,
+                notes = EXCLUDED.notes,
+                updated_at = NOW()
+            RETURNING *
+            """,
+            (
+                tid, body.client_id, body.title, body.related_type_name,
+                json.dumps(body.tools), json.dumps(body.parts), json.dumps(body.steps), body.notes,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _serialize(row)
+
+
+@router.delete("/vehicle/procedures/{record_id}")
+def delete_procedure(record_id: int):
+    ensure_vehicle_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM vehicle_procedures WHERE id = %s AND tenant_id = %s",
+            (record_id, tid),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Record not found")
+        conn.commit()
+    return {"deleted": record_id}
 
 
 # ---------------------------------------------------------------------------
@@ -775,6 +1117,9 @@ def unlink_transaction(kind: str, record_id: int):
 # Helpers
 # ---------------------------------------------------------------------------
 
+_JSONB_LIST_COLUMNS = {"pressure_checks", "parts_replaced", "tools", "parts", "steps"}
+
+
 def _serialize(row: dict) -> dict:
     out = {}
     for k, v in row.items():
@@ -786,6 +1131,11 @@ def _serialize(row: dict) -> dict:
             # them into JSON floats (e.g. "id": 1.0) that strict clients can't parse
             # back into an Int field. Only actual NUMERIC/DECIMAL columns need this.
             out[k] = float(v)
+        elif k in _JSONB_LIST_COLUMNS and isinstance(v, str):
+            try:
+                out[k] = json.loads(v)
+            except Exception:
+                out[k] = []
         else:
             out[k] = v
     return out

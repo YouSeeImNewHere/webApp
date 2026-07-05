@@ -63,6 +63,7 @@ data class VehicleFuelRecord(
     @SerialName("total_cost") val totalCost: Double? = null,
     val station: String = "",
     val notes: String = "",
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 @Serializable
@@ -77,6 +78,7 @@ data class VehicleFuelCreateRequest(
     @SerialName("total_cost") val totalCost: Double? = null,
     val station: String = "",
     val notes: String = "",
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 // ---- Maintenance ----
@@ -91,6 +93,7 @@ data class VehicleMaintenanceRecord(
     @SerialName("is_shop_performed") val isShopPerformed: Boolean = false,
     @SerialName("shop_name") val shopName: String = "",
     val notes: String = "",
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 @Serializable
@@ -105,6 +108,7 @@ data class VehicleMaintenanceCreateRequest(
     @SerialName("is_shop_performed") val isShopPerformed: Boolean = false,
     @SerialName("shop_name") val shopName: String = "",
     val notes: String = "",
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 // ---- Issues ----
@@ -120,6 +124,7 @@ data class VehicleIssue(
     @SerialName("is_resolved") val isResolved: Boolean = false,
     @SerialName("resolved_date") val resolvedDate: String? = null,
     val notes: String = "",
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 @Serializable
@@ -133,6 +138,9 @@ data class VehicleIssueCreateRequest(
     @SerialName("mileage_noticed") val mileageNoticed: Int? = null,
     @SerialName("date_noticed") val dateNoticed: String? = null,
     val notes: String = "",
+    @SerialName("is_resolved") val isResolved: Boolean = false,
+    @SerialName("resolved_date") val resolvedDate: String? = null,
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 // ---- Inspections ----
@@ -144,6 +152,7 @@ data class VehicleInspectionItem(
     @SerialName("periodicity_days") val periodicityDays: Int = 30,
     @SerialName("last_checked_date") val lastCheckedDate: String? = null,
     @SerialName("is_built_in") val isBuiltIn: Boolean = false,
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 @Serializable
@@ -151,6 +160,8 @@ data class VehicleInspectionCreateRequest(
     val name: String,
     @SerialName("periodicity_days") val periodicityDays: Int = 30,
     @SerialName("is_built_in") val isBuiltIn: Boolean = false,
+    @SerialName("last_checked_date") val lastCheckedDate: String? = null,
+    @SerialName("client_id") val clientId: String? = null,
 )
 
 // ---- Locally-stored entities (no backend table) ----
