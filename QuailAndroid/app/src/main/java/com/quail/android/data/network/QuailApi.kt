@@ -102,7 +102,14 @@ import com.quail.android.data.model.VehicleProfile
 import com.quail.android.data.model.VehicleProfileUpdateRequest
 import com.quail.android.data.model.VerifyBalanceRequest
 import com.quail.android.data.model.VerifyBalanceResponse
+import com.quail.android.data.model.WidgetSummaryResponse
+import com.quail.android.data.model.CsvPreviewResponse
+import com.quail.android.data.model.CsvMappingPresetResponse
+import com.quail.android.data.model.CsvMappingPresetUpsertRequest
+import com.quail.android.data.model.CsvIngestJobResponse
+import com.quail.android.data.model.CsvJobStatusResponse
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -112,6 +119,7 @@ import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Part
+import retrofit2.http.PartMap
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
@@ -517,6 +525,42 @@ interface QuailApi {
 
     @DELETE("bugs/notes/{id}")
     suspend fun deleteBugNote(@Path("id") id: Int): OkResponse
+
+    // ---- Widget (Quail Cash home screen widget) ----
+
+    @GET("widget/summary")
+    suspend fun getWidgetSummary(@Query("widget_script_version") widgetScriptVersion: Int): WidgetSummaryResponse
+
+    // ---- CSV import (bank statement ingestion) ----
+
+    @Multipart
+    @POST("csv/preview")
+    suspend fun csvPreview(
+        @Part file: MultipartBody.Part,
+        @Part("delimiter") delimiter: RequestBody,
+        @Part("header_row") headerRow: RequestBody,
+        @Part("data_start_row") dataStartRow: RequestBody,
+        @Part("max_rows") maxRows: RequestBody,
+    ): CsvPreviewResponse
+
+    @GET("csv/mapping-presets")
+    suspend fun getCsvMappingPreset(
+        @Query("account_id") accountId: Int,
+        @Query("institution_key") institutionKey: String = "__account__",
+    ): CsvMappingPresetResponse
+
+    @POST("csv/mapping-presets")
+    suspend fun saveCsvMappingPreset(@Body body: CsvMappingPresetUpsertRequest): OkResponse
+
+    @Multipart
+    @POST("csv/ingest-mapped/async")
+    suspend fun ingestCsvMappedAsync(
+        @Part file: MultipartBody.Part,
+        @PartMap fields: Map<String, @JvmSuppressWildcards RequestBody>,
+    ): CsvIngestJobResponse
+
+    @GET("csv/jobs/{jobId}")
+    suspend fun getCsvJobStatus(@Path("jobId") jobId: String): CsvJobStatusResponse
 
     // ---- Projects (Quail Projects) ----
 

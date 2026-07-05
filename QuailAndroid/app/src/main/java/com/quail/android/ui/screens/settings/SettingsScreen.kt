@@ -76,7 +76,12 @@ val SUPPORTED_THEMES = setOf("system", "dark")
  * here — that's dashboard-level, not Cash-specific, per iOS's own split. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit, onOpenNotificationSettings: () -> Unit) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onBack: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
+    onOpenCsvImportQueue: () -> Unit = {},
+) {
     val context = LocalContext.current
     val cacheStatus by viewModel.cacheStatus.collectAsState()
     var theme by remember { mutableStateOf("system") }
@@ -153,9 +158,11 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit, onOpenNotif
                     SettingsRow(
                         icon = Icons.Filled.Widgets,
                         iconColor = Color(0xFFAB47BC),
-                        title = "Android Widget Setup",
-                        subtitle = "Configure home screen widget workflows",
-                        onClick = { Toast.makeText(context, "Widget setup isn't built yet", Toast.LENGTH_SHORT).show() },
+                        title = "Home Screen Widget",
+                        subtitle = "Long-press your home screen, tap Widgets, and add Quail Cash",
+                        onClick = {
+                            Toast.makeText(context, "Long-press your home screen → Widgets → Quail Cash", Toast.LENGTH_LONG).show()
+                        },
                     )
                 }
             }
@@ -183,7 +190,7 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit, onOpenNotif
                         iconColor = Color(0xFF66BB6A),
                         title = "Import Queue",
                         subtitle = "Review CSV imports awaiting processing",
-                        onClick = { Toast.makeText(context, "Import queue isn't built yet", Toast.LENGTH_SHORT).show() },
+                        onClick = onOpenCsvImportQueue,
                     )
                     RowDivider()
                     SettingsRow(

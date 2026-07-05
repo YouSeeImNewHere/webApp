@@ -13,6 +13,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.lifecycleScope
@@ -22,6 +24,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.quail.android.bugreport.NavPathHolder
+import com.quail.android.csvimport.CsvImportDatabase
+import com.quail.android.csvimport.CsvImportQueueScreen
+import com.quail.android.csvimport.CsvImportRepository
+import com.quail.android.csvimport.CsvImportViewModel
+import com.quail.android.csvimport.CsvMappingSetupScreen
 import com.quail.android.data.bugs.BugsDatabase
 import com.quail.android.data.bugs.BugsRepository
 import com.quail.android.data.fitness.FitnessDatabase
@@ -95,6 +102,8 @@ private const val ROUTE_DASHBOARD_SETTINGS = "dashboard_settings"
 private const val ROUTE_NOTIFICATION_SETTINGS = "notification_settings"
 private const val ROUTE_BUDGET = "budget"
 private const val ROUTE_ADMIN = "admin"
+private const val ROUTE_CSV_IMPORT_QUEUE = "csv_import_queue"
+private const val ROUTE_CSV_MAPPING_SETUP = "csv_mapping_setup/{itemId}"
 
 class MainActivity : ComponentActivity() {
     private lateinit var authStore: AuthStore
@@ -191,6 +200,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
     val fitnessRepository = remember { FitnessRepository(api, FitnessDatabase.getInstance(context), context) }
     val bugsRepository = remember { BugsRepository(api, BugsDatabase.getInstance(context), context) }
     val projectsRepository = remember { ProjectsRepository(api, ProjectsDatabase.getInstance(context), context) }
+    val csvImportRepository = remember { CsvImportRepository(api, CsvImportDatabase.getInstance(context), context) }
     val onSignOut: () -> Unit = {
         scope.launch {
             authStore.clear()
@@ -390,7 +400,36 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenNotificationSettings = { navController.navigate(ROUTE_NOTIFICATION_SETTINGS) },
+                onOpenCsvImportQueue = { navController.navigate(ROUTE_CSV_IMPORT_QUEUE) },
             )
+        }
+
+        composable(ROUTE_CSV_IMPORT_QUEUE) {
+            val viewModel: CsvImportViewModel = viewModel(factory = CsvImportViewModel.Factory(api, csvImportRepository, context))
+            CsvImportQueueScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onSetupMapping = { item -> navController.navigate("csv_mapping_setup/${item.id}") },
+            )
+        }
+
+        composable(ROUTE_CSV_MAPPING_SETUP) { backStackEntry ->
+            val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(ROUTE_CSV_IMPORT_QUEUE) }
+            val viewModel: CsvImportViewModel = viewModel(parentEntry, factory = CsvImportViewModel.Factory(api, csvImportRepository, context))
+            val itemId = backStackEntry.arguments?.getString("itemId").orEmpty()
+            val items by viewModel.items.collectAsState()
+            val item = items.find { it.id == itemId }
+            if (item == null) {
+                navController.popBackStack()
+            } else {
+                CsvMappingSetupScreen(
+                    api = api,
+                    repository = csvImportRepository,
+                    item = item,
+                    onBack = { navController.popBackStack() },
+                    onSaved = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(ROUTE_DASHBOARD_SETTINGS) {
