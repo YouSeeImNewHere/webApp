@@ -102,6 +102,10 @@ import com.quail.android.data.model.VehicleProfile
 import com.quail.android.data.model.VehicleProfileUpdateRequest
 import com.quail.android.data.model.VerifyBalanceRequest
 import com.quail.android.data.model.VerifyBalanceResponse
+import com.quail.android.data.model.AccountInfoResponse
+import com.quail.android.data.model.AccountTransactionsRangeResponse
+import com.quail.android.data.model.TransactionCreateRequest
+import com.quail.android.data.model.TransactionCreateResponse
 import com.quail.android.data.model.WidgetSummaryResponse
 import com.quail.android.data.model.CsvPreviewResponse
 import com.quail.android.data.model.CsvMappingPresetResponse
@@ -207,6 +211,27 @@ interface QuailApi {
         @Path("id") accountId: Int,
         @Body request: VerifyBalanceRequest,
     ): VerifyBalanceResponse
+
+    @GET("account/{id}")
+    suspend fun getAccountInfo(@Path("id") accountId: Int): AccountInfoResponse
+
+    @GET("account-series")
+    suspend fun getAccountSeries(
+        @Query("account_id") accountId: Int,
+        @Query("start") start: String,
+        @Query("end") end: String,
+    ): List<ChartPoint>
+
+    @GET("account-transactions-range")
+    suspend fun getAccountTransactionsRange(
+        @Query("account_id") accountId: Int,
+        @Query("start") start: String,
+        @Query("end") end: String,
+        @Query("limit") limit: Int = 500,
+    ): AccountTransactionsRangeResponse
+
+    @POST("transaction")
+    suspend fun createTransaction(@Body request: TransactionCreateRequest): TransactionCreateResponse
 
     // ---- Notifications ----
 

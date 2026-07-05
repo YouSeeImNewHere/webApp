@@ -118,6 +118,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenBudget: () -> Unit,
+    onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit = { _, _ -> },
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(CashTab.HOME) }
@@ -187,6 +188,7 @@ fun HomeScreen(
                             onOpenSheet,
                             onOpenUnassignedWizard = { showUnassignedWizard = true },
                             onOpenBudget = onOpenBudget,
+                            onOpenAccountDetail = onOpenAccountDetail,
                         )
                     }
                 }
@@ -370,6 +372,7 @@ private fun HomeContent(
     onOpenSheet: (HomeSheet) -> Unit,
     onOpenUnassignedWizard: () -> Unit,
     onOpenBudget: () -> Unit,
+    onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit = { _, _ -> },
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -393,7 +396,7 @@ private fun HomeContent(
             item { MonthlySpendingCard(categoryTotalsMonth ?: CategoryTotalsMonth(), onOpenUnassignedWizard) }
         }
         if (payload.bankTotals.isNotEmpty()) {
-            item { BankTotalsCard(payload.bankTotals, onOpenSheet) }
+            item { BankTotalsCard(payload.bankTotals, onOpenSheet, onOpenAccountDetail) }
         }
         if (upcoming.isNotEmpty()) {
             item { UpcomingCard(upcoming) }
@@ -614,7 +617,11 @@ private fun CountPill(count: Int) {
 }
 
 @Composable
-private fun BankTotalsCard(bankTotals: Map<String, BankGroup>, onOpenSheet: (HomeSheet) -> Unit) {
+private fun BankTotalsCard(
+    bankTotals: Map<String, BankGroup>,
+    onOpenSheet: (HomeSheet) -> Unit,
+    onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit,
+) {
     val context = LocalContext.current
     ExpandableCard(title = "Bank Totals") {
         Row(
@@ -622,7 +629,7 @@ private fun BankTotalsCard(bankTotals: Map<String, BankGroup>, onOpenSheet: (Hom
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             HeaderActionButton("Import CSV/Excel", primary = true) {
-                Toast.makeText(context, "CSV import isn't built yet", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Share a bank CSV to Quail Cash, or open Settings → Import Queue", Toast.LENGTH_LONG).show()
             }
             HeaderActionButton("Bank Info", primary = false) { onOpenSheet(HomeSheet.BankInfo) }
         }
@@ -632,7 +639,7 @@ private fun BankTotalsCard(bankTotals: Map<String, BankGroup>, onOpenSheet: (Hom
             orderedTypes.forEach { type ->
                 val group = bankTotals.getValue(type)
                 if (group.accounts.isNotEmpty()) {
-                    BankTypeSection(type, group, onOpenSheet)
+                    BankTypeSection(type, group, onOpenSheet, onOpenAccountDetail)
                 }
             }
         }
@@ -670,7 +677,12 @@ private fun creditUsageSubtitle(type: String, group: BankGroup): String? {
 }
 
 @Composable
-private fun BankTypeSection(type: String, group: BankGroup, onOpenSheet: (HomeSheet) -> Unit) {
+private fun BankTypeSection(
+    type: String,
+    group: BankGroup,
+    onOpenSheet: (HomeSheet) -> Unit,
+    onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Surface(
         onClick = { expanded = !expanded },
@@ -708,7 +720,7 @@ private fun BankTypeSection(type: String, group: BankGroup, onOpenSheet: (HomeSh
                 exit = fadeOut() + shrinkVertically(),
             ) {
                 Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    group.accounts.forEach { account -> BankAccountRow(account, onOpenSheet) }
+                    group.accounts.forEach { account -> BankAccountRow(account, onOpenSheet, onOpenAccountDetail) }
                 }
             }
         }
@@ -716,8 +728,17 @@ private fun BankTypeSection(type: String, group: BankGroup, onOpenSheet: (HomeSh
 }
 
 @Composable
-private fun BankAccountRow(account: BankAccount, onOpenSheet: (HomeSheet) -> Unit) {
-    Surface(color = QuailSurface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+private fun BankAccountRow(
+    account: BankAccount,
+    onOpenSheet: (HomeSheet) -> Unit,
+    onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit,
+) {
+    Surface(
+        onClick = { onOpenAccountDetail(account.id, false) },
+        color = QuailSurface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -738,7 +759,7 @@ private fun BankAccountRow(account: BankAccount, onOpenSheet: (HomeSheet) -> Uni
                         onOpenSheet(HomeSheet.VerifyBalance(account.id, account.name ?: "Account"))
                     }
                     SmallPillButton("Audit") {
-                        onOpenSheet(HomeSheet.AccountAudit(account))
+                        onOpenAccountDetail(account.id, true)
                     }
                 }
             }

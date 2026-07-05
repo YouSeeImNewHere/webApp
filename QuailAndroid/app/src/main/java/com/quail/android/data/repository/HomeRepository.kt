@@ -118,6 +118,30 @@ class HomeRepository(private val api: QuailApi) {
     suspend fun verifyBalance(accountId: Int, verifiedDate: String? = null): VerifyBalanceResponse =
         api.verifyBalance(accountId, VerifyBalanceRequest(verifiedDate))
 
+    // ---- Account detail ----
+
+    suspend fun getAccountInfo(accountId: Int): com.quail.android.data.model.AccountInfoResponse = api.getAccountInfo(accountId)
+
+    suspend fun getAccountSeries(accountId: Int, start: java.time.LocalDate, end: java.time.LocalDate): List<ChartPoint> =
+        api.getAccountSeries(accountId, start.toString(), end.toString())
+
+    suspend fun getAccountTransactionsRange(
+        accountId: Int,
+        start: java.time.LocalDate,
+        end: java.time.LocalDate,
+        limit: Int = 500,
+    ): com.quail.android.data.model.AccountTransactionsRangeResponse =
+        api.getAccountTransactionsRange(accountId, start.toString(), end.toString(), limit)
+
+    suspend fun createTransaction(
+        accountId: Int,
+        amount: Double,
+        merchant: String,
+        status: String,
+        date: String?,
+    ): com.quail.android.data.model.TransactionCreateResponse =
+        api.createTransaction(com.quail.android.data.model.TransactionCreateRequest(accountId, amount, merchant, status, date))
+
     // ---- Notifications ----
 
     suspend fun getNotifications(limit: Int = 100): List<NotificationItem> = api.getNotifications(limit).items

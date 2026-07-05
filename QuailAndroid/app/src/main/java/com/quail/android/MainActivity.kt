@@ -29,6 +29,9 @@ import com.quail.android.csvimport.CsvImportQueueScreen
 import com.quail.android.csvimport.CsvImportRepository
 import com.quail.android.csvimport.CsvImportViewModel
 import com.quail.android.csvimport.CsvMappingSetupScreen
+import com.quail.android.ui.screens.accountdetail.AccountDetailScreen
+import com.quail.android.ui.screens.accountdetail.AccountDetailViewModel
+import com.quail.android.ui.screens.accountdetail.shareTransactionsCsv
 import com.quail.android.data.bugs.BugsDatabase
 import com.quail.android.data.bugs.BugsRepository
 import com.quail.android.data.fitness.FitnessDatabase
@@ -104,6 +107,7 @@ private const val ROUTE_BUDGET = "budget"
 private const val ROUTE_ADMIN = "admin"
 private const val ROUTE_CSV_IMPORT_QUEUE = "csv_import_queue"
 private const val ROUTE_CSV_MAPPING_SETUP = "csv_mapping_setup/{itemId}"
+private const val ROUTE_ACCOUNT_DETAIL = "account_detail/{accountId}/{auditMode}"
 
 class MainActivity : ComponentActivity() {
     private lateinit var authStore: AuthStore
@@ -386,6 +390,34 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenSettings = { navController.navigate(ROUTE_SETTINGS) },
                 onOpenNotifications = { navController.navigate(ROUTE_NOTIFICATIONS) },
                 onOpenBudget = { navController.navigate(ROUTE_BUDGET) },
+                onOpenAccountDetail = { accountId, auditMode ->
+                    navController.navigate("account_detail/$accountId/${if (auditMode) 1 else 0}")
+                },
+            )
+        }
+
+        composable(ROUTE_ACCOUNT_DETAIL) { backStackEntry ->
+            val accountId = backStackEntry.arguments?.getString("accountId")?.toIntOrNull() ?: 0
+            val auditMode = backStackEntry.arguments?.getString("auditMode") == "1"
+            val detailViewModel: AccountDetailViewModel = viewModel(
+                key = "account_detail_$accountId",
+                factory = AccountDetailViewModel.Factory(repository, accountId, context),
+            )
+            val accountInfo by detailViewModel.accountInfo.collectAsState()
+            androidx.compose.runtime.LaunchedEffect(auditMode) {
+                if (auditMode) detailViewModel.toggleAuditMode()
+            }
+            AccountDetailScreen(
+                api = api,
+                viewModel = detailViewModel,
+                accountName = accountInfo?.name ?: "Account",
+                onBack = { navController.popBackStack() },
+                onSwitchAccount = { newId, newAuditMode ->
+                    navController.navigate("account_detail/$newId/${if (newAuditMode) 1 else 0}") {
+                        popUpTo(ROUTE_ACCOUNT_DETAIL) { inclusive = true }
+                    }
+                },
+                onShareCsv = { txs, accountName -> shareTransactionsCsv(context, txs, accountName) },
             )
         }
 
