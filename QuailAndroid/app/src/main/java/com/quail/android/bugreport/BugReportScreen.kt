@@ -8,11 +8,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -104,6 +106,20 @@ fun BugReportScreen(
                 },
             )
         },
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
+                Button(
+                    onClick = {
+                        val annotated = screenshot?.let { compositeAnnotations(it, strokes, displaySize) }
+                        onSubmit(description, annotated)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                ) {
+                    Text("Submit Bug Report", fontWeight = FontWeight.Bold, color = Color.Black, modifier = Modifier.padding(vertical = 6.dp))
+                }
+            }
+        },
     ) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
             if (imageBitmap != null) {
@@ -113,34 +129,41 @@ fun BugReportScreen(
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(imageBitmap.width.toFloat() / imageBitmap.height.toFloat())
-                        .padding(horizontal = 16.dp)
-                        .onSizeChanged { displaySize = it }
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = { offset -> currentStroke = listOf(offset) },
-                                onDrag = { change, _ -> currentStroke = currentStroke + change.position },
-                                onDragEnd = {
-                                    if (currentStroke.size > 1) strokes = strokes + listOf(currentStroke)
-                                    currentStroke = emptyList()
-                                },
-                            )
-                        },
-                ) {
-                    Image(bitmap = imageBitmap, contentDescription = "Screenshot", modifier = Modifier.fillMaxSize())
-                    Canvas(Modifier.fillMaxSize()) {
-                        (strokes + listOf(currentStroke)).forEach { stroke ->
-                            for (i in 0 until stroke.size - 1) {
-                                drawLine(
-                                    color = Color.Red,
-                                    start = stroke[i],
-                                    end = stroke[i + 1],
-                                    strokeWidth = 7f,
-                                    cap = StrokeCap.Round,
+                BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    val ratio = imageBitmap.width.toFloat() / imageBitmap.height.toFloat()
+                    val maxPreviewHeight = 340.dp
+                    val widthForMaxHeight = maxPreviewHeight * ratio
+                    val boxWidth = if (widthForMaxHeight < maxWidth) widthForMaxHeight else maxWidth
+                    val boxHeight = boxWidth / ratio
+
+                    Box(
+                        modifier = Modifier
+                            .width(boxWidth)
+                            .height(boxHeight)
+                            .onSizeChanged { displaySize = it }
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDragStart = { offset -> currentStroke = listOf(offset) },
+                                    onDrag = { change, _ -> currentStroke = currentStroke + change.position },
+                                    onDragEnd = {
+                                        if (currentStroke.size > 1) strokes = strokes + listOf(currentStroke)
+                                        currentStroke = emptyList()
+                                    },
                                 )
+                            },
+                    ) {
+                        Image(bitmap = imageBitmap, contentDescription = "Screenshot", modifier = Modifier.fillMaxSize())
+                        Canvas(Modifier.fillMaxSize()) {
+                            (strokes + listOf(currentStroke)).forEach { stroke ->
+                                for (i in 0 until stroke.size - 1) {
+                                    drawLine(
+                                        color = Color.Red,
+                                        start = stroke[i],
+                                        end = stroke[i + 1],
+                                        strokeWidth = 7f,
+                                        cap = StrokeCap.Round,
+                                    )
+                                }
                             }
                         }
                     }
@@ -192,17 +215,6 @@ fun BugReportScreen(
                         }
                     }
                 }
-            }
-
-            Button(
-                onClick = {
-                    val annotated = screenshot?.let { compositeAnnotations(it, strokes, displaySize) }
-                    onSubmit(description, annotated)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text("Submit Bug Report", fontWeight = FontWeight.Bold, color = Color.Black, modifier = Modifier.padding(vertical = 6.dp))
             }
         }
     }

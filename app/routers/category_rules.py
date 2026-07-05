@@ -693,6 +693,7 @@ def _month_budget_home(
     min_occ: int = 3,
     include_stale: bool = False,
     pushover_user_key: str | None = None,
+    allow_notifications: bool = False,
 ):
     ensure_transactions_ignore_column()
     tid = _require_tenant_id()
@@ -967,22 +968,23 @@ def _month_budget_home(
     is_weekend_today = (today.weekday() >= 5)
     today_limit = weekend_limit if is_weekend_today else weekday_limit
 
-    _emit_smart_budget_notifications(
-        tid=tid,
-        year=year,
-        month=month,
-        today=today,
-        groups=list(groups or []),
-        cat_spent=dict(cat_spent or {}),
-        safe_to_spend=float(safe_to_spend),
-        days_left=int(days_left),
-        today_limit=float(today_limit),
-        spent_free=float(spent_free),
-        events=list(events or []),
-        min_occ=int(min_occ),
-        include_stale=bool(include_stale),
-        pushover_user_key=pushover_user_key,
-    )
+    if allow_notifications:
+        _emit_smart_budget_notifications(
+            tid=tid,
+            year=year,
+            month=month,
+            today=today,
+            groups=list(groups or []),
+            cat_spent=dict(cat_spent or {}),
+            safe_to_spend=float(safe_to_spend),
+            days_left=int(days_left),
+            today_limit=float(today_limit),
+            spent_free=float(spent_free),
+            events=list(events or []),
+            min_occ=int(min_occ),
+            include_stale=bool(include_stale),
+            pushover_user_key=pushover_user_key,
+        )
 
     return {
         "_calc_version": int(MONTH_BUDGET_CALC_VERSION),
@@ -1057,6 +1059,7 @@ def month_budget_home_cached(
     include_stale: bool = False,
     pushover_user_key: str | None = None,
     force_refresh: bool = False,
+    allow_notifications: bool = False,
 ):
     tid = _require_tenant_id()
     today = today_local()
@@ -1106,6 +1109,7 @@ def month_budget_home_cached(
         min_occ=int(min_occ),
         include_stale=bool(include_stale),
         pushover_user_key=pushover_user_key,
+        allow_notifications=bool(allow_notifications),
     )
 
     version_after = home_snapshot_version_for_tenant(tid)

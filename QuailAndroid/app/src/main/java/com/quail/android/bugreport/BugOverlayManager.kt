@@ -27,8 +27,23 @@ import kotlin.math.abs
  * it stays visible and tappable above any other on-screen popup/dialog,
  * including ones from this app (which render in their own Android windows). */
 object BugOverlayManager {
+    private const val PREFS_NAME = "bug_overlay_prefs"
+    private const val KEY_X = "x"
+    private const val KEY_Y = "y"
+
     private var buttonView: View? = null
     private var windowManager: WindowManager? = null
+
+    private fun savePosition(context: Context, x: Int, y: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putInt(KEY_X, x).putInt(KEY_Y, y).apply()
+    }
+
+    private fun loadPosition(context: Context): Pair<Int, Int>? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_X) || !prefs.contains(KEY_Y)) return null
+        return prefs.getInt(KEY_X, 0) to prefs.getInt(KEY_Y, 0)
+    }
 
     fun hasPermission(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
@@ -64,14 +79,23 @@ object BugOverlayManager {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
 
+        val savedPosition = loadPosition(appContext)
+        val margin = (16 * appContext.resources.displayMetrics.density).toInt()
+
         val params = WindowManager.LayoutParams(
             sizePx, sizePx, overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 24
-            y = 300
+            if (savedPosition != null) {
+                x = savedPosition.first
+                y = savedPosition.second
+            } else {
+                // Default to the bottom-right corner, out of the way of app content.
+                x = appContext.resources.displayMetrics.widthPixels - sizePx - margin
+                y = appContext.resources.displayMetrics.heightPixels - sizePx - margin * 6
+            }
         }
 
         var downX = 0f
@@ -100,7 +124,7 @@ object BugOverlayManager {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!dragged) onTap()
+                    if (dragged) savePosition(appContext, params.x, params.y) else onTap()
                     true
                 }
                 else -> false

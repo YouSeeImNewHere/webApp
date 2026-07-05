@@ -22,10 +22,13 @@ try:
         try:
             today = today_local()
             # force_refresh=True bypasses the cache so this actually recomputes
-            # and emits "Today's safe-to-spend" (plus any other date-gated
-            # smart-budget alerts) right now, instead of waiting for whoever
-            # first opens the app that day to trigger it lazily.
-            month_budget_home_cached(today.year, today.month, force_refresh=True)
+            # right now. allow_notifications=True is what actually emits
+            # "Today's safe-to-spend" (plus other date-gated smart-budget
+            # alerts) — every other caller of month_budget_home_cached leaves
+            # this False, so an ordinary app-open recompute (which also runs
+            # once the cached payload goes stale after midnight) can't steal
+            # the notification before this scheduled run fires.
+            month_budget_home_cached(today.year, today.month, force_refresh=True, allow_notifications=True)
         finally:
             reset_current_tenant_id(token)
 
