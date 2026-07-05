@@ -14,7 +14,6 @@ import com.quail.android.data.model.VehicleIssue
 import com.quail.android.data.model.VehicleMaintenanceRecord
 import com.quail.android.data.model.VehicleProfile
 import com.quail.android.data.model.VehicleProfileUpdateRequest
-import com.quail.android.data.repository.HomeRepository
 import com.quail.android.data.vehicle.VehicleOfflineRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +44,6 @@ sealed interface VehicleUiState {
 }
 
 class VehicleViewModel(
-    private val repository: HomeRepository,
     private val offlineRepository: VehicleOfflineRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<VehicleUiState>(VehicleUiState.Loading)
@@ -57,8 +55,9 @@ class VehicleViewModel(
 
     fun refresh() {
         viewModelScope.launch {
+            offlineRepository.refreshProfileIfOnline()
             try {
-                val profile = repository.getVehicleProfile()
+                val profile = offlineRepository.profile.first()
                 val maintenance = offlineRepository.maintenanceRecords.first()
                 val inspections = loadOrSeedInspections()
                 val fuel = offlineRepository.fuelRecords.first()
@@ -92,7 +91,7 @@ class VehicleViewModel(
 
     fun saveProfile(request: VehicleProfileUpdateRequest) {
         viewModelScope.launch {
-            runCatching { repository.putVehicleProfile(request) }
+            offlineRepository.saveProfile(request)
             refresh()
         }
     }
@@ -176,7 +175,7 @@ class VehicleViewModel(
 
     private suspend fun bumpMileageIfNeeded(mileage: Int) {
         if (mileage > currentMileage()) {
-            runCatching { repository.updateVehicleMileage(mileage) }
+            offlineRepository.bumpMileage(mileage)
         }
     }
 
@@ -184,10 +183,10 @@ class VehicleViewModel(
         fun newId(): String = UUID.randomUUID().toString()
     }
 
-    class Factory(private val repository: HomeRepository, private val offlineRepository: VehicleOfflineRepository) : ViewModelProvider.Factory {
+    class Factory(private val offlineRepository: VehicleOfflineRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return VehicleViewModel(repository, offlineRepository) as T
+            return VehicleViewModel(offlineRepository) as T
         }
     }
 }

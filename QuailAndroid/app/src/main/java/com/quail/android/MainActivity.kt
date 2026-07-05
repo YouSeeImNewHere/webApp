@@ -58,6 +58,7 @@ import com.quail.android.ui.screens.settings.NotificationPrefsScreen
 import com.quail.android.ui.screens.settings.SettingsScreen
 import com.quail.android.ui.screens.settings.SettingsViewModel
 import com.quail.android.ui.screens.vehicle.VehicleFuelHistoryScreen
+import com.quail.android.ui.screens.vehicle.VehicleIssuesScreen
 import com.quail.android.ui.screens.vehicle.VehicleNotificationsScreen
 import com.quail.android.ui.screens.vehicle.VehicleProceduresScreen
 import com.quail.android.ui.screens.vehicle.VehicleScreen
@@ -73,6 +74,7 @@ private const val ROUTE_HOME = "home"
 private const val ROUTE_VEHICLE = "vehicle"
 private const val ROUTE_VEHICLE_PROCEDURES = "vehicle_procedures"
 private const val ROUTE_VEHICLE_FUEL_HISTORY = "vehicle_fuel_history"
+private const val ROUTE_VEHICLE_ISSUES = "vehicle_issues"
 private const val ROUTE_VEHICLE_SETTINGS = "vehicle_settings"
 private const val ROUTE_VEHICLE_NOTIFICATIONS = "vehicle_notifications"
 private const val ROUTE_FITNESS = "fitness"
@@ -247,11 +249,12 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(vehicleOfflineRepository))
             VehicleScreen(
                 viewModel = viewModel,
                 onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
                 onOpenFuelHistory = { navController.navigate(ROUTE_VEHICLE_FUEL_HISTORY) },
+                onOpenIssues = { navController.navigate(ROUTE_VEHICLE_ISSUES) },
                 onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
                 onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
@@ -259,10 +262,11 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE_PROCEDURES) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(vehicleOfflineRepository))
             VehicleProceduresScreen(
                 viewModel = viewModel,
                 onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
+                onOpenIssues = { navController.navigate(ROUTE_VEHICLE_ISSUES) },
                 onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
                 onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
@@ -270,15 +274,27 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_VEHICLE_FUEL_HISTORY) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(vehicleOfflineRepository))
             VehicleFuelHistoryScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
             )
         }
 
+        composable(ROUTE_VEHICLE_ISSUES) {
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(vehicleOfflineRepository))
+            VehicleIssuesScreen(
+                viewModel = viewModel,
+                onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
+                onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
+                onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
+                onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
         composable(ROUTE_VEHICLE_SETTINGS) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(vehicleOfflineRepository))
             VehicleSettingsScreen(
                 viewModel = viewModel,
                 localStore = vehicleLocalStore,
@@ -286,18 +302,20 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenNotifications = { navController.navigate(ROUTE_VEHICLE_NOTIFICATIONS) },
                 onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
                 onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
+                onOpenIssues = { navController.navigate(ROUTE_VEHICLE_ISSUES) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }
 
         composable(ROUTE_VEHICLE_NOTIFICATIONS) {
-            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(repository, vehicleOfflineRepository))
+            val viewModel: VehicleViewModel = viewModel(factory = VehicleViewModel.Factory(vehicleOfflineRepository))
             VehicleNotificationsScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenSettings = { navController.navigate(ROUTE_VEHICLE_SETTINGS) },
                 onOpenHome = { navController.popBackStack(ROUTE_VEHICLE, inclusive = false) },
                 onOpenProcedures = { navController.navigate(ROUTE_VEHICLE_PROCEDURES) },
+                onOpenIssues = { navController.navigate(ROUTE_VEHICLE_ISSUES) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }

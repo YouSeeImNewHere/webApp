@@ -17,6 +17,8 @@ import com.quail.android.data.model.VehicleIssueCreateRequest
 import com.quail.android.data.model.VehicleMaintenanceCreateRequest
 import com.quail.android.data.model.VehicleMaintenanceRecord
 import com.quail.android.data.model.VehicleProcedureUpsertRequest
+import com.quail.android.data.model.VehicleProfile
+import com.quail.android.data.model.VehicleProfileUpdateRequest
 import com.quail.android.data.network.QuailApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -123,6 +125,9 @@ class VehicleOfflineRepository(
     val maintenanceRecords: Flow<List<VehicleMaintenanceRecord>> = db.maintenanceRecordDao().observeAll().map { list -> list.map { it.toDomain() } }
     val issues: Flow<List<VehicleIssue>> = db.issueDao().observeAll().map { list -> list.map { it.toDomain() } }
     val inspectionItems: Flow<List<VehicleInspectionItem>> = db.inspectionItemDao().observeAll().map { list -> list.map { it.toDomain() } }
+    val profile: Flow<VehicleProfile> = db.profileDao().observe().map { entity ->
+        entity?.let { runCatching { vehicleJson.decodeFromString<VehicleProfile>(it.profileJson) }.getOrNull() } ?: VehicleProfile()
+    }
 
     suspend fun saveTireSet(tireSet: TireSet) {
         db.tireSetDao().upsert(tireSet.toEntity())
@@ -201,6 +206,40 @@ class VehicleOfflineRepository(
         val entity = db.inspectionItemDao().getByClientId(clientId) ?: return
         db.inspectionItemDao().upsert(entity.copy(lastCheckedDate = checkedDate, pendingSync = true))
         VehicleOfflineSyncScheduler.scheduleSync(context)
+    }
+
+    suspend fun saveProfile(request: VehicleProfileUpdateRequest) {
+        val existingId = runCatching { vehicleJson.decodeFromString<VehicleProfile>(db.profileDao().get()?.profileJson ?: "") }.getOrNull()?.id
+        val snapshot = VehicleProfile(
+            id = existingId, make = request.make, model = request.model, year = request.year, vin = request.vin,
+            licensePlate = request.licensePlate, oilType = request.oilType, oilCapacityWithFilter = request.oilCapacityWithFilter,
+            oilCapacityWithoutFilter = request.oilCapacityWithoutFilter, transmissionFluidType = request.transmissionFluidType,
+            transmissionFluidCapacity = request.transmissionFluidCapacity, coolantType = request.coolantType,
+            currentMileage = request.currentMileage, tankCapacityGallons = request.tankCapacityGallons, notes = request.notes,
+        )
+        db.profileDao().upsert(VehicleProfileEntity(profileJson = vehicleJson.encodeToString(snapshot), pendingSync = true))
+        VehicleOfflineSyncScheduler.scheduleSync(context)
+    }
+
+    suspend fun bumpMileage(mileage: Int) {
+        val cached = db.profileDao().get() ?: return
+        val current = runCatching { vehicleJson.decodeFromString<VehicleProfile>(cached.profileJson) }.getOrNull() ?: return
+        val updated = current.copy(currentMileage = mileage)
+        db.profileDao().upsert(VehicleProfileEntity(profileJson = vehicleJson.encodeToString(updated), pendingSync = true))
+        VehicleOfflineSyncScheduler.scheduleSync(context)
+    }
+
+    /** Best-effort network refresh of the profile cache, called opportunistically
+     * from the UI on screen load. Never overwrites an unsynced local edit, and
+     * no-ops silently if there's no connection. */
+    suspend fun refreshProfileIfOnline() {
+        runCatching {
+            val cached = db.profileDao().get()
+            if (cached == null || !cached.pendingSync) {
+                val remote = api.getVehicleProfile()
+                db.profileDao().upsert(VehicleProfileEntity(profileJson = vehicleJson.encodeToString(remote), pendingSync = false))
+            }
+        }
     }
 
     suspend fun pushPending() {
@@ -318,6 +357,22 @@ class VehicleOfflineRepository(
                 inspectionDao.markSynced(entity.clientId, saved.id)
             }
         }
+
+        db.profileDao().get()?.let { entity ->
+            if (entity.pendingSync) {
+                runCatching {
+                    val snapshot = vehicleJson.decodeFromString<VehicleProfile>(entity.profileJson)
+                    val req = VehicleProfileUpdateRequest(
+                        snapshot.make, snapshot.model, snapshot.year, snapshot.vin, snapshot.licensePlate, snapshot.oilType,
+                        snapshot.oilCapacityWithFilter, snapshot.oilCapacityWithoutFilter, snapshot.transmissionFluidType,
+                        snapshot.transmissionFluidCapacity, snapshot.coolantType, snapshot.currentMileage,
+                        snapshot.tankCapacityGallons, snapshot.notes,
+                    )
+                    val saved = api.putVehicleProfile(req)
+                    db.profileDao().upsert(VehicleProfileEntity(profileJson = vehicleJson.encodeToString(saved), pendingSync = false))
+                }
+            }
+        }
     }
 
     suspend fun pullFromServer() {
@@ -372,6 +427,13 @@ class VehicleOfflineRepository(
         runCatching {
             api.getVehicleInspections().forEach { record ->
                 db.inspectionItemDao().upsert(record.toEntity(pendingSync = false))
+            }
+        }
+        runCatching {
+            val cached = db.profileDao().get()
+            if (cached == null || !cached.pendingSync) {
+                val remote = api.getVehicleProfile()
+                db.profileDao().upsert(VehicleProfileEntity(profileJson = vehicleJson.encodeToString(remote), pendingSync = false))
             }
         }
     }

@@ -61,6 +61,7 @@ fun VehicleSettingsScreen(
     onOpenNotifications: () -> Unit,
     onOpenHome: () -> Unit,
     onOpenProcedures: () -> Unit,
+    onOpenIssues: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -82,6 +83,7 @@ fun VehicleSettingsScreen(
                 selectedTab = null,
                 onSelectHome = onOpenHome,
                 onSelectProcedures = onOpenProcedures,
+                onSelectIssues = onOpenIssues,
                 onOpenDashboard = onOpenDashboard,
             )
         },

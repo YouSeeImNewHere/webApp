@@ -44,6 +44,7 @@ import com.quail.android.ui.theme.QuailTextDim
 fun VehicleProceduresScreen(
     viewModel: VehicleViewModel,
     onOpenHome: () -> Unit,
+    onOpenIssues: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenDashboard: () -> Unit,
@@ -66,6 +67,7 @@ fun VehicleProceduresScreen(
                 selectedTab = VehicleTab.PROCEDURES,
                 onSelectHome = onOpenHome,
                 onSelectProcedures = {},
+                onSelectIssues = onOpenIssues,
                 onOpenDashboard = onOpenDashboard,
             )
         },

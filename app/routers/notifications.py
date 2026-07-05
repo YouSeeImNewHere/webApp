@@ -33,6 +33,7 @@ DEFAULT_NOTIFICATION_PREFS: Dict[str, bool] = {
     "disable_all": False,
     "ios_push": True,
     "android_push": True,
+    "transaction_alert": True,
     "homelab_alert": True,
     "credit_usage": True,
     "credit_usage_total": True,

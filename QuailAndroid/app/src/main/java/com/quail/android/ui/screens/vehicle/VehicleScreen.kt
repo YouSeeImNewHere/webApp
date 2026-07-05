@@ -116,6 +116,7 @@ fun VehicleScreen(
     viewModel: VehicleViewModel,
     onOpenProcedures: () -> Unit,
     onOpenFuelHistory: () -> Unit,
+    onOpenIssues: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenDashboard: () -> Unit,
@@ -138,6 +139,7 @@ fun VehicleScreen(
                 selectedTab = VehicleTab.HOME,
                 onSelectHome = {},
                 onSelectProcedures = onOpenProcedures,
+                onSelectIssues = onOpenIssues,
                 onOpenDashboard = onOpenDashboard,
             )
         },
@@ -211,22 +213,25 @@ fun TopCircleButton(icon: ImageVector, modifier: Modifier = Modifier, onClick: (
     }
 }
 
-enum class VehicleTab { HOME, PROCEDURES }
+enum class VehicleTab { HOME, PROCEDURES, ISSUES }
 
 @Composable
 fun VehicleBottomBar(
     selectedTab: VehicleTab?,
     onSelectHome: () -> Unit,
     onSelectProcedures: () -> Unit,
+    onSelectIssues: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
     Surface(color = QuailSurface) {
         Row(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            VehicleBottomBarTab("Home", Icons.Filled.Home, selected = selectedTab == VehicleTab.HOME, onClick = onSelectHome)
-            VehicleBottomBarTab("Procedures", Icons.Filled.Description, selected = selectedTab == VehicleTab.PROCEDURES, onClick = onSelectProcedures)
+            VehicleBottomBarTab("Home", Icons.Filled.Home, selected = selectedTab == VehicleTab.HOME, onClick = onSelectHome, modifier = Modifier.weight(1f))
+            VehicleBottomBarTab("Procedures", Icons.Filled.Description, selected = selectedTab == VehicleTab.PROCEDURES, onClick = onSelectProcedures, modifier = Modifier.weight(1f))
+            VehicleBottomBarTab("Issues", Icons.Filled.Warning, selected = selectedTab == VehicleTab.ISSUES, onClick = onSelectIssues, modifier = Modifier.weight(1f))
             Surface(onClick = onOpenDashboard, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(12.dp)) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -241,15 +246,15 @@ fun VehicleBottomBar(
 }
 
 @Composable
-private fun VehicleBottomBarTab(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+private fun VehicleBottomBarTab(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onClick,
         color = if (selected) QuailSurfaceRaised else Color.Transparent,
         shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.width(84.dp),
+        modifier = modifier,
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(icon, contentDescription = label, tint = if (selected) QuailText else QuailTextDim)
@@ -275,7 +280,6 @@ private fun VehicleContent(
         item { InspectionsSection(data, onCheckInspection) }
         item { FuelSection(data, onOpenSheet, onOpenFuelHistory) }
         item { TiresSection(data, onOpenSheet) }
-        item { IssuesSection(data, onOpenSheet) }
     }
 }
 
@@ -630,39 +634,7 @@ private fun PressureCell(pos: String, psi: Int, required: Int, modifier: Modifie
 // ---- Issues & Corrective ----
 
 @Composable
-private fun IssuesSection(data: VehicleData, onOpenSheet: (VehicleSheet) -> Unit) {
-    val open = data.openIssues
-    val corrective = data.correctiveRecords.sortedByDescending { it.date }.take(3)
-    Column {
-        SectionHeader("Issues & Repairs", actionLabel = "Report Issue") { onOpenSheet(VehicleSheet.AddIssue) }
-        if (open.isEmpty() && corrective.isEmpty()) {
-            EmptyCard("No open issues", "Report an Issue") { onOpenSheet(VehicleSheet.AddIssue) }
-        } else {
-            Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(vertical = 8.dp)) {
-                    if (open.isNotEmpty()) {
-                        Text("OPEN ISSUES", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
-                        open.forEach { issue -> IssueRow(issue, onOpenSheet) }
-                        Surface(
-                            onClick = { onOpenSheet(VehicleSheet.AddCorrective(null)) },
-                            color = Color.Transparent,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                        ) {
-                            Text("Record Repair", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                        }
-                    }
-                    if (corrective.isNotEmpty()) {
-                        Text("RECENT REPAIRS", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
-                        corrective.forEach { CorrectiveRow(it) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IssueRow(issue: VehicleIssue, onOpenSheet: (VehicleSheet) -> Unit) {
+fun IssueRow(issue: VehicleIssue, onOpenSheet: (VehicleSheet) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -684,7 +656,7 @@ private fun IssueRow(issue: VehicleIssue, onOpenSheet: (VehicleSheet) -> Unit) {
 }
 
 @Composable
-private fun CorrectiveRow(rec: CorrectiveRecord) {
+fun CorrectiveRow(rec: CorrectiveRecord) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

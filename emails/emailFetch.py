@@ -548,7 +548,7 @@ def try_resolve_pending_and_notify(
     message = f"{bank} {card} was used at {m} for {amt_str} on {date_str} at {time_str}"
 
     dbg_notification_decision("Resolved pending → sending pushover now")
-    send_pushover(title, message, recipient_email=recipient_email)
+    push_db_notification(kind="transaction_alert", subject=title, body=message, dedupe_key=f"txn:{fp}")
 
     mark_notified(fp)
     delete_pending(pending_table, fp)
@@ -873,7 +873,7 @@ def flush_pending_notifications(
                 title = "Transaction alert"
                 message = f"{bank} {card} was used at {merchant} for {amt_str} on {date_str} at {time_str}"
 
-                send_pushover(title, message, recipient_email=recipient_email)
+                push_db_notification(kind="transaction_alert", subject=title, body=message, dedupe_key=f"txn:{k}")
                 mark_notified(k)
 
                 cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
@@ -898,7 +898,7 @@ def flush_pending_notifications(
                 title = "Transaction alert"
                 message = f"{bank} {card} was used at Unknown merchant for {amt_str} on {date_str} at {time_str}"
 
-                send_pushover(title, message, recipient_email=recipient_email)
+                push_db_notification(kind="transaction_alert", subject=title, body=message, dedupe_key=f"txn:{k}")
                 mark_notified(k)
 
                 cur.execute(f"DELETE FROM {pending_table} WHERE k=%s", (k,))
@@ -1760,7 +1760,7 @@ def process_wizard_email(
                 amt_str = f"${float(amount_val):.2f}"
                 title = "Transaction alert"
                 message = f"{meta['bank']} {meta['card']} was used at {merchant} for {amt_str} on {date_mmddyy} at {time_local}"
-                send_pushover(title, message, recipient_email=recipient_email)
+                push_db_notification(kind="transaction_alert", subject=title, body=message, dedupe_key=f"txn:{notified_key}")
                 mark_notified(notified_key)
                 did_notify = True
                 notify_reason = reason or "notify now"

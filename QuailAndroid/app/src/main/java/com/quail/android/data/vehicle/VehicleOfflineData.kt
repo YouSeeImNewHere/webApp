@@ -304,12 +304,37 @@ interface InspectionItemDao {
     suspend fun hardDelete(clientId: String)
 }
 
+/** Single-row cache for vehicle_profiles — profile edits and mileage bumps used
+ * to go straight to the network with no queue at all, so a save attempted with
+ * zero signal was silently lost. This mirrors the same Room-is-source-of-truth
+ * pattern as the list-based entities above, just with a fixed id=0 row since
+ * there's only ever one profile per tenant. */
+@Entity(tableName = "vehicle_profile_cache")
+data class VehicleProfileEntity(
+    @PrimaryKey val id: Int = 0,
+    val profileJson: String,
+    val pendingSync: Boolean = false,
+)
+
+@Dao
+interface VehicleProfileDao {
+    @Query("SELECT * FROM vehicle_profile_cache WHERE id = 0")
+    fun observe(): Flow<VehicleProfileEntity?>
+
+    @Query("SELECT * FROM vehicle_profile_cache WHERE id = 0")
+    suspend fun get(): VehicleProfileEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: VehicleProfileEntity)
+}
+
 @Database(
     entities = [
         TireSetEntity::class, CorrectiveRecordEntity::class, VehicleProcedureEntity::class,
         FuelRecordEntity::class, MaintenanceRecordEntity::class, IssueEntity::class, InspectionItemEntity::class,
+        VehicleProfileEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class VehicleOfflineDatabase : RoomDatabase() {
@@ -320,6 +345,7 @@ abstract class VehicleOfflineDatabase : RoomDatabase() {
     abstract fun maintenanceRecordDao(): MaintenanceRecordDao
     abstract fun issueDao(): IssueDao
     abstract fun inspectionItemDao(): InspectionItemDao
+    abstract fun profileDao(): VehicleProfileDao
 
     companion object {
         @Volatile private var instance: VehicleOfflineDatabase? = null
