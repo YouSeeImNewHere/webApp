@@ -51,6 +51,7 @@ import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import java.text.NumberFormat
 import java.util.Locale
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private val currencyFormat: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 
@@ -95,6 +96,7 @@ fun DashboardScreen(
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
                 },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

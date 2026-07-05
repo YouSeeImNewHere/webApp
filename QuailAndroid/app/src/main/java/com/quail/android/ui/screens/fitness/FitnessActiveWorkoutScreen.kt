@@ -26,15 +26,15 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,6 +54,7 @@ import com.quail.android.data.model.WorkoutExerciseEntry
 import com.quail.android.data.model.WorkoutSessionRecord
 import com.quail.android.data.model.WorkoutSet
 import com.quail.android.data.model.exerciseById
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -61,6 +62,7 @@ import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import kotlinx.coroutines.delay
 import java.util.UUID
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private const val FITNESS_PREFS_NAME = "quail_fitness_prefs"
 private const val KEY_LAST_REST_SECONDS = "last_rest_seconds"
@@ -107,6 +109,7 @@ fun FitnessActiveWorkoutScreen(viewModel: FitnessViewModel, onFinished: () -> Un
                 title = { Text("Active Workout", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = { viewModel.cancelWorkout(); onCancelled() }) { Icon(Icons.Filled.Close, contentDescription = "Cancel") } },
                 actions = {
+                    BugReportTopBarAction()
                     Surface(onClick = { showFinishDialog = true }, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(999.dp)) {
                         Text("Finish", color = Color.Black, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
                     }
@@ -349,7 +352,6 @@ private fun SetRow(index: Int, set: WorkoutSet, isTimed: Boolean, onChange: (Wor
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExercisePickerSheet(
     customExercises: List<Exercise>,
@@ -361,7 +363,7 @@ fun ExercisePickerSheet(
 ) {
     var category by remember { mutableStateOf<ExerciseCategory?>(null) }
     val allExercises = DEFAULT_EXERCISES + customExercises
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Text("Add Exercise", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -413,6 +415,8 @@ fun ExercisePickerSheet(
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @Composable
@@ -432,7 +436,6 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FinishWorkoutSheet(onDismiss: () -> Unit, onConfirm: (durationMinutes: Int, notes: String, routineName: String?) -> Unit) {
     var duration by remember { mutableStateOf("30") }
@@ -440,7 +443,7 @@ private fun FinishWorkoutSheet(onDismiss: () -> Unit, onConfirm: (durationMinute
     var saveAsRoutine by remember { mutableStateOf(false) }
     var routineName by remember { mutableStateOf("") }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Finish Workout", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
             OutlinedTextField(
@@ -485,4 +488,6 @@ private fun FinishWorkoutSheet(onDismiss: () -> Unit, onConfirm: (durationMinute
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }

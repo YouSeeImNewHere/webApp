@@ -17,14 +17,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +41,7 @@ import com.quail.android.data.model.ProcedureStep
 import com.quail.android.data.model.TirePressureCheck
 import com.quail.android.data.model.TireSet
 import com.quail.android.data.model.VehicleProfileUpdateRequest
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import java.time.Instant
@@ -50,11 +51,10 @@ import java.time.ZoneOffset
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 private fun Long.toLocalDateUtc(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VehicleSheetHost(sheet: VehicleSheet, viewModel: VehicleViewModel, uiState: VehicleUiState, onDismiss: () -> Unit) {
     val data = (uiState as? VehicleUiState.Success)?.data ?: return
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         when (sheet) {
             is VehicleSheet.EditProfile -> EditProfileSheet(data, viewModel, onDismiss)
             is VehicleSheet.RecordMaintenance -> RecordMaintenanceSheet(sheet.typeName, data, viewModel, onDismiss)
@@ -66,6 +66,8 @@ fun VehicleSheetHost(sheet: VehicleSheet, viewModel: VehicleViewModel, uiState: 
             is VehicleSheet.EditProcedure -> EditProcedureSheet(sheet.existing, viewModel, onDismiss)
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @Composable

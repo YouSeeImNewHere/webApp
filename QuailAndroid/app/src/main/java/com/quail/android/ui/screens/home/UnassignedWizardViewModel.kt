@@ -53,9 +53,17 @@ class UnassignedWizardViewModel(
                 _state.value = UnassignedUiState.Error(e.message ?: "Couldn't load unassigned transactions")
                 return@launch
             }
-            _state.value = UnassignedUiState.Ready(rows = rows, categories = categories)
+            _state.value = UnassignedUiState.Ready(rows = dedupeForMode(rows, "freq"), categories = categories)
         }
     }
+
+    /** In "freq" mode the backend returns every underlying transaction for a
+     * merchant (annotated with a shared usage_count), not one row per
+     * merchant — so without this, the same merchant would appear repeated
+     * usage_count times in a row. "recent" mode is left as-is since it's
+     * meant to show individual transactions in date order. */
+    private fun dedupeForMode(rows: List<UnassignedTransaction>, mode: String): List<UnassignedTransaction> =
+        if (mode == "freq") rows.distinctBy { it.merchant } else rows
 
     private fun ready(): UnassignedUiState.Ready? = _state.value as? UnassignedUiState.Ready
 
@@ -70,7 +78,7 @@ class UnassignedWizardViewModel(
                 _state.value = (ready() ?: s).copy(saving = false, statusMessage = e.message ?: "Couldn't load")
                 return@launch
             }
-            _state.value = (ready() ?: s).copy(rows = rows, index = 0, saving = false)
+            _state.value = (ready() ?: s).copy(rows = dedupeForMode(rows, mode), index = 0, saving = false)
         }
     }
 
@@ -108,7 +116,7 @@ class UnassignedWizardViewModel(
                 val refreshed = runCatching { repository.getUnassigned(limit = 25, mode = s.mode) }.getOrDefault(emptyList())
                 val latest = ready() ?: return@launch
                 _state.value = latest.copy(
-                    rows = refreshed,
+                    rows = dedupeForMode(refreshed, s.mode),
                     index = 0,
                     statusMessage = if (refreshed.isEmpty()) "No additional unassigned transactions right now." else null,
                 )

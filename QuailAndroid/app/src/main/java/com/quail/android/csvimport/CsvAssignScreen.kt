@@ -48,6 +48,7 @@ import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import kotlinx.coroutines.launch
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private data class AccountOption(val id: Int, val label: String)
 
@@ -98,6 +99,7 @@ fun CsvAssignScreen(
             TopAppBar(
                 title = { Text("Assign CSV", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onDone) { Icon(Icons.Filled.Close, contentDescription = "Cancel") } },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

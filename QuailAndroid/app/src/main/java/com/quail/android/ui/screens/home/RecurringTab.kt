@@ -19,13 +19,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.quail.android.data.model.RecurringCalendarEvent
 import com.quail.android.data.model.RecurringGroup
 import com.quail.android.data.model.RecurringPattern
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -105,15 +106,19 @@ fun RecurringTab(padding: PaddingValues, viewModel: RecurringViewModel) {
                 }
 
                 s.selectedPattern?.let { pattern ->
-                    ModalBottomSheet(onDismissRequest = { viewModel.closePattern() }, sheetState = rememberModalBottomSheetState()) {
+                    val content: @Composable () -> Unit = {
                         PatternDetailContent(pattern, onIgnore = { viewModel.ignorePattern(pattern) })
                     }
+                    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { viewModel.closePattern() }, content = content) }
+                    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
                 }
                 s.selectedDay?.let { day ->
                     val eventsByDay = remember(s.calendarEvents) { (s.calendarEvents ?: emptyList()).groupBy { it.date } }
-                    ModalBottomSheet(onDismissRequest = { viewModel.selectDay(null) }, sheetState = rememberModalBottomSheetState()) {
+                    val content: @Composable () -> Unit = {
                         DayDetailContent(day, eventsByDay[day] ?: emptyList())
                     }
+                    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { viewModel.selectDay(null) }, content = content) }
+                    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
                 }
             }
         }

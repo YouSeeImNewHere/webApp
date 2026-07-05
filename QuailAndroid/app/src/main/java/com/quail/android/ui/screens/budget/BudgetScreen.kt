@@ -23,7 +23,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -31,8 +30,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +47,7 @@ import com.quail.android.data.model.BudgetGroup
 import com.quail.android.data.model.BudgetSpentCategory
 import com.quail.android.data.model.MonthBudget
 import com.quail.android.data.model.SinkingFund
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -57,6 +58,7 @@ import java.text.NumberFormat
 import java.time.Month
 import java.time.format.TextStyle
 import java.util.Locale
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private val currency: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 private val FUND_CADENCES = listOf("monthly" to "Monthly", "weekly" to "Weekly", "paycheck" to "Per paycheck", "custom" to "Custom")
@@ -74,6 +76,7 @@ fun BudgetScreen(viewModel: BudgetViewModel, onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
                 },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->
@@ -122,17 +125,21 @@ private fun BudgetContent(state: BudgetUiState.Success, viewModel: BudgetViewMod
     }
 
     state.editingGroup?.let { draft ->
-        ModalBottomSheet(onDismissRequest = { viewModel.closeGroupEditor() }, sheetState = rememberModalBottomSheetState()) {
+        val content: @Composable () -> Unit = {
             BudgetGroupEditorContent(draft, busy = state.busy, onSave = { viewModel.saveGroup(it) }, onCancel = { viewModel.closeGroupEditor() })
         }
+        SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { viewModel.closeGroupEditor() }, content = content) }
+        DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
     }
     state.editingFund?.let { draft ->
-        ModalBottomSheet(onDismissRequest = { viewModel.closeFundEditor() }, sheetState = rememberModalBottomSheetState()) {
+        val content: @Composable () -> Unit = {
             FundEditorContent(draft, busy = state.busy, onSave = { viewModel.saveFund(it) }, onCancel = { viewModel.closeFundEditor() })
         }
+        SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { viewModel.closeFundEditor() }, content = content) }
+        DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
     }
     state.adjustingFund?.let { adjust ->
-        ModalBottomSheet(onDismissRequest = { viewModel.closeFundAdjustment() }, sheetState = rememberModalBottomSheetState()) {
+        val content: @Composable () -> Unit = {
             FundAdjustContent(
                 adjust,
                 busy = state.busy,
@@ -140,6 +147,8 @@ private fun BudgetContent(state: BudgetUiState.Success, viewModel: BudgetViewMod
                 onCancel = { viewModel.closeFundAdjustment() },
             )
         }
+        SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { viewModel.closeFundAdjustment() }, content = content) }
+        DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
     }
 }
 

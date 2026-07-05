@@ -34,6 +34,7 @@ import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailTextDim
 import java.text.NumberFormat
 import java.util.Locale
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private val fuelCurrencyFormat: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 
@@ -51,6 +52,7 @@ fun VehicleFuelHistoryScreen(viewModel: VehicleViewModel, onBack: () -> Unit) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

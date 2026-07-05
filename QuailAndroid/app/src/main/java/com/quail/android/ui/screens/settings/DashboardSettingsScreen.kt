@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quail.android.AppConfig
 import com.quail.android.ui.theme.QuailBadRed
+import com.quail.android.bugreport.BugReportTopBarAction
 
 /** Mirrors DashboardSettingsPageView.swift — the Dashboard's own gear icon
  * opens this, NOT the Cash-specific SettingsScreen. It's a lightweight
@@ -57,6 +58,7 @@ fun DashboardSettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
                 },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

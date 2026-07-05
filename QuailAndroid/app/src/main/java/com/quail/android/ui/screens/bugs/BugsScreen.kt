@@ -29,15 +29,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,13 +47,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import com.quail.android.bugreport.BugOverlayManager
+import com.quail.android.bugreport.BugReportTopBarAction
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.data.model.BugNoteRecord
 import com.quail.android.data.model.BugReportRecord
 import com.quail.android.data.model.BugStatus
@@ -73,25 +69,12 @@ fun BugsScreen(viewModel: BugsViewModel, onBack: () -> Unit) {
     var showAddReport by remember { mutableStateOf(false) }
     var editingReport by remember { mutableStateOf<BugReportRecord?>(null) }
 
-    val context = LocalContext.current
-    var overlayGranted by remember { mutableStateOf(BugOverlayManager.hasPermission(context)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                overlayGranted = BugOverlayManager.hasPermission(context)
-                if (overlayGranted) BugOverlayManager.ensureShown(context.applicationContext)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Quail Bugs", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = { BugReportTopBarAction() },
             )
         },
         floatingActionButton = {
@@ -107,26 +90,6 @@ fun BugsScreen(viewModel: BugsViewModel, onBack: () -> Unit) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                if (!overlayGranted) {
-                    item {
-                        Surface(
-                            onClick = { BugOverlayManager.requestPermission(context) },
-                            color = QuailSurfaceRaised,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(Modifier.padding(14.dp)) {
-                                Text("Enable the floating bug button", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    "Grant \"display over other apps\" so you can report a bug from anywhere, even over a popup. Tap to open settings.",
-                                    color = QuailTextDim,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                            }
-                        }
-                    }
-                }
                 item {
                     Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip("All", filter == null) { filter = null }
@@ -296,7 +259,7 @@ private fun BugReportSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(if (existing == null) "Report Bug" else "Edit Bug", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -386,4 +349,6 @@ private fun BugReportSheet(
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }

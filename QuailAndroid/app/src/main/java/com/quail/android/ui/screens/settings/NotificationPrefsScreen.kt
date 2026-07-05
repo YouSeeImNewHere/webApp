@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailTextDim
+import com.quail.android.bugreport.BugReportTopBarAction
 
 /** Mirrors NotificationSettingsPageView.swift — shared/global notification
  * preferences, reachable both from Cash's SettingsHomePageView ("Smart
@@ -49,6 +50,7 @@ fun NotificationPrefsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
                 },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

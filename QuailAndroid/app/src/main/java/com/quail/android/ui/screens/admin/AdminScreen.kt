@@ -32,6 +32,7 @@ import com.quail.android.data.model.HomelabMetrics
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailTextDim
+import com.quail.android.bugreport.BugReportTopBarAction
 
 /** "Quail Admin" — the Admin dashboard tile's destination. Currently just
  * shows live homelab server metrics (CPU/RAM/disk/network/temp), pulled from
@@ -52,6 +53,7 @@ fun AdminScreen(viewModel: AdminViewModel, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
+                    BugReportTopBarAction()
                     IconButton(onClick = { viewModel.loadHomelabMetrics() }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                     }

@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quail.android.bugreport.BugReportTopBarAction
 import com.quail.android.data.model.CorrectiveRecord
 import com.quail.android.data.model.DEFAULT_MAINTENANCE_TYPES
 import com.quail.android.data.model.MaintenanceColor
@@ -197,11 +198,17 @@ fun VehicleTopBar(
 
             Text(title, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.Center))
 
-            TopCircleButton(
-                icon = trailingIcon,
+            Row(
                 modifier = Modifier.align(Alignment.CenterEnd),
-                onClick = onTrailingClick,
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BugReportTopBarAction()
+                TopCircleButton(
+                    icon = trailingIcon,
+                    onClick = onTrailingClick,
+                )
+            }
         }
     }
 }

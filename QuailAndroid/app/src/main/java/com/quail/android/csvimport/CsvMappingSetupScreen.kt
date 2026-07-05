@@ -48,6 +48,7 @@ import com.quail.android.data.network.QuailApi
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailTextDim
 import kotlinx.coroutines.launch
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private enum class AmountMode { SINGLE, DEBIT_CREDIT }
 
@@ -92,6 +93,7 @@ fun CsvMappingSetupScreen(
             TopAppBar(
                 title = { Text("Map Columns", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

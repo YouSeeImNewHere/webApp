@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
@@ -39,7 +40,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -48,9 +48,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +74,7 @@ import com.quail.android.data.model.AccountLedgerTransaction
 import com.quail.android.data.model.BankInfoOptions
 import com.quail.android.data.model.ChartPoint
 import com.quail.android.data.network.QuailApi
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -87,6 +89,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private val currencyFormat: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 private val axisFormat: NumberFormat = NumberFormat.getIntegerInstance(Locale.US)
@@ -120,7 +123,9 @@ fun AccountDetailScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showSwitcher by remember { mutableStateOf(false) }
     var showGlobalVerify by remember { mutableStateOf(false) }
+    var showAddTransaction by remember { mutableStateOf(false) }
     var bankInfo by remember { mutableStateOf(BankInfoOptions()) }
+    var selectedTxId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         bankInfo = runCatching { api.getBankInfo() }.getOrDefault(BankInfoOptions())
@@ -132,6 +137,7 @@ fun AccountDetailScreen(
                 title = { Text(accountName, fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
+                    BugReportTopBarAction()
                     IconButton(onClick = { showSwitcher = true }) { Icon(Icons.Filled.SwapHoriz, contentDescription = "Switch account") }
                     IconButton(onClick = { viewModel.toggleAuditMode() }) {
                         Icon(
@@ -156,8 +162,14 @@ fun AccountDetailScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
+        var isRefreshing by remember { mutableStateOf(false) }
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refreshAll(); isRefreshing = false },
             modifier = Modifier.fillMaxSize().padding(padding),
+        ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -182,13 +194,6 @@ fun AccountDetailScreen(
                 }
             }
 
-            item {
-                AddTransactionCard(
-                    state = addTxState,
-                    onSubmit = { amount, merchant, status, date -> viewModel.addTransaction(amount, merchant, status, date) },
-                )
-            }
-
             when (val ls = ledgerState) {
                 is AccountLedgerUiState.Loading -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -198,6 +203,27 @@ fun AccountDetailScreen(
                 }
                 is AccountLedgerUiState.Success -> {
                     item { BalanceSummaryRow(ls.data.startingBalance, ls.data.endingBalance) }
+
+                    item {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AccountActionButton("Add Transaction", active = showAddTransaction, modifier = Modifier.weight(1f)) {
+                                showAddTransaction = !showAddTransaction
+                            }
+                            AccountActionButton("Verified", modifier = Modifier.weight(1f)) { showGlobalVerify = true }
+                            AccountActionButton("Audit", active = auditMode, modifier = Modifier.weight(1f)) { viewModel.toggleAuditMode() }
+                        }
+                    }
+
+                    if (showAddTransaction) {
+                        item {
+                            AddTransactionCard(
+                                expanded = true,
+                                state = addTxState,
+                                onSubmit = { amount, merchant, status, date -> viewModel.addTransaction(amount, merchant, status, date) },
+                                onDone = { showAddTransaction = false },
+                            )
+                        }
+                    }
 
                     val pending = ls.data.transactions.filter { it.status == "pending" }
                     val posted = ls.data.transactions.filter { it.status != "pending" }
@@ -213,7 +239,13 @@ fun AccountDetailScreen(
                             )
                         }
                         items(pending, key = { "pending-${it.id}" }) { tx ->
-                            LedgerRow(tx, auditMode, checkedIds.contains(tx.id)) { viewModel.toggleChecked(tx.id) }
+                            LedgerRow(
+                                tx = tx,
+                                auditMode = auditMode,
+                                checked = checkedIds.contains(tx.id),
+                                onToggleChecked = { viewModel.toggleChecked(tx.id) },
+                                onOpenDetail = { selectedTxId = tx.id },
+                            )
                         }
                     }
 
@@ -222,11 +254,21 @@ fun AccountDetailScreen(
                             DayHeader(
                                 label = runCatching { LocalDate.parse(day).format(headerDateFormat) }.getOrDefault(day),
                                 auditMode = auditMode,
+                                // txs preserves the backend's dateISO DESC, id DESC order, so the
+                                // first row for this day is the last one folded into the running
+                                // balance — i.e. the actual end-of-day total.
+                                endOfDayBalance = txs.firstOrNull()?.balanceAfter,
                                 onVerify = { runCatching { LocalDate.parse(day) }.getOrNull()?.let { viewModel.verify(it) } },
                             )
                         }
                         items(txs, key = { "$day-${it.id}" }) { tx ->
-                            LedgerRow(tx, auditMode, checkedIds.contains(tx.id)) { viewModel.toggleChecked(tx.id) }
+                            LedgerRow(
+                                tx = tx,
+                                auditMode = auditMode,
+                                checked = checkedIds.contains(tx.id),
+                                onToggleChecked = { viewModel.toggleChecked(tx.id) },
+                                onOpenDetail = { selectedTxId = tx.id },
+                            )
                         }
                     }
 
@@ -237,8 +279,13 @@ fun AccountDetailScreen(
                             }
                         }
                     }
+
+                    if (auditMode) {
+                        item { AuditStartAnchor(ls.data.startingBalance, accountInfo?.lastManualVerifiedAt) }
+                    }
                 }
             }
+        }
         }
     }
 
@@ -259,6 +306,10 @@ fun AccountDetailScreen(
             onDismiss = { showGlobalVerify = false },
             onConfirm = { date -> viewModel.verify(date); showGlobalVerify = false },
         )
+    }
+
+    selectedTxId?.let { id ->
+        AccountTransactionDetailSheet(id = id, viewModel = viewModel, onDismiss = { selectedTxId = null })
     }
 }
 
@@ -298,22 +349,54 @@ private fun BalanceSummaryRow(starting: Double, ending: Double) {
     }
 }
 
+/** Shown as the last item in the audit-mode list (chronologically the
+ * oldest point, since rows are newest-first) — the running balance right
+ * after the last verified date, i.e. the number to start reconciling from. */
 @Composable
-private fun DayHeader(label: String, auditMode: Boolean, onVerify: () -> Unit) {
+private fun AuditStartAnchor(startingBalance: Double, lastVerifiedIso: String?) {
+    val dateLabel = lastVerifiedIso?.let {
+        runCatching { java.time.OffsetDateTime.parse(it).toLocalDate().format(headerDateFormat) }.getOrNull()
+    } ?: "the beginning"
+    Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Audit starts here", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Balance as of $dateLabel (your last verified date):",
+                color = QuailTextDim,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(currencyFormat.format(startingBalance), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+}
+
+@Composable
+private fun DayHeader(label: String, auditMode: Boolean, endOfDayBalance: Double? = null, onVerify: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, color = QuailTextDim, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-        if (auditMode && label != "Pending") {
-            Surface(onClick = onVerify, color = QuailSurfaceRaised, shape = RoundedCornerShape(999.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (auditMode && label != "Pending") {
+                Surface(onClick = onVerify, color = QuailSurfaceRaised, shape = RoundedCornerShape(999.dp)) {
+                    Text(
+                        "Verify",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            if (endOfDayBalance != null) {
                 Text(
-                    "Verify",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
+                    currencyFormat.format(endOfDayBalance),
+                    color = QuailTextDim,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
         }
@@ -321,9 +404,15 @@ private fun DayHeader(label: String, auditMode: Boolean, onVerify: () -> Unit) {
 }
 
 @Composable
-private fun LedgerRow(tx: AccountLedgerTransaction, auditMode: Boolean, checked: Boolean, onToggleChecked: () -> Unit) {
+private fun LedgerRow(
+    tx: AccountLedgerTransaction,
+    auditMode: Boolean,
+    checked: Boolean,
+    onToggleChecked: () -> Unit,
+    onOpenDetail: () -> Unit,
+) {
     Surface(
-        onClick = { if (auditMode) onToggleChecked() },
+        onClick = { if (auditMode) onToggleChecked() else onOpenDetail() },
         color = if (checked) QuailSurfaceRaised else QuailSurface,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth(),
@@ -360,24 +449,22 @@ private fun LedgerRow(tx: AccountLedgerTransaction, auditMode: Boolean, checked:
                     Text(currencyFormat.format(it), color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
                 }
             }
+            if (auditMode) {
+                IconButton(onClick = onOpenDetail, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Info, contentDescription = "View details", tint = QuailTextDim, modifier = Modifier.size(18.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun AddTransactionCard(state: AddTxState, onSubmit: (Double, String, String, LocalDate) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
+private fun AddTransactionCard(expanded: Boolean, state: AddTxState, onSubmit: (Double, String, String, LocalDate) -> Unit, onDone: () -> Unit) {
+    if (!expanded) return
     Surface(color = QuailSurface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Add Transaction", fontWeight = FontWeight.Bold)
-                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Close" else "Add") }
-            }
-            if (expanded) {
+            Text("Add Transaction", fontWeight = FontWeight.Bold)
+            run {
                 var merchant by remember { mutableStateOf("") }
                 var amount by remember { mutableStateOf("") }
                 var status by remember { mutableStateOf("posted") }
@@ -433,7 +520,7 @@ private fun AddTransactionCard(state: AddTxState, onSubmit: (Double, String, Str
                         onSubmit(amt, merchant, status, date)
                         merchant = ""
                         amount = ""
-                        expanded = false
+                        onDone()
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 ) {
@@ -448,12 +535,11 @@ private fun AddTransactionCard(state: AddTxState, onSubmit: (Double, String, Str
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AccountSwitcherSheet(bankInfo: BankInfoOptions, onDismiss: () -> Unit, onSelect: (Int) -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.padding(bottom = 24.dp)) {
-            Text("Switch account", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, bottom = 8.dp))
+            Text("Switch account", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
             bankInfo.accounts.forEach { acc ->
                 DropdownMenuItem(text = { Text("${acc.bank.orEmpty()} - ${acc.name.orEmpty()}") }, onClick = { onSelect(acc.accountId) })
             }
@@ -462,12 +548,14 @@ private fun AccountSwitcherSheet(bankInfo: BankInfoOptions, onDismiss: () -> Uni
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GlobalVerifyDialog(state: VerifyState, onDismiss: () -> Unit, onConfirm: (LocalDate) -> Unit) {
-    var date by remember { mutableStateOf(LocalDate.now()) }
+    var date by remember { mutableStateOf(LocalDate.now().minusDays(1)) }
     DatePickerModal(
         initial = date,
         onDismiss = onDismiss,
@@ -566,6 +654,25 @@ private fun AccountChartCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AccountActionButton(label: String, active: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (active) MaterialTheme.colorScheme.primary else QuailSurfaceRaised,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
+    ) {
+        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (active) Color.Black else MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }

@@ -38,6 +38,7 @@ import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import com.quail.android.ui.theme.QuailWarnYellow
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private fun statusLabel(status: String): String = when (status) {
     CsvImportStatus.ASSIGNED -> "Queued"
@@ -70,6 +71,7 @@ fun CsvImportQueueScreen(
             TopAppBar(
                 title = { Text("CSV Import Queue", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

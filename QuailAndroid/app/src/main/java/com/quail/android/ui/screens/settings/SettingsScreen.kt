@@ -54,6 +54,7 @@ import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
+import com.quail.android.bugreport.BugReportTopBarAction
 
 // Matches SettingsHomePageView.swift's `themes` list — only "system"/"dark"
 // are real on Android today (one branded dark palette, no light/OLED/etc.
@@ -93,6 +94,7 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
                 },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->

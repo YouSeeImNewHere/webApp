@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.quail.android.bugreport.triggerBugReport
 import com.quail.android.data.model.BankAccount
 import com.quail.android.data.model.BankGroup
 import com.quail.android.data.model.CategoryTotalsMonth
@@ -81,6 +82,7 @@ import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailText
 import com.quail.android.ui.theme.QuailTextDim
+import com.quail.android.ui.theme.categoryIcon
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -210,7 +212,6 @@ fun HomeScreen(
 
 @Composable
 private fun QuailTopBar(unreadCount: Int, onOpenSettings: () -> Unit, onOpenNotifications: () -> Unit) {
-    val context = LocalContext.current
     Surface(color = QuailSurface) {
         Box(
             modifier = Modifier
@@ -241,7 +242,7 @@ private fun QuailTopBar(unreadCount: Int, onOpenSettings: () -> Unit, onOpenNoti
                     icon = Icons.Filled.BugReport,
                     background = QuailBadRed,
                     tint = Color.White,
-                ) { Toast.makeText(context, "Bug reporting isn't built yet", Toast.LENGTH_SHORT).show() }
+                ) { triggerBugReport() }
 
                 Box {
                     TopBarCircleButton(icon = Icons.Filled.Notifications, onClick = onOpenNotifications)
@@ -663,6 +664,15 @@ private fun HeaderActionButton(label: String, primary: Boolean, onClick: () -> U
     }
 }
 
+/** bank_totals() keeps credit balances as a signed raw value (negative =
+ * debt, see accounts.py's comment), but the Account Detail screen's
+ * account-transactions-range endpoint flips credit balances so debt reads
+ * as positive — the more intuitive convention for "how much do I owe".
+ * Flipped here at display time only, so this card matches Account Detail
+ * without touching the debt-magnitude math in creditUsageSubtitle() below
+ * (which already expects the raw negative-is-debt sign). */
+private fun creditDisplayTotal(type: String, total: Double): Double = if (type == "credit") -total else total
+
 /** Sum of positive credit_limit values vs. sum of debt (negative `total`,
  * see accounts.py's bank_totals() "signed raw value" comment) — mirrors
  * HomeView.swift's creditUsageSummaryPct(). Only shown for the credit
@@ -702,7 +712,7 @@ private fun BankTypeSection(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(currencyFormat.format(group.total), fontWeight = FontWeight.Bold)
+                        Text(currencyFormat.format(creditDisplayTotal(type, group.total)), fontWeight = FontWeight.Bold)
                         creditUsageSubtitle(type, group)?.let {
                             Text(it, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
                         }
@@ -720,7 +730,7 @@ private fun BankTypeSection(
                 exit = fadeOut() + shrinkVertically(),
             ) {
                 Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    group.accounts.forEach { account -> BankAccountRow(account, onOpenSheet, onOpenAccountDetail) }
+                    group.accounts.forEach { account -> BankAccountRow(type, account, onOpenSheet, onOpenAccountDetail) }
                 }
             }
         }
@@ -729,6 +739,7 @@ private fun BankTypeSection(
 
 @Composable
 private fun BankAccountRow(
+    type: String,
     account: BankAccount,
     onOpenSheet: (HomeSheet) -> Unit,
     onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit,
@@ -753,7 +764,7 @@ private fun BankAccountRow(
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(currencyFormat.format(account.total), fontWeight = FontWeight.Bold)
+                Text(currencyFormat.format(creditDisplayTotal(type, account.total)), fontWeight = FontWeight.Bold)
                 Row(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SmallPillButton("Verified") {
                         onOpenSheet(HomeSheet.VerifyBalance(account.id, account.name ?: "Account"))
@@ -905,10 +916,7 @@ private fun TransactionRow(tx: Transaction, onOpenSheet: (HomeSheet) -> Unit) {
         ) {
             Surface(color = QuailSurface, shape = CircleShape, modifier = Modifier.size(38.dp)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        tx.merchant?.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                        fontWeight = FontWeight.Bold,
-                    )
+                    Icon(categoryIcon(tx.category), contentDescription = tx.category, tint = QuailTextDim)
                 }
             }
             Column(modifier = Modifier.weight(1f)) {

@@ -17,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -38,6 +39,7 @@ import com.quail.android.data.model.Transaction
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
+import com.quail.android.ui.theme.categoryIcon
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import java.text.NumberFormat
@@ -203,7 +205,7 @@ private fun AllTransactionRow(tx: Transaction, onClick: () -> Unit) {
         ) {
             Surface(color = QuailSurface, shape = CircleShape, modifier = Modifier.size(38.dp)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(tx.merchant?.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontWeight = FontWeight.Bold)
+                    Icon(categoryIcon(tx.category), contentDescription = tx.category, tint = QuailTextDim)
                 }
             }
             Column(modifier = Modifier.weight(1f)) {

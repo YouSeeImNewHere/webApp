@@ -26,15 +26,15 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,9 +49,11 @@ import androidx.compose.ui.unit.dp
 import com.quail.android.data.model.DEFAULT_EXERCISES
 import com.quail.android.data.model.DEFAULT_PROGRESSION_PATHS
 import com.quail.android.data.model.FitnessGoalTypeOption
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private const val FITNESS_PROFILE_PREFS = "quail_fitness_profile"
 
@@ -101,6 +103,7 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("Settings", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->
@@ -213,9 +216,11 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
     }
 
     if (showLogWeight) {
-        ModalBottomSheet(onDismissRequest = { showLogWeight = false }, sheetState = rememberModalBottomSheetState()) {
+        val content: @Composable () -> Unit = {
             LogBodyweightContent(viewModel) { showLogWeight = false }
         }
+        SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { showLogWeight = false }, content = content) }
+        DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
     }
 
     if (showGarminConnect) {
@@ -302,7 +307,6 @@ private fun LogBodyweightContent(viewModel: FitnessViewModel, onDone: () -> Unit
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GarminConnectSheet(
     state: GarminConnectState,
@@ -315,7 +319,7 @@ private fun GarminConnectSheet(
     var password by remember { mutableStateOf("") }
     var mfaCode by remember { mutableStateOf("") }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Garmin Connect", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -378,16 +382,17 @@ private fun GarminConnectSheet(
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CustomExerciseManagerSheet(
     customExercises: List<com.quail.android.data.model.Exercise>,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Custom Exercises", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
             if (customExercises.isEmpty()) {
@@ -414,4 +419,6 @@ private fun CustomExerciseManagerSheet(
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }

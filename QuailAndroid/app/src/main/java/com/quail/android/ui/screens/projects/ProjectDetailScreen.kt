@@ -23,14 +23,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +45,7 @@ import com.quail.android.data.model.DecisionOption
 import com.quail.android.data.model.ProjectItem
 import com.quail.android.data.model.ProjectItemType
 import com.quail.android.data.model.ProjectSection
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
@@ -52,6 +53,7 @@ import com.quail.android.ui.theme.QuailTextDim
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.UUID
+import com.quail.android.bugreport.BugReportTopBarAction
 
 private val detailCurrency: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 
@@ -68,6 +70,7 @@ fun ProjectDetailScreen(viewModel: ProjectsViewModel, clientId: String, onBack: 
             TopAppBar(
                 title = { Text(project?.name ?: "Project", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = { BugReportTopBarAction() },
             )
         },
     ) { padding ->
@@ -160,7 +163,6 @@ private fun ProjectItemRow(item: ProjectItem, onClick: () -> Unit, onDelete: () 
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddItemSheet(existing: ProjectItem?, onDismiss: () -> Unit, onSave: (ProjectItem) -> Unit) {
     var type by remember { mutableStateOf(existing?.let { ProjectItemType.fromServer(it.type) } ?: ProjectItemType.NOTE) }
@@ -172,7 +174,7 @@ private fun AddItemSheet(existing: ProjectItem?, onDismiss: () -> Unit, onSave: 
     var options by remember { mutableStateOf(existing?.options ?: emptyList()) }
     var newOption by remember { mutableStateOf("") }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(if (existing == null) "Add Item" else "Edit Item", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -296,4 +298,6 @@ private fun AddItemSheet(existing: ProjectItem?, onDismiss: () -> Unit, onSave: 
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }

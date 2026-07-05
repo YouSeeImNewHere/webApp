@@ -86,8 +86,18 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    private val _categories = MutableStateFlow<List<String>>(emptyList())
+    val categories: StateFlow<List<String>> = _categories.asStateFlow()
+
     init {
         refresh()
+        loadCategories()
+    }
+
+    private fun loadCategories() {
+        viewModelScope.launch {
+            _categories.value = runCatching { repository.getCategories() }.getOrDefault(emptyList())
+        }
     }
 
     fun refresh() {

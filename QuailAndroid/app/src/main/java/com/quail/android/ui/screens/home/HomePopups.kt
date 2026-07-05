@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -27,15 +26,15 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quail.android.ui.overlay.AppOverlayHost
+import com.quail.android.ui.overlay.InlineConfirmCard
+import com.quail.android.ui.theme.CategoryPickerField
 import com.quail.android.data.model.BankAccount
 import com.quail.android.data.model.ExtraSavedDay
 import com.quail.android.data.model.IncomeBasisPaycheck
@@ -82,7 +84,7 @@ sealed interface HomeSheet {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeSheetHost(sheet: HomeSheet, viewModel: HomeViewModel, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         when (sheet) {
             is HomeSheet.Income -> IncomeSheetContent(sheet.budget)
             is HomeSheet.ExtraSaved -> ExtraSavedSheetContent(viewModel)
@@ -93,6 +95,8 @@ fun HomeSheetHost(sheet: HomeSheet, viewModel: HomeViewModel, onDismiss: () -> U
             is HomeSheet.AccountAudit -> AccountAuditSheetContent(sheet.account)
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @Composable
@@ -330,7 +334,7 @@ private fun SpentSoFarCategoryRow(
 @Composable
 private fun VerifyBalanceSheetContent(sheet: HomeSheet.VerifyBalance, viewModel: HomeViewModel, onDismiss: () -> Unit) {
     val state by viewModel.verifyBalanceState.collectAsState()
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now().minusDays(1)) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(state) {
@@ -408,7 +412,10 @@ private fun TransactionDetailSheetContent(id: String, viewModel: HomeViewModel, 
                 SheetError(s.message)
             }
             is TransactionDetailUiState.Deleted -> {}
-            is TransactionDetailUiState.Success -> TransactionDetailBody(id, s.detail, s.actionInFlight, viewModel, onDismiss)
+            is TransactionDetailUiState.Success -> {
+                val categories by viewModel.categories.collectAsState()
+                TransactionDetailBody(id, s.detail, s.actionInFlight, categories, viewModel, onDismiss)
+            }
         }
     }
 }
@@ -418,6 +425,7 @@ private fun TransactionDetailBody(
     id: String,
     tx: TransactionDetail,
     actionInFlight: Boolean,
+    categories: List<String>,
     viewModel: HomeViewModel,
     onDismiss: () -> Unit,
 ) {
@@ -459,11 +467,11 @@ private fun TransactionDetailBody(
 
     Text("category", color = QuailTextDim, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
+        CategoryPickerField(
             value = categoryText,
             onValueChange = { categoryText = it },
+            categories = categories,
             modifier = Modifier.weight(1f),
-            singleLine = true,
         )
         Surface(
             onClick = { viewModel.setTransactionCategory(id, categoryText.trim()) },
@@ -580,19 +588,16 @@ private fun TransactionDetailBody(
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete transaction?") },
-            text = { Text("This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirm = false
-                    viewModel.deleteTransaction(id)
-                }) { Text("Delete", color = QuailBadRed) }
+        InlineConfirmCard(
+            title = "Delete transaction?",
+            text = "This can't be undone.",
+            confirmLabel = "Delete",
+            confirmColor = QuailBadRed,
+            onConfirm = {
+                showDeleteConfirm = false
+                viewModel.deleteTransaction(id)
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
-            },
+            onCancel = { showDeleteConfirm = false },
         )
     }
 }

@@ -58,6 +58,7 @@ import com.quail.android.data.model.repRange
 import com.quail.android.data.model.restAdvice
 import com.quail.android.data.model.setsAdvice
 import com.quail.android.data.model.strategyNotes
+import com.quail.android.bugreport.BugReportTopBarAction
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
@@ -138,6 +139,9 @@ fun FitnessTopBar(onOpenSettings: () -> Unit) {
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.align(Alignment.Center),
             )
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                BugReportTopBarAction()
+            }
         }
     }
 }

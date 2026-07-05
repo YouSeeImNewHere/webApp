@@ -5,7 +5,6 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.routers.balances import latest_rates_map_pg
 from db import with_db_cursor, query_db, run_db_retry
 from app.core.config import MULTI_TENANT_ENABLED
 from app.core.tenancy import current_tenant_id
@@ -228,9 +227,34 @@ def bank_info():
 
     def _run():
         with with_db_cursor() as (conn, cur):
-            # Current rate (decimal) from interest_rates: 0.0425 means 4.25%
-            # Your app_postgres.py already defines latest_rates_map_pg()
-            rate_now = latest_rates_map_pg()
+            # Current rate (decimal) from interest_rates: 0.0425 means 4.25%.
+            # Queried on this same cursor/connection rather than calling
+            # latest_rates_map_pg() (which opens its own pooled connection
+            # via query_db()) — nesting a second pool checkout inside this
+            # one, while this one is still held, can stall behind pool
+            # contention under concurrent requests instead of returning.
+            cur.execute(
+                """
+                SELECT r.account_id::int AS account_id, r.apr::double precision AS apr
+                FROM interest_rates r
+                JOIN accounts a ON a.id = r.account_id
+                JOIN (
+                  SELECT account_id, MAX(effective_date) AS max_eff
+                  FROM interest_rates
+                  GROUP BY account_id
+                ) last
+                  ON last.account_id = r.account_id
+                 AND last.max_eff = r.effective_date
+                """
+                + ("WHERE a.tenant_id = %s" if tid else ""),
+                (int(tid),) if tid else (),
+            )
+            rate_now: Dict[int, float] = {}
+            for r in cur.fetchall() or []:
+                try:
+                    rate_now[int(r["account_id"])] = float(r["apr"])
+                except Exception:
+                    pass
 
             # Be robust to schema (no hard requirement for optional columns/tables)
             has_credit_limit = _pg_column_exists(cur, "accounts", "credit_limit")

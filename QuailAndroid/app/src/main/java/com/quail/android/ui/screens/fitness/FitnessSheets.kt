@@ -17,14 +17,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +40,7 @@ import com.quail.android.data.model.FitnessGoalTypeOption
 import com.quail.android.data.model.WorkoutExerciseEntry
 import com.quail.android.data.model.WorkoutSet
 import com.quail.android.data.model.exerciseById
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 import java.time.Instant
@@ -50,10 +51,9 @@ import java.util.UUID
 private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 private fun Long.toLocalDateUtc(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FitnessSheetHost(sheet: FitnessSheet, viewModel: FitnessViewModel, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         when (sheet) {
             is FitnessSheet.AddGoal -> AddGoalSheet(viewModel, onDismiss)
             is FitnessSheet.LogBodyweight -> LogBodyweightSheet(viewModel, onDismiss)
@@ -61,6 +61,8 @@ fun FitnessSheetHost(sheet: FitnessSheet, viewModel: FitnessViewModel, onDismiss
             is FitnessSheet.CreateRoutine -> CreateRoutineContent(viewModel, onDismiss)
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @Composable

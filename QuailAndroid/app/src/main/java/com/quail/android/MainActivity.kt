@@ -11,6 +11,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -23,7 +25,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.ui.Modifier
 import com.quail.android.bugreport.NavPathHolder
+import com.quail.android.ui.overlay.AppOverlayRoot
 import com.quail.android.csvimport.CsvImportDatabase
 import com.quail.android.csvimport.CsvImportQueueScreen
 import com.quail.android.csvimport.CsvImportRepository
@@ -212,6 +216,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(navController = navController, startDestination = ROUTE_LOGIN) {
         composable(ROUTE_LOGIN) { LoginScreen() }
 
@@ -401,12 +406,9 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
             val auditMode = backStackEntry.arguments?.getString("auditMode") == "1"
             val detailViewModel: AccountDetailViewModel = viewModel(
                 key = "account_detail_$accountId",
-                factory = AccountDetailViewModel.Factory(repository, accountId, context),
+                factory = AccountDetailViewModel.Factory(repository, accountId, context, auditMode),
             )
             val accountInfo by detailViewModel.accountInfo.collectAsState()
-            androidx.compose.runtime.LaunchedEffect(auditMode) {
-                if (auditMode) detailViewModel.toggleAuditMode()
-            }
             AccountDetailScreen(
                 api = api,
                 viewModel = detailViewModel,
@@ -482,6 +484,9 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
             val viewModel: BudgetViewModel = viewModel(factory = BudgetViewModel.Factory(repository))
             BudgetScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
+    }
+
+    AppOverlayRoot()
     }
 
     LaunchedEffect(Unit) {

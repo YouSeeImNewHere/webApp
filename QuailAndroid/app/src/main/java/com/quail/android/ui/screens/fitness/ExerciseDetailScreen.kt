@@ -14,16 +14,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,12 +41,12 @@ import com.quail.android.data.model.ExerciseDifficulty
 import com.quail.android.data.model.MuscleGroup
 import com.quail.android.data.model.WorkoutSessionRecord
 import com.quail.android.data.model.WorkoutSet
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExerciseDetailSheet(
     exercise: Exercise,
@@ -63,7 +62,7 @@ fun ExerciseDetailSheet(
         .sortedByDescending { it.date }
         .take(5)
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text(exercise.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
@@ -170,9 +169,10 @@ fun ExerciseDetailSheet(
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateCustomExerciseSheet(
     onDismiss: () -> Unit,
@@ -193,7 +193,7 @@ fun CreateCustomExerciseSheet(
     var defaultReps by remember { mutableStateOf("10") }
     var defaultDuration by remember { mutableStateOf("30") }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Create Exercise", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
 
@@ -331,4 +331,6 @@ fun CreateCustomExerciseSheet(
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }

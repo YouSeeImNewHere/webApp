@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.quail.android.data.model.AccountInfoResponse
 import com.quail.android.data.model.AccountTransactionsRangeResponse
 import com.quail.android.data.model.ChartPoint
+import com.quail.android.data.model.TransactionDetail
 import com.quail.android.data.repository.HomeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,17 @@ sealed interface VerifyState {
     data class Error(val message: String) : VerifyState
 }
 
+/** Mirrors HomeViewModel's TransactionDetailUiState — same shape, kept
+ * separate so this screen's transaction popup doesn't need to reach into
+ * HomeViewModel (which isn't scoped to this account's nav back-stack entry). */
+sealed interface AccountTxDetailUiState {
+    data object Idle : AccountTxDetailUiState
+    data object Loading : AccountTxDetailUiState
+    data class Error(val message: String) : AccountTxDetailUiState
+    data class Success(val detail: TransactionDetail, val actionInFlight: Boolean = false) : AccountTxDetailUiState
+    data object Deleted : AccountTxDetailUiState
+}
+
 private val TODAY: LocalDate = LocalDate.now()
 private fun clampToToday(date: LocalDate): LocalDate = if (date.isAfter(TODAY)) TODAY else date
 
@@ -67,11 +79,12 @@ class AccountDetailViewModel(
     private val repository: HomeRepository,
     private val accountId: Int,
     appContext: Context,
+    initialAuditMode: Boolean = false,
 ) : ViewModel() {
     private val _accountInfo = MutableStateFlow<AccountInfoResponse?>(null)
     val accountInfo: StateFlow<AccountInfoResponse?> = _accountInfo.asStateFlow()
 
-    private val _auditMode = MutableStateFlow(false)
+    private val _auditMode = MutableStateFlow(initialAuditMode)
     val auditMode: StateFlow<Boolean> = _auditMode.asStateFlow()
 
     private val _year = MutableStateFlow(TODAY.year)
@@ -99,21 +112,54 @@ class AccountDetailViewModel(
     private val _checkedIds = MutableStateFlow<Set<String>>(checkedPrefs.getStringSet("checked", emptySet()) ?: emptySet())
     val checkedIds: StateFlow<Set<String>> = _checkedIds.asStateFlow()
 
+    private val _txDetailState = MutableStateFlow<AccountTxDetailUiState>(AccountTxDetailUiState.Idle)
+    val txDetailState: StateFlow<AccountTxDetailUiState> = _txDetailState.asStateFlow()
+
+    private val _categories = MutableStateFlow<List<String>>(emptyList())
+    val categories: StateFlow<List<String>> = _categories.asStateFlow()
+
     val canGoToNextYear: Boolean get() = _year.value < TODAY.year
 
     init {
-        loadAccountInfo()
-        loadChart()
-        loadLedger()
+        // Sequenced deliberately: if we're opening straight into audit mode
+        // (tapped "Audit" on the dashboard), the only fetch that should ever
+        // run is the narrow audit-range one. Firing the default full-range
+        // loadChart()/loadLedger() unconditionally here — even briefly, in
+        // parallel with an audit-range fetch triggered right after — used to
+        // race them, and whichever response landed second clobbered the
+        // other's state. Since both are the same StateFlow, that silently
+        // "un-filtered" the audit list whenever the wide fetch won the race.
+        viewModelScope.launch {
+            refreshAccountInfo()
+            if (_auditMode.value) {
+                applyAuditRange()
+            } else {
+                loadChart()
+                loadLedger()
+            }
+        }
+        viewModelScope.launch {
+            _categories.value = runCatching { repository.getCategories() }.getOrDefault(emptyList())
+        }
     }
 
     fun toggleAuditMode() {
-        _auditMode.value = !_auditMode.value
-        if (_auditMode.value) {
-            applyAuditRange()
+        val entering = !_auditMode.value
+        _auditMode.value = entering
+        if (entering) {
+            // last_manual_verified_at drives the whole audit range, so make
+            // sure we have a fresh read of it before computing anything.
+            viewModelScope.launch {
+                refreshAccountInfo()
+                applyAuditRange()
+            }
         } else {
             setRange(annualRangeFor(_year.value))
         }
+    }
+
+    private suspend fun refreshAccountInfo() {
+        _accountInfo.value = runCatching { repository.getAccountInfo(accountId) }.getOrNull()
     }
 
     private fun applyAuditRange() {
@@ -190,9 +236,18 @@ class AccountDetailViewModel(
     }
 
     fun refreshAll() {
-        loadAccountInfo()
-        loadChart()
-        loadLedger()
+        viewModelScope.launch {
+            refreshAccountInfo()
+            if (_auditMode.value) {
+                // Re-derive from the freshly-fetched last_manual_verified_at
+                // rather than just re-querying the same cached range — a
+                // verify from another device/session should narrow this.
+                applyAuditRange()
+            } else {
+                loadChart()
+                loadLedger()
+            }
+        }
     }
 
     fun toggleChecked(key: String) {
@@ -208,7 +263,7 @@ class AccountDetailViewModel(
             try {
                 repository.verifyBalance(accountId, date.toString())
                 _verifyState.value = VerifyState.Idle
-                loadAccountInfo()
+                refreshAccountInfo()
                 if (_auditMode.value) applyAuditRange() else loadLedger()
             } catch (e: Exception) {
                 _verifyState.value = VerifyState.Error(e.message ?: "Verify failed")
@@ -230,14 +285,87 @@ class AccountDetailViewModel(
         }
     }
 
+    fun loadTransactionDetail(id: String) {
+        viewModelScope.launch {
+            _txDetailState.value = AccountTxDetailUiState.Loading
+            try {
+                _txDetailState.value = AccountTxDetailUiState.Success(repository.getTransactionDetail(id))
+            } catch (e: Exception) {
+                _txDetailState.value = AccountTxDetailUiState.Error(e.message ?: "Couldn't load transaction")
+            }
+        }
+    }
+
+    fun clearTransactionDetail() {
+        _txDetailState.value = AccountTxDetailUiState.Idle
+    }
+
+    private inline fun runTxAction(crossinline block: suspend () -> TransactionDetail) {
+        val current = _txDetailState.value as? AccountTxDetailUiState.Success ?: return
+        _txDetailState.value = current.copy(actionInFlight = true)
+        viewModelScope.launch {
+            try {
+                _txDetailState.value = AccountTxDetailUiState.Success(block())
+                // The edited transaction may have moved out of range (date
+                // change) or changed the running balance — refresh both.
+                loadChart()
+                loadLedger()
+            } catch (e: Exception) {
+                _txDetailState.value = AccountTxDetailUiState.Error(e.message ?: "That action failed")
+            }
+        }
+    }
+
+    fun setTransactionCategory(id: String, category: String) = runTxAction { repository.setTransactionCategory(id, category) }
+
+    fun updateTransactionMeta(id: String, status: String?, postedDate: String?) =
+        runTxAction { repository.updateTransactionMeta(id, status, postedDate) }
+
+    fun invertTransactionAmount(id: String) = runTxAction { repository.invertTransactionAmount(id) }
+
+    fun setTransactionIgnored(id: String, ignored: Boolean) = runTxAction { repository.setTransactionIgnored(id, ignored) }
+
+    fun createFinancingPlan(id: String, label: String, amount: Double, months: Int) {
+        val current = _txDetailState.value as? AccountTxDetailUiState.Success ?: return
+        _txDetailState.value = current.copy(actionInFlight = true)
+        viewModelScope.launch {
+            try {
+                repository.createFinancingPlan(label, amount, months, id)
+                _txDetailState.value = current.copy(actionInFlight = false)
+            } catch (e: Exception) {
+                _txDetailState.value = AccountTxDetailUiState.Error(e.message ?: "Couldn't create financing plan")
+            }
+        }
+    }
+
+    fun deleteTransactionDetail(id: String) {
+        val current = _txDetailState.value as? AccountTxDetailUiState.Success ?: return
+        _txDetailState.value = current.copy(actionInFlight = true)
+        viewModelScope.launch {
+            try {
+                repository.deleteTransaction(id)
+                _txDetailState.value = AccountTxDetailUiState.Deleted
+                if (_checkedIds.value.contains(id)) {
+                    _checkedIds.value = _checkedIds.value - id
+                    checkedPrefs.edit().putStringSet("checked", _checkedIds.value).apply()
+                }
+                loadChart()
+                loadLedger()
+            } catch (e: Exception) {
+                _txDetailState.value = AccountTxDetailUiState.Error(e.message ?: "Couldn't delete transaction")
+            }
+        }
+    }
+
     class Factory(
         private val repository: HomeRepository,
         private val accountId: Int,
         private val appContext: Context,
+        private val initialAuditMode: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            AccountDetailViewModel(repository, accountId, appContext) as T
+            AccountDetailViewModel(repository, accountId, appContext, initialAuditMode) as T
     }
 }
 

@@ -12,15 +12,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quail.android.data.model.UnassignedTransaction
+import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
@@ -39,13 +39,9 @@ import java.util.Locale
 
 private val currency: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnassignedWizardSheet(viewModel: UnassignedWizardViewModel, onDismiss: () -> Unit) {
-    ModalBottomSheet(
-        onDismissRequest = { viewModel.requestClose(onDismiss) },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
+    val content: @Composable () -> Unit = {
         val state by viewModel.state.collectAsState()
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -64,6 +60,8 @@ fun UnassignedWizardSheet(viewModel: UnassignedWizardViewModel, onDismiss: () ->
             }
         }
     }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = { viewModel.requestClose(onDismiss) }, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @Composable
@@ -173,7 +171,7 @@ private fun UnassignedWizardBody(s: UnassignedUiState.Ready, viewModel: Unassign
     Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             WizardButton("Skip", modifier = Modifier.weight(1f), enabled = !s.saving) { viewModel.skipCurrent() }
-            WizardButton("View skipped (${s.skipped.size})", modifier = Modifier.weight(1f), enabled = true) { viewModel.toggleShowSkipped() }
+            WizardButton("View skipped", subLabel = "(${s.skipped.size})", modifier = Modifier.weight(1f), enabled = true) { viewModel.toggleShowSkipped() }
             WizardButton("Save rule", modifier = Modifier.weight(1f), enabled = !s.saving, primary = true) { viewModel.saveRule() }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -235,7 +233,14 @@ private fun KV(label: String, value: String) {
 }
 
 @Composable
-private fun WizardButton(label: String, modifier: Modifier = Modifier, enabled: Boolean = true, primary: Boolean = false, onClick: () -> Unit) {
+private fun WizardButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+    subLabel: String? = null,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -243,17 +248,31 @@ private fun WizardButton(label: String, modifier: Modifier = Modifier, enabled: 
         shape = RoundedCornerShape(12.dp),
         modifier = modifier,
     ) {
-        Box(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
+        val textColor = when {
+            !enabled -> QuailTextDim
+            primary -> androidx.compose.ui.graphics.Color.Black
+            else -> androidx.compose.ui.graphics.Color.Unspecified
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
                 label,
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.labelMedium,
-                color = when {
-                    !enabled -> QuailTextDim
-                    primary -> androidx.compose.ui.graphics.Color.Black
-                    else -> androidx.compose.ui.graphics.Color.Unspecified
-                },
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                color = textColor,
             )
+            if (subLabel != null) {
+                Text(
+                    subLabel,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = textColor,
+                )
+            }
         }
     }
 }
