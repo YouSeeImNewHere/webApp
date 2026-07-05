@@ -8,14 +8,20 @@ import com.quail.android.data.model.BugReportUpsertRequest
 import com.quail.android.data.network.QuailApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
 import java.util.UUID
 
 private fun BugReportEntity.toRecord(): BugReportRecord = BugReportRecord(
     id = serverId ?: 0, clientId = clientId, title = title, description = description, status = status, route = route,
+    networkLog = networkLog, hasScreenshot = screenshotUploaded || localScreenshotPath != null,
 )
 
-private fun BugReportRecord.toEntity(pendingSync: Boolean = true): BugReportEntity = BugReportEntity(
+private fun BugReportRecord.toEntity(pendingSync: Boolean = true, localScreenshotPath: String? = null): BugReportEntity = BugReportEntity(
     clientId = clientId, serverId = id.takeIf { it != 0 }, title = title, description = description, status = status, route = route,
+    networkLog = networkLog, localScreenshotPath = localScreenshotPath, screenshotUploaded = hasScreenshot,
     pendingSync = pendingSync,
 )
 
@@ -37,8 +43,8 @@ class BugsRepository(
     val reports: Flow<List<BugReportRecord>> = db.bugReportDao().observeAll().map { list -> list.map { it.toRecord() } }
     val notes: Flow<List<BugNoteRecord>> = db.bugNoteDao().observeAll().map { list -> list.map { it.toRecord() } }
 
-    suspend fun saveReport(report: BugReportRecord) {
-        db.bugReportDao().upsert(report.toEntity())
+    suspend fun saveReport(report: BugReportRecord, localScreenshotPath: String? = null) {
+        db.bugReportDao().upsert(report.toEntity(localScreenshotPath = localScreenshotPath))
         BugsSyncScheduler.scheduleSync(context)
     }
 
@@ -61,10 +67,15 @@ class BugsRepository(
         val reportDao = db.bugReportDao()
         reportDao.getPendingSync().forEach { entity ->
             runCatching {
-                val saved = api.upsertBugReport(BugReportUpsertRequest(entity.clientId, entity.title, entity.description, entity.status, entity.route))
+                val saved = api.upsertBugReport(
+                    BugReportUpsertRequest(entity.clientId, entity.title, entity.description, entity.status, entity.route, entity.networkLog)
+                )
                 reportDao.markSynced(entity.clientId, saved.id)
             }
         }
+
+        uploadPendingScreenshots()
+
         reportDao.getPendingDelete().forEach { entity ->
             runCatching {
                 if (entity.serverId != null) api.deleteBugReport(entity.serverId)
@@ -87,8 +98,26 @@ class BugsRepository(
         }
     }
 
+    private suspend fun uploadPendingScreenshots() {
+        val reportDao = db.bugReportDao()
+        reportDao.getPendingScreenshotUploads().forEach { entity ->
+            val path = entity.localScreenshotPath ?: return@forEach
+            val file = File(path)
+            if (!file.exists()) return@forEach
+            runCatching {
+                val body = file.asRequestBody("image/png".toMediaTypeOrNull())
+                val part = MultipartBody.Part.createFormData("file", file.name, body)
+                api.uploadBugScreenshot(entity.clientId, part)
+                reportDao.markScreenshotUploaded(entity.clientId)
+            }
+        }
+    }
+
     suspend fun pullFromServer() {
         runCatching { api.getBugReports().forEach { db.bugReportDao().upsert(it.toEntity(pendingSync = false)) } }
         runCatching { api.getBugNotes().forEach { db.bugNoteDao().upsert(it.toEntity(pendingSync = false)) } }
     }
+
+    suspend fun fetchScreenshotBytes(reportId: Int): ByteArray? =
+        runCatching { api.getBugScreenshot(reportId).bytes() }.getOrNull()
 }

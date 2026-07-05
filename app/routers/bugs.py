@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.tenancy import current_tenant_id
@@ -13,6 +15,8 @@ from db import query_db, with_db_cursor
 router = APIRouter()
 
 _tables_ready = False
+
+BUGS_DATA_DIR = os.getenv("BUGS_DATA_DIR", "bugs_data")
 
 
 def ensure_bugs_tables():
@@ -34,6 +38,8 @@ def ensure_bugs_tables():
                 UNIQUE(tenant_id, client_id)
             )
         """)
+        cur.execute("ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS network_log TEXT DEFAULT ''")
+        cur.execute("ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS has_screenshot BOOLEAN DEFAULT FALSE")
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_bug_reports_tenant_status
                 ON bug_reports(tenant_id, status)
@@ -59,6 +65,7 @@ class BugReportIn(BaseModel):
     description: Optional[str] = ""
     status: str = "open"
     route: Optional[str] = ""
+    network_log: Optional[str] = ""
 
 
 class BugNoteIn(BaseModel):
@@ -85,21 +92,64 @@ def upsert_bug_report(body: BugReportIn):
     with with_db_cursor() as (conn, cur):
         cur.execute(
             """
-            INSERT INTO bug_reports (tenant_id, client_id, title, description, status, route, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,NOW())
+            INSERT INTO bug_reports (tenant_id, client_id, title, description, status, route, network_log, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,NOW())
             ON CONFLICT (tenant_id, client_id) DO UPDATE SET
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
                 status = EXCLUDED.status,
                 route = EXCLUDED.route,
+                network_log = EXCLUDED.network_log,
                 updated_at = NOW()
             RETURNING *
             """,
-            (tid, body.client_id, body.title, body.description, body.status, body.route),
+            (tid, body.client_id, body.title, body.description, body.status, body.route, body.network_log),
         )
         row = cur.fetchone()
         conn.commit()
         return _serialize(row)
+
+
+@router.post("/bugs/reports/{client_id}/screenshot")
+async def upload_bug_screenshot(client_id: str, file: UploadFile = File(...)):
+    ensure_bugs_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "SELECT id FROM bug_reports WHERE tenant_id = %s AND client_id = %s",
+            (tid, client_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Bug report not found")
+
+        dest_dir = os.path.join(BUGS_DATA_DIR, client_id)
+        os.makedirs(dest_dir, exist_ok=True)
+        dest_path = os.path.join(dest_dir, "screenshot.jpg")
+        with open(dest_path, "wb") as f:
+            f.write(await file.read())
+
+        cur.execute(
+            "UPDATE bug_reports SET has_screenshot = TRUE WHERE tenant_id = %s AND client_id = %s",
+            (tid, client_id),
+        )
+        conn.commit()
+    return {"ok": True}
+
+
+@router.get("/bugs/reports/{record_id}/screenshot")
+def get_bug_screenshot(record_id: int):
+    ensure_bugs_tables()
+    tid = current_tenant_id()
+    row = query_db(
+        "SELECT client_id FROM bug_reports WHERE id = %s AND tenant_id = %s",
+        (record_id, tid),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Bug report not found")
+    path = os.path.join(BUGS_DATA_DIR, str(row[0]["client_id"]), "screenshot.jpg")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No screenshot for this report")
+    return FileResponse(path, media_type="image/jpeg")
 
 
 @router.delete("/bugs/reports/{record_id}")
@@ -108,12 +158,26 @@ def delete_bug_report(record_id: int):
     tid = current_tenant_id()
     with with_db_cursor() as (conn, cur):
         cur.execute(
+            "SELECT client_id FROM bug_reports WHERE id = %s AND tenant_id = %s",
+            (record_id, tid),
+        )
+        row = cur.fetchone()
+        cur.execute(
             "DELETE FROM bug_reports WHERE id = %s AND tenant_id = %s",
             (record_id, tid),
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Record not found")
         conn.commit()
+
+    if row:
+        screenshot_dir = os.path.join(BUGS_DATA_DIR, str(row["client_id"]))
+        try:
+            if os.path.exists(screenshot_dir):
+                import shutil
+                shutil.rmtree(screenshot_dir)
+        except Exception:
+            pass
     return {"deleted": record_id}
 
 

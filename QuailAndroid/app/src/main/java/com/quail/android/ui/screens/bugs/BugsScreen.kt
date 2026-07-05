@@ -1,5 +1,7 @@
 package com.quail.android.ui.screens.bugs
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,16 +37,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.quail.android.bugreport.BugOverlayManager
 import com.quail.android.data.model.BugNoteRecord
 import com.quail.android.data.model.BugReportRecord
 import com.quail.android.data.model.BugStatus
@@ -61,6 +72,20 @@ fun BugsScreen(viewModel: BugsViewModel, onBack: () -> Unit) {
     var filter by remember { mutableStateOf<BugStatus?>(null) }
     var showAddReport by remember { mutableStateOf(false) }
     var editingReport by remember { mutableStateOf<BugReportRecord?>(null) }
+
+    val context = LocalContext.current
+    var overlayGranted by remember { mutableStateOf(BugOverlayManager.hasPermission(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                overlayGranted = BugOverlayManager.hasPermission(context)
+                if (overlayGranted) BugOverlayManager.ensureShown(context.applicationContext)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
@@ -82,6 +107,26 @@ fun BugsScreen(viewModel: BugsViewModel, onBack: () -> Unit) {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                if (!overlayGranted) {
+                    item {
+                        Surface(
+                            onClick = { BugOverlayManager.requestPermission(context) },
+                            color = QuailSurfaceRaised,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text("Enable the floating bug button", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Grant \"display over other apps\" so you can report a bug from anywhere, even over a popup. Tap to open settings.",
+                                    color = QuailTextDim,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
                 item {
                     Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip("All", filter == null) { filter = null }
@@ -108,11 +153,12 @@ fun BugsScreen(viewModel: BugsViewModel, onBack: () -> Unit) {
     }
 
     if (showAddReport) {
-        BugReportSheet(existing = null, onDismiss = { showAddReport = false }, onSave = { title, desc -> viewModel.addReport(title, desc) })
+        BugReportSheet(existing = null, viewModel = viewModel, onDismiss = { showAddReport = false }, onSave = { title, desc -> viewModel.addReport(title, desc) })
     }
     editingReport?.let { report ->
         BugReportSheet(
             existing = report,
+            viewModel = viewModel,
             onDismiss = { editingReport = null },
             onSave = { title, desc -> viewModel.updateReport(report, title, desc) },
             onStatusChange = { status -> viewModel.updateReportStatus(report, status) },
@@ -156,6 +202,18 @@ private fun BugReportRow(report: BugReportRecord, onClick: () -> Unit, onDelete:
                 Text(report.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                 if (report.description.isNotBlank()) {
                     Text(report.description, color = QuailTextDim, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                }
+                if (report.hasScreenshot || report.route.isNotBlank()) {
+                    Text(
+                        listOfNotNull(
+                            if (report.hasScreenshot) "Screenshot attached" else null,
+                            report.route.takeIf { it.isNotBlank() },
+                        ).joinToString("  ·  "),
+                        color = QuailTextDim,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -222,12 +280,21 @@ private fun QuickNotesSection(notes: List<BugNoteRecord>, viewModel: BugsViewMod
 @Composable
 private fun BugReportSheet(
     existing: BugReportRecord?,
+    viewModel: BugsViewModel,
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit,
     onStatusChange: ((BugStatus) -> Unit)? = null,
 ) {
     var title by remember { mutableStateOf(existing?.title ?: "") }
     var description by remember { mutableStateOf(existing?.description ?: "") }
+    var showNetworkLog by remember { mutableStateOf(false) }
+
+    val screenshotBitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = existing?.id) {
+        if (existing != null && existing.hasScreenshot && existing.id != 0) {
+            val bytes = viewModel.fetchScreenshotBytes(existing.id)
+            value = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+        }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
@@ -257,6 +324,47 @@ private fun BugReportSheet(
                                 fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.labelSmall,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            if (existing != null && screenshotBitmap != null) {
+                Text("Screenshot", color = QuailTextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 16.dp, bottom = 6.dp))
+                Image(
+                    bitmap = screenshotBitmap!!.asImageBitmap(),
+                    contentDescription = "Bug screenshot",
+                    modifier = Modifier.fillMaxWidth().height(220.dp),
+                )
+            }
+            if (existing != null && existing.route.isNotBlank()) {
+                Text(
+                    "Screen path: ${existing.route}",
+                    color = QuailTextDim,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+            if (existing != null && existing.networkLog.isNotBlank()) {
+                Surface(
+                    onClick = { showNetworkLog = !showNetworkLog },
+                    color = QuailSurfaceRaised,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            if (showNetworkLog) "Hide recent network calls" else "Show recent network calls",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        if (showNetworkLog) {
+                            Text(
+                                existing.networkLog,
+                                color = QuailTextDim,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(top = 8.dp),
                             )
                         }
                     }

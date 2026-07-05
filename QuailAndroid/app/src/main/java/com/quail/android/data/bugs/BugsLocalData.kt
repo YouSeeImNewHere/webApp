@@ -20,6 +20,9 @@ data class BugReportEntity(
     val description: String = "",
     val status: String = "open",
     val route: String = "",
+    val networkLog: String = "",
+    val localScreenshotPath: String? = null,
+    val screenshotUploaded: Boolean = false,
     val pendingSync: Boolean = true,
     val pendingDelete: Boolean = false,
     val createdAtMillis: Long = System.currentTimeMillis(),
@@ -47,11 +50,17 @@ interface BugReportDao {
     @Query("SELECT * FROM bug_reports WHERE pendingDelete = 1")
     suspend fun getPendingDelete(): List<BugReportEntity>
 
+    @Query("SELECT * FROM bug_reports WHERE localScreenshotPath IS NOT NULL AND screenshotUploaded = 0 AND pendingDelete = 0")
+    suspend fun getPendingScreenshotUploads(): List<BugReportEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: BugReportEntity)
 
     @Query("UPDATE bug_reports SET serverId = :serverId, pendingSync = 0 WHERE clientId = :clientId")
     suspend fun markSynced(clientId: String, serverId: Int)
+
+    @Query("UPDATE bug_reports SET screenshotUploaded = 1 WHERE clientId = :clientId")
+    suspend fun markScreenshotUploaded(clientId: String)
 
     @Query("UPDATE bug_reports SET pendingDelete = 1 WHERE clientId = :clientId")
     suspend fun markPendingDelete(clientId: String)
@@ -84,7 +93,7 @@ interface BugNoteDao {
     suspend fun hardDelete(clientId: String)
 }
 
-@Database(entities = [BugReportEntity::class, BugNoteEntity::class], version = 1, exportSchema = false)
+@Database(entities = [BugReportEntity::class, BugNoteEntity::class], version = 2, exportSchema = false)
 abstract class BugsDatabase : RoomDatabase() {
     abstract fun bugReportDao(): BugReportDao
     abstract fun bugNoteDao(): BugNoteDao
@@ -95,6 +104,7 @@ abstract class BugsDatabase : RoomDatabase() {
         fun getInstance(context: Context): BugsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, BugsDatabase::class.java, "quail_bugs.db")
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { instance = it }
             }

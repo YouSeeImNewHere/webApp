@@ -29,6 +29,8 @@ data class BugReportRecord(
     val description: String = "",
     val status: String = "open",
     val route: String = "",
+    @SerialName("network_log") val networkLog: String = "",
+    @SerialName("has_screenshot") val hasScreenshot: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null,
 )
 
@@ -39,6 +41,7 @@ data class BugReportUpsertRequest(
     val description: String = "",
     val status: String = "open",
     val route: String = "",
+    @SerialName("network_log") val networkLog: String = "",
 )
 
 @Serializable

@@ -41,6 +41,8 @@ class BugsViewModel(private val repository: BugsRepository) : ViewModel() {
         viewModelScope.launch { repository.deleteReport(clientId) }
     }
 
+    suspend fun fetchScreenshotBytes(reportId: Int): ByteArray? = repository.fetchScreenshotBytes(reportId)
+
     fun addNote(text: String) {
         if (text.isBlank()) return
         viewModelScope.launch {

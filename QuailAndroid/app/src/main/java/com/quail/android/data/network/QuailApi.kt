@@ -102,14 +102,19 @@ import com.quail.android.data.model.VehicleProfile
 import com.quail.android.data.model.VehicleProfileUpdateRequest
 import com.quail.android.data.model.VerifyBalanceRequest
 import com.quail.android.data.model.VerifyBalanceResponse
+import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface QuailApi {
     @GET("page/home")
@@ -495,6 +500,14 @@ interface QuailApi {
 
     @DELETE("bugs/reports/{id}")
     suspend fun deleteBugReport(@Path("id") id: Int): OkResponse
+
+    @Multipart
+    @POST("bugs/reports/{clientId}/screenshot")
+    suspend fun uploadBugScreenshot(@Path("clientId") clientId: String, @Part file: MultipartBody.Part): OkResponse
+
+    @Streaming
+    @GET("bugs/reports/{id}/screenshot")
+    suspend fun getBugScreenshot(@Path("id") id: Int): ResponseBody
 
     @GET("bugs/notes")
     suspend fun getBugNotes(): List<BugNoteRecord>

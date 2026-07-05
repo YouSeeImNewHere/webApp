@@ -21,6 +21,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.quail.android.bugreport.NavPathHolder
 import com.quail.android.data.bugs.BugsDatabase
 import com.quail.android.data.bugs.BugsRepository
 import com.quail.android.data.fitness.FitnessDatabase
@@ -416,6 +417,12 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         val session = authStore.session.first()
         if (session != null) {
             navController.navigate(ROUTE_DASHBOARD) { popUpTo(ROUTE_LOGIN) { inclusive = true } }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        navController.currentBackStack.collect { stack ->
+            NavPathHolder.current = stack.mapNotNull { it.destination.route }.joinToString(" > ")
         }
     }
 }
