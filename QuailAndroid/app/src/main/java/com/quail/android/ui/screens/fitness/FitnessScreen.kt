@@ -10,17 +10,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.MonitorWeight
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -36,10 +42,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quail.android.data.model.DEFAULT_PROGRESSION_PATHS
+import com.quail.android.data.model.FitnessGoalTypeOption
 import com.quail.android.data.model.GoalRecord
+import com.quail.android.data.model.MilestoneRecord
 import com.quail.android.data.model.RoutineRecord
 import com.quail.android.data.model.WorkoutSessionRecord
 import com.quail.android.data.model.exerciseById
+import com.quail.android.data.model.frequencyAdvice
+import com.quail.android.data.model.repRange
+import com.quail.android.data.model.restAdvice
+import com.quail.android.data.model.setsAdvice
+import com.quail.android.data.model.strategyNotes
 import com.quail.android.ui.theme.QuailSurface
 import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailTextDim
@@ -47,6 +61,8 @@ import com.quail.android.ui.theme.QuailTextDim
 sealed interface FitnessSheet {
     data object AddGoal : FitnessSheet
     data object LogBodyweight : FitnessSheet
+    data object AddMilestone : FitnessSheet
+    data object CreateRoutine : FitnessSheet
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,6 +90,7 @@ fun FitnessScreen(
                 onDeleteSession = viewModel::deleteSession,
                 onDeleteRoutine = viewModel::deleteRoutine,
                 onDeleteGoal = viewModel::deleteGoal,
+                onDeleteMilestone = viewModel::deleteMilestone,
                 onStartFromRoutine = { routine -> viewModel.startWorkout(fromRoutine = routine); onStartWorkout() },
             )
         }
@@ -128,6 +145,7 @@ private fun FitnessContent(
     onDeleteSession: (String) -> Unit,
     onDeleteRoutine: (String) -> Unit,
     onDeleteGoal: (String) -> Unit,
+    onDeleteMilestone: (String) -> Unit,
     onStartFromRoutine: (RoutineRecord) -> Unit,
 ) {
     LazyColumn(
@@ -137,11 +155,14 @@ private fun FitnessContent(
     ) {
         item { StartWorkoutCard(data, onStartWorkout) }
         item { BodyweightCard(data, onOpenSheet) }
-        item { RoutinesSection(data.routines, onStartFromRoutine, onDeleteRoutine) }
+        item { ProgressionsSection(data) }
+        item { WeeklyVolumeSection(data) }
+        item { RoutinesSection(data.routines, onOpenSheet, onStartFromRoutine, onDeleteRoutine) }
         if (data.recentSessions.isNotEmpty()) {
             item { RecentSessionsSection(data.recentSessions, onDeleteSession) }
         }
-        item { GoalsSection(data.goals, onOpenSheet, onDeleteGoal) }
+        item { GoalsSection(data.goals, data.sessions, onOpenSheet, onDeleteGoal) }
+        item { MilestonesSection(data.milestones, onOpenSheet, onDeleteMilestone) }
     }
 }
 
@@ -197,9 +218,9 @@ private fun BodyweightCard(data: FitnessData, onOpenSheet: (FitnessSheet) -> Uni
 }
 
 @Composable
-private fun RoutinesSection(routines: List<RoutineRecord>, onStart: (RoutineRecord) -> Unit, onDelete: (String) -> Unit) {
+private fun RoutinesSection(routines: List<RoutineRecord>, onOpenSheet: (FitnessSheet) -> Unit, onStart: (RoutineRecord) -> Unit, onDelete: (String) -> Unit) {
     Column {
-        SectionHeader("Routines")
+        SectionHeader("Routines", actionLabel = "+ New") { onOpenSheet(FitnessSheet.CreateRoutine) }
         if (routines.isEmpty()) {
             Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -239,6 +260,82 @@ private fun RoutinesSection(routines: List<RoutineRecord>, onStart: (RoutineReco
 }
 
 @Composable
+private fun ProgressionsSection(data: FitnessData) {
+    Column {
+        SectionHeader("Progressions")
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DEFAULT_PROGRESSION_PATHS.forEach { path ->
+                val step = currentProgressionStep(path, data.sessions, data.allExercises)
+                Surface(color = QuailSurface, shape = RoundedCornerShape(18.dp), modifier = Modifier.width(180.dp)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(path.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                        if (step != null) {
+                            val (exercise, index) = step
+                            val total = path.exerciseIds.size
+                            Text(
+                                "Step ${index + 1} of $total",
+                                color = QuailTextDim,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                            )
+                            LinearProgressIndicator(
+                                progress = { (index + 1).toFloat() / total.toFloat() },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = QuailSurfaceRaised,
+                            )
+                            Text(
+                                exercise.name,
+                                color = QuailTextDim,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        } else {
+                            Text("No data yet", color = QuailTextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeeklyVolumeSection(data: FitnessData) {
+    val volume = weeklyVolume(data.sessions, data.allExercises)
+    val sorted = volume.entries.sortedByDescending { it.value }.take(6)
+    if (sorted.isEmpty()) return
+    val max = sorted.first().value.coerceAtLeast(1)
+
+    Column {
+        SectionHeader("This Week's Volume")
+        Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                sorted.forEach { (muscle, reps) ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(muscle.displayName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(90.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { reps.toFloat() / max.toFloat() },
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = QuailSurfaceRaised,
+                        )
+                        Text("$reps", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(36.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatPace(secPerKm: Int?): String? {
+    if (secPerKm == null || secPerKm <= 0) return null
+    val min = secPerKm / 60
+    val sec = secPerKm % 60
+    return "%d:%02d /km".format(min, sec)
+}
+
+@Composable
 private fun RecentSessionsSection(sessions: List<WorkoutSessionRecord>, onDelete: (String) -> Unit) {
     Column {
         SectionHeader("Recent Sessions")
@@ -251,12 +348,33 @@ private fun RecentSessionsSection(sessions: List<WorkoutSessionRecord>, onDelete
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(session.date, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "${session.exercises.size} exercises · ${session.totalSets} sets · ${session.durationMinutes} min",
-                                color = QuailTextDim,
-                                style = MaterialTheme.typography.labelSmall,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (session.isFromGarmin) {
+                                    Icon(
+                                        Icons.Filled.DirectionsRun,
+                                        contentDescription = "Synced from Garmin",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                    )
+                                }
+                                Text(
+                                    if (session.isFromGarmin) session.notes.ifBlank { "Run" } else session.date,
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            val subtitle = if (session.isFromGarmin) {
+                                listOfNotNull(
+                                    session.date,
+                                    session.distanceKm?.let { "%.2f km".format(it) },
+                                    formatPace(session.avgPaceSecPerKm),
+                                    session.avgHeartRate?.let { "$it bpm avg" },
+                                    session.calories?.let { "$it cal" },
+                                ).joinToString(" · ")
+                            } else {
+                                "${session.exercises.size} exercises · ${session.totalSets} sets · ${session.durationMinutes} min"
+                            }
+                            Text(subtitle, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
                         }
                         Surface(onClick = { onDelete(session.clientId) }, color = Color.Transparent) {
                             Text("Delete", color = QuailTextDim, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
@@ -270,7 +388,7 @@ private fun RecentSessionsSection(sessions: List<WorkoutSessionRecord>, onDelete
 }
 
 @Composable
-private fun GoalsSection(goals: List<GoalRecord>, onOpenSheet: (FitnessSheet) -> Unit, onDelete: (String) -> Unit) {
+private fun GoalsSection(goals: List<GoalRecord>, sessions: List<WorkoutSessionRecord>, onOpenSheet: (FitnessSheet) -> Unit, onDelete: (String) -> Unit) {
     Column {
         SectionHeader("Goals", actionLabel = "+ New") { onOpenSheet(FitnessSheet.AddGoal) }
         if (goals.isEmpty()) {
@@ -284,29 +402,107 @@ private fun GoalsSection(goals: List<GoalRecord>, onOpenSheet: (FitnessSheet) ->
             Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                 Column {
                     goals.forEachIndexed { idx, goal ->
+                        GoalRow(goal, sessions, onDelete)
+                        if (idx < goals.size - 1) HorizontalDivider(color = QuailSurfaceRaised)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalRow(goal: GoalRecord, sessions: List<WorkoutSessionRecord>, onDelete: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val goalType = runCatching { FitnessGoalTypeOption.valueOf(goal.goalType) }.getOrNull()
+    val progress = progressForGoal(goal, sessions)
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(goal.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    listOfNotNull(
+                        goal.targetExerciseId?.let { exerciseById(it)?.name },
+                        goal.targetReps?.let { "$it reps" },
+                        goal.targetDurationSeconds?.let { "${it}s" },
+                        goal.targetDate,
+                    ).joinToString(" · "),
+                    color = QuailTextDim,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            Surface(onClick = { onDelete(goal.clientId) }, color = Color.Transparent) {
+                Text("Delete", color = QuailTextDim, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+            }
+        }
+        if (goal.targetExerciseId != null) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = QuailSurfaceRaised,
+            )
+        }
+        if (expanded && goalType != null) {
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Text("HOW TO GET THERE", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 6.dp))
+                Text("Rep range: ${goalType.repRange}", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                Text("Sets: ${goalType.setsAdvice}", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                Text("Rest: ${goalType.restAdvice}", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                Text("Frequency: ${goalType.frequencyAdvice}", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                goalType.strategyNotes.forEach { note ->
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Text("•", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
+                        Text(note, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MilestonesSection(milestones: List<MilestoneRecord>, onOpenSheet: (FitnessSheet) -> Unit, onDelete: (String) -> Unit) {
+    Column {
+        SectionHeader("Milestones", actionLabel = "+ New") { onOpenSheet(FitnessSheet.AddMilestone) }
+        if (milestones.isEmpty()) {
+            Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = QuailTextDim)
+                    Text("No milestones yet", color = QuailTextDim, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        } else {
+            Surface(color = QuailSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    milestones.sortedByDescending { it.date }.forEachIndexed { idx, milestone ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(goal.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                Text(milestone.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     listOfNotNull(
-                                        goal.targetExerciseId?.let { exerciseById(it)?.name },
-                                        goal.targetReps?.let { "$it reps" },
-                                        goal.targetDurationSeconds?.let { "${it}s" },
-                                        goal.targetDate,
+                                        milestone.date,
+                                        milestone.exerciseId?.let { exerciseById(it)?.name },
+                                        milestone.notes.takeIf { it.isNotBlank() },
                                     ).joinToString(" · "),
                                     color = QuailTextDim,
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
-                            Surface(onClick = { onDelete(goal.clientId) }, color = Color.Transparent) {
+                            Surface(onClick = { onDelete(milestone.clientId) }, color = Color.Transparent) {
                                 Text("Delete", color = QuailTextDim, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
                             }
                         }
-                        if (idx < goals.size - 1) HorizontalDivider(color = QuailSurfaceRaised)
+                        if (idx < milestones.size - 1) HorizontalDivider(color = QuailSurfaceRaised)
                     }
                 }
             }

@@ -39,6 +39,16 @@ def ensure_fitness_tables():
             CREATE INDEX IF NOT EXISTS idx_fitness_sessions_tenant_date
                 ON fitness_workout_sessions(tenant_id, date DESC)
         """)
+        # Cardio fields for Garmin-synced runs — a run has no sets/reps, so it's
+        # kept in the same table as top-level session fields rather than in the
+        # `exercises` JSONB list. `source` distinguishes manual entries from
+        # Garmin imports; Garmin rows reuse the existing client_id unique
+        # constraint (client_id = "garmin:<activity_id>") for idempotent upsert.
+        cur.execute("ALTER TABLE fitness_workout_sessions ADD COLUMN IF NOT EXISTS distance_km DECIMAL(6,2)")
+        cur.execute("ALTER TABLE fitness_workout_sessions ADD COLUMN IF NOT EXISTS avg_pace_sec_per_km INTEGER")
+        cur.execute("ALTER TABLE fitness_workout_sessions ADD COLUMN IF NOT EXISTS avg_heart_rate INTEGER")
+        cur.execute("ALTER TABLE fitness_workout_sessions ADD COLUMN IF NOT EXISTS calories INTEGER")
+        cur.execute("ALTER TABLE fitness_workout_sessions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fitness_routines (
                 id SERIAL PRIMARY KEY,
@@ -94,6 +104,25 @@ def ensure_fitness_tables():
             CREATE INDEX IF NOT EXISTS idx_fitness_bodyweight_tenant_date
                 ON fitness_bodyweight_logs(tenant_id, date DESC)
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fitness_custom_exercises (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                muscle_groups JSONB NOT NULL DEFAULT '[]',
+                difficulty TEXT NOT NULL DEFAULT 'BEGINNER',
+                instructions JSONB NOT NULL DEFAULT '[]',
+                video_url TEXT,
+                is_timed_exercise BOOLEAN DEFAULT FALSE,
+                default_sets INTEGER DEFAULT 3,
+                default_reps INTEGER DEFAULT 10,
+                default_duration_seconds INTEGER DEFAULT 30,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, client_id)
+            )
+        """)
         conn.commit()
     _tables_ready = True
 
@@ -109,6 +138,11 @@ class WorkoutSessionIn(BaseModel):
     bodyweight_kg: Optional[float] = None
     notes: Optional[str] = ""
     exercises: List[dict] = []
+    distance_km: Optional[float] = None
+    avg_pace_sec_per_km: Optional[int] = None
+    avg_heart_rate: Optional[int] = None
+    calories: Optional[int] = None
+    source: str = "manual"
 
 
 class RoutineIn(BaseModel):
@@ -142,6 +176,20 @@ class BodyweightIn(BaseModel):
     weight_kg: float
 
 
+class CustomExerciseIn(BaseModel):
+    client_id: str
+    name: str
+    category: str
+    muscle_groups: List[str] = []
+    difficulty: str = "BEGINNER"
+    instructions: List[str] = []
+    video_url: Optional[str] = None
+    is_timed_exercise: bool = False
+    default_sets: int = 3
+    default_reps: int = 10
+    default_duration_seconds: int = 30
+
+
 # ---------------------------------------------------------------------------
 # Workout sessions
 # ---------------------------------------------------------------------------
@@ -171,19 +219,26 @@ def upsert_session(body: WorkoutSessionIn):
         cur.execute(
             """
             INSERT INTO fitness_workout_sessions (
-                tenant_id, client_id, date, duration_minutes, bodyweight_kg, notes, exercises
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb)
+                tenant_id, client_id, date, duration_minutes, bodyweight_kg, notes, exercises,
+                distance_km, avg_pace_sec_per_km, avg_heart_rate, calories, source
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s)
             ON CONFLICT (tenant_id, client_id) DO UPDATE SET
                 date = EXCLUDED.date,
                 duration_minutes = EXCLUDED.duration_minutes,
                 bodyweight_kg = EXCLUDED.bodyweight_kg,
                 notes = EXCLUDED.notes,
-                exercises = EXCLUDED.exercises
+                exercises = EXCLUDED.exercises,
+                distance_km = EXCLUDED.distance_km,
+                avg_pace_sec_per_km = EXCLUDED.avg_pace_sec_per_km,
+                avg_heart_rate = EXCLUDED.avg_heart_rate,
+                calories = EXCLUDED.calories,
+                source = EXCLUDED.source
             RETURNING *
             """,
             (
                 tid, body.client_id, body.date, body.duration_minutes, body.bodyweight_kg,
                 body.notes, json.dumps(body.exercises),
+                body.distance_km, body.avg_pace_sec_per_km, body.avg_heart_rate, body.calories, body.source,
             ),
         )
         row = cur.fetchone()
@@ -428,6 +483,71 @@ def delete_bodyweight(record_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Custom exercises (user-created, on top of the built-in static catalog)
+# ---------------------------------------------------------------------------
+
+@router.get("/fitness/custom-exercises")
+def list_custom_exercises():
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM fitness_custom_exercises WHERE tenant_id = %s ORDER BY name",
+        (tid,),
+    )
+    return [_serialize(r) for r in rows]
+
+
+@router.post("/fitness/custom-exercises")
+def upsert_custom_exercise(body: CustomExerciseIn):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO fitness_custom_exercises (
+                tenant_id, client_id, name, category, muscle_groups, difficulty, instructions,
+                video_url, is_timed_exercise, default_sets, default_reps, default_duration_seconds
+            ) VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s,%s,%s,%s,%s)
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                category = EXCLUDED.category,
+                muscle_groups = EXCLUDED.muscle_groups,
+                difficulty = EXCLUDED.difficulty,
+                instructions = EXCLUDED.instructions,
+                video_url = EXCLUDED.video_url,
+                is_timed_exercise = EXCLUDED.is_timed_exercise,
+                default_sets = EXCLUDED.default_sets,
+                default_reps = EXCLUDED.default_reps,
+                default_duration_seconds = EXCLUDED.default_duration_seconds
+            RETURNING *
+            """,
+            (
+                tid, body.client_id, body.name, body.category, json.dumps(body.muscle_groups),
+                body.difficulty, json.dumps(body.instructions), body.video_url,
+                body.is_timed_exercise, body.default_sets, body.default_reps, body.default_duration_seconds,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _serialize(row)
+
+
+@router.delete("/fitness/custom-exercises/{record_id}")
+def delete_custom_exercise(record_id: int):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM fitness_custom_exercises WHERE id = %s AND tenant_id = %s",
+            (record_id, tid),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Record not found")
+        conn.commit()
+    return {"deleted": record_id}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -438,7 +558,7 @@ def _serialize(row: dict) -> dict:
             out[k] = v.isoformat()
         elif isinstance(v, Decimal):
             out[k] = float(v)
-        elif k in ("exercises",) and isinstance(v, str):
+        elif k in ("exercises", "muscle_groups", "instructions") and isinstance(v, str):
             try:
                 out[k] = json.loads(v)
             except Exception:

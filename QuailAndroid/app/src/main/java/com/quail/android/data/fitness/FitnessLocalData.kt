@@ -27,6 +27,11 @@ data class WorkoutSessionEntity(
     val bodyweightKg: Double? = null,
     val notes: String = "",
     val exercisesJson: String = "[]",
+    val distanceKm: Double? = null,
+    val avgPaceSecPerKm: Int? = null,
+    val avgHeartRate: Int? = null,
+    val calories: Int? = null,
+    val source: String = "manual",
     val pendingSync: Boolean = true,
     val pendingDelete: Boolean = false,
     val createdAtMillis: Long = System.currentTimeMillis(),
@@ -78,6 +83,25 @@ data class BodyweightEntity(
     val serverId: Int? = null,
     val date: String,
     val weightKg: Double,
+    val pendingSync: Boolean = true,
+    val pendingDelete: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "fitness_custom_exercises")
+data class CustomExerciseEntity(
+    @PrimaryKey val clientId: String,
+    val serverId: Int? = null,
+    val name: String,
+    val category: String = "PUSH",
+    val muscleGroupsJson: String = "[]",
+    val difficulty: String = "BEGINNER",
+    val instructionsJson: String = "[]",
+    val videoUrl: String? = null,
+    val isTimedExercise: Boolean = false,
+    val defaultSets: Int = 3,
+    val defaultReps: Int = 10,
+    val defaultDurationSeconds: Int = 30,
     val pendingSync: Boolean = true,
     val pendingDelete: Boolean = false,
     val createdAtMillis: Long = System.currentTimeMillis(),
@@ -203,6 +227,30 @@ interface BodyweightDao {
     suspend fun hardDelete(clientId: String)
 }
 
+@Dao
+interface CustomExerciseDao {
+    @Query("SELECT * FROM fitness_custom_exercises WHERE pendingDelete = 0 ORDER BY name")
+    fun observeAll(): Flow<List<CustomExerciseEntity>>
+
+    @Query("SELECT * FROM fitness_custom_exercises WHERE pendingSync = 1 AND pendingDelete = 0")
+    suspend fun getPendingSync(): List<CustomExerciseEntity>
+
+    @Query("SELECT * FROM fitness_custom_exercises WHERE pendingDelete = 1")
+    suspend fun getPendingDelete(): List<CustomExerciseEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: CustomExerciseEntity)
+
+    @Query("UPDATE fitness_custom_exercises SET serverId = :serverId, pendingSync = 0 WHERE clientId = :clientId")
+    suspend fun markSynced(clientId: String, serverId: Int)
+
+    @Query("UPDATE fitness_custom_exercises SET pendingDelete = 1 WHERE clientId = :clientId")
+    suspend fun markPendingDelete(clientId: String)
+
+    @Query("DELETE FROM fitness_custom_exercises WHERE clientId = :clientId")
+    suspend fun hardDelete(clientId: String)
+}
+
 @Database(
     entities = [
         WorkoutSessionEntity::class,
@@ -210,8 +258,9 @@ interface BodyweightDao {
         GoalEntity::class,
         MilestoneEntity::class,
         BodyweightEntity::class,
+        CustomExerciseEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class FitnessDatabase : RoomDatabase() {
@@ -220,6 +269,7 @@ abstract class FitnessDatabase : RoomDatabase() {
     abstract fun goalDao(): GoalDao
     abstract fun milestoneDao(): MilestoneDao
     abstract fun bodyweightDao(): BodyweightDao
+    abstract fun customExerciseDao(): CustomExerciseDao
 
     companion object {
         @Volatile private var instance: FitnessDatabase? = null
@@ -227,6 +277,7 @@ abstract class FitnessDatabase : RoomDatabase() {
         fun getInstance(context: Context): FitnessDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, FitnessDatabase::class.java, "quail_fitness.db")
+                    .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }
             }

@@ -3,6 +3,8 @@ package com.quail.android.data.fitness
 import android.content.Context
 import com.quail.android.data.model.BodyweightRecord
 import com.quail.android.data.model.BodyweightUpsertRequest
+import com.quail.android.data.model.CustomExerciseRecord
+import com.quail.android.data.model.CustomExerciseUpsertRequest
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.MilestoneRecord
@@ -30,6 +32,11 @@ private fun WorkoutSessionEntity.toRecord(): WorkoutSessionRecord = WorkoutSessi
     bodyweightKg = bodyweightKg,
     notes = notes,
     exercises = runCatching { fitnessJson.decodeFromString<List<WorkoutExerciseEntry>>(exercisesJson) }.getOrDefault(emptyList()),
+    distanceKm = distanceKm,
+    avgPaceSecPerKm = avgPaceSecPerKm,
+    avgHeartRate = avgHeartRate,
+    calories = calories,
+    source = source,
 )
 
 private fun WorkoutSessionRecord.toEntity(pendingSync: Boolean = true): WorkoutSessionEntity = WorkoutSessionEntity(
@@ -40,6 +47,11 @@ private fun WorkoutSessionRecord.toEntity(pendingSync: Boolean = true): WorkoutS
     bodyweightKg = bodyweightKg,
     notes = notes,
     exercisesJson = fitnessJson.encodeToString(exercises),
+    distanceKm = distanceKm,
+    avgPaceSecPerKm = avgPaceSecPerKm,
+    avgHeartRate = avgHeartRate,
+    calories = calories,
+    source = source,
     pendingSync = pendingSync,
 )
 
@@ -88,6 +100,23 @@ private fun BodyweightRecord.toEntity(pendingSync: Boolean = true): BodyweightEn
     clientId = clientId, serverId = id.takeIf { it != 0 }, date = date, weightKg = weightKg, pendingSync = pendingSync,
 )
 
+private fun CustomExerciseEntity.toRecord(): CustomExerciseRecord = CustomExerciseRecord(
+    id = serverId ?: 0, clientId = clientId, name = name, category = category,
+    muscleGroups = runCatching { fitnessJson.decodeFromString<List<String>>(muscleGroupsJson) }.getOrDefault(emptyList()),
+    difficulty = difficulty,
+    instructions = runCatching { fitnessJson.decodeFromString<List<String>>(instructionsJson) }.getOrDefault(emptyList()),
+    videoUrl = videoUrl, isTimedExercise = isTimedExercise, defaultSets = defaultSets,
+    defaultReps = defaultReps, defaultDurationSeconds = defaultDurationSeconds,
+)
+
+private fun CustomExerciseRecord.toEntity(pendingSync: Boolean = true): CustomExerciseEntity = CustomExerciseEntity(
+    clientId = clientId, serverId = id.takeIf { it != 0 }, name = name, category = category,
+    muscleGroupsJson = fitnessJson.encodeToString(muscleGroups), difficulty = difficulty,
+    instructionsJson = fitnessJson.encodeToString(instructions),
+    videoUrl = videoUrl, isTimedExercise = isTimedExercise, defaultSets = defaultSets,
+    defaultReps = defaultReps, defaultDurationSeconds = defaultDurationSeconds, pendingSync = pendingSync,
+)
+
 class FitnessRepository(
     private val api: QuailApi,
     private val db: FitnessDatabase,
@@ -104,6 +133,7 @@ class FitnessRepository(
     val goals: Flow<List<GoalRecord>> = db.goalDao().observeAll().map { list -> list.map { it.toRecord() } }
     val milestones: Flow<List<MilestoneRecord>> = db.milestoneDao().observeAll().map { list -> list.map { it.toRecord() } }
     val bodyweightLogs: Flow<List<BodyweightRecord>> = db.bodyweightDao().observeAll().map { list -> list.map { it.toRecord() } }
+    val customExercises: Flow<List<CustomExerciseRecord>> = db.customExerciseDao().observeAll().map { list -> list.map { it.toRecord() } }
 
     // ---- Local-first writes: land in Room immediately, then let the sync
     // worker push whenever there's a connection (see FitnessSyncScheduler). ----
@@ -155,6 +185,16 @@ class FitnessRepository(
 
     suspend fun deleteBodyweight(clientId: String) {
         db.bodyweightDao().markPendingDelete(clientId)
+        FitnessSyncScheduler.scheduleSync(context)
+    }
+
+    suspend fun saveCustomExercise(exercise: CustomExerciseRecord) {
+        db.customExerciseDao().upsert(exercise.toEntity())
+        FitnessSyncScheduler.scheduleSync(context)
+    }
+
+    suspend fun deleteCustomExercise(clientId: String) {
+        db.customExerciseDao().markPendingDelete(clientId)
         FitnessSyncScheduler.scheduleSync(context)
     }
 
@@ -235,6 +275,26 @@ class FitnessRepository(
                 bodyweightDao.hardDelete(entity.clientId)
             }
         }
+
+        val customExerciseDao = db.customExerciseDao()
+        customExerciseDao.getPendingSync().forEach { entity ->
+            runCatching {
+                val record = entity.toRecord()
+                val req = CustomExerciseUpsertRequest(
+                    entity.clientId, record.name, record.category, record.muscleGroups, record.difficulty,
+                    record.instructions, record.videoUrl, record.isTimedExercise, record.defaultSets,
+                    record.defaultReps, record.defaultDurationSeconds,
+                )
+                val saved = api.upsertCustomExercise(req)
+                customExerciseDao.markSynced(entity.clientId, saved.id)
+            }
+        }
+        customExerciseDao.getPendingDelete().forEach { entity ->
+            runCatching {
+                if (entity.serverId != null) api.deleteCustomExercise(entity.serverId)
+                customExerciseDao.hardDelete(entity.clientId)
+            }
+        }
     }
 
     /** Pulls the server's copy into the local cache — run after pushPending()
@@ -255,6 +315,9 @@ class FitnessRepository(
         }
         runCatching {
             api.getBodyweightLogs().forEach { db.bodyweightDao().upsert(it.toEntity(pendingSync = false)) }
+        }
+        runCatching {
+            api.getCustomExercises().forEach { db.customExerciseDao().upsert(it.toEntity(pendingSync = false)) }
         }
     }
 }

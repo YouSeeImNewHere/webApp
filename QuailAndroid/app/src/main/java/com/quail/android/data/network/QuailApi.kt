@@ -27,6 +27,8 @@ import com.quail.android.data.model.BodyweightRecord
 import com.quail.android.data.model.BodyweightUpsertRequest
 import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.FinancingPlanCreateRequest
+import com.quail.android.data.model.CustomExerciseRecord
+import com.quail.android.data.model.CustomExerciseUpsertRequest
 import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
@@ -443,6 +445,15 @@ interface QuailApi {
 
     @DELETE("fitness/milestones/{id}")
     suspend fun deleteMilestone(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/custom-exercises")
+    suspend fun getCustomExercises(): List<CustomExerciseRecord>
+
+    @POST("fitness/custom-exercises")
+    suspend fun upsertCustomExercise(@Body request: CustomExerciseUpsertRequest): CustomExerciseRecord
+
+    @DELETE("fitness/custom-exercises/{id}")
+    suspend fun deleteCustomExercise(@Path("id") id: Int): OkResponse
 
     @GET("fitness/bodyweight")
     suspend fun getBodyweightLogs(@Query("limit") limit: Int = 200): List<BodyweightRecord>

@@ -349,4 +349,5 @@ val DEFAULT_PROGRESSION_PATHS: List<ProgressionPath> = listOf(
         listOf("tuck_back_lever", "back_lever")),
 )
 
-fun exerciseById(id: String): Exercise? = DEFAULT_EXERCISES.firstOrNull { it.id == id }
+fun exerciseById(id: String, customExercises: List<Exercise> = emptyList()): Exercise? =
+    DEFAULT_EXERCISES.firstOrNull { it.id == id } ?: customExercises.firstOrNull { it.id == id }
