@@ -5,10 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
@@ -81,15 +84,29 @@ object AppOverlayHost {
 fun AppOverlayRoot() {
     val current = AppOverlayHost.content ?: return
     BackHandler(enabled = true) { AppOverlayHost.dismiss() }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(top = TOP_BAR_CLEARANCE)
-            .background(Color.Black.copy(alpha = 0.55f))
-            .pointerInput(Unit) { detectTapGestures(onTap = { AppOverlayHost.dismiss() }) },
-    ) {
-        current()
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Tapping the top bar dismisses whatever's open — a guaranteed-visible
+        // escape hatch regardless of how tall the popup's own content is
+        // (it also takes priority over the real top bar's buttons underneath
+        // while a popup is showing, which is the point: the bar becomes a
+        // dismiss target instead of its normal actions until you back out).
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .height(TOP_BAR_CLEARANCE)
+                .pointerInput(Unit) { detectTapGestures(onTap = { AppOverlayHost.dismiss() }) },
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(top = TOP_BAR_CLEARANCE)
+                .background(Color.Black.copy(alpha = 0.55f))
+                .pointerInput(Unit) { detectTapGestures(onTap = { AppOverlayHost.dismiss() }) },
+        ) {
+            current()
+        }
     }
 }
 
@@ -97,15 +114,22 @@ fun AppOverlayRoot() {
  * (top-bar-excluded) area, rounded top corners. Content supplies its own
  * scrolling/padding, same as it did inside a real ModalBottomSheet. Taps
  * inside the sheet are swallowed so they don't fall through to the scrim's
- * dismiss handler in AppOverlayRoot. */
+ * dismiss handler in AppOverlayRoot.
+ *
+ * Capped at 85% of the available height so long content (e.g. Bank Info)
+ * can never grow to cover the entire scrim — a sheet that fills 100% of
+ * the space leaves nothing to tap-outside to dismiss. Content taller than
+ * that is expected to scroll internally (every sheet here already wraps
+ * its body in Modifier.verticalScroll). */
 @Composable
 fun AppBottomSheetOverlay(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = maxHeight * 0.85f)
                 .pointerInput(Unit) { detectTapGestures(onTap = {}) },
         ) {
             Box(Modifier.padding(top = 8.dp)) {

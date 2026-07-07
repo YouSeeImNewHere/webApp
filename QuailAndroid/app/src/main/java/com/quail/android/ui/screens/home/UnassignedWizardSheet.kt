@@ -254,7 +254,7 @@ private fun WizardButton(
             else -> androidx.compose.ui.graphics.Color.Unspecified
         }
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(

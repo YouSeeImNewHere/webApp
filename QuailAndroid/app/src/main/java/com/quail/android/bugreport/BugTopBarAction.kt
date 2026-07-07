@@ -6,12 +6,20 @@ import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.quail.android.data.network.NetworkCallLog
+import com.quail.android.ui.theme.QuailBadRed
 import java.io.File
 import java.io.FileOutputStream
 
@@ -19,17 +27,28 @@ import java.io.FileOutputStream
  * Activity's window via PixelCopy — now that popups render as in-window
  * overlays (see ui/overlay/AppOverlay.kt) instead of separate-window
  * ModalBottomSheet/AlertDialog, PixelCopy captures whatever popup is open
- * along with the rest of the screen. */
+ * along with the rest of the screen.
+ *
+ * Styled as a red circle (matching the original HomeScreen bug button) so
+ * it looks the same everywhere instead of blending in as a plain icon on
+ * some screens and standing out on others. */
 @Composable
-fun BugReportTopBarAction() {
-    IconButton(onClick = { triggerBugReport() }) {
-        Icon(Icons.Filled.BugReport, contentDescription = "Report a bug")
+fun BugReportTopBarAction(modifier: Modifier = Modifier) {
+    Surface(
+        onClick = { triggerBugReport() },
+        color = QuailBadRed,
+        shape = CircleShape,
+        modifier = modifier.size(40.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.BugReport, contentDescription = "Report a bug", tint = Color.White)
+        }
     }
 }
 
 /** Same capture flow as [BugReportTopBarAction], exposed standalone for
  * screens with a custom top bar button style (e.g. HomeScreen's
- * TopBarCircleButton) instead of a plain IconButton. */
+ * TopBarCircleButton) instead of the shared Surface above. */
 fun triggerBugReport() {
     val activity = CurrentActivityHolder.current?.get() ?: return
     captureAndOpenReport(activity)

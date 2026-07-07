@@ -75,6 +75,12 @@ import com.quail.android.ui.screens.settings.DashboardSettingsScreen
 import com.quail.android.ui.screens.settings.NotificationPrefsScreen
 import com.quail.android.ui.screens.settings.SettingsScreen
 import com.quail.android.ui.screens.settings.SettingsViewModel
+import com.quail.android.ui.screens.wizards.SetupWizardScreen
+import com.quail.android.ui.screens.wizards.SetupWizardViewModel
+import com.quail.android.ui.screens.wizards.IncomeWizardScreen
+import com.quail.android.ui.screens.wizards.IncomeWizardViewModel
+import com.quail.android.ui.screens.wizards.EmailParserWizardScreen
+import com.quail.android.ui.screens.wizards.EmailParserWizardViewModel
 import com.quail.android.ui.screens.vehicle.VehicleFuelHistoryScreen
 import com.quail.android.ui.screens.vehicle.VehicleIssuesScreen
 import com.quail.android.ui.screens.vehicle.VehicleNotificationsScreen
@@ -108,6 +114,9 @@ private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_DASHBOARD_SETTINGS = "dashboard_settings"
 private const val ROUTE_NOTIFICATION_SETTINGS = "notification_settings"
 private const val ROUTE_BUDGET = "budget"
+private const val ROUTE_SETUP_WIZARD = "setup_wizard"
+private const val ROUTE_INCOME_WIZARD = "income_wizard"
+private const val ROUTE_EMAIL_PARSER_WIZARD = "email_parser_wizard"
 private const val ROUTE_ADMIN = "admin"
 private const val ROUTE_CSV_IMPORT_QUEUE = "csv_import_queue"
 private const val ROUTE_CSV_MAPPING_SETUP = "csv_mapping_setup/{itemId}"
@@ -435,6 +444,30 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onBack = { navController.popBackStack() },
                 onOpenNotificationSettings = { navController.navigate(ROUTE_NOTIFICATION_SETTINGS) },
                 onOpenCsvImportQueue = { navController.navigate(ROUTE_CSV_IMPORT_QUEUE) },
+                onOpenSetupWizard = { navController.navigate(ROUTE_SETUP_WIZARD) },
+                onOpenIncomeWizard = { navController.navigate(ROUTE_INCOME_WIZARD) },
+                onOpenEmailParserWizard = { navController.navigate(ROUTE_EMAIL_PARSER_WIZARD) },
+            )
+        }
+
+        composable(ROUTE_INCOME_WIZARD) {
+            val viewModel: IncomeWizardViewModel = viewModel(factory = IncomeWizardViewModel.Factory(repository, context))
+            IncomeWizardScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+
+        composable(ROUTE_EMAIL_PARSER_WIZARD) {
+            val viewModel: EmailParserWizardViewModel = viewModel(factory = EmailParserWizardViewModel.Factory(repository))
+            EmailParserWizardScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+
+        composable(ROUTE_SETUP_WIZARD) {
+            val viewModel: SetupWizardViewModel = viewModel(factory = SetupWizardViewModel.Factory(repository))
+            SetupWizardScreen(
+                viewModel = viewModel,
+                csvImportRepository = csvImportRepository,
+                onBack = { navController.popBackStack() },
+                onOpenCsvImportQueue = { navController.navigate(ROUTE_CSV_IMPORT_QUEUE) },
+                onOpenEmailParserWizard = { navController.navigate(ROUTE_EMAIL_PARSER_WIZARD) },
             )
         }
 

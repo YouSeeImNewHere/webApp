@@ -31,7 +31,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -66,7 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.quail.android.bugreport.triggerBugReport
+import com.quail.android.bugreport.BugReportTopBarAction
 import com.quail.android.data.model.BankAccount
 import com.quail.android.data.model.BankGroup
 import com.quail.android.data.model.CategoryTotalsMonth
@@ -238,11 +237,7 @@ private fun QuailTopBar(unreadCount: Int, onOpenSettings: () -> Unit, onOpenNoti
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                TopBarCircleButton(
-                    icon = Icons.Filled.BugReport,
-                    background = QuailBadRed,
-                    tint = Color.White,
-                ) { triggerBugReport() }
+                BugReportTopBarAction()
 
                 Box {
                     TopBarCircleButton(icon = Icons.Filled.Notifications, onClick = onOpenNotifications)

@@ -91,7 +91,7 @@ fun HomeSheetHost(sheet: HomeSheet, viewModel: HomeViewModel, onDismiss: () -> U
             is HomeSheet.SpentSoFar -> SpentSoFarSheetContent(viewModel)
             is HomeSheet.VerifyBalance -> VerifyBalanceSheetContent(sheet, viewModel, onDismiss)
             is HomeSheet.TransactionDetail -> TransactionDetailSheetContent(sheet.id, viewModel, onDismiss)
-            is HomeSheet.BankInfo -> BankInfoSheetContent(viewModel)
+            is HomeSheet.BankInfo -> BankInfoSheetContent(viewModel, onDismiss)
             is HomeSheet.AccountAudit -> AccountAuditSheetContent(sheet.account)
         }
     }
@@ -613,12 +613,17 @@ private fun DetailKV(label: String, value: String) {
 // ---- Bank info ----
 
 @Composable
-private fun BankInfoSheetContent(viewModel: HomeViewModel) {
+private fun BankInfoSheetContent(viewModel: HomeViewModel, onDismiss: () -> Unit) {
     val state by viewModel.bankInfoState.collectAsState()
     LaunchedEffect(Unit) { viewModel.loadBankInfo() }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-        SheetTitle("Bank info")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Bank info", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "Close")
+            }
+        }
         when (val s = state) {
             is BankInfoUiState.Idle, is BankInfoUiState.Loading -> SheetLoading()
             is BankInfoUiState.Error -> SheetError(s.message)

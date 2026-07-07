@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -75,6 +76,7 @@ import com.quail.android.data.model.BankInfoOptions
 import com.quail.android.data.model.ChartPoint
 import com.quail.android.data.network.QuailApi
 import com.quail.android.ui.overlay.AppOverlayHost
+import com.quail.android.ui.theme.categoryIcon
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -428,6 +430,12 @@ private fun LedgerRow(
                     contentDescription = if (checked) "Checked" else "Not checked",
                     tint = if (checked) QuailGoodGreen else QuailTextDim,
                 )
+            } else {
+                Surface(color = QuailSurfaceRaised, shape = CircleShape, modifier = Modifier.size(36.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(categoryIcon(tx.category), contentDescription = tx.category, tint = QuailTextDim)
+                    }
+                }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(tx.merchant?.ifBlank { "Transaction" } ?: "Transaction", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)

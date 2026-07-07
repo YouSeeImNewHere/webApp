@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ChevronRight
@@ -25,7 +24,6 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,6 +80,9 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenCsvImportQueue: () -> Unit = {},
+    onOpenSetupWizard: () -> Unit = {},
+    onOpenEmailParserWizard: () -> Unit = {},
+    onOpenIncomeWizard: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val cacheStatus by viewModel.cacheStatus.collectAsState()
@@ -156,27 +157,13 @@ fun SettingsScreen(
             }
 
             item {
-                SettingsSection("Widgets") {
-                    SettingsRow(
-                        icon = Icons.Filled.Widgets,
-                        iconColor = Color(0xFFAB47BC),
-                        title = "Home Screen Widget",
-                        subtitle = "Long-press your home screen, tap Widgets, and add Quail Cash",
-                        onClick = {
-                            Toast.makeText(context, "Long-press your home screen → Widgets → Quail Cash", Toast.LENGTH_LONG).show()
-                        },
-                    )
-                }
-            }
-
-            item {
                 SettingsSection("Initial Setup") {
                     SettingsRow(
                         icon = Icons.Filled.AutoFixHigh,
                         iconColor = Color(0xFF7E57C2),
                         title = "Setup Wizard",
                         subtitle = "Walk through the initial budget and account configuration",
-                        onClick = { Toast.makeText(context, "Setup wizard isn't built yet", Toast.LENGTH_SHORT).show() },
+                        onClick = onOpenSetupWizard,
                     )
                     RowDivider()
                     SettingsRow(
@@ -184,31 +171,27 @@ fun SettingsScreen(
                         iconColor = Color(0xFF26A69A),
                         title = "Email Parser Wizard",
                         subtitle = "Create and maintain live email parser rules",
-                        onClick = { Toast.makeText(context, "Email parser wizard isn't built yet", Toast.LENGTH_SHORT).show() },
-                    )
-                    RowDivider()
-                    SettingsRow(
-                        icon = Icons.Filled.Inbox,
-                        iconColor = Color(0xFF66BB6A),
-                        title = "Import Queue",
-                        subtitle = "Review CSV imports awaiting processing",
-                        onClick = onOpenCsvImportQueue,
+                        onClick = onOpenEmailParserWizard,
                     )
                     RowDivider()
                     SettingsRow(
                         icon = Icons.Filled.AttachMoney,
                         iconColor = Color(0xFF26C6DA),
                         title = "Income Wizard",
-                        subtitle = "Set up salary or hourly income settings",
-                        onClick = { Toast.makeText(context, "Income wizard isn't built yet", Toast.LENGTH_SHORT).show() },
+                        subtitle = "LES pay profile, paycheck matching, and daily spending weights",
+                        onClick = onOpenIncomeWizard,
                     )
-                    RowDivider()
+                }
+            }
+
+            item {
+                SettingsSection("Import") {
                     SettingsRow(
-                        icon = Icons.Filled.Apps,
-                        iconColor = QuailTextDim,
-                        title = "External Apps",
-                        subtitle = "Install required apps for widgets and push notifications",
-                        onClick = { Toast.makeText(context, "External apps isn't built yet", Toast.LENGTH_SHORT).show() },
+                        icon = Icons.Filled.Inbox,
+                        iconColor = Color(0xFF66BB6A),
+                        title = "Import Queue",
+                        subtitle = "Review CSV imports awaiting processing",
+                        onClick = onOpenCsvImportQueue,
                     )
                 }
             }

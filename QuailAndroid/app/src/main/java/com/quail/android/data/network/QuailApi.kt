@@ -112,6 +112,39 @@ import com.quail.android.data.model.CsvMappingPresetResponse
 import com.quail.android.data.model.CsvMappingPresetUpsertRequest
 import com.quail.android.data.model.CsvIngestJobResponse
 import com.quail.android.data.model.CsvJobStatusResponse
+import com.quail.android.data.model.OnboardingStatusResponse
+import com.quail.android.data.model.OnboardingAccountCreate
+import com.quail.android.data.model.OnboardingAccountResponse
+import com.quail.android.data.model.OnboardingAccountDeleteResponse
+import com.quail.android.data.model.PushoverKeyRequest
+import com.quail.android.data.model.PushoverKeyResponse
+import com.quail.android.data.model.PushoverTestRequest
+import com.quail.android.data.model.PushoverTestResponse
+import com.quail.android.data.model.OnboardingCompleteRequest
+import com.quail.android.data.model.OnboardingCompleteResponse
+import com.quail.android.data.model.LESProfileResponse
+import com.quail.android.data.model.LESProfileRequest
+import com.quail.android.data.model.LESPaychecksRequest
+import com.quail.android.data.model.LESPaychecksResponse
+import com.quail.android.data.model.DailyWeightsResponse
+import com.quail.android.data.model.DailyWeightsRequest
+import com.quail.android.data.model.PaycheckMatchersResponse
+import com.quail.android.data.model.PaycheckMatchersRequest
+import com.quail.android.data.model.ParserAccountsResponse
+import com.quail.android.data.model.ParserSamplesRequest
+import com.quail.android.data.model.ParserSamplesResponse
+import com.quail.android.data.model.ParserAccountSettingsResponse
+import com.quail.android.data.model.ParserConfigRequest
+import com.quail.android.data.model.ParserPreviewResponse
+import com.quail.android.data.model.ParserSaveResponse
+import com.quail.android.data.model.ParserCorrelationRequest
+import com.quail.android.data.model.ParserCorrelationResponse
+import com.quail.android.data.model.ParserDraftsResetRequest
+import com.quail.android.data.model.ParserDraftsResetResponse
+import com.quail.android.data.model.ParserDraftDeleteOneRequest
+import com.quail.android.data.model.ParserDraftDeleteOneResponse
+import com.quail.android.data.model.ParserTestRunRequest
+import com.quail.android.data.model.ParserTestRunResponse
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
@@ -615,4 +648,79 @@ interface QuailApi {
 
     @DELETE("projects/checklists/{id}")
     suspend fun deleteProjectChecklist(@Path("id") id: Int): OkResponse
+
+    // ---- Setup Wizard ----
+
+    @GET("onboarding/status")
+    suspend fun getOnboardingStatus(): OnboardingStatusResponse
+
+    @POST("onboarding/accounts")
+    suspend fun createOnboardingAccount(@Body request: OnboardingAccountCreate): OnboardingAccountResponse
+
+    @PUT("onboarding/accounts/{id}")
+    suspend fun updateOnboardingAccount(@Path("id") id: Int, @Body request: OnboardingAccountCreate): OnboardingAccountResponse
+
+    @DELETE("onboarding/accounts/{id}")
+    suspend fun deleteOnboardingAccount(@Path("id") id: Int): OnboardingAccountDeleteResponse
+
+    @POST("onboarding/pushover-key")
+    suspend fun setOnboardingPushoverKey(@Body request: PushoverKeyRequest): PushoverKeyResponse
+
+    @POST("onboarding/pushover-test")
+    suspend fun testOnboardingPushover(@Body request: PushoverTestRequest): PushoverTestResponse
+
+    @POST("onboarding/complete")
+    suspend fun completeOnboarding(@Body request: OnboardingCompleteRequest = OnboardingCompleteRequest()): OnboardingCompleteResponse
+
+    // ---- Income Wizard ----
+
+    @GET("les-profile")
+    suspend fun getLesProfile(@Query("key") key: String = "default"): LESProfileResponse
+
+    @POST("les-profile")
+    suspend fun setLesProfile(@Body request: LESProfileRequest): LESProfileResponse
+
+    @POST("les/paychecks")
+    suspend fun getLesPaychecks(@Body request: LESPaychecksRequest): LESPaychecksResponse
+
+    @GET("settings/daily-weights")
+    suspend fun getDailyWeights(): DailyWeightsResponse
+
+    @POST("settings/daily-weights")
+    suspend fun setDailyWeights(@Body request: DailyWeightsRequest): DailyWeightsResponse
+
+    @GET("settings/paycheck-matchers")
+    suspend fun getPaycheckMatchers(): PaycheckMatchersResponse
+
+    @POST("settings/paycheck-matchers")
+    suspend fun setPaycheckMatchers(@Body request: PaycheckMatchersRequest): PaycheckMatchersResponse
+
+    // ---- Email Parser Wizard ----
+
+    @GET("email-parser/trial/accounts")
+    suspend fun getParserAccounts(): ParserAccountsResponse
+
+    @POST("email-parser/trial/samples")
+    suspend fun getParserSamples(@Body request: ParserSamplesRequest): ParserSamplesResponse
+
+    @GET("email-parser/trial/account-settings/{accountId}")
+    suspend fun getParserAccountSettings(@Path("accountId") accountId: Int): ParserAccountSettingsResponse
+
+    @POST("email-parser/trial/preview")
+    suspend fun previewParserConfig(@Body request: ParserConfigRequest): ParserPreviewResponse
+
+    @POST("email-parser/trial/save")
+    suspend fun saveParserConfig(@Body request: ParserConfigRequest): ParserSaveResponse
+
+    @POST("email-parser/trial/correlation-preview")
+    suspend fun previewParserCorrelation(@Body request: ParserCorrelationRequest): ParserCorrelationResponse
+
+    @POST("email-parser/trial/drafts/reset")
+    suspend fun resetParserDrafts(@Body request: ParserDraftsResetRequest): ParserDraftsResetResponse
+
+    @POST("email-parser/trial/draft/delete-one")
+    suspend fun deleteParserDraft(@Body request: ParserDraftDeleteOneRequest): ParserDraftDeleteOneResponse
+
+    @POST("email-parser/trial/test-run")
+    suspend fun runParserTest(@Body request: ParserTestRunRequest): ParserTestRunResponse
 }
