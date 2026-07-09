@@ -81,11 +81,16 @@ struct BugReport: Codable, Identifiable {
     var networkLog: [NetworkLogEntry]
     var createdAt: Date
     var updatedAt: Date
+    // Backend sync bookkeeping — not present in older locally-cached JSON, so all optional/defaulted.
+    var serverId: Int? = nil
+    var hasRemoteScreenshot: Bool = false
+    var screenshotUploaded: Bool = false
 
-    init(id: UUID, title: String, description: String, screenshotFilename: String?, strokes: [DrawnStroke], status: BugStatus, route: String, networkLog: [NetworkLogEntry], createdAt: Date, updatedAt: Date) {
+    init(id: UUID, title: String, description: String, screenshotFilename: String?, strokes: [DrawnStroke], status: BugStatus, route: String, networkLog: [NetworkLogEntry], createdAt: Date, updatedAt: Date, serverId: Int? = nil, hasRemoteScreenshot: Bool = false, screenshotUploaded: Bool = false) {
         self.id = id; self.title = title; self.description = description
         self.screenshotFilename = screenshotFilename; self.strokes = strokes; self.status = status
         self.route = route; self.networkLog = networkLog; self.createdAt = createdAt; self.updatedAt = updatedAt
+        self.serverId = serverId; self.hasRemoteScreenshot = hasRemoteScreenshot; self.screenshotUploaded = screenshotUploaded
     }
 
     init(from decoder: Decoder) throws {
@@ -100,6 +105,9 @@ struct BugReport: Codable, Identifiable {
         networkLog = (try? c.decode([NetworkLogEntry].self, forKey: .networkLog)) ?? []
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        serverId = (try? c.decodeIfPresent(Int.self, forKey: .serverId)) ?? nil
+        hasRemoteScreenshot = (try? c.decodeIfPresent(Bool.self, forKey: .hasRemoteScreenshot) ?? false) ?? false
+        screenshotUploaded = (try? c.decodeIfPresent(Bool.self, forKey: .screenshotUploaded) ?? false) ?? false
     }
 }
 
@@ -110,79 +118,245 @@ struct TextBugNote: Codable, Identifiable {
     var text: String
     var isResolved: Bool = false
     var createdAt: Date = Date()
+    var serverId: Int? = nil
 }
 
+@MainActor
 final class TextBugStore: ObservableObject {
     static let shared = TextBugStore()
     @Published var notes: [TextBugNote] = []
     private let key = "quail.bugs.textNotes"
 
-    init() { load() }
+    init() {
+        loadCache()
+        Task { await refresh() }
+    }
 
-    func load() {
+    // MARK: - Local cache (offline fallback)
+
+    func loadCache() {
         guard let data = UserDefaults.standard.data(forKey: key),
               let decoded = try? JSONDecoder().decode([TextBugNote].self, from: data) else { return }
         notes = decoded
     }
 
-    func save() {
+    func saveCache() {
         if let data = try? JSONEncoder().encode(notes) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    // MARK: - Backend sync
+
+    func refresh() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/bugs/notes")
+            let payloads = try JSONDecoder.quailCash.decode([BugNotePayload].self, from: data)
+            notes = payloads.map { $0.asTextBugNote() }.sorted { $0.createdAt > $1.createdAt }
+            saveCache()
+        } catch {
+            print("[Quail] TextBugStore.refresh failed, using cache: \(error.localizedDescription)")
+        }
     }
 
     func add(text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
-        notes.insert(TextBugNote(text: t), at: 0)
-        save()
+        let note = TextBugNote(text: t)
+        notes.insert(note, at: 0)
+        saveCache()
+        Task { await push(note) }
     }
 
     func toggle(_ note: TextBugNote) {
         if let i = notes.firstIndex(where: { $0.id == note.id }) {
             notes[i].isResolved.toggle()
-            save()
+            saveCache()
+            Task { await push(notes[i]) }
         }
     }
 
     func delete(_ note: TextBugNote) {
         notes.removeAll { $0.id == note.id }
-        save()
+        saveCache()
+        guard let serverId = note.serverId else { return }
+        Task {
+            do {
+                try await QuailAPI.shared.sendJSON(path: "/bugs/notes/\(serverId)", method: "DELETE")
+            } catch {
+                print("[Quail] TextBugStore.delete failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func push(_ note: TextBugNote) async {
+        do {
+            let body: [String: Any] = [
+                "client_id": note.id.uuidString,
+                "text": note.text,
+                "is_resolved": note.isResolved,
+            ]
+            let data = try await QuailAPI.shared.fetchData(path: "/bugs/notes", method: "POST", jsonBody: body)
+            let payload = try JSONDecoder.quailCash.decode(BugNotePayload.self, from: data)
+            if let i = notes.firstIndex(where: { $0.id == note.id }) {
+                notes[i].serverId = payload.id
+                saveCache()
+            }
+        } catch {
+            print("[Quail] TextBugStore.push failed: \(error.localizedDescription)")
+        }
     }
 
     var openCount: Int { notes.filter { !$0.isResolved }.count }
 }
 
+// MARK: - Backend payload models
+
+private struct BugReportPayload: Codable {
+    var id: Int
+    var clientId: String
+    var title: String
+    var description: String?
+    var status: String
+    var route: String?
+    var networkLog: String?
+    var hasScreenshot: Bool?
+    var createdAt: String?
+    var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case clientId = "client_id"
+        case title
+        case description
+        case status
+        case route
+        case networkLog = "network_log"
+        case hasScreenshot = "has_screenshot"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    func asBugReport(existingLocal: BugReport?) -> BugReport {
+        let uuid = UUID(uuidString: clientId) ?? existingLocal?.id ?? UUID()
+        let decodedLog: [NetworkLogEntry]
+        if let logJSON = networkLog, let data = logJSON.data(using: .utf8),
+           let entries = try? JSONDecoder().decode([NetworkLogEntry].self, from: data) {
+            decodedLog = entries
+        } else {
+            decodedLog = existingLocal?.networkLog ?? []
+        }
+        return BugReport(
+            id: uuid,
+            title: title,
+            description: description ?? "",
+            screenshotFilename: existingLocal?.screenshotFilename,
+            strokes: existingLocal?.strokes ?? [],
+            status: BugStatus(rawValue: status) ?? .open,
+            route: route ?? "",
+            networkLog: decodedLog,
+            createdAt: BugReportStore.parseServerDate(createdAt) ?? existingLocal?.createdAt ?? Date(),
+            updatedAt: BugReportStore.parseServerDate(updatedAt) ?? existingLocal?.updatedAt ?? Date(),
+            serverId: id,
+            hasRemoteScreenshot: hasScreenshot ?? false,
+            screenshotUploaded: (hasScreenshot ?? false) || (existingLocal?.screenshotUploaded ?? false)
+        )
+    }
+}
+
+private struct BugNotePayload: Codable {
+    var id: Int
+    var clientId: String
+    var text: String
+    var isResolved: Bool?
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case clientId = "client_id"
+        case text
+        case isResolved = "is_resolved"
+        case createdAt = "created_at"
+    }
+
+    func asTextBugNote() -> TextBugNote {
+        TextBugNote(
+            id: UUID(uuidString: clientId) ?? UUID(),
+            text: text,
+            isResolved: isResolved ?? false,
+            createdAt: BugReportStore.parseServerDate(createdAt) ?? Date(),
+            serverId: id
+        )
+    }
+}
+
 // MARK: - Store
 
+@MainActor
 final class BugReportStore: ObservableObject {
     static let shared = BugReportStore()
     @Published var reports: [BugReport] = []
 
     private let key = "quail.bugs.reports"
-    private let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    private nonisolated let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 
-    init() { load() }
+    init() {
+        loadCache()
+        Task { await refresh() }
+    }
 
-    func load() {
+    static func parseServerDate(_ iso: String?) -> Date? {
+        guard let iso else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = withFraction.date(from: iso) { return d }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        if let d = plain.date(from: iso) { return d }
+        // Postgres isoformat() without timezone suffix normalization; try appending "Z" style offset.
+        if let d = withFraction.date(from: iso + "Z") { return d }
+        return nil
+    }
+
+    // MARK: - Local cache (offline fallback)
+
+    func loadCache() {
         guard let data = UserDefaults.standard.data(forKey: key),
               let decoded = try? JSONDecoder().decode([BugReport].self, from: data) else { return }
         reports = decoded.sorted { $0.createdAt > $1.createdAt }
     }
 
-    func save() {
+    func saveCache() {
         if let data = try? JSONEncoder().encode(reports) {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
 
+    // MARK: - Backend sync
+
+    func refresh() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/bugs/reports")
+            let payloads = try JSONDecoder.quailCash.decode([BugReportPayload].self, from: data)
+            let existingByID = Dictionary(uniqueKeysWithValues: reports.map { ($0.id, $0) })
+            reports = payloads
+                .map { $0.asBugReport(existingLocal: existingByID[UUID(uuidString: $0.clientId) ?? UUID()]) }
+                .sorted { $0.createdAt > $1.createdAt }
+            saveCache()
+        } catch {
+            print("[Quail] BugReportStore.refresh failed, using cache: \(error.localizedDescription)")
+        }
+    }
+
     func add(_ report: BugReport) {
         reports.insert(report, at: 0)
-        save()
+        saveCache()
+        Task { await push(report) }
     }
 
     func update(_ report: BugReport) {
         if let i = reports.firstIndex(where: { $0.id == report.id }) {
             reports[i] = report
-            save()
+            saveCache()
+            Task { await push(reports[i]) }
         }
     }
 
@@ -192,10 +366,66 @@ final class BugReportStore: ObservableObject {
             try? FileManager.default.removeItem(at: url)
         }
         reports.removeAll { $0.id == report.id }
-        save()
+        saveCache()
+        guard let serverId = report.serverId else { return }
+        Task {
+            do {
+                try await QuailAPI.shared.sendJSON(path: "/bugs/reports/\(serverId)", method: "DELETE")
+            } catch {
+                print("[Quail] BugReportStore.delete failed: \(error.localizedDescription)")
+            }
+        }
     }
 
-    func saveImage(_ image: UIImage, id: UUID) -> String {
+    /// Upserts the report to the backend, then uploads the screenshot (if any and not already uploaded).
+    private func push(_ report: BugReport) async {
+        do {
+            let logJSON: String
+            if let data = try? JSONEncoder().encode(report.networkLog), let s = String(data: data, encoding: .utf8) {
+                logJSON = s
+            } else {
+                logJSON = "[]"
+            }
+            let body: [String: Any] = [
+                "client_id": report.id.uuidString,
+                "title": report.title,
+                "description": report.description,
+                "status": statusRawValue(report.status),
+                "route": report.route,
+                "network_log": logJSON,
+            ]
+            let data = try await QuailAPI.shared.fetchData(path: "/bugs/reports", method: "POST", jsonBody: body)
+            let payload = try JSONDecoder.quailCash.decode(BugReportPayload.self, from: data)
+            if let i = reports.firstIndex(where: { $0.id == report.id }) {
+                reports[i].serverId = payload.id
+                saveCache()
+            }
+
+            if let filename = report.screenshotFilename, !report.screenshotUploaded {
+                let fileURL = docsDir.appendingPathComponent(filename)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try await QuailAPI.shared.uploadBugScreenshot(clientId: report.id.uuidString, fileURL: fileURL)
+                    if let i = reports.firstIndex(where: { $0.id == report.id }) {
+                        reports[i].screenshotUploaded = true
+                        reports[i].hasRemoteScreenshot = true
+                        saveCache()
+                    }
+                }
+            }
+        } catch {
+            print("[Quail] BugReportStore.push failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func statusRawValue(_ status: BugStatus) -> String {
+        switch status {
+        case .open: return "open"
+        case .inProgress: return "in_progress"
+        case .resolved: return "resolved"
+        }
+    }
+
+    nonisolated func saveImage(_ image: UIImage, id: UUID) -> String {
         let filename = "bug_\(id.uuidString).jpg"
         let url = docsDir.appendingPathComponent(filename)
         if let data = image.jpegData(compressionQuality: 0.75) {
@@ -204,10 +434,34 @@ final class BugReportStore: ObservableObject {
         return filename
     }
 
-    func loadImage(filename: String) -> UIImage? {
+    nonisolated func loadImage(filename: String) -> UIImage? {
         let url = docsDir.appendingPathComponent(filename)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return UIImage(data: data)
+    }
+
+    /// Downloads and locally caches the screenshot for a report that has one on the server
+    /// but no local file yet (e.g. synced from another device/Android).
+    func ensureScreenshotDownloaded(for report: BugReport) async -> String? {
+        if let filename = report.screenshotFilename,
+           FileManager.default.fileExists(atPath: docsDir.appendingPathComponent(filename).path) {
+            return filename
+        }
+        guard report.hasRemoteScreenshot, let serverId = report.serverId else { return nil }
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/bugs/reports/\(serverId)/screenshot")
+            let filename = "bug_\(report.id.uuidString).jpg"
+            let url = docsDir.appendingPathComponent(filename)
+            try data.write(to: url)
+            if let i = reports.firstIndex(where: { $0.id == report.id }) {
+                reports[i].screenshotFilename = filename
+                saveCache()
+            }
+            return filename
+        } catch {
+            print("[Quail] BugReportStore.ensureScreenshotDownloaded failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 }
 
@@ -857,6 +1111,8 @@ struct BugDetailSheet: View {
     @State private var editingTitle = false
     @State private var tempTitle = ""
     @State private var showingDeleteConfirm = false
+    @State private var resolvedScreenshotFilename: String?
+    @State private var isLoadingScreenshot = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -875,13 +1131,30 @@ struct BugDetailSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Screenshot
-                    if let filename = report.screenshotFilename,
+                    // Screenshot — loaded locally, or downloaded on demand if only present on the server.
+                    if let filename = resolvedScreenshotFilename ?? report.screenshotFilename,
                        let img = BugReportStore.shared.loadImage(filename: filename) {
                         Image(uiImage: img)
                             .resizable().scaledToFit()
                             .frame(maxWidth: .infinity)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else if report.hasRemoteScreenshot {
+                        VStack(spacing: 8) {
+                            ProgressView()
+                            Text("Loading screenshot…")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 100)
+                        .task {
+                            guard !isLoadingScreenshot else { return }
+                            isLoadingScreenshot = true
+                            if let filename = await BugReportStore.shared.ensureScreenshotDownloaded(for: report) {
+                                report.screenshotFilename = filename
+                                resolvedScreenshotFilename = filename
+                            }
+                            isLoadingScreenshot = false
+                        }
                     }
 
                     // Status picker

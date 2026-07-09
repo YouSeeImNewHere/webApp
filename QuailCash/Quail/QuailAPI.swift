@@ -819,6 +819,18 @@ final class QuailAPI {
         }
     }
 
+    func uploadBugScreenshot(clientId: String, fileURL: URL) async throws {
+        let request = try makeMultipartRequest(
+            url: AppConfig.url(path: "/bugs/reports/\(clientId)/screenshot"),
+            fields: [:],
+            fileFieldName: "file",
+            fileURL: fileURL,
+            mimeType: "image/jpeg",
+            timeoutInterval: RequestTimeout.standardResource
+        )
+        _ = try await checkedData(for: request)
+    }
+
     func pollCsvJob(jobID: String) async throws -> CsvJobStatusPayload {
         let request = makeRequest(url: AppConfig.url(path: "/csv/jobs/\(jobID)"))
         let data = try await checkedData(for: request)
