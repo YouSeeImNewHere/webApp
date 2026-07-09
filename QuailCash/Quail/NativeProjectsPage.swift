@@ -2,30 +2,142 @@ import SwiftUI
 import PhotosUI
 import Combine
 
+// MARK: - Backend payloads (mirrors app/routers/projects.py)
+
+private func parseProjectsTimestamp(_ s: String) -> Date {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = fractional.date(from: s) { return d }
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    if let d = plain.date(from: s) { return d }
+    return Date()
+}
+
+private func stableProjectsUUID(_ seed: String) -> UUID {
+    var bytes = Array(repeating: UInt8(0), count: 16)
+    for (i, byte) in Data(seed.utf8).prefix(16).enumerated() { bytes[i] = byte }
+    for (i, byte) in Data(seed.utf8).dropFirst(16).prefix(16).enumerated() { bytes[i] ^= byte }
+    bytes[6] = (bytes[6] & 0x0F) | 0x40
+    bytes[8] = (bytes[8] & 0x3F) | 0x80
+    return UUID(uuid: (bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],
+                       bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
+}
+
+struct ProjectsQuickNotePayload: Codable {
+    var id: Int
+    var clientID: String
+    var title: String?
+    var text: String
+    var createdAt: String
+
+    enum CodingKeys: String, CodingKey { case id, clientID = "client_id", title, text, createdAt = "created_at" }
+
+    func toQuickNote() -> QuickNote {
+        QuickNote(
+            id: stableProjectsUUID(clientID),
+            clientID: clientID,
+            title: title ?? "",
+            text: text,
+            createdAt: parseProjectsTimestamp(createdAt),
+            recordID: id
+        )
+    }
+}
+
+struct ProjectsChecklistItemPayload: Codable {
+    var id: String?
+    var text: String?
+    var isChecked: Bool?
+}
+
+struct ProjectsChecklistPayload: Codable {
+    var id: Int
+    var clientID: String
+    var title: String
+    var items: [ProjectsChecklistItemPayload]
+    var createdAt: String
+
+    enum CodingKeys: String, CodingKey { case id, clientID = "client_id", title, items, createdAt = "created_at" }
+
+    func toChecklist() -> Checklist {
+        Checklist(
+            id: stableProjectsUUID(clientID),
+            clientID: clientID,
+            title: title,
+            items: items.map { item in
+                ChecklistItem(
+                    id: item.id.flatMap { UUID(uuidString: $0) } ?? UUID(),
+                    text: item.text ?? "",
+                    isChecked: item.isChecked ?? false
+                )
+            },
+            createdAt: parseProjectsTimestamp(createdAt),
+            recordID: id
+        )
+    }
+}
+
+struct ProjectsRecordPayload: Codable {
+    var id: Int
+    var clientID: String
+    var name: String
+    var type: String
+    var description: String?
+    var sections: [ProjectSection]
+    var createdAt: String
+    var updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, clientID = "client_id", name, type, description, sections
+        case createdAt = "created_at", updatedAt = "updated_at"
+    }
+
+    func toProject() -> Project {
+        Project(
+            id: stableProjectsUUID(clientID),
+            clientID: clientID,
+            name: name,
+            type: ProjectType(rawValue: type) ?? .generic,
+            description: description ?? "",
+            sections: sections,
+            createdAt: parseProjectsTimestamp(createdAt),
+            updatedAt: parseProjectsTimestamp(updatedAt),
+            recordID: id
+        )
+    }
+}
+
 // MARK: - Quick Notes
 
 struct QuickNote: Codable, Identifiable {
     let id: UUID
+    var clientID: String
     var title: String
     var text: String
     var createdAt: Date
+    var recordID: Int?
 
-    // Backward-compatible init for notes without title
-    init(id: UUID = UUID(), title: String = "", text: String, createdAt: Date = Date()) {
-        self.id = id; self.title = title; self.text = text; self.createdAt = createdAt
+    // Backward-compatible init for notes without title/clientID
+    init(id: UUID = UUID(), clientID: String? = nil, title: String = "", text: String, createdAt: Date = Date(), recordID: Int? = nil) {
+        self.id = id; self.clientID = clientID ?? id.uuidString; self.title = title; self.text = text
+        self.createdAt = createdAt; self.recordID = recordID
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
+        clientID = (try? c.decode(String.self, forKey: .clientID)) ?? id.uuidString
         title = (try? c.decode(String.self, forKey: .title)) ?? ""
         text = try c.decode(String.self, forKey: .text)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
+        recordID = try? c.decode(Int.self, forKey: .recordID)
     }
 
-    enum CodingKeys: String, CodingKey { case id, title, text, createdAt }
+    enum CodingKeys: String, CodingKey { case id, clientID, title, text, createdAt, recordID }
 }
 
+@MainActor
 final class QuickNoteStore: ObservableObject {
     static let shared = QuickNoteStore()
     @Published var notes: [QuickNote] = []
@@ -45,17 +157,61 @@ final class QuickNoteStore: ObservableObject {
 
     func add(title: String, text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        notes.insert(QuickNote(title: title, text: text), at: 0)
+        let note = QuickNote(title: title, text: text)
+        notes.insert(note, at: 0)
         save()
+        Task { await pushToServer(note) }
     }
 
     func update(_ note: QuickNote) {
         if let i = notes.firstIndex(where: { $0.id == note.id }) { notes[i] = note; save() }
+        Task { await pushToServer(note) }
     }
 
-    func delete(at offsets: IndexSet) { notes.remove(atOffsets: offsets); save() }
+    func delete(at offsets: IndexSet) {
+        let removed = offsets.map { notes[$0] }
+        notes.remove(atOffsets: offsets); save()
+        for note in removed { Task { await deleteFromServer(note) } }
+    }
+
     func delete(_ note: QuickNote) {
         notes.removeAll { $0.id == note.id }; save()
+        Task { await deleteFromServer(note) }
+    }
+
+    // MARK: - Backend sync
+
+    func refresh() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/projects/quick-notes")
+            let payloads = try JSONDecoder.quailCash.decode([ProjectsQuickNotePayload].self, from: data)
+            guard !payloads.isEmpty else { return }
+            notes = payloads.map { $0.toQuickNote() }
+            save()
+        } catch {
+            // Keep local cache on failure.
+        }
+    }
+
+    private func pushToServer(_ note: QuickNote) async {
+        do {
+            try await QuailAPI.shared.sendJSON(path: "/projects/quick-notes", method: "POST", jsonBody: [
+                "client_id": note.clientID,
+                "title": note.title,
+                "text": note.text,
+            ])
+        } catch {
+            // Offline-first: local copy is already saved.
+        }
+    }
+
+    private func deleteFromServer(_ note: QuickNote) async {
+        guard let recordID = note.recordID else { return }
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/projects/quick-notes/\(recordID)", method: "DELETE")
+        } catch {
+            // Ignore — nothing more we can do offline.
+        }
     }
 }
 
@@ -69,14 +225,17 @@ struct ChecklistItem: Codable, Identifiable {
 
 struct Checklist: Codable, Identifiable {
     var id: UUID = UUID()
+    var clientID: String = UUID().uuidString
     var title: String
     var items: [ChecklistItem] = []
     var createdAt: Date = Date()
+    var recordID: Int?
 
     var completedCount: Int { items.filter(\.isChecked).count }
     var totalCount: Int { items.count }
 }
 
+@MainActor
 final class ChecklistStore: ObservableObject {
     static let shared = ChecklistStore()
     @Published var checklists: [Checklist] = []
@@ -95,16 +254,56 @@ final class ChecklistStore: ObservableObject {
     }
 
     func add(title: String) {
-        checklists.insert(Checklist(title: title.isEmpty ? "Checklist" : title), at: 0)
+        let list = Checklist(title: title.isEmpty ? "Checklist" : title)
+        checklists.insert(list, at: 0)
         save()
+        Task { await pushToServer(list) }
     }
 
     func update(_ list: Checklist) {
         if let i = checklists.firstIndex(where: { $0.id == list.id }) { checklists[i] = list; save() }
+        Task { await pushToServer(list) }
     }
 
     func delete(_ list: Checklist) {
         checklists.removeAll { $0.id == list.id }; save()
+        Task { await deleteFromServer(list) }
+    }
+
+    // MARK: - Backend sync
+
+    func refresh() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/projects/checklists")
+            let payloads = try JSONDecoder.quailCash.decode([ProjectsChecklistPayload].self, from: data)
+            guard !payloads.isEmpty else { return }
+            checklists = payloads.map { $0.toChecklist() }
+            save()
+        } catch {
+            // Keep local cache on failure.
+        }
+    }
+
+    private func pushToServer(_ list: Checklist) async {
+        do {
+            let items: [[String: Any]] = list.items.map { ["id": $0.id.uuidString, "text": $0.text, "isChecked": $0.isChecked] }
+            try await QuailAPI.shared.sendJSON(path: "/projects/checklists", method: "POST", jsonBody: [
+                "client_id": list.clientID,
+                "title": list.title,
+                "items": items,
+            ])
+        } catch {
+            // Offline-first: local copy is already saved.
+        }
+    }
+
+    private func deleteFromServer(_ list: Checklist) async {
+        guard let recordID = list.recordID else { return }
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/projects/checklists/\(recordID)", method: "DELETE")
+        } catch {
+            // Ignore — nothing more we can do offline.
+        }
     }
 }
 
@@ -536,15 +735,38 @@ struct ProjectSection: Codable, Identifiable {
 
 struct Project: Codable, Identifiable {
     let id: UUID
+    var clientID: String = UUID().uuidString
     var name: String
     var type: ProjectType
     var description: String
     var sections: [ProjectSection]
     var createdAt: Date
     var updatedAt: Date
+    var recordID: Int?
 
     var totalBudget: Double {
         sections.flatMap(\.items).compactMap { $0.type == .budget ? $0.amount : nil }.reduce(0, +)
+    }
+
+    enum CodingKeys: String, CodingKey { case id, clientID, name, type, description, sections, createdAt, updatedAt, recordID }
+
+    init(id: UUID, clientID: String? = nil, name: String, type: ProjectType, description: String, sections: [ProjectSection], createdAt: Date, updatedAt: Date, recordID: Int? = nil) {
+        self.id = id; self.clientID = clientID ?? id.uuidString; self.name = name; self.type = type
+        self.description = description; self.sections = sections; self.createdAt = createdAt
+        self.updatedAt = updatedAt; self.recordID = recordID
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        clientID = (try? c.decode(String.self, forKey: .clientID)) ?? id.uuidString
+        name = try c.decode(String.self, forKey: .name)
+        type = try c.decode(ProjectType.self, forKey: .type)
+        description = try c.decode(String.self, forKey: .description)
+        sections = try c.decode([ProjectSection].self, forKey: .sections)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        recordID = try? c.decode(Int.self, forKey: .recordID)
     }
 }
 
@@ -629,6 +851,7 @@ extension Project {
 
 // MARK: - Store
 
+@MainActor
 final class ProjectStore: ObservableObject {
     static let shared = ProjectStore()
     @Published var projects: [Project] = []
@@ -650,12 +873,16 @@ final class ProjectStore: ObservableObject {
         }
     }
 
-    func add(_ p: Project) { projects.insert(p, at: 0); save() }
+    func add(_ p: Project) {
+        projects.insert(p, at: 0); save()
+        Task { await pushToServer(p) }
+    }
 
     func update(_ p: Project) {
         if let i = projects.firstIndex(where: { $0.id == p.id }) {
             projects[i] = p; save()
         }
+        Task { await pushToServer(p) }
     }
 
     func delete(_ p: Project) {
@@ -670,6 +897,7 @@ final class ProjectStore: ObservableObject {
         }
         projects.removeAll { $0.id == p.id }
         save()
+        Task { await deleteFromServer(p) }
     }
 
     func saveImage(_ image: UIImage, id: UUID) -> String {
@@ -685,6 +913,45 @@ final class ProjectStore: ObservableObject {
         let url = docsDir.appendingPathComponent(filename)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return UIImage(data: data)
+    }
+
+    // MARK: - Backend sync
+
+    func refresh() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/projects")
+            let payloads = try JSONDecoder.quailCash.decode([ProjectsRecordPayload].self, from: data)
+            guard !payloads.isEmpty else { return }
+            projects = payloads.map { $0.toProject() }.sorted { $0.updatedAt > $1.updatedAt }
+            save()
+        } catch {
+            // Keep local cache on failure.
+        }
+    }
+
+    private func pushToServer(_ p: Project) async {
+        do {
+            let sectionsData = try JSONEncoder().encode(p.sections)
+            let sectionsJSON = (try? JSONSerialization.jsonObject(with: sectionsData)) as? [[String: Any]] ?? []
+            try await QuailAPI.shared.sendJSON(path: "/projects", method: "POST", jsonBody: [
+                "client_id": p.clientID,
+                "name": p.name,
+                "type": p.type.rawValue,
+                "description": p.description,
+                "sections": sectionsJSON,
+            ])
+        } catch {
+            // Offline-first: local copy is already saved.
+        }
+    }
+
+    private func deleteFromServer(_ p: Project) async {
+        guard let recordID = p.recordID else { return }
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/projects/\(recordID)", method: "DELETE")
+        } catch {
+            // Ignore — nothing more we can do offline.
+        }
     }
 }
 
@@ -749,6 +1016,11 @@ struct ProjectsPageView: View {
                 store.delete(proj)
                 selectedProject = nil
             }
+        }
+        .task {
+            await store.refresh()
+            await QuickNoteStore.shared.refresh()
+            await ChecklistStore.shared.refresh()
         }
     }
 }
