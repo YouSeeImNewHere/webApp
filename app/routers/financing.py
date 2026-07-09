@@ -43,15 +43,25 @@ class RecordPaymentIn(BaseModel):
 
 
 def _elapsed_months(start_date_val, as_of: date) -> int:
-    """Whole calendar months between start_date and as_of. Plans auto-finish
-    once this reaches total_months — nothing ever calls POST .../pay (not
-    from this app, not from iOS either — recordPayment() there is defined
-    but unused), so months_paid alone would stay 0 forever and the
-    installment would keep counting against Safe to Spend indefinitely."""
+    """Whole calendar months between start_date and as_of (0 in the purchase
+    month itself). Plans stop deducting from Safe to Spend once this reaches
+    total_months — nothing ever calls POST .../pay (not from this app, not
+    from iOS either — recordPayment() there is defined but unused), so
+    months_paid alone would stay 0 forever and the installment would keep
+    counting against Safe to Spend indefinitely."""
     if isinstance(start_date_val, str):
         start_date_val = datetime.strptime(start_date_val, "%Y-%m-%d").date()
     months = (as_of.year - start_date_val.year) * 12 + (as_of.month - start_date_val.month)
     return max(0, months)
+
+
+def _display_months_paid(stored_months_paid: int, start_date_val, total_months: int, as_of: date) -> int:
+    """1-indexed progress for display: the purchase month itself already
+    counts as "paid" since its installment is already being deducted from
+    that month's Safe to Spend (see get_active_monthly_financing_total) —
+    so a brand-new plan shows 1 month paid, not 0."""
+    elapsed_1indexed = _elapsed_months(start_date_val, as_of) + 1
+    return max(int(stored_months_paid or 0), min(total_months, elapsed_1indexed))
 
 
 def _serialize(row: dict) -> dict:
@@ -86,8 +96,7 @@ def get_plans():
     # _elapsed_months for why the stored value alone can't be trusted.
     today = date.today()
     for r in rows:
-        elapsed = min(r["total_months"], _elapsed_months(r["start_date"], today))
-        r["months_paid"] = max(int(r["months_paid"] or 0), elapsed)
+        r["months_paid"] = _display_months_paid(r["months_paid"], r["start_date"], r["total_months"], today)
         r["total_amount"] = float(r["total_amount"])
         r["monthly_payment"] = float(r["monthly_payment"])
         r["months_remaining"] = max(0, r["total_months"] - r["months_paid"])
@@ -131,10 +140,11 @@ def create_plan(body: FinancingPlanIn):
     bump_home_snapshot_version(tid)
     row["total_amount"] = float(row["total_amount"])
     row["monthly_payment"] = float(row["monthly_payment"])
-    row["months_remaining"] = row["total_months"]
-    row["amount_paid"] = 0.0
-    row["amount_remaining"] = float(row["total_amount"])
-    row["is_complete"] = False
+    row["months_paid"] = _display_months_paid(row["months_paid"], row["start_date"], row["total_months"], date.today())
+    row["months_remaining"] = max(0, row["total_months"] - row["months_paid"])
+    row["amount_paid"] = round(row["monthly_payment"] * row["months_paid"], 2)
+    row["amount_remaining"] = round(row["total_amount"] - row["amount_paid"], 2)
+    row["is_complete"] = row["months_paid"] >= row["total_months"]
     return row
 
 
