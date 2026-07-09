@@ -12,6 +12,7 @@ from app.core.maps_config import (
     city_cache_dir,
     maps_enabled,
     master_dir,
+    tile_cache_dir,
 )
 from app.core.maps_state import car_drive_staleness, get_car_drive_state, get_master_state
 from app.core.tenancy import current_tenant_id
@@ -79,3 +80,31 @@ def get_city_extract(
         media_type="application/x-sqlite3",
         filename=f"quail-maps-{cache_key}.sqlite3",
     )
+
+
+@router.get("/tile/{z}/{x}/{y}.png")
+def get_tile(z: int, x: int, y: int):
+    """Standard slippy-map raster tile — the client only ever fetches the
+    handful of tiles actually on screen, instead of downloading/rendering
+    an entire metro area's worth of roads at once (see /extract's docstring
+    history for why that doesn't scale on a phone)."""
+    _require_maps_enabled()
+    if not (0 <= z <= 19):
+        raise HTTPException(status_code=400, detail="z must be between 0 and 19")
+    n = 2**z
+    if not (0 <= x < n and 0 <= y < n):
+        raise HTTPException(status_code=400, detail="x/y out of range for this z")
+
+    cache_path = tile_cache_dir() / str(z) / str(x) / f"{y}.png"
+    if not cache_path.exists():
+        master_db_paths = _master_db_paths()
+        if not master_db_paths:
+            raise HTTPException(status_code=404, detail="No map regions have been built yet")
+
+        from maps_pipeline.tile_render import render_tile
+
+        png_bytes = render_tile(master_db_paths, z, x, y)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(png_bytes)
+
+    return FileResponse(cache_path, media_type="image/png")

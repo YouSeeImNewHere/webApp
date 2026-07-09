@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -50,14 +51,25 @@ private fun formatBytes(bytes: Long): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit) {
+fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit, onOpenMap: (Double, Double) -> Unit) {
     val statusState by viewModel.status.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
+    val openMapLoading by viewModel.openMapLoading.collectAsState()
+    val openMapError by viewModel.openMapError.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.openMapEvent.collect { (lat, lon) -> onOpenMap(lat, lon) }
+    }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) viewModel.downloadCurrentCity()
+    }
+    val openMapPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) viewModel.openLiveMap()
     }
 
     Scaffold(
@@ -78,10 +90,18 @@ fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                OpenMapCard(
+                    loading = openMapLoading,
+                    error = openMapError,
+                    onOpen = { openMapPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                )
+            }
+
+            item {
                 DownloadCard(
                     downloadState = downloadState,
                     onDownload = { locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
-                    onDismiss = { viewModel.resetDownloadState() },
+                    onViewMap = { lat, lon -> onOpenMap(lat, lon) },
                 )
             }
 
@@ -128,12 +148,41 @@ fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun DownloadCard(downloadState: DownloadUiState, onDownload: () -> Unit, onDismiss: () -> Unit) {
+private fun OpenMapCard(loading: Boolean, error: String?, onOpen: () -> Unit) {
+    Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Live map", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Pan and zoom the road network near you, streamed from the server.",
+                color = QuailTextDim,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (error != null) {
+                Text(error, color = QuailBadRed, style = MaterialTheme.typography.bodySmall)
+            }
+            if (loading) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.padding(2.dp))
+                    Text("Finding your location...", color = QuailTextDim)
+                }
+            } else {
+                Button(onClick = onOpen) { Text("Open map") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadCard(
+    downloadState: DownloadUiState,
+    onDownload: () -> Unit,
+    onViewMap: (Double, Double) -> Unit,
+) {
     Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Offline city map", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Downloads roads and places around your current location for offline use.",
+                "Downloads roads and places around your current location for a future fully-offline mode.",
                 color = QuailTextDim,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -159,7 +208,12 @@ private fun DownloadCard(downloadState: DownloadUiState, onDownload: () -> Unit,
                         color = QuailGoodGreen,
                         fontWeight = FontWeight.Bold,
                     )
-                    Button(onClick = onDownload) { Text("Re-download") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onViewMap(downloadState.result.lat, downloadState.result.lon) }) {
+                            Text("View on map")
+                        }
+                        Button(onClick = onDownload) { Text("Re-download") }
+                    }
                 }
                 is DownloadUiState.Error -> {
                     Text(downloadState.message, color = QuailBadRed)

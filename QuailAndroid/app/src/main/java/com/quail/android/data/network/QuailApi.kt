@@ -777,4 +777,12 @@ interface QuailApi {
         @Query("lon") lon: Double,
         @Query("radius_km") radiusKm: Double,
     ): ResponseBody
+
+    @Streaming
+    @GET("api/maps/tile/{z}/{x}/{y}.png")
+    suspend fun getMapTile(
+        @Path("z") z: Int,
+        @Path("x") x: Int,
+        @Path("y") y: Int,
+    ): ResponseBody
 }

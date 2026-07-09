@@ -3,6 +3,8 @@ package com.quail.android.data.maps
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.location.Location
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -12,7 +14,9 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import com.quail.android.data.model.MapsExtractResult
 import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.network.QuailApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
@@ -22,7 +26,27 @@ class LocationUnavailableException(message: String) : Exception(message)
 
 class MapsRepository(private val api: QuailApi, private val context: Context) {
 
+    private val tileCache = TileCache()
+
     suspend fun getStatus(): MapsStatusResponse = api.getMapsStatus()
+
+    /** Fetches one slippy-map tile (or returns it from the in-memory
+     * cache). Deliberately small and self-contained: unlike the old
+     * whole-extract approach, a single tile miss is cheap to retry and
+     * never risks blocking the UI for more than one small image fetch. */
+    suspend fun fetchTile(z: Int, x: Int, y: Int): Bitmap? {
+        tileCache[z, x, y]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            try {
+                val bytes = api.getMapTile(z, x, y).bytes()
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+                tileCache.put(z, x, y, bitmap)
+                bitmap
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 
     /** Uses Google's Fused Location Provider (fuses GPS + wifi + cell —
      * already available since Play Services is a dependency via Firebase)
@@ -88,6 +112,39 @@ class MapsRepository(private val api: QuailApi, private val context: Context) {
                 input.copyTo(output)
             }
         }
+
+        return MapsExtractResult(
+            filePath = file.absolutePath,
+            sizeBytes = file.length(),
+            lat = lat,
+            lon = lon,
+            radiusKm = radiusKm,
+        )
+    }
+
+    /** Parses a downloaded extract's nodes/edges/places off the main thread
+     * — a 40km-radius extract can be tens of thousands of rows. */
+    suspend fun readExtract(filePath: String, onProgress: ((Float) -> Unit)? = null): MapExtractData =
+        withContext(Dispatchers.IO) {
+            MapsExtractReader.read(filePath, onProgress)
+        }
+
+    private val filenamePattern = Regex("""extract_(-?[\d.]+)_(-?[\d.]+)_(\d+)km\.sqlite3""")
+
+    /** Whatever's already on disk from a previous session — the ViewModel
+     * was otherwise always starting from "nothing downloaded" on every
+     * fresh process (app relaunch, not just a real reinstall), even though
+     * the file was still sitting in storage the whole time. */
+    fun mostRecentExtract(): MapsExtractResult? {
+        val dir = File(context.filesDir, "maps")
+        val file = dir.listFiles { f -> f.name.endsWith(".sqlite3") }
+            ?.maxByOrNull { it.lastModified() }
+            ?: return null
+
+        val match = filenamePattern.matchEntire(file.name)
+        val lat = match?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+        val lon = match?.groupValues?.get(2)?.toDoubleOrNull() ?: 0.0
+        val radiusKm = match?.groupValues?.get(3)?.toDoubleOrNull() ?: 0.0
 
         return MapsExtractResult(
             filePath = file.absolutePath,

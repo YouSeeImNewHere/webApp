@@ -53,6 +53,7 @@ import com.quail.android.ui.screens.admin.AdminScreen
 import com.quail.android.ui.screens.admin.AdminViewModel
 import com.quail.android.ui.screens.maps.MapsScreen
 import com.quail.android.ui.screens.maps.MapsViewModel
+import com.quail.android.ui.screens.maps.TileMapScreen
 import com.quail.android.ui.screens.budget.BudgetScreen
 import com.quail.android.ui.screens.budget.BudgetViewModel
 import com.quail.android.ui.screens.bugs.BugsScreen
@@ -127,6 +128,7 @@ private const val ROUTE_INCOME_WIZARD = "income_wizard"
 private const val ROUTE_EMAIL_PARSER_WIZARD = "email_parser_wizard"
 private const val ROUTE_ADMIN = "admin"
 private const val ROUTE_MAPS = "maps"
+private const val ROUTE_MAPS_TILE_VIEW = "maps_tile_view/{lat}/{lon}"
 private const val ROUTE_CSV_IMPORT_QUEUE = "csv_import_queue"
 private const val ROUTE_CSV_MAPPING_SETUP = "csv_mapping_setup/{itemId}"
 private const val ROUTE_ACCOUNT_DETAIL = "account_detail/{accountId}/{auditMode}"
@@ -256,7 +258,22 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
 
         composable(ROUTE_MAPS) {
             val viewModel: MapsViewModel = viewModel(factory = MapsViewModel.Factory(mapsRepository))
-            MapsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            MapsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenMap = { lat, lon -> navController.navigate("maps_tile_view/$lat/$lon") },
+            )
+        }
+
+        composable(ROUTE_MAPS_TILE_VIEW) { backStackEntry ->
+            val lat = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull() ?: 0.0
+            val lon = backStackEntry.arguments?.getString("lon")?.toDoubleOrNull() ?: 0.0
+            TileMapScreen(
+                repository = mapsRepository,
+                lat = lat,
+                lon = lon,
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable(ROUTE_BUGS) {

@@ -37,6 +37,12 @@ def city_cache_dir() -> Path:
     return _subdir("city_cache")
 
 
+def tile_cache_dir() -> Path:
+    """Rendered z/x/y.png raster tiles — a standard slippy-map tile cache,
+    generated on first request and reused after that."""
+    return _subdir("tile_cache")
+
+
 # Comma-separated list of Geofabrik relative paths, e.g.
 #   "north-america/us/california,north-america/us/nevada"
 # Each becomes https://download.geofabrik.de/<path>-latest.osm.pbf

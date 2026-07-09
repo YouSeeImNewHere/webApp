@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core.maps_config import MAPS_REGION_SOURCES, city_cache_dir, master_dir, maps_enabled, raw_dir
+from app.core.maps_config import MAPS_REGION_SOURCES, city_cache_dir, master_dir, maps_enabled, raw_dir, tile_cache_dir
 from app.core.maps_state import record_region_build
 from app.core.tenancy import get_owner_tenant_id, initialize_tenancy
 from db import open_pool, close_pool
@@ -80,10 +80,12 @@ def main() -> None:
             record_region_build(tenant_id, region, stats, source_md5)
             log(f"  done: {region}: {stats}")
 
-        if any_changed and city_cache_dir().exists():
-            log("master data changed — clearing stale city extract cache")
-            shutil.rmtree(city_cache_dir())
-            city_cache_dir().mkdir(parents=True, exist_ok=True)
+        if any_changed:
+            for cache_dir, label in ((city_cache_dir(), "city extract"), (tile_cache_dir(), "tile")):
+                if cache_dir.exists():
+                    log(f"master data changed — clearing stale {label} cache")
+                    shutil.rmtree(cache_dir)
+                    cache_dir.mkdir(parents=True, exist_ok=True)
         log("all regions processed")
     finally:
         close_pool()
