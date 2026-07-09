@@ -115,6 +115,8 @@ struct TirePressureCheck: Codable, Identifiable {
 
 struct TireSet: Codable, Identifiable {
     var id: UUID = UUID()
+    var clientID: String = UUID().uuidString
+    var serverID: Int?
     var brand: String = ""
     var model: String = ""
     var size: String = ""
@@ -136,6 +138,8 @@ struct TireSet: Codable, Identifiable {
 
 struct CorrectiveRecord: Codable, Identifiable {
     var id: UUID = UUID()
+    var clientID: String = UUID().uuidString
+    var serverID: Int?
     var date: Date = Date()
     var mileage: Int = 0
     var description: String = ""
@@ -165,6 +169,8 @@ struct ProcedureStep: Codable, Identifiable {
 
 struct MaintenanceProcedure: Codable, Identifiable {
     var id: UUID = UUID()
+    var clientID: String = UUID().uuidString
+    var serverID: Int?
     var title: String = ""
     var relatedTypeName: String = ""
     var tools: [String] = []
@@ -391,7 +397,249 @@ final class VehicleStore: ObservableObject {
             }
         }
 
+        if let payloads = try? await fetchVehicleTireSets(), !payloads.isEmpty {
+            tireSets = payloads.map { p in
+                TireSet(
+                    id: stableID("tire-\(p.clientId ?? String(p.id))"),
+                    clientID: p.clientId ?? String(p.id),
+                    serverID: p.id,
+                    brand: p.brand ?? "",
+                    model: p.model ?? "",
+                    size: p.size ?? "",
+                    installDate: p.installDate.flatMap { df.date(from: $0) } ?? Date(),
+                    installMileage: p.installMileage ?? 0,
+                    requiredPressureFront: p.requiredPressureFront ?? 35,
+                    requiredPressureRear: p.requiredPressureRear ?? 35,
+                    pressureChecks: (p.pressureChecks ?? []).compactMap { c in
+                        guard let d = c.date, let date = ISO8601DateFormatter().date(from: d) ?? df.date(from: d) else { return nil }
+                        return TirePressureCheck(
+                            date: date,
+                            mileage: c.mileage ?? 0,
+                            frontLeft: c.frontLeft ?? 0,
+                            frontRight: c.frontRight ?? 0,
+                            rearLeft: c.rearLeft ?? 0,
+                            rearRight: c.rearRight ?? 0,
+                            notes: c.notes ?? ""
+                        )
+                    },
+                    isActive: p.isActive ?? true
+                )
+            }
+        }
+
+        if let payloads = try? await fetchVehicleCorrectiveRecords(), !payloads.isEmpty {
+            correctiveRecords = payloads.compactMap { p -> CorrectiveRecord? in
+                guard let date = df.date(from: p.date) else { return nil }
+                return CorrectiveRecord(
+                    id: stableID("corrective-\(p.clientId ?? String(p.id))"),
+                    clientID: p.clientId ?? String(p.id),
+                    serverID: p.id,
+                    date: date,
+                    mileage: p.mileage ?? 0,
+                    description: p.description ?? "",
+                    reason: p.reason ?? "",
+                    partsReplaced: p.partsReplaced ?? [],
+                    cost: p.cost,
+                    resolvedIssue: p.resolvedIssue ?? false,
+                    linkedIssueID: nil,
+                    notes: p.notes ?? ""
+                )
+            }
+        }
+
+        if let payloads = try? await fetchVehicleProcedures(), !payloads.isEmpty {
+            procedures = payloads.map { p in
+                MaintenanceProcedure(
+                    id: stableID("procedure-\(p.clientId ?? String(p.id))"),
+                    clientID: p.clientId ?? String(p.id),
+                    serverID: p.id,
+                    title: p.title,
+                    relatedTypeName: p.relatedTypeName ?? "",
+                    tools: p.tools ?? [],
+                    parts: p.parts ?? [],
+                    steps: (p.steps ?? []).compactMap { s in
+                        guard let text = s.text else { return nil }
+                        return ProcedureStep(text: text)
+                    },
+                    notes: p.notes ?? "",
+                    lastUpdated: p.updatedAt.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date()
+                )
+            }
+        }
+
         save()
+    }
+
+    // MARK: Tires / Corrective / Procedures network payloads
+    //
+    // These three vehicle sections were local-only (UserDefaults/Documents JSON
+    // via save()/load()) until now — they never synced to the backend or showed
+    // up in admin. The backend routes already exist (app/routers/vehicle.py:
+    // /vehicle/tires, /vehicle/corrective, /vehicle/procedures), but QuailAPI.swift
+    // has no typed wrappers for them yet, so we use the generic
+    // QuailAPI.shared.fetchData/sendJSON helpers directly here, following the same
+    // client_id upsert pattern already used by fuel/maintenance/issues/inspections.
+
+    private struct TirePressureCheckPayload: Codable {
+        var date: String?
+        var mileage: Int?
+        var frontLeft: Int?
+        var frontRight: Int?
+        var rearLeft: Int?
+        var rearRight: Int?
+        var notes: String?
+
+        enum CodingKeys: String, CodingKey {
+            case date, mileage, notes
+            case frontLeft = "front_left"
+            case frontRight = "front_right"
+            case rearLeft = "rear_left"
+            case rearRight = "rear_right"
+        }
+    }
+
+    private struct TireSetPayload: Codable {
+        var id: Int
+        var clientId: String?
+        var brand: String?
+        var model: String?
+        var size: String?
+        var installDate: String?
+        var installMileage: Int?
+        var requiredPressureFront: Int?
+        var requiredPressureRear: Int?
+        var pressureChecks: [TirePressureCheckPayload]?
+        var isActive: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, brand, model, size
+            case clientId = "client_id"
+            case installDate = "install_date"
+            case installMileage = "install_mileage"
+            case requiredPressureFront = "required_pressure_front"
+            case requiredPressureRear = "required_pressure_rear"
+            case pressureChecks = "pressure_checks"
+            case isActive = "is_active"
+        }
+    }
+
+    private struct CorrectiveRecordPayload: Codable {
+        var id: Int
+        var clientId: String?
+        var date: String
+        var mileage: Int?
+        var description: String?
+        var reason: String?
+        var partsReplaced: [String]?
+        var cost: Double?
+        var resolvedIssue: Bool?
+        var linkedIssueId: Int?
+        var notes: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, date, mileage, description, reason, cost, notes
+            case clientId = "client_id"
+            case partsReplaced = "parts_replaced"
+            case resolvedIssue = "resolved_issue"
+            case linkedIssueId = "linked_issue_id"
+        }
+    }
+
+    private struct ProcedureStepPayload: Codable {
+        var text: String?
+    }
+
+    private struct VehicleProcedurePayload: Codable {
+        var id: Int
+        var clientId: String?
+        var title: String
+        var relatedTypeName: String?
+        var tools: [String]?
+        var parts: [String]?
+        var steps: [ProcedureStepPayload]?
+        var notes: String?
+        var updatedAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, title, tools, parts, steps, notes
+            case clientId = "client_id"
+            case relatedTypeName = "related_type_name"
+            case updatedAt = "updated_at"
+        }
+    }
+
+    private func fetchVehicleTireSets() async throws -> [TireSetPayload] {
+        let data = try await QuailAPI.shared.fetchData(path: "/vehicle/tires")
+        return try JSONDecoder().decode([TireSetPayload].self, from: data)
+    }
+
+    private func fetchVehicleCorrectiveRecords() async throws -> [CorrectiveRecordPayload] {
+        let data = try await QuailAPI.shared.fetchData(path: "/vehicle/corrective")
+        return try JSONDecoder().decode([CorrectiveRecordPayload].self, from: data)
+    }
+
+    private func fetchVehicleProcedures() async throws -> [VehicleProcedurePayload] {
+        let data = try await QuailAPI.shared.fetchData(path: "/vehicle/procedures")
+        return try JSONDecoder().decode([VehicleProcedurePayload].self, from: data)
+    }
+
+    private func syncTireSet(_ ts: TireSet) {
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate]
+        let checks: [[String: Any]] = ts.pressureChecks.map { c in
+            [
+                "date": df.string(from: c.date),
+                "mileage": c.mileage,
+                "front_left": c.frontLeft,
+                "front_right": c.frontRight,
+                "rear_left": c.rearLeft,
+                "rear_right": c.rearRight,
+                "notes": c.notes,
+            ]
+        }
+        let body: [String: Any] = [
+            "client_id": ts.clientID,
+            "brand": ts.brand,
+            "model": ts.model,
+            "size": ts.size,
+            "install_date": df.string(from: ts.installDate),
+            "install_mileage": ts.installMileage,
+            "required_pressure_front": ts.requiredPressureFront,
+            "required_pressure_rear": ts.requiredPressureRear,
+            "pressure_checks": checks,
+            "is_active": ts.isActive,
+        ]
+        Task { try? await QuailAPI.shared.sendJSON(path: "/vehicle/tires", method: "POST", jsonBody: body) }
+    }
+
+    private func syncCorrectiveRecord(_ r: CorrectiveRecord) {
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate]
+        let body: [String: Any] = [
+            "client_id": r.clientID,
+            "date": df.string(from: r.date),
+            "mileage": r.mileage,
+            "description": r.description,
+            "reason": r.reason,
+            "parts_replaced": r.partsReplaced,
+            "cost": r.cost as Any,
+            "resolved_issue": r.resolvedIssue,
+            "notes": r.notes,
+        ]
+        Task { try? await QuailAPI.shared.sendJSON(path: "/vehicle/corrective", method: "POST", jsonBody: body) }
+    }
+
+    private func syncProcedure(_ p: MaintenanceProcedure) {
+        let body: [String: Any] = [
+            "client_id": p.clientID,
+            "title": p.title,
+            "related_type_name": p.relatedTypeName,
+            "tools": p.tools,
+            "parts": p.parts,
+            "steps": p.steps.map { ["text": $0.text] },
+            "notes": p.notes,
+        ]
+        Task { try? await QuailAPI.shared.sendJSON(path: "/vehicle/procedures", method: "POST", jsonBody: body) }
     }
 
     private func stableID(_ seed: String) -> UUID {
@@ -432,6 +680,14 @@ final class VehicleStore: ObservableObject {
         if ts.isActive { tireSets = tireSets.map { var t = $0; t.isActive = false; return t } }
         tireSets.append(ts)
         save()
+        syncTireSet(ts)
+        if ts.isActive {
+            // Every other set was just flipped to inactive locally — push those too
+            // so the backend's is_active flags stay consistent with the local state.
+            for other in tireSets where other.id != ts.id {
+                syncTireSet(other)
+            }
+        }
     }
 
     func addPressureCheck(_ check: TirePressureCheck, tireID: UUID) {
@@ -439,6 +695,7 @@ final class VehicleStore: ObservableObject {
         tireSets[i].pressureChecks.append(check)
         if check.mileage > profile.currentMileage { profile.currentMileage = check.mileage }
         save()
+        syncTireSet(tireSets[i])
     }
 
     func addIssue(_ issue: VehicleIssue) { issues.append(issue); save() }
@@ -452,6 +709,7 @@ final class VehicleStore: ObservableObject {
             issues[i].resolvedDate = r.date
         }
         save()
+        syncCorrectiveRecord(r)
     }
 
     func saveProcedure(_ p: MaintenanceProcedure) {
@@ -461,11 +719,38 @@ final class VehicleStore: ObservableObject {
             procedures.append(p)
         }
         save()
+        syncProcedure(p)
     }
 
     func deleteIssue(_ id: UUID) { issues.removeAll { $0.id == id }; save() }
-    func deleteCorrectiveRecord(_ id: UUID) { correctiveRecords.removeAll { $0.id == id }; save() }
-    func deleteProcedure(_ id: UUID) { procedures.removeAll { $0.id == id }; save() }
+
+    func deleteTireSet(_ id: UUID) {
+        guard let ts = tireSets.first(where: { $0.id == id }) else { return }
+        tireSets.removeAll { $0.id == id }
+        save()
+        if let serverID = ts.serverID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/vehicle/tires/\(serverID)", method: "DELETE") }
+        }
+    }
+
+    func deleteCorrectiveRecord(_ id: UUID) {
+        guard let rec = correctiveRecords.first(where: { $0.id == id }) else { return }
+        correctiveRecords.removeAll { $0.id == id }
+        save()
+        if let serverID = rec.serverID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/vehicle/corrective/\(serverID)", method: "DELETE") }
+        }
+    }
+
+    func deleteProcedure(_ id: UUID) {
+        guard let proc = procedures.first(where: { $0.id == id }) else { return }
+        procedures.removeAll { $0.id == id }
+        save()
+        if let serverID = proc.serverID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/vehicle/procedures/\(serverID)", method: "DELETE") }
+        }
+    }
+
     func deleteMaintenanceRecord(_ id: UUID) { maintenanceRecords.removeAll { $0.id == id }; save() }
     func deleteFuelRecord(_ id: UUID) { fuelRecords.removeAll { $0.id == id }; save() }
 
