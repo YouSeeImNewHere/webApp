@@ -148,6 +148,7 @@ struct WorkoutRoutine: Codable, Identifiable {
     var name: String
     var exercises: [WorkoutExercise]
     var createdAt: Date = Date()
+    var backendID: Int?
 }
 
 // MARK: - Goals
@@ -259,6 +260,8 @@ struct FitnessGoal: Codable, Identifiable {
     var targetDate: Date
     var notes: String = ""
     var createdAt: Date = Date()
+    /// Backend row id (fitness_goals.id) — nil until the first successful sync.
+    var backendID: Int?
 }
 
 struct WorkoutExercise: Codable, Identifiable {
@@ -276,6 +279,13 @@ struct WorkoutSession: Codable, Identifiable {
     var bodyweightKg: Double?
     var notes: String = ""
     var hkWorkoutUUID: String?
+    var backendID: Int?
+    // Cardio fields (Garmin/manual runs) — mirrors fitness_workout_sessions columns.
+    var distanceKm: Double?
+    var avgPaceSecPerKm: Int?
+    var avgHeartRate: Int?
+    var calories: Int?
+    var source: String = "manual"
 
     var totalSets: Int { exercises.reduce(0) { $0 + $1.sets.filter(\.isCompleted).count } }
     var totalReps: Int {
@@ -291,6 +301,90 @@ struct FitnessMilestone: Codable, Identifiable {
     var date: Date = Date()
     var exerciseID: UUID?
     var notes: String = ""
+    var backendID: Int?
+}
+
+// MARK: - Bodyweight Log
+
+struct BodyweightEntry: Codable, Identifiable {
+    var id: UUID = UUID()
+    var date: Date = Date()
+    var weightKg: Double
+    var backendID: Int?
+}
+
+// MARK: - Training Plan
+
+enum FitnessPlanStatus: String, Codable {
+    case none = "NONE"
+    case testing = "TESTING"
+    case active = "ACTIVE"
+}
+
+struct ScheduledWorkout: Codable, Identifiable {
+    var id: Int
+    var clientID: String
+    var scheduledDate: Date
+    var goalIDs: [Int]
+    var workoutType: String
+    var prescription: [String: AnyCodableValue]
+    var status: String
+    var linkedSessionClientID: String?
+    var weekNumber: Int
+}
+
+/// Minimal JSON-value box for decoding the free-form `prescription` dict the
+/// backend returns (see fitness.py ScheduledWorkoutIn.prescription: dict).
+enum AnyCodableValue: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case array([AnyCodableValue])
+    case object([String: AnyCodableValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null; return }
+        if let v = try? container.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? container.decode(Int.self) { self = .int(v); return }
+        if let v = try? container.decode(Double.self) { self = .double(v); return }
+        if let v = try? container.decode(String.self) { self = .string(v); return }
+        if let v = try? container.decode([AnyCodableValue].self) { self = .array(v); return }
+        if let v = try? container.decode([String: AnyCodableValue].self) { self = .object(v); return }
+        self = .null
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try container.encode(v)
+        case .int(let v): try container.encode(v)
+        case .double(let v): try container.encode(v)
+        case .bool(let v): try container.encode(v)
+        case .array(let v): try container.encode(v)
+        case .object(let v): try container.encode(v)
+        case .null: try container.encodeNil()
+        }
+    }
+
+    var doubleValue: Double? {
+        switch self {
+        case .int(let v): return Double(v)
+        case .double(let v): return v
+        case .string(let v): return Double(v)
+        default: return nil
+        }
+    }
+    var stringValue: String? {
+        switch self {
+        case .string(let v): return v
+        case .int(let v): return "\(v)"
+        case .double(let v): return "\(v)"
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Sleep Breakdown
@@ -380,10 +474,19 @@ final class FitnessStore: ObservableObject {
     @Published var milestones: [FitnessMilestone] = []
     @Published var routines: [WorkoutRoutine] = []
     @Published var goals: [FitnessGoal] = []
+    @Published var bodyweightLog: [BodyweightEntry] = []
     @Published var activeSession: WorkoutSession?
     @Published var healthSnapshot = HealthSnapshot()
     @Published var healthKitAvailable: Bool = HKHealthStore.isHealthDataAvailable()
     @Published var healthKitAuthorized: Bool = false
+
+    // MARK: - Backend Sync State
+
+    @Published var isSyncing: Bool = false
+    @Published var lastSyncError: String?
+    @Published var planStatus: FitnessPlanStatus = .none
+    @Published var scheduledWorkouts: [ScheduledWorkout] = []
+    @Published var garminConnected: Bool = false
 
     private let hkStore = HKHealthStore()
     private var docs: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
@@ -422,6 +525,7 @@ final class FitnessStore: ObservableObject {
         milestones      = load("fitness_milestones.json") ?? []
         routines        = load("fitness_routines.json") ?? []
         goals           = load("fitness_goals.json") ?? []
+        bodyweightLog   = load("fitness_bodyweight.json") ?? []
     }
 
     private func load<T: Decodable>(_ name: String) -> T? {
@@ -443,9 +547,22 @@ final class FitnessStore: ObservableObject {
     func saveMilestones() { save(milestones, as: "fitness_milestones.json") }
     func saveRoutines()   { save(routines, as: "fitness_routines.json") }
     func saveGoals()      { save(goals, as: "fitness_goals.json") }
+    func saveBodyweightLog() { save(bodyweightLog, as: "fitness_bodyweight.json") }
 
-    func addGoal(_ goal: FitnessGoal) { goals.insert(goal, at: 0); saveGoals() }
-    func deleteGoal(id: UUID) { goals.removeAll { $0.id == id }; saveGoals() }
+    func addGoal(_ goal: FitnessGoal) {
+        goals.insert(goal, at: 0)
+        saveGoals()
+        Task { await pushGoal(goal) }
+    }
+
+    func deleteGoal(id: UUID) {
+        let backendID = goals.first { $0.id == id }?.backendID
+        goals.removeAll { $0.id == id }
+        saveGoals()
+        if let backendID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/fitness/goals/\(backendID)", method: "DELETE") }
+        }
+    }
 
     func progressForGoal(_ goal: FitnessGoal) -> Double {
         guard let exID = goal.targetExerciseID, let pb = personalBest(for: exID) else { return 0 }
@@ -471,11 +588,16 @@ final class FitnessStore: ObservableObject {
         let routine = WorkoutRoutine(name: trimmed, exercises: exercises)
         routines.insert(routine, at: 0)
         saveRoutines()
+        Task { await pushRoutine(routine) }
     }
 
     func deleteRoutine(id: UUID) {
+        let backendID = routines.first { $0.id == id }?.backendID
         routines.removeAll { $0.id == id }
         saveRoutines()
+        if let backendID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/fitness/routines/\(backendID)", method: "DELETE") }
+        }
     }
 
     // MARK: - Active Workout
@@ -513,6 +635,7 @@ final class FitnessStore: ObservableObject {
         saveSessions()
         activeSession = nil
         Task { await writeWorkoutToHealthKit(finished) }
+        Task { await pushSession(finished) }
     }
 
     func cancelSession() { activeSession = nil }
@@ -582,11 +705,16 @@ final class FitnessStore: ObservableObject {
     func addMilestone(_ milestone: FitnessMilestone) {
         milestones.insert(milestone, at: 0)
         saveMilestones()
+        Task { await pushMilestone(milestone) }
     }
 
     func deleteMilestone(id: UUID) {
+        let backendID = milestones.first { $0.id == id }?.backendID
         milestones.removeAll { $0.id == id }
         saveMilestones()
+        if let backendID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/fitness/milestones/\(backendID)", method: "DELETE") }
+        }
     }
 
     // MARK: - HealthKit
@@ -647,11 +775,31 @@ final class FitnessStore: ObservableObject {
     @Published var latestBodyMassKg: Double? = nil
 
     func saveBodyMass(_ kg: Double) async {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
-        let type = HKQuantityType(.bodyMass)
-        let sample = HKQuantitySample(type: type, quantity: HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: kg), start: Date(), end: Date())
-        try? await hkStore.save(sample)
+        if HKHealthStore.isHealthDataAvailable() {
+            let type = HKQuantityType(.bodyMass)
+            let sample = HKQuantitySample(type: type, quantity: HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: kg), start: Date(), end: Date())
+            try? await hkStore.save(sample)
+        }
         latestBodyMassKg = kg
+        logBodyweight(kg, date: Date())
+    }
+
+    /// Logs a bodyweight entry to the backend (source of truth) and local cache.
+    func logBodyweight(_ kg: Double, date: Date) {
+        let entry = BodyweightEntry(date: date, weightKg: kg)
+        bodyweightLog.insert(entry, at: 0)
+        bodyweightLog.sort { $0.date > $1.date }
+        saveBodyweightLog()
+        Task { await pushBodyweight(entry) }
+    }
+
+    func deleteBodyweightEntry(id: UUID) {
+        let backendID = bodyweightLog.first { $0.id == id }?.backendID
+        bodyweightLog.removeAll { $0.id == id }
+        saveBodyweightLog()
+        if let backendID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/fitness/bodyweight/\(backendID)", method: "DELETE") }
+        }
     }
 
     private func fetchLatestQuantity(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit) async -> Double? {
@@ -812,6 +960,479 @@ final class FitnessStore: ObservableObject {
         let kcal = met * bw * hours
         guard kcal > 0 else { return nil }
         return HKQuantity(unit: .kilocalorie(), doubleValue: kcal)
+    }
+
+    // MARK: - Backend Sync
+    //
+    // Mirrors QuailAndroid's Fitness backend sync: on refresh, GET each
+    // collection from /fitness/* and make it the source of truth for the
+    // published arrays, same as VehicleStore.refresh(). Mutations still write
+    // to the local UserDefaults cache immediately (so the UI updates and
+    // offline usage still works), then fire a best-effort POST to persist to
+    // the backend using the same client_id (the local UUID's string form) for
+    // idempotent upsert.
+
+    private static let iso8601Date: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate]
+        return f
+    }()
+
+    private func dateOnly(_ date: Date) -> String { Self.iso8601Date.string(from: date) }
+    private func parseDateOnly(_ s: String?) -> Date? {
+        guard let s else { return nil }
+        if let d = Self.iso8601Date.date(from: s) { return d }
+        return ISO8601DateFormatter().date(from: s)
+    }
+
+    private func jsonObjects(_ data: Data) -> [[String: Any]] {
+        (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+    }
+    private func jsonObject(_ data: Data) -> [String: Any] {
+        (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    /// Refreshes every backend-synced collection. Call on appear / pull-to-refresh.
+    /// Each fetch is independent — one failure doesn't block the others, matching
+    /// VehicleStore.refresh()'s pattern.
+    func refreshFromBackend() async {
+        guard AuthStore.token != nil else { return }
+        isSyncing = true
+        lastSyncError = nil
+
+        async let sessionsTask: Void = refreshSessions()
+        async let routinesTask: Void = refreshRoutines()
+        async let goalsTask: Void = refreshGoals()
+        async let milestonesTask: Void = refreshMilestones()
+        async let bodyweightTask: Void = refreshBodyweight()
+        async let planTask: Void = refreshPlanStatus()
+        async let scheduledTask: Void = refreshScheduledWorkouts()
+        async let garminTask: Void = refreshGarminStatus()
+        _ = await (sessionsTask, routinesTask, goalsTask, milestonesTask, bodyweightTask, planTask, scheduledTask, garminTask)
+
+        isSyncing = false
+    }
+
+    private func refreshSessions() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/sessions", queryItems: [URLQueryItem(name: "limit", value: "200")])
+            let payload = jsonObject(data)
+            let records = (payload["records"] as? [[String: Any]]) ?? []
+            let existingByClientID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id.uuidString.lowercased(), $0) })
+            var merged: [WorkoutSession] = []
+            for row in records {
+                guard let clientIDStr = row["client_id"] as? String, let clientID = UUID(uuidString: clientIDStr) else { continue }
+                var session = existingByClientID[clientIDStr.lowercased()] ?? WorkoutSession(id: clientID)
+                session.id = clientID
+                session.backendID = row["id"] as? Int
+                if let dateStr = row["date"] as? String, let d = parseDateOnly(dateStr) { session.date = d }
+                session.durationMinutes = (row["duration_minutes"] as? Int) ?? session.durationMinutes
+                if let bw = row["bodyweight_kg"] as? Double { session.bodyweightKg = bw }
+                session.notes = (row["notes"] as? String) ?? session.notes
+                session.distanceKm = row["distance_km"] as? Double
+                session.avgPaceSecPerKm = row["avg_pace_sec_per_km"] as? Int
+                session.avgHeartRate = row["avg_heart_rate"] as? Int
+                session.calories = row["calories"] as? Int
+                session.source = (row["source"] as? String) ?? "manual"
+                if let exercisesRaw = row["exercises"] as? [[String: Any]] {
+                    session.exercises = exercisesRaw.compactMap { decodeWorkoutExercise($0) }
+                }
+                merged.append(session)
+            }
+            merged.sort { $0.date > $1.date }
+            sessions = merged
+            saveSessions()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func decodeWorkoutExercise(_ dict: [String: Any]) -> WorkoutExercise? {
+        guard let exIDStr = dict["exerciseId"] as? String ?? dict["exercise_id"] as? String,
+              let exID = UUID(uuidString: exIDStr) else { return nil }
+        let setsRaw = (dict["sets"] as? [[String: Any]]) ?? []
+        let sets: [WorkoutSet] = setsRaw.map { s in
+            var set = WorkoutSet()
+            set.reps = s["reps"] as? Int
+            set.durationSeconds = s["durationSeconds"] as? Int ?? s["duration_seconds"] as? Int
+            set.addedWeightKg = s["addedWeightKg"] as? Double ?? s["added_weight_kg"] as? Double
+            set.isCompleted = (s["isCompleted"] as? Bool) ?? (s["is_completed"] as? Bool) ?? true
+            set.rpe = s["rpe"] as? Int
+            set.restSeconds = s["restSeconds"] as? Int ?? s["rest_seconds"] as? Int
+            return set
+        }
+        return WorkoutExercise(exerciseID: exID, sets: sets, notes: (dict["notes"] as? String) ?? "")
+    }
+
+    private func encodeWorkoutExercise(_ we: WorkoutExercise) -> [String: Any] {
+        [
+            "exerciseId": we.exerciseID.uuidString,
+            "notes": we.notes,
+            "sets": we.sets.map { s -> [String: Any] in
+                var d: [String: Any] = ["isCompleted": s.isCompleted]
+                if let r = s.reps { d["reps"] = r }
+                if let dur = s.durationSeconds { d["durationSeconds"] = dur }
+                if let w = s.addedWeightKg { d["addedWeightKg"] = w }
+                if let rpe = s.rpe { d["rpe"] = rpe }
+                if let rest = s.restSeconds { d["restSeconds"] = rest }
+                return d
+            },
+        ]
+    }
+
+    private func pushSession(_ session: WorkoutSession) async {
+        var body: [String: Any] = [
+            "client_id": session.id.uuidString,
+            "date": dateOnly(session.date),
+            "duration_minutes": session.durationMinutes,
+            "notes": session.notes,
+            "exercises": session.exercises.map { encodeWorkoutExercise($0) },
+            "source": session.source,
+        ]
+        if let bw = session.bodyweightKg { body["bodyweight_kg"] = bw }
+        if let d = session.distanceKm { body["distance_km"] = d }
+        if let p = session.avgPaceSecPerKm { body["avg_pace_sec_per_km"] = p }
+        if let hr = session.avgHeartRate { body["avg_heart_rate"] = hr }
+        if let c = session.calories { body["calories"] = c }
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/sessions", method: "POST", jsonBody: body)
+            let row = jsonObject(data)
+            if let idx = sessions.firstIndex(where: { $0.id == session.id }), let backendID = row["id"] as? Int {
+                sessions[idx].backendID = backendID
+                saveSessions()
+            }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    func deleteSession(id: UUID) {
+        let backendID = sessions.first { $0.id == id }?.backendID
+        sessions.removeAll { $0.id == id }
+        saveSessions()
+        if let backendID {
+            Task { try? await QuailAPI.shared.sendJSON(path: "/fitness/sessions/\(backendID)", method: "DELETE") }
+        }
+    }
+
+    private func refreshRoutines() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/routines")
+            let rows = jsonObjects(data)
+            let existingByClientID = Dictionary(uniqueKeysWithValues: routines.map { ($0.id.uuidString.lowercased(), $0) })
+            var merged: [WorkoutRoutine] = []
+            for row in rows {
+                guard let clientIDStr = row["client_id"] as? String, let clientID = UUID(uuidString: clientIDStr) else { continue }
+                var routine = existingByClientID[clientIDStr.lowercased()] ?? WorkoutRoutine(id: clientID, name: "", exercises: [])
+                routine.id = clientID
+                routine.backendID = row["id"] as? Int
+                routine.name = (row["name"] as? String) ?? routine.name
+                if let exercisesRaw = row["exercises"] as? [[String: Any]] {
+                    routine.exercises = exercisesRaw.compactMap { decodeWorkoutExercise($0) }
+                }
+                merged.append(routine)
+            }
+            routines = merged
+            saveRoutines()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func pushRoutine(_ routine: WorkoutRoutine) async {
+        let body: [String: Any] = [
+            "client_id": routine.id.uuidString,
+            "name": routine.name,
+            "exercises": routine.exercises.map { encodeWorkoutExercise($0) },
+        ]
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/routines", method: "POST", jsonBody: body)
+            let row = jsonObject(data)
+            if let idx = routines.firstIndex(where: { $0.id == routine.id }), let backendID = row["id"] as? Int {
+                routines[idx].backendID = backendID
+                saveRoutines()
+            }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private static let goalTypeToBackend: [FitnessGoalType: String] = [
+        .muscleMass: "MUSCLE_MASS", .strength: "STRENGTH", .endurance: "ENDURANCE", .fatLoss: "FAT_LOSS",
+    ]
+    private static let backendToGoalType: [String: FitnessGoalType] = Dictionary(uniqueKeysWithValues: goalTypeToBackend.map { ($1, $0) })
+
+    private func refreshGoals() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/goals")
+            let rows = jsonObjects(data)
+            let existingByClientID = Dictionary(uniqueKeysWithValues: goals.map { ($0.id.uuidString.lowercased(), $0) })
+            var merged: [FitnessGoal] = []
+            for row in rows {
+                guard let clientIDStr = row["client_id"] as? String, let clientID = UUID(uuidString: clientIDStr) else { continue }
+                var goal = existingByClientID[clientIDStr.lowercased()]
+                    ?? FitnessGoal(id: clientID, title: "", goalType: .muscleMass, targetDate: Date())
+                goal.id = clientID
+                goal.backendID = row["id"] as? Int
+                goal.title = (row["title"] as? String) ?? goal.title
+                if let gt = row["goal_type"] as? String, let mapped = Self.backendToGoalType[gt] { goal.goalType = mapped }
+                if let exIDStr = row["target_exercise_id"] as? String { goal.targetExerciseID = UUID(uuidString: exIDStr) }
+                goal.targetReps = row["target_reps"] as? Int
+                goal.targetDurationSeconds = row["target_duration_seconds"] as? Int
+                if let dateStr = row["target_date"] as? String, let d = parseDateOnly(dateStr) { goal.targetDate = d }
+                goal.notes = (row["notes"] as? String) ?? goal.notes
+                merged.append(goal)
+            }
+            goals = merged
+            saveGoals()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func pushGoal(_ goal: FitnessGoal) async {
+        var body: [String: Any] = [
+            "client_id": goal.id.uuidString,
+            "title": goal.title,
+            "goal_type": Self.goalTypeToBackend[goal.goalType] ?? "MUSCLE_MASS",
+            "notes": goal.notes,
+            "target_date": dateOnly(goal.targetDate),
+        ]
+        if let exID = goal.targetExerciseID { body["target_exercise_id"] = exID.uuidString }
+        if let r = goal.targetReps { body["target_reps"] = r }
+        if let d = goal.targetDurationSeconds { body["target_duration_seconds"] = d }
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/goals", method: "POST", jsonBody: body)
+            let row = jsonObject(data)
+            if let idx = goals.firstIndex(where: { $0.id == goal.id }), let backendID = row["id"] as? Int {
+                goals[idx].backendID = backendID
+                saveGoals()
+            }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func refreshMilestones() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/milestones")
+            let rows = jsonObjects(data)
+            let existingByClientID = Dictionary(uniqueKeysWithValues: milestones.map { ($0.id.uuidString.lowercased(), $0) })
+            var merged: [FitnessMilestone] = []
+            for row in rows {
+                guard let clientIDStr = row["client_id"] as? String, let clientID = UUID(uuidString: clientIDStr) else { continue }
+                var milestone = existingByClientID[clientIDStr.lowercased()] ?? FitnessMilestone(id: clientID, title: "")
+                milestone.id = clientID
+                milestone.backendID = row["id"] as? Int
+                milestone.title = (row["title"] as? String) ?? milestone.title
+                if let dateStr = row["date"] as? String, let d = parseDateOnly(dateStr) { milestone.date = d }
+                if let exIDStr = row["exercise_id"] as? String { milestone.exerciseID = UUID(uuidString: exIDStr) }
+                milestone.notes = (row["notes"] as? String) ?? milestone.notes
+                merged.append(milestone)
+            }
+            merged.sort { $0.date > $1.date }
+            milestones = merged
+            saveMilestones()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func pushMilestone(_ milestone: FitnessMilestone) async {
+        var body: [String: Any] = [
+            "client_id": milestone.id.uuidString,
+            "title": milestone.title,
+            "date": dateOnly(milestone.date),
+            "notes": milestone.notes,
+        ]
+        if let exID = milestone.exerciseID { body["exercise_id"] = exID.uuidString }
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/milestones", method: "POST", jsonBody: body)
+            let row = jsonObject(data)
+            if let idx = milestones.firstIndex(where: { $0.id == milestone.id }), let backendID = row["id"] as? Int {
+                milestones[idx].backendID = backendID
+                saveMilestones()
+            }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func refreshBodyweight() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/bodyweight", queryItems: [URLQueryItem(name: "limit", value: "200")])
+            let rows = jsonObjects(data)
+            let existingByClientID = Dictionary(uniqueKeysWithValues: bodyweightLog.map { ($0.id.uuidString.lowercased(), $0) })
+            var merged: [BodyweightEntry] = []
+            for row in rows {
+                guard let clientIDStr = row["client_id"] as? String, let clientID = UUID(uuidString: clientIDStr),
+                      let weightKg = row["weight_kg"] as? Double else { continue }
+                var entry = existingByClientID[clientIDStr.lowercased()] ?? BodyweightEntry(id: clientID, weightKg: weightKg)
+                entry.id = clientID
+                entry.backendID = row["id"] as? Int
+                entry.weightKg = weightKg
+                if let dateStr = row["date"] as? String, let d = parseDateOnly(dateStr) { entry.date = d }
+                merged.append(entry)
+            }
+            merged.sort { $0.date > $1.date }
+            bodyweightLog = merged
+            saveBodyweightLog()
+            if let latest = merged.first { latestBodyMassKg = latest.weightKg }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    private func pushBodyweight(_ entry: BodyweightEntry) async {
+        let body: [String: Any] = [
+            "client_id": entry.id.uuidString,
+            "date": dateOnly(entry.date),
+            "weight_kg": entry.weightKg,
+        ]
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/bodyweight", method: "POST", jsonBody: body)
+            let row = jsonObject(data)
+            if let idx = bodyweightLog.firstIndex(where: { $0.id == entry.id }), let backendID = row["id"] as? Int {
+                bodyweightLog[idx].backendID = backendID
+                saveBodyweightLog()
+            }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Training Plan
+
+    func refreshPlanStatus() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/plan/status")
+            let row = jsonObject(data)
+            if let statusStr = row["status"] as? String, let status = FitnessPlanStatus(rawValue: statusStr) {
+                planStatus = status
+            }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    func refreshScheduledWorkouts() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/plan/scheduled")
+            let rows = jsonObjects(data)
+            scheduledWorkouts = rows.compactMap { row -> ScheduledWorkout? in
+                guard let id = row["id"] as? Int,
+                      let clientID = row["client_id"] as? String,
+                      let dateStr = row["scheduled_date"] as? String,
+                      let date = parseDateOnly(dateStr),
+                      let workoutType = row["workout_type"] as? String,
+                      let status = row["status"] as? String else { return nil }
+                let goalIDs = (row["goal_ids"] as? [Any])?.compactMap { $0 as? Int } ?? []
+                var prescription: [String: AnyCodableValue] = [:]
+                if let presc = row["prescription"] as? [String: Any],
+                   let data = try? JSONSerialization.data(withJSONObject: presc),
+                   let decoded = try? JSONDecoder().decode([String: AnyCodableValue].self, from: data) {
+                    prescription = decoded
+                }
+                return ScheduledWorkout(
+                    id: id, clientID: clientID, scheduledDate: date, goalIDs: goalIDs,
+                    workoutType: workoutType, prescription: prescription, status: status,
+                    linkedSessionClientID: row["linked_session_client_id"] as? String,
+                    weekNumber: (row["week_number"] as? Int) ?? 0
+                )
+            }.sorted { $0.scheduledDate < $1.scheduledDate }
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    func startTestingWeek() async {
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/fitness/plan/start-testing-week", method: "POST")
+            await refreshPlanStatus()
+            await refreshScheduledWorkouts()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    func generatePlan() async {
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/fitness/plan/generate", method: "POST")
+            await refreshPlanStatus()
+            await refreshScheduledWorkouts()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    func completeScheduledWorkout(_ workout: ScheduledWorkout, sessionClientID: String? = nil, logged: [String: Any] = [:]) async {
+        var body: [String: Any] = ["logged": logged]
+        if let sessionClientID { body["session_client_id"] = sessionClientID }
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/fitness/plan/scheduled/\(workout.id)/complete", method: "POST", jsonBody: body)
+            await refreshScheduledWorkouts()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    func skipScheduledWorkout(_ workout: ScheduledWorkout) async {
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/fitness/plan/scheduled/\(workout.id)/skip", method: "POST")
+            await refreshScheduledWorkouts()
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Garmin
+
+    func refreshGarminStatus() async {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/garmin/status")
+            let row = jsonObject(data)
+            garminConnected = (row["connected"] as? Bool) ?? false
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
+    }
+
+    /// Returns (needsMFA, sessionID). On success without MFA, sessionID is nil.
+    func garminConnect(email: String, password: String) async -> (needsMFA: Bool, sessionID: String?) {
+        do {
+            let data = try await QuailAPI.shared.fetchData(path: "/fitness/garmin/connect", method: "POST", jsonBody: [
+                "email": email, "password": password,
+            ])
+            let row = jsonObject(data)
+            let needsMFA = (row["needs_mfa"] as? Bool) ?? false
+            await refreshGarminStatus()
+            return (needsMFA, row["session_id"] as? String)
+        } catch {
+            lastSyncError = error.localizedDescription
+            return (false, nil)
+        }
+    }
+
+    func garminSubmitMFA(sessionID: String, code: String) async -> Bool {
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/fitness/garmin/mfa", method: "POST", jsonBody: [
+                "session_id": sessionID, "mfa_code": code,
+            ])
+            await refreshGarminStatus()
+            return true
+        } catch {
+            lastSyncError = error.localizedDescription
+            return false
+        }
+    }
+
+    func garminDisconnect() async {
+        do {
+            _ = try await QuailAPI.shared.fetchData(path: "/fitness/garmin/connect", method: "DELETE")
+            garminConnected = false
+        } catch {
+            lastSyncError = error.localizedDescription
+        }
     }
 
     // MARK: - Default Data

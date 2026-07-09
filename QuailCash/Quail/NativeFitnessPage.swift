@@ -111,6 +111,7 @@ struct FitnessPageView: View {
     @State private var activeSheet: FitnessSheet?
     @State private var showActiveWorkout = false
     @State private var showCreateRoutine = false
+    @State private var showTrainingPlan = false
 
     private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
 
@@ -125,6 +126,7 @@ struct FitnessPageView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     readinessCard
                     healthMetricsSection
+                    trainingPlanCard
                     startWorkoutCard
                     routinesSection
                     if !store.recentSessions().isEmpty {
@@ -139,6 +141,9 @@ struct FitnessPageView: View {
                 }
             }
         }
+        .sheet(isPresented: $showTrainingPlan) {
+            TrainingPlanSheet()
+        }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
         }
@@ -151,6 +156,39 @@ struct FitnessPageView: View {
         }
         .onAppear {
             Task { await store.refreshHealthData() }
+            Task { await store.refreshFromBackend() }
+        }
+    }
+
+    // MARK: - Training Plan Card
+
+    private var trainingPlanCard: some View {
+        Button { showTrainingPlan = true } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(palette.accent.opacity(0.15)).frame(width: 40, height: 40)
+                    Image(systemName: "calendar.badge.clock").font(.system(size: 18, weight: .semibold)).foregroundStyle(palette.accent)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Training Plan").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.primary)
+                    Text(trainingPlanSubtitle).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var trainingPlanSubtitle: String {
+        switch store.planStatus {
+        case .none:    return "Not started — tap to set up"
+        case .testing: return "Testing week in progress"
+        case .active:  return "\(store.scheduledWorkouts.filter { $0.status == "PLANNED" }.count) workouts scheduled"
         }
     }
 
@@ -1926,6 +1964,171 @@ private struct AddFitnessGoalSheet: View {
     }
 }
 
+// MARK: - Training Plan Sheet
+//
+// Minimal parity with Android's FitnessPlanScreen: status card, generate /
+// start-testing-week actions, and a list of scheduled workouts with
+// complete/skip. Presented as a sheet from FitnessPageView since adding a
+// dedicated AppRoute would require editing AppNavigator.swift/NativePages.swift.
+
+private struct TrainingPlanSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @ObservedObject private var store = FitnessStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var isBusy = false
+
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
+
+    var body: some View {
+        NavigationStack {
+            AppPageScroll(contentPadding: 14) {
+                VStack(alignment: .leading, spacing: 16) {
+                    statusCard
+                    if store.planStatus == .none {
+                        actionButton(title: "Start Testing Week", icon: "flag.checkered") {
+                            await store.startTestingWeek()
+                        }
+                        Text("A testing week measures your current ability on each training goal before building a progressive plan around it.")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    } else if store.planStatus == .testing {
+                        actionButton(title: "Generate Plan From Test Results", icon: "wand.and.stars") {
+                            await store.generatePlan()
+                        }
+                    }
+                    if !store.scheduledWorkouts.isEmpty {
+                        scheduledSection
+                    }
+                    Color.clear.frame(height: 30)
+                }
+            }
+            .navigationTitle("Training Plan")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .task {
+            await store.refreshPlanStatus()
+            await store.refreshScheduledWorkouts()
+        }
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(palette.accent.opacity(0.15)).frame(width: 40, height: 40)
+                Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 18, weight: .semibold)).foregroundStyle(palette.accent)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(statusLabel).font(.system(size: 15, weight: .bold, design: .rounded))
+                Text(statusSubtitle).font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private var statusLabel: String {
+        switch store.planStatus {
+        case .none:    return "No Plan Yet"
+        case .testing: return "Testing Week"
+        case .active:  return "Plan Active"
+        }
+    }
+
+    private var statusSubtitle: String {
+        switch store.planStatus {
+        case .none:    return "Set training goals, then start a testing week"
+        case .testing: return "Complete the scheduled test workouts below"
+        case .active:  return "\(store.scheduledWorkouts.filter { $0.status == "PLANNED" }.count) upcoming workouts"
+        }
+    }
+
+    private func actionButton(title: String, icon: String, action: @escaping () async -> Void) -> some View {
+        Button {
+            guard !isBusy else { return }
+            isBusy = true
+            Task {
+                await action()
+                isBusy = false
+            }
+        } label: {
+            HStack {
+                if isBusy { ProgressView().tint(.white) } else { Image(systemName: icon) }
+                Text(title)
+            }
+            .font(.system(size: 15, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(palette.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+    }
+
+    private var scheduledSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Scheduled Workouts")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+            VStack(spacing: 0) {
+                ForEach(Array(store.scheduledWorkouts.enumerated()), id: \.element.id) { idx, workout in
+                    scheduledRow(workout)
+                    if idx < store.scheduledWorkouts.count - 1 { Divider().padding(.leading, 14) }
+                }
+            }
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
+        }
+    }
+
+    private func scheduledRow(_ workout: ScheduledWorkout) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(workout.workoutType.capitalized)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                Text(workout.scheduledDate, style: .date)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text(workout.status.capitalized)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(statusColor(workout.status))
+            }
+            Spacer()
+            if workout.status == "PLANNED" {
+                Button {
+                    Task { await store.skipScheduledWorkout(workout) }
+                } label: {
+                    Image(systemName: "xmark.circle").font(.system(size: 20)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                Button {
+                    Task { await store.completeScheduledWorkout(workout) }
+                } label: {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(palette.positive)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "COMPLETED": return palette.positive
+        case "SKIPPED":   return Color(red: 0.85, green: 0.25, blue: 0.25)
+        default:          return .secondary
+        }
+    }
+}
+
 // MARK: - Fitness Profile Sheet
 
 private struct FitnessProfileSheet: View {
@@ -2355,6 +2558,7 @@ struct QuailFitnessSettingsPageView: View {
     @State private var showNotificationSettings = false
     @State private var showRoutineManager = false
     @State private var showProfile = false
+    @State private var showGarmin = false
 
     private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
 
@@ -2382,6 +2586,12 @@ struct QuailFitnessSettingsPageView: View {
                         ) {
                             Task { await store.requestHealthKitAuthorization() }
                         }
+                        Divider().padding(.leading, 60)
+                        fitnessSettingsRow(
+                            icon: "figure.run.circle.fill", iconColor: Color(red: 0.10, green: 0.55, blue: 0.85),
+                            title: "Garmin",
+                            subtitle: store.garminConnected ? "Connected" : "Not connected"
+                        ) { showGarmin = true }
                     }
 
                     fitnessSettingsSection(title: "Library") {
@@ -2429,6 +2639,12 @@ struct QuailFitnessSettingsPageView: View {
         .sheet(isPresented: $showProgressionEditor) {
             ProgressionPathEditorSheet()
         }
+        .sheet(isPresented: $showGarmin) {
+            GarminSettingsSheet()
+        }
+        .task {
+            await store.refreshGarminStatus()
+        }
     }
 
     private func fitnessSettingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -2463,6 +2679,103 @@ struct QuailFitnessSettingsPageView: View {
         .buttonStyle(.plain)
     }
 
+}
+
+// MARK: - Garmin Settings Sheet
+
+private struct GarminSettingsSheet: View {
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @ObservedObject private var store = FitnessStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var email = ""
+    @State private var password = ""
+    @State private var mfaCode = ""
+    @State private var pendingSessionID: String?
+    @State private var isBusy = false
+    @State private var message: String?
+
+    private var palette: QuailThemePalette { QuailTheme.palette(for: themeSelection) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Status") {
+                    HStack {
+                        Text(store.garminConnected ? "Connected" : "Not Connected")
+                            .foregroundStyle(store.garminConnected ? palette.positive : .secondary)
+                        Spacer()
+                        if store.garminConnected {
+                            Button("Disconnect", role: .destructive) {
+                                Task {
+                                    isBusy = true
+                                    await store.garminDisconnect()
+                                    isBusy = false
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !store.garminConnected {
+                    Section("Connect Garmin") {
+                        TextField("Email", text: $email)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                        SecureField("Password", text: $password)
+                        Button {
+                            Task {
+                                isBusy = true
+                                message = nil
+                                let result = await store.garminConnect(email: email, password: password)
+                                if result.needsMFA {
+                                    pendingSessionID = result.sessionID
+                                    message = "Enter the MFA code sent to your device."
+                                } else if store.garminConnected {
+                                    message = "Connected."
+                                } else {
+                                    message = "Could not connect. Check your credentials."
+                                }
+                                isBusy = false
+                            }
+                        } label: {
+                            if isBusy { ProgressView() } else { Text("Connect") }
+                        }
+                        .disabled(email.isEmpty || password.isEmpty || isBusy)
+                    }
+
+                    if let pendingSessionID {
+                        Section("Two-Factor Code") {
+                            TextField("MFA Code", text: $mfaCode)
+                                .keyboardType(.numberPad)
+                            Button {
+                                Task {
+                                    isBusy = true
+                                    let ok = await store.garminSubmitMFA(sessionID: pendingSessionID, code: mfaCode)
+                                    message = ok ? "Connected." : "Invalid code."
+                                    if ok { self.pendingSessionID = nil }
+                                    isBusy = false
+                                }
+                            } label: {
+                                if isBusy { ProgressView() } else { Text("Submit Code") }
+                            }
+                            .disabled(mfaCode.isEmpty || isBusy)
+                        }
+                    }
+                }
+
+                if let message {
+                    Section { Text(message).font(.system(size: 12, design: .rounded)).foregroundStyle(.secondary) }
+                }
+            }
+            .navigationTitle("Garmin")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .task { await store.refreshGarminStatus() }
+    }
 }
 
 private struct FitnessNotificationSettingsSheet: View {
