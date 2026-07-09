@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.model.BudgetGroup
+import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.PageBudgetResponse
 import com.quail.android.data.model.RoundUpSettings
 import com.quail.android.data.model.SinkingFund
@@ -47,6 +48,7 @@ sealed interface BudgetUiState {
         val month: Int,
         val payload: PageBudgetResponse,
         val roundUps: RoundUpSettings = RoundUpSettings(),
+        val financingPlans: List<FinancingPlanResponse> = emptyList(),
         val trend: List<TrendRow> = emptyList(),
         val busy: Boolean = false,
         val editingGroup: BudgetGroupDraft? = null,
@@ -86,7 +88,8 @@ class BudgetViewModel(private val repository: HomeRepository) : ViewModel() {
             try {
                 val payload = repository.getPageBudget(year, month, recalc)
                 val roundUps = runCatching { repository.getRoundUps() }.getOrDefault(RoundUpSettings())
-                _uiState.value = BudgetUiState.Success(year, month, payload, roundUps)
+                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
+                _uiState.value = BudgetUiState.Success(year, month, payload, roundUps, financingPlans)
                 loadTrend()
             } catch (e: Exception) {
                 _uiState.value = BudgetUiState.Error(e.message ?: "Couldn't load budget")
@@ -102,7 +105,8 @@ class BudgetViewModel(private val repository: HomeRepository) : ViewModel() {
             try {
                 val payload = repository.getPageBudget(year, month)
                 val roundUps = runCatching { repository.getRoundUps() }.getOrDefault(RoundUpSettings())
-                _uiState.value = BudgetUiState.Success(year, month, payload, roundUps)
+                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
+                _uiState.value = BudgetUiState.Success(year, month, payload, roundUps, financingPlans)
                 loadTrend()
             } catch (e: Exception) {
                 // Keep whatever was already showing.
@@ -265,6 +269,20 @@ class BudgetViewModel(private val repository: HomeRepository) : ViewModel() {
                 load()
             } catch (e: Exception) {
                 _uiState.value = current.copy(busy = false, errorMessage = e.message ?: "Couldn't adjust fund")
+            }
+        }
+    }
+
+    fun deleteFinancingPlan(plan: FinancingPlanResponse) {
+        val current = _uiState.value as? BudgetUiState.Success ?: return
+        _uiState.value = current.copy(financingPlans = current.financingPlans.filter { it.id != plan.id })
+        viewModelScope.launch {
+            try {
+                repository.deleteFinancingPlan(plan.id)
+                load()
+            } catch (e: Exception) {
+                // Reload to restore the real state if the delete failed server-side.
+                load()
             }
         }
     }

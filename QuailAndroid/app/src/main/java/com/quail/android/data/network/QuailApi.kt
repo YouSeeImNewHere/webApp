@@ -36,6 +36,7 @@ import com.quail.android.data.model.GarminMfaRequest
 import com.quail.android.data.model.GarminMfaResponse
 import com.quail.android.data.model.GarminStatusResponse
 import com.quail.android.data.model.FinancingPlanResponse
+import com.quail.android.data.model.FinancingPlanPayResponse
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.HomePayload
@@ -236,8 +237,17 @@ interface QuailApi {
     @GET("categories")
     suspend fun getCategories(): List<String>
 
+    @GET("financing/plans")
+    suspend fun getFinancingPlans(): List<FinancingPlanResponse>
+
     @POST("financing/plans")
     suspend fun createFinancingPlan(@Body request: FinancingPlanCreateRequest): FinancingPlanResponse
+
+    @DELETE("financing/plans/{id}")
+    suspend fun deleteFinancingPlan(@Path("id") id: Int): OkResponse
+
+    @POST("financing/plans/{id}/pay")
+    suspend fun payFinancingPlan(@Path("id") id: Int): FinancingPlanPayResponse
 
     @POST("account/{id}/balance-verified")
     suspend fun verifyBalance(

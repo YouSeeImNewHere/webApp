@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, datetime
 from app.core.tenancy import current_tenant_id
+from app.core.transactions_ignore import ensure_transactions_ignore_column
+from app.core.home_snapshot_cache import bump_home_snapshot_version
 from db import get_conn
 
 router = APIRouter()
@@ -84,6 +86,7 @@ def create_plan(body: FinancingPlanIn):
         raise HTTPException(status_code=400, detail="total_months must be > 0")
     monthly = round(body.total_amount / body.total_months, 2)
     tid = current_tenant_id()
+    ensure_transactions_ignore_column()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -94,7 +97,21 @@ def create_plan(body: FinancingPlanIn):
                           months_paid, start_date, transaction_id, created_at
             """, (tid, body.label, body.total_amount, monthly, body.total_months, body.transaction_id))
             row = _serialize(cur.fetchone())
+            # The original transaction's full amount already hit "spent so
+            # far" the month it posted. Once it's financed, that one-time hit
+            # is replaced by the flat monthly installment (see
+            # get_active_monthly_financing_total, applied every month
+            # start_date <= month, including the month of purchase) — so
+            # ignore the original transaction everywhere spend is tallied,
+            # or the purchase would be counted twice: once in full, once
+            # amortized.
+            if body.transaction_id:
+                cur.execute(
+                    "UPDATE transactions SET is_ignored = true WHERE id = %s AND tenant_id = %s",
+                    (body.transaction_id, tid),
+                )
         conn.commit()
+    bump_home_snapshot_version(tid)
     row["total_amount"] = float(row["total_amount"])
     row["monthly_payment"] = float(row["monthly_payment"])
     row["months_remaining"] = row["total_months"]
@@ -119,6 +136,7 @@ def record_payment(plan_id: int):
             if not row:
                 raise HTTPException(status_code=404, detail="Plan not found")
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"months_paid": row["months_paid"], "is_complete": row["months_paid"] >= row["total_months"]}
 
 
@@ -127,8 +145,22 @@ def delete_plan(plan_id: int):
     tid = current_tenant_id()
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT transaction_id FROM financing_plans WHERE id=%s AND tenant_id=%s",
+                (plan_id, tid),
+            )
+            existing = cur.fetchone()
             cur.execute("DELETE FROM financing_plans WHERE id=%s AND tenant_id=%s", (plan_id, tid))
+            # Removing the plan un-does the "ignore the original transaction"
+            # substitution from create_plan, so the purchase counts as
+            # regular spend again.
+            if existing and existing.get("transaction_id"):
+                cur.execute(
+                    "UPDATE transactions SET is_ignored = false WHERE id = %s AND tenant_id = %s",
+                    (existing["transaction_id"], tid),
+                )
         conn.commit()
+    bump_home_snapshot_version(tid)
     return {"ok": True}
 
 

@@ -10,6 +10,7 @@ import com.quail.android.data.model.ChartPoint
 import com.quail.android.data.model.ExtraSavedDetail
 import com.quail.android.data.model.FinancingPlanCreateRequest
 import com.quail.android.data.model.FinancingPlanResponse
+import com.quail.android.data.model.FinancingPlanPayResponse
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.AndroidPushDeviceBody
 import com.quail.android.data.model.AndroidPushDeviceResponse
@@ -146,8 +147,14 @@ class HomeRepository(private val api: QuailApi) {
 
     suspend fun getCategories(): List<String> = api.getCategories()
 
+    suspend fun getFinancingPlans(): List<FinancingPlanResponse> = api.getFinancingPlans()
+
     suspend fun createFinancingPlan(label: String, totalAmount: Double, totalMonths: Int, transactionId: String? = null): FinancingPlanResponse =
         api.createFinancingPlan(FinancingPlanCreateRequest(label, totalAmount, totalMonths, transactionId))
+
+    suspend fun deleteFinancingPlan(id: Int) { api.deleteFinancingPlan(id) }
+
+    suspend fun payFinancingPlan(id: Int): FinancingPlanPayResponse = api.payFinancingPlan(id)
 
     suspend fun verifyBalance(accountId: Int, verifiedDate: String? = null): VerifyBalanceResponse =
         api.verifyBalance(accountId, VerifyBalanceRequest(verifiedDate))

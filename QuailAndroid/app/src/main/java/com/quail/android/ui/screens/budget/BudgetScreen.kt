@@ -45,9 +45,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quail.android.data.model.BudgetGroup
 import com.quail.android.data.model.BudgetSpentCategory
+import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.MonthBudget
 import com.quail.android.data.model.SinkingFund
 import com.quail.android.ui.overlay.AppOverlayHost
+import com.quail.android.ui.theme.FinancingPlansList
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -115,6 +117,9 @@ private fun BudgetContent(state: BudgetUiState.Success, viewModel: BudgetViewMod
         item { KpiGrid(state, viewModel) }
         item { BudgetGroupsCard(state.payload.groups, onAdd = { viewModel.openGroupEditor(null) }, onEdit = { viewModel.openGroupEditor(it) }, onDelete = { viewModel.deleteGroup(it) }) }
         item { SinkingFundsCard(state.payload.funds, viewModel) }
+        if (state.financingPlans.isNotEmpty()) {
+            item { FinancingCard(state.financingPlans, onDelete = { viewModel.deleteFinancingPlan(it) }) }
+        }
         if (state.payload.spentCategories.isNotEmpty()) {
             item { SpentCategoriesCard(state.payload.spentCategories) }
         }
@@ -373,6 +378,15 @@ private fun SinkingFundRow(fund: SinkingFund, viewModel: BudgetViewModel) {
                 SmallButton("Edit", onClick = { viewModel.openFundEditor(fund) })
                 SmallButton("Delete", onClick = { viewModel.deleteFund(fund) })
             }
+        }
+    }
+}
+
+@Composable
+private fun FinancingCard(plans: List<FinancingPlanResponse>, onDelete: (FinancingPlanResponse) -> Unit) {
+    Surface(color = QuailSurface, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            FinancingPlansList(plans, onDelete)
         }
     }
 }

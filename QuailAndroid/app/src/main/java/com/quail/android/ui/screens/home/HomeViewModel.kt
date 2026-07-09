@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.model.BankInfoOptions
 import com.quail.android.data.model.ExtraSavedDetail
+import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.SpentSoFarBreakdown
 import com.quail.android.data.model.SpentSoFarTransaction
@@ -20,7 +21,11 @@ import java.time.LocalDate
 sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Error(val message: String) : HomeUiState
-    data class Success(val payload: HomePayload, val upcoming: List<UpcomingEvent>) : HomeUiState
+    data class Success(
+        val payload: HomePayload,
+        val upcoming: List<UpcomingEvent>,
+        val financingPlans: List<FinancingPlanResponse> = emptyList(),
+    ) : HomeUiState
 }
 
 sealed interface ExtraSavedUiState {
@@ -106,7 +111,8 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
             try {
                 val payload = repository.getHome()
                 val upcoming = runCatching { repository.getUpcoming() }.getOrDefault(emptyList())
-                _uiState.value = HomeUiState.Success(payload, upcoming)
+                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
+                _uiState.value = HomeUiState.Success(payload, upcoming, financingPlans)
             } catch (e: Exception) {
                 _uiState.value = HomeUiState.Error(e.message ?: "Something went wrong")
             }
@@ -121,7 +127,8 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
             try {
                 val payload = repository.getHome()
                 val upcoming = runCatching { repository.getUpcoming() }.getOrDefault(emptyList())
-                _uiState.value = HomeUiState.Success(payload, upcoming)
+                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
+                _uiState.value = HomeUiState.Success(payload, upcoming, financingPlans)
             } catch (e: Exception) {
                 // Keep whatever was already showing.
             }
@@ -285,6 +292,15 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
     fun clearVerifyBalance() { _verifyBalanceState.value = VerifyBalanceUiState.Idle }
     fun clearSpentSoFar() { _spentSoFarState.value = SpentSoFarUiState.Idle }
     fun clearBankInfo() { _bankInfoState.value = BankInfoUiState.Idle }
+
+    fun deleteFinancingPlan(plan: FinancingPlanResponse) {
+        val current = _uiState.value as? HomeUiState.Success ?: return
+        _uiState.value = current.copy(financingPlans = current.financingPlans.filter { it.id != plan.id })
+        viewModelScope.launch {
+            runCatching { repository.deleteFinancingPlan(plan.id) }
+            refresh()
+        }
+    }
 
     class Factory(private val repository: HomeRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

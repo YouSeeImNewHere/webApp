@@ -211,4 +211,12 @@ data class FinancingPlanResponse(
     @SerialName("amount_paid") val amountPaid: Double = 0.0,
     @SerialName("amount_remaining") val amountRemaining: Double = 0.0,
     @SerialName("is_complete") val isComplete: Boolean = false,
+    @SerialName("start_date") val startDate: String? = null,
+    @SerialName("transaction_id") val transactionId: String? = null,
+)
+
+@Serializable
+data class FinancingPlanPayResponse(
+    @SerialName("months_paid") val monthsPaid: Int = 0,
+    @SerialName("is_complete") val isComplete: Boolean = false,
 )

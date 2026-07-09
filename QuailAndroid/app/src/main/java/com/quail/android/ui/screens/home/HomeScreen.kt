@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +71,7 @@ import com.quail.android.data.model.BankAccount
 import com.quail.android.data.model.BankGroup
 import com.quail.android.data.model.CategoryTotalsMonth
 import com.quail.android.data.model.DayLimit
+import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.MonthBudget
 import com.quail.android.data.model.Transaction
@@ -82,6 +84,7 @@ import com.quail.android.ui.theme.QuailSurfaceRaised
 import com.quail.android.ui.theme.QuailText
 import com.quail.android.ui.theme.QuailTextDim
 import com.quail.android.ui.theme.categoryIcon
+import com.quail.android.ui.theme.FinancingPlansList
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -190,6 +193,8 @@ fun HomeScreen(
                             onOpenUnassignedWizard = { showUnassignedWizard = true },
                             onOpenBudget = onOpenBudget,
                             onOpenAccountDetail = onOpenAccountDetail,
+                            financingPlans = state.financingPlans,
+                            onDeleteFinancingPlan = { viewModel.deleteFinancingPlan(it) },
                         )
                     }
                 }
@@ -369,6 +374,8 @@ private fun HomeContent(
     onOpenUnassignedWizard: () -> Unit,
     onOpenBudget: () -> Unit,
     onOpenAccountDetail: (accountId: Int, auditMode: Boolean) -> Unit = { _, _ -> },
+    financingPlans: List<FinancingPlanResponse> = emptyList(),
+    onDeleteFinancingPlan: (FinancingPlanResponse) -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -388,8 +395,8 @@ private fun HomeContent(
             item { MonthlySnapshotCard(payload.monthBudget, payload.dayLimit, onOpenSheet, onOpenBudget) }
         }
         val categoryTotalsMonth = payload.categoryTotalsMonth
-        if ((categoryTotalsMonth?.categories?.isNotEmpty() == true) || (categoryTotalsMonth?.unassignedAllTime ?: 0) > 0) {
-            item { MonthlySpendingCard(categoryTotalsMonth ?: CategoryTotalsMonth(), onOpenUnassignedWizard) }
+        if ((categoryTotalsMonth?.categories?.isNotEmpty() == true) || (categoryTotalsMonth?.unassignedAllTime ?: 0) > 0 || financingPlans.isNotEmpty()) {
+            item { MonthlySpendingCard(categoryTotalsMonth ?: CategoryTotalsMonth(), onOpenUnassignedWizard, financingPlans, onDeleteFinancingPlan) }
         }
         if (payload.bankTotals.isNotEmpty()) {
             item { BankTotalsCard(payload.bankTotals, onOpenSheet, onOpenAccountDetail) }
@@ -554,9 +561,18 @@ private fun MonthlySnapshotCard(budget: MonthBudget, dayLimit: DayLimit?, onOpen
 }
 
 @Composable
-private fun MonthlySpendingCard(categoryTotalsMonth: CategoryTotalsMonth, onOpenUnassignedWizard: () -> Unit) {
+private fun MonthlySpendingCard(
+    categoryTotalsMonth: CategoryTotalsMonth,
+    onOpenUnassignedWizard: () -> Unit,
+    financingPlans: List<FinancingPlanResponse> = emptyList(),
+    onDeleteFinancingPlan: (FinancingPlanResponse) -> Unit = {},
+) {
     ExpandableCard(title = "Monthly Spending") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (financingPlans.isNotEmpty()) {
+                FinancingPlansList(financingPlans, onDeleteFinancingPlan)
+                HorizontalDivider(color = QuailTextDim.copy(alpha = 0.12f))
+            }
             categoryTotalsMonth.categories.sortedByDescending { it.total }.forEach { cat ->
                 Surface(
                     color = QuailSurfaceRaised,
