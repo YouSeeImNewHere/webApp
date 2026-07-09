@@ -7,6 +7,8 @@ import com.quail.android.data.model.RecurringCalendarEvent
 import com.quail.android.data.model.RecurringGroup
 import com.quail.android.data.model.RecurringPattern
 import com.quail.android.data.repository.HomeRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,15 +55,20 @@ class RecurringViewModel(private val repository: HomeRepository) : ViewModel() {
             _isRefreshing.value = true
             try {
                 val includeStale = current?.includeStale ?: false
-                val groups = repository.getRecurring(minOcc = 3, includeStale = includeStale)
-                val events = runCatching {
-                    repository.getRecurringCalendar(
-                        year = current?.calendarYear ?: LocalDate.now().year,
-                        month = current?.calendarMonth ?: LocalDate.now().monthValue,
-                        minOcc = 3,
-                        includeStale = includeStale,
-                    )
-                }.getOrNull()
+                val (groups, events) = coroutineScope {
+                    val groupsDeferred = async { repository.getRecurring(minOcc = 3, includeStale = includeStale) }
+                    val eventsDeferred = async {
+                        runCatching {
+                            repository.getRecurringCalendar(
+                                year = current?.calendarYear ?: LocalDate.now().year,
+                                month = current?.calendarMonth ?: LocalDate.now().monthValue,
+                                minOcc = 3,
+                                includeStale = includeStale,
+                            )
+                        }.getOrNull()
+                    }
+                    groupsDeferred.await() to eventsDeferred.await()
+                }
                 _uiState.value = RecurringUiState.Success(
                     groups = groups,
                     includeStale = includeStale,

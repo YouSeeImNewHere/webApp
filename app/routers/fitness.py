@@ -12,6 +12,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.core import fitness_plan_engine as fpe
 from app.core.tenancy import current_tenant_id
 from db import query_db, with_db_cursor
 
@@ -163,6 +164,15 @@ def ensure_fitness_tables():
                 UNIQUE(tenant_id, client_id)
             )
         """)
+        # Training-plan goal types (RUN_DISTANCE/RUN_PACE/MAX_REPS/MAX_HOLD) reuse
+        # target_reps/target_duration_seconds/target_date above and add the
+        # fields those didn't cover: a distance target, a pace target, and the
+        # baseline ability captured at the end of the testing week (see
+        # fitness_plan_engine.py) that the progressive plan is generated from.
+        cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS target_distance_km DECIMAL(6,2)")
+        cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS target_pace_sec_per_mile INTEGER")
+        cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS baseline_value DECIMAL(8,2)")
+        cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS baseline_captured_at DATE")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fitness_milestones (
                 id SERIAL PRIMARY KEY,
@@ -239,6 +249,61 @@ def ensure_fitness_tables():
             CREATE INDEX IF NOT EXISTS idx_fitness_garmin_daily_health_tenant_date
                 ON fitness_garmin_daily_health(tenant_id, date DESC)
         """)
+
+        # -------------------------------------------------------------------
+        # Training plan: availability + generated schedule (see
+        # app/core/fitness_plan_engine.py)
+        # -------------------------------------------------------------------
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fitness_availability_weekday (
+                tenant_id INTEGER NOT NULL,
+                weekday INTEGER NOT NULL,
+                available BOOLEAN NOT NULL DEFAULT TRUE,
+                PRIMARY KEY (tenant_id, weekday)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fitness_unavailable_dates (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                reason TEXT DEFAULT '',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, date)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fitness_training_plan (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'TESTING',
+                started_at TIMESTAMPTZ DEFAULT NOW(),
+                last_regenerated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, client_id)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fitness_scheduled_workouts (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                scheduled_date DATE NOT NULL,
+                goal_ids JSONB NOT NULL DEFAULT '[]',
+                workout_type TEXT NOT NULL,
+                prescription JSONB NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'PLANNED',
+                linked_session_client_id TEXT,
+                week_number INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(tenant_id, client_id)
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_fitness_scheduled_workouts_tenant_date
+                ON fitness_scheduled_workouts(tenant_id, scheduled_date)
+        """)
+
         conn.commit()
     _tables_ready = True
 
@@ -276,6 +341,8 @@ class GoalIn(BaseModel):
     target_duration_seconds: Optional[int] = None
     target_date: Optional[date] = None
     notes: Optional[str] = ""
+    target_distance_km: Optional[float] = None
+    target_pace_sec_per_mile: Optional[int] = None
 
 
 class MilestoneIn(BaseModel):
@@ -452,8 +519,9 @@ def upsert_goal(body: GoalIn):
             """
             INSERT INTO fitness_goals (
                 tenant_id, client_id, title, goal_type, target_exercise_id,
-                target_reps, target_duration_seconds, target_date, notes
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                target_reps, target_duration_seconds, target_date, notes,
+                target_distance_km, target_pace_sec_per_mile
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (tenant_id, client_id) DO UPDATE SET
                 title = EXCLUDED.title,
                 goal_type = EXCLUDED.goal_type,
@@ -461,12 +529,15 @@ def upsert_goal(body: GoalIn):
                 target_reps = EXCLUDED.target_reps,
                 target_duration_seconds = EXCLUDED.target_duration_seconds,
                 target_date = EXCLUDED.target_date,
-                notes = EXCLUDED.notes
+                notes = EXCLUDED.notes,
+                target_distance_km = EXCLUDED.target_distance_km,
+                target_pace_sec_per_mile = EXCLUDED.target_pace_sec_per_mile
             RETURNING *
             """,
             (
                 tid, body.client_id, body.title, body.goal_type, body.target_exercise_id,
                 body.target_reps, body.target_duration_seconds, body.target_date, body.notes,
+                body.target_distance_km, body.target_pace_sec_per_mile,
             ),
         )
         row = cur.fetchone()
@@ -721,6 +792,382 @@ def upsert_garmin_daily_health(cur, tenant_id: int, day: str, fields: dict) -> N
 
 
 # ---------------------------------------------------------------------------
+# Training plan (see app/core/fitness_plan_engine.py for the actual
+# progression/reflow/adjustment algorithms — this section is just DB glue)
+# ---------------------------------------------------------------------------
+
+_PLAN_CLIENT_ID = "main"  # one active plan per tenant
+
+
+class WeekdayAvailabilityIn(BaseModel):
+    weekday: int
+    available: bool
+
+
+class UnavailableDateIn(BaseModel):
+    date: date
+    reason: Optional[str] = ""
+
+
+class AvailabilityIn(BaseModel):
+    weekdays: List[WeekdayAvailabilityIn] = []
+    unavailable_dates: List[UnavailableDateIn] = []
+
+
+class CompleteScheduledWorkoutIn(BaseModel):
+    session_client_id: Optional[str] = None
+    # Free-form logged performance, shape depends on prescription type — see
+    # fitness_plan_engine.performance_delta(): best_set_reps, best_hold_seconds,
+    # avg_pace_sec_per_mile.
+    logged: dict = {}
+
+
+def _load_availability(tid: int) -> fpe.Availability:
+    weekday_rows = query_db(
+        "SELECT weekday, available FROM fitness_availability_weekday WHERE tenant_id = %s", (tid,)
+    )
+    if weekday_rows:
+        available_weekdays = {r["weekday"] for r in weekday_rows if r["available"]}
+    else:
+        available_weekdays = {0, 1, 2, 3, 4, 5, 6}  # no rows saved yet — default to every day open
+    date_rows = query_db(
+        "SELECT date FROM fitness_unavailable_dates WHERE tenant_id = %s", (tid,)
+    )
+    unavailable_dates = {r["date"] for r in date_rows}
+    return fpe.Availability(available_weekdays=available_weekdays, unavailable_dates=unavailable_dates)
+
+
+def _load_goals(tid: int, goal_types: tuple[str, ...]) -> list[fpe.Goal]:
+    placeholders = ",".join(["%s"] * len(goal_types))
+    rows = query_db(
+        f"SELECT * FROM fitness_goals WHERE tenant_id = %s AND goal_type IN ({placeholders})",
+        (tid, *goal_types),
+    )
+    return [
+        fpe.Goal(
+            id=r["id"],
+            goal_type=r["goal_type"],
+            target_exercise_id=r.get("target_exercise_id"),
+            target_reps=r.get("target_reps"),
+            target_duration_seconds=r.get("target_duration_seconds"),
+            target_date=r.get("target_date"),
+            target_distance_km=float(r["target_distance_km"]) if r.get("target_distance_km") is not None else None,
+            target_pace_sec_per_mile=r.get("target_pace_sec_per_mile"),
+            baseline_value=float(r["baseline_value"]) if r.get("baseline_value") is not None else None,
+        )
+        for r in rows
+    ]
+
+
+_TRAINING_GOAL_TYPES = (fpe.GOAL_RUN_DISTANCE, fpe.GOAL_RUN_PACE, fpe.GOAL_MAX_REPS, fpe.GOAL_MAX_HOLD)
+
+
+def _insert_scheduled_workouts(cur, tid: int, rows: list[dict]) -> None:
+    for row in rows:
+        cur.execute(
+            """
+            INSERT INTO fitness_scheduled_workouts (
+                tenant_id, client_id, scheduled_date, goal_ids, workout_type, prescription, status, week_number
+            ) VALUES (%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s,%s)
+            ON CONFLICT (tenant_id, client_id) DO NOTHING
+            """,
+            (
+                tid, row["client_id"], row["scheduled_date"], json.dumps(row["goal_ids"]),
+                row["workout_type"], json.dumps(row["prescription"]), row["status"], row["week_number"],
+            ),
+        )
+
+
+@router.get("/fitness/availability")
+def get_availability():
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    avail = _load_availability(tid)
+    date_rows = query_db(
+        "SELECT date, reason FROM fitness_unavailable_dates WHERE tenant_id = %s ORDER BY date", (tid,)
+    )
+    return {
+        "weekdays": [{"weekday": d, "available": d in avail.available_weekdays} for d in range(7)],
+        "unavailable_dates": [_serialize(r) for r in date_rows],
+    }
+
+
+@router.post("/fitness/availability")
+def set_availability(body: AvailabilityIn):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        for w in body.weekdays:
+            cur.execute(
+                """
+                INSERT INTO fitness_availability_weekday (tenant_id, weekday, available)
+                VALUES (%s,%s,%s)
+                ON CONFLICT (tenant_id, weekday) DO UPDATE SET available = EXCLUDED.available
+                """,
+                (tid, w.weekday, w.available),
+            )
+        cur.execute("DELETE FROM fitness_unavailable_dates WHERE tenant_id = %s", (tid,))
+        for d in body.unavailable_dates:
+            cur.execute(
+                "INSERT INTO fitness_unavailable_dates (tenant_id, date, reason) VALUES (%s,%s,%s)",
+                (tid, d.date, d.reason),
+            )
+        conn.commit()
+
+    # Reflow any already-scheduled future plan around the new availability.
+    plan_rows = query_db(
+        "SELECT * FROM fitness_training_plan WHERE tenant_id = %s AND client_id = %s", (tid, _PLAN_CLIENT_ID)
+    )
+    if plan_rows:
+        avail = _load_availability(tid)
+        scheduled = query_db(
+            "SELECT * FROM fitness_scheduled_workouts WHERE tenant_id = %s", (tid,)
+        )
+        updates = fpe.reflow_plan(scheduled, avail, date.today())
+        if updates:
+            with with_db_cursor() as (conn, cur):
+                for u in updates:
+                    cur.execute(
+                        "UPDATE fitness_scheduled_workouts SET scheduled_date = %s WHERE tenant_id = %s AND client_id = %s",
+                        (u["scheduled_date"], tid, u["client_id"]),
+                    )
+                conn.commit()
+
+    return get_availability()
+
+
+@router.post("/fitness/plan/start-testing-week")
+def start_testing_week():
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    goals = _load_goals(tid, _TRAINING_GOAL_TYPES)
+    if not goals:
+        raise HTTPException(status_code=400, detail="No training goals set up yet")
+    avail = _load_availability(tid)
+    testing_rows = fpe.generate_testing_week(goals, avail, date.today())
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO fitness_training_plan (tenant_id, client_id, status)
+            VALUES (%s,%s,'TESTING')
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET status = 'TESTING', last_regenerated_at = NOW()
+            """,
+            (tid, _PLAN_CLIENT_ID),
+        )
+        cur.execute("DELETE FROM fitness_scheduled_workouts WHERE tenant_id = %s", (tid,))
+        _insert_scheduled_workouts(cur, tid, testing_rows)
+        conn.commit()
+
+    return {"status": "TESTING", "scheduled": len(testing_rows)}
+
+
+def _extract_baseline(prescription_type: str, session_row: dict) -> Optional[float]:
+    """Pulls the relevant baseline number out of a logged test session,
+    depending on which test it was. `exercises` is already the parsed
+    list (see _serialize) by the time this runs."""
+    if prescription_type == "pushup_test":
+        best = 0
+        for ex in session_row.get("exercises") or []:
+            for s in ex.get("sets") or []:
+                best = max(best, s.get("reps") or 0)
+        return float(best) if best else None
+    if prescription_type == "lsit_test":
+        best = 0
+        for ex in session_row.get("exercises") or []:
+            for s in ex.get("sets") or []:
+                best = max(best, s.get("durationSeconds") or 0)
+        return float(best) if best else None
+    return None
+
+
+@router.post("/fitness/plan/generate")
+def generate_real_plan():
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    goals = _load_goals(tid, _TRAINING_GOAL_TYPES)
+    if not goals:
+        raise HTTPException(status_code=400, detail="No training goals set up yet")
+
+    test_rows = query_db(
+        "SELECT * FROM fitness_scheduled_workouts WHERE tenant_id = %s AND workout_type = 'TEST' AND status = 'COMPLETED'",
+        (tid,),
+    )
+    with with_db_cursor() as (conn, cur):
+        for test_row in test_rows:
+            test_row = _serialize(test_row)
+            if not test_row.get("linked_session_client_id"):
+                continue
+            session_rows = query_db(
+                "SELECT * FROM fitness_workout_sessions WHERE tenant_id = %s AND client_id = %s",
+                (tid, test_row["linked_session_client_id"]),
+            )
+            if not session_rows:
+                continue
+            session_row = _serialize(session_rows[0])
+            prescription_type = test_row["prescription"].get("type")
+            goal_ids = test_row["goal_ids"] or []
+
+            if prescription_type == "run_test":
+                distance_km = session_row.get("distance_km")
+                avg_pace_sec_per_km = session_row.get("avg_pace_sec_per_km")
+                for gid in goal_ids:
+                    goal = next((g for g in goals if g.id == gid), None)
+                    if goal is None:
+                        continue
+                    if goal.goal_type == fpe.GOAL_RUN_DISTANCE and distance_km is not None:
+                        cur.execute(
+                            "UPDATE fitness_goals SET baseline_value = %s, baseline_captured_at = %s WHERE id = %s AND tenant_id = %s",
+                            (float(distance_km), date.today(), gid, tid),
+                        )
+                        goal.baseline_value = float(distance_km)
+                    if goal.goal_type == fpe.GOAL_RUN_PACE and avg_pace_sec_per_km is not None:
+                        pace_per_mile = float(avg_pace_sec_per_km) * 1.60934
+                        cur.execute(
+                            "UPDATE fitness_goals SET baseline_value = %s, baseline_captured_at = %s WHERE id = %s AND tenant_id = %s",
+                            (pace_per_mile, date.today(), gid, tid),
+                        )
+                        goal.baseline_value = pace_per_mile
+            else:
+                baseline = _extract_baseline(prescription_type, session_row)
+                if baseline is not None:
+                    for gid in goal_ids:
+                        cur.execute(
+                            "UPDATE fitness_goals SET baseline_value = %s, baseline_captured_at = %s WHERE id = %s AND tenant_id = %s",
+                            (baseline, date.today(), gid, tid),
+                        )
+                        goal = next((g for g in goals if g.id == gid), None)
+                        if goal is not None:
+                            goal.baseline_value = baseline
+        conn.commit()
+
+    plan_rows = _regenerate_future_plan(tid, goals)
+    return {"status": "ACTIVE", "scheduled": len(plan_rows)}
+
+
+def _regenerate_future_plan(tid: int, goals: list[fpe.Goal]) -> list[dict]:
+    """Rebuilds all not-yet-completed (PLANNED) scheduled workouts from
+    today's availability + each goal's current baseline_value. History
+    (COMPLETED/SKIPPED rows) is untouched — this is what both the initial
+    `generate` call and the adaptive nudge in complete_scheduled_workout()
+    use to keep the forward plan current."""
+    avail = _load_availability(tid)
+    plan_rows = fpe.generate_plan(goals, avail, date.today())
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "DELETE FROM fitness_scheduled_workouts WHERE tenant_id = %s AND status = 'PLANNED'", (tid,)
+        )
+        _insert_scheduled_workouts(cur, tid, plan_rows)
+        cur.execute(
+            """
+            INSERT INTO fitness_training_plan (tenant_id, client_id, status)
+            VALUES (%s,%s,'ACTIVE')
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET status = 'ACTIVE', last_regenerated_at = NOW()
+            """,
+            (tid, _PLAN_CLIENT_ID),
+        )
+        conn.commit()
+    return plan_rows
+
+
+@router.get("/fitness/plan/status")
+def get_plan_status():
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM fitness_training_plan WHERE tenant_id = %s AND client_id = %s", (tid, _PLAN_CLIENT_ID)
+    )
+    if not rows:
+        return {"status": "NONE"}
+    return _serialize(rows[0])
+
+
+@router.get("/fitness/plan/scheduled")
+def list_scheduled_workouts(start: Optional[date] = None, end: Optional[date] = None):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    query = "SELECT * FROM fitness_scheduled_workouts WHERE tenant_id = %s"
+    params: list[Any] = [tid]
+    if start is not None:
+        query += " AND scheduled_date >= %s"
+        params.append(start)
+    if end is not None:
+        query += " AND scheduled_date <= %s"
+        params.append(end)
+    query += " ORDER BY scheduled_date"
+    rows = query_db(query, tuple(params))
+    return [_serialize(r) for r in rows]
+
+
+@router.post("/fitness/plan/scheduled/{record_id}/complete")
+def complete_scheduled_workout(record_id: int, body: CompleteScheduledWorkoutIn):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    rows = query_db(
+        "SELECT * FROM fitness_scheduled_workouts WHERE id = %s AND tenant_id = %s", (record_id, tid)
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Scheduled workout not found")
+    row = _serialize(rows[0])
+
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "UPDATE fitness_scheduled_workouts SET status = 'COMPLETED', linked_session_client_id = %s WHERE id = %s AND tenant_id = %s",
+            (body.session_client_id, record_id, tid),
+        )
+        conn.commit()
+
+    # Bounded adaptive nudge — only applies to real training sessions, not
+    # baseline tests (those feed generate_plan() directly instead).
+    baseline_changed = False
+    if row["workout_type"] != "TEST" and body.logged:
+        delta = fpe.performance_delta(row["prescription"], body.logged)
+        if delta is not None:
+            for gid in row["goal_ids"] or []:
+                goal_rows = query_db("SELECT * FROM fitness_goals WHERE id = %s AND tenant_id = %s", (gid, tid))
+                if not goal_rows:
+                    continue
+                goal_row = _serialize(goal_rows[0])
+                if goal_row.get("baseline_value") is None:
+                    continue
+                goal = fpe.Goal(id=gid, goal_type=goal_row["goal_type"], baseline_value=float(goal_row["baseline_value"]))
+                new_baseline = fpe.adjust_for_performance(goal, delta)
+                if new_baseline is not None:
+                    with with_db_cursor() as (conn, cur):
+                        cur.execute(
+                            "UPDATE fitness_goals SET baseline_value = %s WHERE id = %s AND tenant_id = %s",
+                            (new_baseline, gid, tid),
+                        )
+                        conn.commit()
+                    baseline_changed = True
+
+    if baseline_changed:
+        plan_status = query_db(
+            "SELECT status FROM fitness_training_plan WHERE tenant_id = %s AND client_id = %s", (tid, _PLAN_CLIENT_ID)
+        )
+        if plan_status and plan_status[0]["status"] == "ACTIVE":
+            goals = _load_goals(tid, _TRAINING_GOAL_TYPES)
+            _regenerate_future_plan(tid, goals)
+
+    return {"ok": True}
+
+
+@router.post("/fitness/plan/scheduled/{record_id}/skip")
+def skip_scheduled_workout(record_id: int):
+    ensure_fitness_tables()
+    tid = current_tenant_id()
+    with with_db_cursor() as (conn, cur):
+        cur.execute(
+            "UPDATE fitness_scheduled_workouts SET status = 'SKIPPED' WHERE id = %s AND tenant_id = %s",
+            (record_id, tid),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Scheduled workout not found")
+        conn.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -731,11 +1178,11 @@ def _serialize(row: dict) -> dict:
             out[k] = v.isoformat()
         elif isinstance(v, Decimal):
             out[k] = float(v)
-        elif k in ("exercises", "muscle_groups", "instructions") and isinstance(v, str):
+        elif k in ("exercises", "muscle_groups", "instructions", "goal_ids", "prescription") and isinstance(v, str):
             try:
                 out[k] = json.loads(v)
             except Exception:
-                out[k] = []
+                out[k] = {} if k == "prescription" else []
         else:
             out[k] = v
     return out

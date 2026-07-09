@@ -1,8 +1,16 @@
 package com.quail.android.data.fitness
 
 import android.content.Context
+import com.quail.android.data.model.AvailabilityRecord
+import com.quail.android.data.model.AvailabilityUpsertRequest
 import com.quail.android.data.model.BodyweightRecord
 import com.quail.android.data.model.BodyweightUpsertRequest
+import com.quail.android.data.model.CompleteScheduledWorkoutRequest
+import com.quail.android.data.model.ScheduledWorkoutRecord
+import com.quail.android.data.model.StartPlanResponse
+import com.quail.android.data.model.TrainingPlanStatus
+import com.quail.android.data.model.UnavailableDate
+import com.quail.android.data.model.WeekdayAvailability
 import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.CustomExerciseUpsertRequest
 import com.quail.android.data.model.GarminConnectRequest
@@ -20,6 +28,7 @@ import com.quail.android.data.model.WorkoutSessionRecord
 import com.quail.android.data.model.WorkoutSessionUpsertRequest
 import com.quail.android.data.network.QuailApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonElement
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -78,12 +87,16 @@ private fun GoalEntity.toRecord(): GoalRecord = GoalRecord(
     id = serverId ?: 0, clientId = clientId, title = title, goalType = goalType,
     targetExerciseId = targetExerciseId, targetReps = targetReps,
     targetDurationSeconds = targetDurationSeconds, targetDate = targetDate, notes = notes,
+    targetDistanceKm = targetDistanceKm, targetPaceSecPerMile = targetPaceSecPerMile,
+    baselineValue = baselineValue, baselineCapturedAt = baselineCapturedAt,
 )
 
 private fun GoalRecord.toEntity(pendingSync: Boolean = true): GoalEntity = GoalEntity(
     clientId = clientId, serverId = id.takeIf { it != 0 }, title = title, goalType = goalType,
     targetExerciseId = targetExerciseId, targetReps = targetReps,
     targetDurationSeconds = targetDurationSeconds, targetDate = targetDate, notes = notes,
+    targetDistanceKm = targetDistanceKm, targetPaceSecPerMile = targetPaceSecPerMile,
+    baselineValue = baselineValue, baselineCapturedAt = baselineCapturedAt,
     pendingSync = pendingSync,
 )
 
@@ -219,6 +232,32 @@ class FitnessRepository(
 
     suspend fun getGarminDailyHealth(days: Int = 14): List<GarminDailyHealthRecord> = api.getGarminDailyHealth(days)
 
+    // ---- Training plan: server-computed schedule, fetched live (no offline
+    // queue — same pattern as Quail Cash's financing plans: derived data the
+    // user isn't expected to edit while offline) ----
+
+    suspend fun getAvailability(): AvailabilityRecord = api.getFitnessAvailability()
+
+    suspend fun setAvailability(weekdays: List<WeekdayAvailability>, unavailableDates: List<UnavailableDate>): AvailabilityRecord =
+        api.setFitnessAvailability(AvailabilityUpsertRequest(weekdays, unavailableDates))
+
+    suspend fun startTrainingPlanTestingWeek(): StartPlanResponse = api.startTrainingPlanTestingWeek()
+
+    suspend fun generateTrainingPlan(): StartPlanResponse = api.generateTrainingPlan()
+
+    suspend fun getTrainingPlanStatus(): TrainingPlanStatus = api.getTrainingPlanStatus()
+
+    suspend fun getScheduledWorkouts(start: String? = null, end: String? = null): List<ScheduledWorkoutRecord> =
+        api.getScheduledWorkouts(start, end)
+
+    suspend fun completeScheduledWorkout(id: Int, sessionClientId: String?, logged: Map<String, JsonElement> = emptyMap()) {
+        api.completeScheduledWorkout(id, CompleteScheduledWorkoutRequest(sessionClientId, logged))
+    }
+
+    suspend fun skipScheduledWorkout(id: Int) {
+        api.skipScheduledWorkout(id)
+    }
+
     // ---- Sync worker entry point: push everything pending, best-effort ----
 
     suspend fun pushPending() {
@@ -255,7 +294,11 @@ class FitnessRepository(
         val goalDao = db.goalDao()
         goalDao.getPendingSync().forEach { entity ->
             runCatching {
-                val req = GoalUpsertRequest(entity.clientId, entity.title, entity.goalType, entity.targetExerciseId, entity.targetReps, entity.targetDurationSeconds, entity.targetDate, entity.notes)
+                val req = GoalUpsertRequest(
+                    entity.clientId, entity.title, entity.goalType, entity.targetExerciseId, entity.targetReps,
+                    entity.targetDurationSeconds, entity.targetDate, entity.notes,
+                    entity.targetDistanceKm, entity.targetPaceSecPerMile,
+                )
                 val saved = api.upsertGoal(req)
                 goalDao.markSynced(entity.clientId, saved.id)
             }

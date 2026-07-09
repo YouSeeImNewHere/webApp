@@ -42,6 +42,7 @@ fun FitnessAnalyticsScreen(
     onOpenHome: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCalendar: () -> Unit,
+    onOpenPlan: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
     val data by viewModel.uiState.collectAsState()
@@ -54,6 +55,7 @@ fun FitnessAnalyticsScreen(
                 onSelectHome = onOpenHome,
                 onSelectCalendar = onOpenCalendar,
                 onSelectAnalytics = {},
+                onSelectPlan = onOpenPlan,
                 onOpenDashboard = onOpenDashboard,
             )
         },

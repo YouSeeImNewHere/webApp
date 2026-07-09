@@ -22,6 +22,10 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Debug-signed so it can be installed straight from Android Studio
+            // for local performance testing without a real release keystore.
+            // Swap this for a proper signing config before any real release.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -49,6 +53,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
+    // Forces the transitively-resolved androidx.fragment version (pulled in
+    // by activity/navigation, otherwise landed on 1.1.0) up past 1.3.0 -
+    // below that, lintVitalRelease fails the release build with a fatal
+    // InvalidFragmentVersionForActivityResult error on any
+    // registerForActivityResult() call (see MainActivity.kt).
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation(libs.androidx.browser)
     implementation(libs.androidx.datastore.preferences)
 

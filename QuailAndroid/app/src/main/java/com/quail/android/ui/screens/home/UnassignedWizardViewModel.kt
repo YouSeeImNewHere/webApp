@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.model.UnassignedTransaction
 import com.quail.android.data.repository.HomeRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,14 +48,16 @@ class UnassignedWizardViewModel(
 
     init {
         viewModelScope.launch {
-            val categories = runCatching { repository.getCategories() }.getOrDefault(emptyList())
-            val rows = try {
-                repository.getUnassigned(limit = 25, mode = "freq")
+            try {
+                coroutineScope {
+                    val categoriesDeferred = async { runCatching { repository.getCategories() }.getOrDefault(emptyList()) }
+                    val rowsDeferred = async { repository.getUnassigned(limit = 25, mode = "freq") }
+                    val rows = rowsDeferred.await()
+                    _state.value = UnassignedUiState.Ready(rows = dedupeForMode(rows, "freq"), categories = categoriesDeferred.await())
+                }
             } catch (e: Exception) {
                 _state.value = UnassignedUiState.Error(e.message ?: "Couldn't load unassigned transactions")
-                return@launch
             }
-            _state.value = UnassignedUiState.Ready(rows = dedupeForMode(rows, "freq"), categories = categories)
         }
     }
 

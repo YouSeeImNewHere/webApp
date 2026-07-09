@@ -59,6 +59,7 @@ import com.quail.android.ui.screens.dashboard.DashboardViewModel
 import com.quail.android.ui.screens.fitness.FitnessActiveWorkoutScreen
 import com.quail.android.ui.screens.fitness.FitnessAnalyticsScreen
 import com.quail.android.ui.screens.fitness.FitnessCalendarScreen
+import com.quail.android.ui.screens.fitness.FitnessPlanScreen
 import com.quail.android.ui.screens.fitness.FitnessScreen
 import com.quail.android.ui.screens.fitness.FitnessSettingsScreen
 import com.quail.android.ui.screens.fitness.FitnessViewModel
@@ -81,6 +82,8 @@ import com.quail.android.ui.screens.wizards.IncomeWizardScreen
 import com.quail.android.ui.screens.wizards.IncomeWizardViewModel
 import com.quail.android.ui.screens.wizards.EmailParserWizardScreen
 import com.quail.android.ui.screens.wizards.EmailParserWizardViewModel
+import com.quail.android.ui.screens.wizards.GoalSetupWizardScreen
+import com.quail.android.ui.screens.wizards.GoalSetupWizardViewModel
 import com.quail.android.ui.screens.vehicle.VehicleFuelHistoryScreen
 import com.quail.android.ui.screens.vehicle.VehicleIssuesScreen
 import com.quail.android.ui.screens.vehicle.VehicleNotificationsScreen
@@ -106,6 +109,8 @@ private const val ROUTE_FITNESS_ACTIVE_WORKOUT = "fitness_active_workout"
 private const val ROUTE_FITNESS_SETTINGS = "fitness_settings"
 private const val ROUTE_FITNESS_CALENDAR = "fitness_calendar"
 private const val ROUTE_FITNESS_ANALYTICS = "fitness_analytics"
+private const val ROUTE_FITNESS_PLAN = "fitness_plan"
+private const val ROUTE_GOAL_SETUP_WIZARD = "goal_setup_wizard"
 private const val ROUTE_BUGS = "bugs"
 private const val ROUTE_PROJECTS = "projects"
 private const val ROUTE_PROJECT_DETAIL = "project_detail/{clientId}"
@@ -272,6 +277,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
                 onOpenCalendar = { navController.navigate(ROUTE_FITNESS_CALENDAR) },
                 onOpenAnalytics = { navController.navigate(ROUTE_FITNESS_ANALYTICS) },
+                onOpenPlan = { navController.navigate(ROUTE_FITNESS_PLAN) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }
@@ -291,6 +297,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenHome = { navController.popBackStack(ROUTE_FITNESS, inclusive = false) },
                 onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
                 onOpenAnalytics = { navController.navigate(ROUTE_FITNESS_ANALYTICS) },
+                onOpenPlan = { navController.navigate(ROUTE_FITNESS_PLAN) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
             )
         }
@@ -302,7 +309,30 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenHome = { navController.popBackStack(ROUTE_FITNESS, inclusive = false) },
                 onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
                 onOpenCalendar = { navController.navigate(ROUTE_FITNESS_CALENDAR) },
+                onOpenPlan = { navController.navigate(ROUTE_FITNESS_PLAN) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_FITNESS_PLAN) {
+            val viewModel: FitnessViewModel = viewModel(factory = FitnessViewModel.Factory(fitnessRepository))
+            FitnessPlanScreen(
+                viewModel = viewModel,
+                onOpenHome = { navController.popBackStack(ROUTE_FITNESS, inclusive = false) },
+                onOpenSettings = { navController.navigate(ROUTE_FITNESS_SETTINGS) },
+                onOpenCalendar = { navController.navigate(ROUTE_FITNESS_CALENDAR) },
+                onOpenAnalytics = { navController.navigate(ROUTE_FITNESS_ANALYTICS) },
+                onOpenGoalSetupWizard = { navController.navigate(ROUTE_GOAL_SETUP_WIZARD) },
+                onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+            )
+        }
+
+        composable(ROUTE_GOAL_SETUP_WIZARD) {
+            val viewModel: GoalSetupWizardViewModel = viewModel(factory = GoalSetupWizardViewModel.Factory(fitnessRepository))
+            GoalSetupWizardScreen(
+                viewModel = viewModel,
+                onDone = { navController.popBackStack(ROUTE_FITNESS_PLAN, inclusive = false) },
+                onBack = { navController.popBackStack() },
             )
         }
 

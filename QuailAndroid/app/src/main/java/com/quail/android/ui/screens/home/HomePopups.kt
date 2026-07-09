@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.quail.android.ui.overlay.AppOverlayHost
 import com.quail.android.ui.overlay.InlineConfirmCard
 import com.quail.android.ui.theme.CategoryPickerField
+import com.quail.android.ui.theme.FinancingPlansList
 import com.quail.android.data.model.BankAccount
 import com.quail.android.data.model.ExtraSavedDay
 import com.quail.android.data.model.IncomeBasisPaycheck
@@ -79,6 +80,7 @@ sealed interface HomeSheet {
     data class TransactionDetail(val id: String) : HomeSheet
     data object BankInfo : HomeSheet
     data class AccountAudit(val account: BankAccount) : HomeSheet
+    data object Financing : HomeSheet
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,6 +95,7 @@ fun HomeSheetHost(sheet: HomeSheet, viewModel: HomeViewModel, onDismiss: () -> U
             is HomeSheet.TransactionDetail -> TransactionDetailSheetContent(sheet.id, viewModel, onDismiss)
             is HomeSheet.BankInfo -> BankInfoSheetContent(viewModel, onDismiss)
             is HomeSheet.AccountAudit -> AccountAuditSheetContent(sheet.account)
+            is HomeSheet.Financing -> FinancingSheetContent(viewModel)
         }
     }
     SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
@@ -230,6 +233,20 @@ private fun ExtraSavedDayRow(day: ExtraSavedDay) {
 }
 
 // ---- Spent so far ----
+
+@Composable
+private fun FinancingSheetContent(viewModel: HomeViewModel) {
+    val state by viewModel.uiState.collectAsState()
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+        SheetTitle("Financing")
+        val plans = (state as? HomeUiState.Success)?.financingPlans ?: emptyList()
+        if (plans.isEmpty()) {
+            Text("No financed purchases", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+        } else {
+            FinancingPlansList(plans, onDelete = { viewModel.deleteFinancingPlan(it) })
+        }
+    }
+}
 
 @Composable
 private fun SpentSoFarSheetContent(viewModel: HomeViewModel) {

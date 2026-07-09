@@ -39,6 +39,12 @@ import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.FinancingPlanPayResponse
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.GoalUpsertRequest
+import com.quail.android.data.model.AvailabilityRecord
+import com.quail.android.data.model.AvailabilityUpsertRequest
+import com.quail.android.data.model.StartPlanResponse
+import com.quail.android.data.model.TrainingPlanStatus
+import com.quail.android.data.model.ScheduledWorkoutRecord
+import com.quail.android.data.model.CompleteScheduledWorkoutRequest
 import com.quail.android.data.model.HomePayload
 import com.quail.android.data.model.MilestoneRecord
 import com.quail.android.data.model.MilestoneUpsertRequest
@@ -523,6 +529,30 @@ interface QuailApi {
 
     @DELETE("fitness/goals/{id}")
     suspend fun deleteGoal(@Path("id") id: Int): OkResponse
+
+    @GET("fitness/availability")
+    suspend fun getFitnessAvailability(): AvailabilityRecord
+
+    @POST("fitness/availability")
+    suspend fun setFitnessAvailability(@Body request: AvailabilityUpsertRequest): AvailabilityRecord
+
+    @POST("fitness/plan/start-testing-week")
+    suspend fun startTrainingPlanTestingWeek(): StartPlanResponse
+
+    @POST("fitness/plan/generate")
+    suspend fun generateTrainingPlan(): StartPlanResponse
+
+    @GET("fitness/plan/status")
+    suspend fun getTrainingPlanStatus(): TrainingPlanStatus
+
+    @GET("fitness/plan/scheduled")
+    suspend fun getScheduledWorkouts(@Query("start") start: String? = null, @Query("end") end: String? = null): List<ScheduledWorkoutRecord>
+
+    @POST("fitness/plan/scheduled/{id}/complete")
+    suspend fun completeScheduledWorkout(@Path("id") id: Int, @Body request: CompleteScheduledWorkoutRequest): OkResponse
+
+    @POST("fitness/plan/scheduled/{id}/skip")
+    suspend fun skipScheduledWorkout(@Path("id") id: Int): OkResponse
 
     @GET("fitness/milestones")
     suspend fun getMilestones(): List<MilestoneRecord>

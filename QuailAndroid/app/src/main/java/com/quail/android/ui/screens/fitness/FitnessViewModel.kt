@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.fitness.FitnessRepository
+import com.quail.android.data.model.AvailabilityRecord
 import com.quail.android.data.model.BodyweightRecord
 import com.quail.android.data.model.CustomExerciseRecord
 import com.quail.android.data.model.DEFAULT_EXERCISES
@@ -14,6 +15,9 @@ import com.quail.android.data.model.MilestoneRecord
 import com.quail.android.data.model.MuscleGroup
 import com.quail.android.data.model.ProgressionPath
 import com.quail.android.data.model.RoutineRecord
+import com.quail.android.data.model.ScheduledWorkoutRecord
+import com.quail.android.data.model.UnavailableDate
+import com.quail.android.data.model.WeekdayAvailability
 import com.quail.android.data.model.WorkoutExerciseEntry
 import com.quail.android.data.model.WorkoutSessionRecord
 import com.quail.android.data.model.WorkoutSet
@@ -24,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
 import java.time.LocalDate
 import java.util.UUID
 
@@ -54,14 +59,26 @@ data class FitnessData(
 
 /** The workout currently being logged — held in memory only until Finish,
  * at which point it's written through FitnessRepository (Room first, synced
- * to the backend once connected). */
+ * to the backend once connected). `scheduledWorkoutId` is set when this
+ * workout was started from the training plan's "Start" action, so Finish
+ * can report the result back (see completeScheduledWorkout in
+ * FitnessRepository / fitness_plan_engine.adjust_for_performance). */
 data class ActiveWorkout(
     val clientId: String = UUID.randomUUID().toString(),
     val startedAtMillis: Long = System.currentTimeMillis(),
     val exercises: List<WorkoutExerciseEntry> = emptyList(),
     val bodyweightKg: Double? = null,
     val notes: String = "",
+    val scheduledWorkoutId: Int? = null,
 )
+
+sealed interface TrainingPlanUiState {
+    data object Loading : TrainingPlanUiState
+    data class Error(val message: String) : TrainingPlanUiState
+    data class None(val hasGoals: Boolean) : TrainingPlanUiState
+    data class Testing(val scheduled: List<ScheduledWorkoutRecord>) : TrainingPlanUiState
+    data class Active(val scheduled: List<ScheduledWorkoutRecord>) : TrainingPlanUiState
+}
 
 sealed interface GarminConnectState {
     data object Unknown : GarminConnectState
@@ -90,8 +107,122 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
     private val _garminHealth = MutableStateFlow<List<GarminDailyHealthRecord>>(emptyList())
     val garminHealth: StateFlow<List<GarminDailyHealthRecord>> = _garminHealth
 
+    private val _planState = MutableStateFlow<TrainingPlanUiState>(TrainingPlanUiState.Loading)
+    val planState: StateFlow<TrainingPlanUiState> = _planState
+
+    private val _availability = MutableStateFlow<AvailabilityRecord?>(null)
+    val availability: StateFlow<AvailabilityRecord?> = _availability
+
+    private val _planActionInFlight = MutableStateFlow(false)
+    val planActionInFlight: StateFlow<Boolean> = _planActionInFlight
+
     init {
         refreshGarminHealth()
+        loadPlan()
+        loadAvailability()
+    }
+
+    fun loadPlan() {
+        viewModelScope.launch {
+            _planState.value = TrainingPlanUiState.Loading
+            try {
+                val status = repository.getTrainingPlanStatus().status
+                when (status) {
+                    "TESTING" -> _planState.value = TrainingPlanUiState.Testing(repository.getScheduledWorkouts())
+                    "ACTIVE" -> _planState.value = TrainingPlanUiState.Active(repository.getScheduledWorkouts())
+                    else -> {
+                        val hasGoals = uiState.value?.goals?.isNotEmpty() == true
+                        _planState.value = TrainingPlanUiState.None(hasGoals)
+                    }
+                }
+            } catch (e: Exception) {
+                _planState.value = TrainingPlanUiState.Error(e.message ?: "Couldn't load your training plan")
+            }
+        }
+    }
+
+    fun loadAvailability() {
+        viewModelScope.launch {
+            runCatching { repository.getAvailability() }.onSuccess { _availability.value = it }
+        }
+    }
+
+    fun saveAvailability(weekdays: List<WeekdayAvailability>, unavailableDates: List<UnavailableDate>) {
+        viewModelScope.launch {
+            _planActionInFlight.value = true
+            try {
+                _availability.value = repository.setAvailability(weekdays, unavailableDates)
+                loadPlan() // availability changes can reflow the active plan
+            } finally {
+                _planActionInFlight.value = false
+            }
+        }
+    }
+
+    fun startTrainingPlanTestingWeek() {
+        viewModelScope.launch {
+            _planActionInFlight.value = true
+            try {
+                repository.startTrainingPlanTestingWeek()
+                loadPlan()
+            } catch (e: Exception) {
+                _planState.value = TrainingPlanUiState.Error(e.message ?: "Couldn't start your testing week")
+            } finally {
+                _planActionInFlight.value = false
+            }
+        }
+    }
+
+    fun generateTrainingPlan() {
+        viewModelScope.launch {
+            _planActionInFlight.value = true
+            try {
+                repository.generateTrainingPlan()
+                loadPlan()
+            } catch (e: Exception) {
+                _planState.value = TrainingPlanUiState.Error(e.message ?: "Couldn't generate your plan")
+            } finally {
+                _planActionInFlight.value = false
+            }
+        }
+    }
+
+    /** Used for scheduled workouts with no in-app logging path (runs — this
+     * app has no manual cardio entry, only Garmin sync) and for skip. */
+    fun markScheduledWorkoutDone(id: Int) {
+        viewModelScope.launch {
+            runCatching { repository.completeScheduledWorkout(id, sessionClientId = null) }
+            loadPlan()
+        }
+    }
+
+    fun skipScheduledWorkout(id: Int) {
+        viewModelScope.launch {
+            runCatching { repository.skipScheduledWorkout(id) }
+            loadPlan()
+        }
+    }
+
+    /** Seeds the active workout with the prescribed exercise + target
+     * sets/reps (or a single freeform set for the testing-week AMRAP tests),
+     * so the strength/hold-based portion of the plan flows straight into the
+     * normal workout logger. Run prescriptions aren't started this way (see
+     * markScheduledWorkoutDone). */
+    fun startWorkoutFromScheduled(scheduled: ScheduledWorkoutRecord) {
+        val type = scheduled.prescription.str("type")
+        val exercises = when (type) {
+            "pushups", "lsit_hold" -> {
+                val exerciseId = scheduled.prescription.str("exercise_id") ?: "pushup"
+                val sets = scheduled.prescription.setsList().map {
+                    WorkoutSet(id = UUID.randomUUID().toString(), reps = it.reps, durationSeconds = it.holdSeconds)
+                }
+                listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, sets))
+            }
+            "pushup_test" -> listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), "pushup", listOf(WorkoutSet(id = UUID.randomUUID().toString()))))
+            "lsit_test" -> listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), "tuck_lsit", listOf(WorkoutSet(id = UUID.randomUUID().toString()))))
+            else -> emptyList()
+        }
+        _activeWorkout.value = ActiveWorkout(exercises = exercises, scheduledWorkoutId = scheduled.id)
     }
 
     fun refreshGarminHealth() {
@@ -203,6 +334,21 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
                     exercises = workout.exercises,
                 ),
             )
+            workout.scheduledWorkoutId?.let { scheduledId ->
+                val bestReps = workout.exercises.flatMap { it.sets }.mapNotNull { it.reps }.maxOrNull()
+                val bestHold = workout.exercises.flatMap { it.sets }.mapNotNull { it.durationSeconds }.maxOrNull()
+                val logged = buildMap {
+                    bestReps?.let { put("best_set_reps", JsonPrimitive(it)) }
+                    bestHold?.let { put("best_hold_seconds", JsonPrimitive(it)) }
+                }
+                // Push now (rather than waiting for the background sync worker)
+                // so the session this scheduled workout links to already exists
+                // server-side — /fitness/plan/generate reads baselines straight
+                // from fitness_workout_sessions right after a testing-week test.
+                runCatching { repository.pushPending() }
+                runCatching { repository.completeScheduledWorkout(scheduledId, workout.clientId, logged) }
+                loadPlan()
+            }
             _activeWorkout.value = null
         }
     }

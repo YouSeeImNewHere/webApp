@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.quail.android.data.model.BankInfoOptions
 import com.quail.android.data.model.Transaction
 import com.quail.android.data.repository.HomeRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,8 +49,11 @@ class AllTransactionsViewModel(private val repository: HomeRepository) : ViewMod
 
     init {
         viewModelScope.launch {
-            val bankInfo = runCatching { repository.getBankInfo() }.getOrDefault(BankInfoOptions())
-            val categories = runCatching { repository.getCategories() }.getOrDefault(emptyList())
+            val (bankInfo, categories) = coroutineScope {
+                val bankInfoDeferred = async { runCatching { repository.getBankInfo() }.getOrDefault(BankInfoOptions()) }
+                val categoriesDeferred = async { runCatching { repository.getCategories() }.getOrDefault(emptyList()) }
+                bankInfoDeferred.await() to categoriesDeferred.await()
+            }
             loadInternal(TransactionFilters(), bankInfo, categories)
         }
     }

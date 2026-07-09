@@ -59,6 +59,8 @@ fun FitnessSheetHost(sheet: FitnessSheet, viewModel: FitnessViewModel, onDismiss
             is FitnessSheet.LogBodyweight -> LogBodyweightSheet(viewModel, onDismiss)
             is FitnessSheet.AddMilestone -> AddMilestoneSheet(viewModel, onDismiss)
             is FitnessSheet.CreateRoutine -> CreateRoutineContent(viewModel, onDismiss)
+            is FitnessSheet.ScheduledWorkoutDetail -> ScheduledWorkoutDetailSheet(sheet.record, viewModel, onDismiss)
+            is FitnessSheet.EditAvailability -> EditAvailabilitySheet(viewModel, onDismiss)
         }
     }
     SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
@@ -374,5 +376,88 @@ private fun CreateRoutineContent(viewModel: FitnessViewModel, onDismiss: () -> U
             onShowInfo = {},
             onCreateCustomExercise = {},
         )
+    }
+}
+
+// ---- Training plan: scheduled workout detail ----
+
+@Composable
+private fun ScheduledWorkoutDetailSheet(
+    record: com.quail.android.data.model.ScheduledWorkoutRecord,
+    viewModel: FitnessViewModel,
+    onDismiss: () -> Unit,
+) {
+    val prescriptionType = record.prescription.str("type")
+    val canLogInApp = prescriptionType in setOf("pushups", "lsit_hold", "pushup_test", "lsit_test")
+
+    SheetScaffold(record.workoutType.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }, onDismiss) {
+        Text(prescriptionSummary(record.workoutType, record.prescription), fontWeight = FontWeight.SemiBold)
+        record.prescription.str("notes")?.let { Text(it, color = QuailTextDim) }
+        record.prescription.str("instructions")?.let { Text(it, color = QuailTextDim) }
+
+        if (record.status == "PLANNED") {
+            if (canLogInApp) {
+                SaveButton("Start", enabled = true) {
+                    viewModel.startWorkoutFromScheduled(record)
+                    onDismiss()
+                }
+            } else {
+                SaveButton("Mark as Done", enabled = true) {
+                    viewModel.markScheduledWorkoutDone(record.id)
+                    onDismiss()
+                }
+            }
+            TextButton(onClick = { viewModel.skipScheduledWorkout(record.id); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Skip this session")
+            }
+        } else {
+            Text("Status: ${record.status.lowercase().replaceFirstChar { it.uppercase() }}", color = QuailTextDim)
+        }
+    }
+}
+
+// ---- Training plan: availability editor ----
+
+private val PLAN_WEEKDAY_LABELS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+@Composable
+private fun EditAvailabilitySheet(viewModel: FitnessViewModel, onDismiss: () -> Unit) {
+    val availability by viewModel.availability.collectAsState()
+    var selectedWeekdays by remember(availability) {
+        mutableStateOf(
+            availability?.weekdays?.filter { it.available }?.map { it.weekday }?.toSet()
+                ?: setOf(0, 1, 2, 3, 4, 5, 6),
+        )
+    }
+
+    SheetScaffold("Availability", onDismiss) {
+        Text("Which days can you usually train?", color = QuailTextDim)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            PLAN_WEEKDAY_LABELS.forEachIndexed { index, label ->
+                val selected = index in selectedWeekdays
+                Surface(
+                    onClick = { selectedWeekdays = if (selected) selectedWeekdays - index else selectedWeekdays + index },
+                    color = if (selected) MaterialTheme.colorScheme.primary else QuailSurfaceRaised,
+                    shape = RoundedCornerShape(999.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        label,
+                        color = if (selected) Color.Black else Color.Unspecified,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
+                }
+            }
+        }
+        SaveButton("Save", enabled = selectedWeekdays.isNotEmpty()) {
+            viewModel.saveAvailability(
+                weekdays = (0..6).map { com.quail.android.data.model.WeekdayAvailability(it, it in selectedWeekdays) },
+                unavailableDates = availability?.unavailableDates ?: emptyList(),
+            )
+            onDismiss()
+        }
     }
 }

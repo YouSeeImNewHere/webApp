@@ -59,6 +59,10 @@ data class GoalEntity(
     val targetDurationSeconds: Int? = null,
     val targetDate: String? = null,
     val notes: String = "",
+    val targetDistanceKm: Double? = null,
+    val targetPaceSecPerMile: Int? = null,
+    val baselineValue: Double? = null,
+    val baselineCapturedAt: String? = null,
     val pendingSync: Boolean = true,
     val pendingDelete: Boolean = false,
     val createdAtMillis: Long = System.currentTimeMillis(),
@@ -260,7 +264,7 @@ interface CustomExerciseDao {
         BodyweightEntity::class,
         CustomExerciseEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class FitnessDatabase : RoomDatabase() {

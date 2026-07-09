@@ -2,6 +2,7 @@ package com.quail.android.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 // ---- Nested workout shapes (stored as JSONB server-side, JSON text in Room) ----
 
@@ -84,6 +85,10 @@ data class GoalRecord(
     @SerialName("target_duration_seconds") val targetDurationSeconds: Int? = null,
     @SerialName("target_date") val targetDate: String? = null,
     val notes: String = "",
+    @SerialName("target_distance_km") val targetDistanceKm: Double? = null,
+    @SerialName("target_pace_sec_per_mile") val targetPaceSecPerMile: Int? = null,
+    @SerialName("baseline_value") val baselineValue: Double? = null,
+    @SerialName("baseline_captured_at") val baselineCapturedAt: String? = null,
 )
 
 @Serializable
@@ -96,6 +101,71 @@ data class GoalUpsertRequest(
     @SerialName("target_duration_seconds") val targetDurationSeconds: Int? = null,
     @SerialName("target_date") val targetDate: String? = null,
     val notes: String = "",
+    @SerialName("target_distance_km") val targetDistanceKm: Double? = null,
+    @SerialName("target_pace_sec_per_mile") val targetPaceSecPerMile: Int? = null,
+)
+
+// ---- Training plan: goal-driven schedule (see app/core/fitness_plan_engine.py) ----
+
+object FitnessGoalType {
+    const val RUN_DISTANCE = "RUN_DISTANCE"
+    const val RUN_PACE = "RUN_PACE"
+    const val MAX_REPS = "MAX_REPS"
+    const val MAX_HOLD = "MAX_HOLD"
+}
+
+@Serializable
+data class WeekdayAvailability(
+    val weekday: Int,
+    val available: Boolean,
+)
+
+@Serializable
+data class UnavailableDate(
+    val date: String,
+    val reason: String = "",
+)
+
+@Serializable
+data class AvailabilityRecord(
+    val weekdays: List<WeekdayAvailability> = emptyList(),
+    @SerialName("unavailable_dates") val unavailableDates: List<UnavailableDate> = emptyList(),
+)
+
+@Serializable
+data class AvailabilityUpsertRequest(
+    val weekdays: List<WeekdayAvailability>,
+    @SerialName("unavailable_dates") val unavailableDates: List<UnavailableDate>,
+)
+
+@Serializable
+data class TrainingPlanStatus(
+    val status: String = "NONE",
+)
+
+@Serializable
+data class StartPlanResponse(
+    val status: String,
+    val scheduled: Int,
+)
+
+@Serializable
+data class ScheduledWorkoutRecord(
+    val id: Int = 0,
+    @SerialName("client_id") val clientId: String = "",
+    @SerialName("scheduled_date") val scheduledDate: String,
+    @SerialName("goal_ids") val goalIds: List<Int> = emptyList(),
+    @SerialName("workout_type") val workoutType: String,
+    val prescription: Map<String, JsonElement> = emptyMap(),
+    val status: String = "PLANNED",
+    @SerialName("linked_session_client_id") val linkedSessionClientId: String? = null,
+    @SerialName("week_number") val weekNumber: Int = 0,
+)
+
+@Serializable
+data class CompleteScheduledWorkoutRequest(
+    @SerialName("session_client_id") val sessionClientId: String? = null,
+    val logged: Map<String, JsonElement> = emptyMap(),
 )
 
 @Serializable

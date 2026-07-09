@@ -68,6 +68,8 @@ sealed interface FitnessSheet {
     data object LogBodyweight : FitnessSheet
     data object AddMilestone : FitnessSheet
     data object CreateRoutine : FitnessSheet
+    data class ScheduledWorkoutDetail(val record: com.quail.android.data.model.ScheduledWorkoutRecord) : FitnessSheet
+    data object EditAvailability : FitnessSheet
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +80,7 @@ fun FitnessScreen(
     onOpenSettings: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenAnalytics: () -> Unit,
+    onOpenPlan: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
     val data by viewModel.uiState.collectAsState()
@@ -92,6 +95,7 @@ fun FitnessScreen(
                 onSelectHome = {},
                 onSelectCalendar = onOpenCalendar,
                 onSelectAnalytics = onOpenAnalytics,
+                onSelectPlan = onOpenPlan,
                 onOpenDashboard = onOpenDashboard,
             )
         },
@@ -146,7 +150,7 @@ fun FitnessTopBar(onOpenSettings: () -> Unit) {
     }
 }
 
-enum class FitnessTab { HOME, CALENDAR, ANALYTICS }
+enum class FitnessTab { HOME, CALENDAR, ANALYTICS, PLAN }
 
 @Composable
 fun FitnessBottomBar(
@@ -154,6 +158,7 @@ fun FitnessBottomBar(
     onSelectHome: () -> Unit,
     onSelectCalendar: () -> Unit,
     onSelectAnalytics: () -> Unit,
+    onSelectPlan: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
     Surface(color = QuailSurface) {
@@ -163,6 +168,7 @@ fun FitnessBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FitnessBottomBarTab("Home", Icons.Filled.FitnessCenter, selected = selectedTab == FitnessTab.HOME, onClick = onSelectHome, modifier = Modifier.weight(1f))
+            FitnessBottomBarTab("Plan", Icons.Filled.EmojiEvents, selected = selectedTab == FitnessTab.PLAN, onClick = onSelectPlan, modifier = Modifier.weight(1f))
             FitnessBottomBarTab("Calendar", Icons.Filled.CalendarMonth, selected = selectedTab == FitnessTab.CALENDAR, onClick = onSelectCalendar, modifier = Modifier.weight(1f))
             FitnessBottomBarTab("Analytics", Icons.Filled.BarChart, selected = selectedTab == FitnessTab.ANALYTICS, onClick = onSelectAnalytics, modifier = Modifier.weight(1f))
             Surface(onClick = onOpenDashboard, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(12.dp)) {
