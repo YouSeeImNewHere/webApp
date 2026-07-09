@@ -4,10 +4,11 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
-import android.os.Bundle
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.quail.android.data.model.MapsExtractResult
 import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.network.QuailApi
@@ -23,21 +24,24 @@ class MapsRepository(private val api: QuailApi, private val context: Context) {
 
     suspend fun getStatus(): MapsStatusResponse = api.getMapsStatus()
 
-    /** Prefers a fresh GPS fix; falls back to the last known fix (from GPS
-     * or network) if a live fix doesn't land within [timeoutMs] — good
-     * enough for "roughly what city am I in" without stalling the download
-     * button indefinitely on a weak signal indoors. */
-    suspend fun getCurrentLocation(timeoutMs: Long = 15_000): Location {
+    /** Uses Google's Fused Location Provider (fuses GPS + wifi + cell —
+     * already available since Play Services is a dependency via Firebase)
+     * rather than a single raw LocationManager provider, which struggled to
+     * produce a fix at all when tested indoors. Falls back to the provider's
+     * cached last-known fix if a live one doesn't land within [timeoutMs]. */
+    suspend fun getCurrentLocation(timeoutMs: Long = 20_000): Location {
         if (!hasLocationPermission()) {
             throw LocationUnavailableException("Location permission not granted")
         }
-        val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val client = LocationServices.getFusedLocationProviderClient(context)
 
-        val fresh = withTimeoutOrNull(timeoutMs) { requestSingleLocationUpdate(manager) }
+        val fresh = withTimeoutOrNull(timeoutMs) { requestFreshLocation(client) }
         if (fresh != null) return fresh
 
-        return lastKnownLocation(manager)
-            ?: throw LocationUnavailableException("No location fix available — try again outdoors or with wifi/GPS on")
+        return lastKnownLocation(client)
+            ?: throw LocationUnavailableException(
+                "No location fix available — check Location is on (High accuracy mode) and try again",
+            )
     }
 
     private fun hasLocationPermission(): Boolean {
@@ -47,41 +51,30 @@ class MapsRepository(private val api: QuailApi, private val context: Context) {
             PackageManager.PERMISSION_GRANTED
     }
 
-    private fun lastKnownLocation(manager: LocationManager): Location? {
-        val providers = manager.getProviders(true)
-        return providers.mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
-            .maxByOrNull { it.time }
-    }
-
-    private suspend fun requestSingleLocationUpdate(manager: LocationManager): Location? =
+    private suspend fun requestFreshLocation(client: FusedLocationProviderClient): Location? =
         suspendCancellableCoroutine { cont ->
-            val provider = when {
-                manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-                else -> null
-            }
-            if (provider == null) {
-                cont.resume(null)
-                return@suspendCancellableCoroutine
-            }
-            val listener = object : LocationListener {
-                override fun onLocationChanged(location: Location) {
-                    manager.removeUpdates(this)
-                    if (cont.isActive) cont.resume(location)
-                }
-                @Deprecated("Deprecated in Java")
-                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-                override fun onProviderEnabled(provider: String) {}
-                override fun onProviderDisabled(provider: String) {}
-            }
+            val cancellationSource = CancellationTokenSource()
             try {
-                manager.requestLocationUpdates(provider, 0L, 0f, listener, context.mainLooper)
+                client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationSource.token)
+                    .addOnSuccessListener { location -> if (cont.isActive) cont.resume(location) }
+                    .addOnFailureListener { if (cont.isActive) cont.resume(null) }
             } catch (e: SecurityException) {
                 cont.resume(null)
                 return@suspendCancellableCoroutine
             }
-            cont.invokeOnCancellation { manager.removeUpdates(listener) }
+            cont.invokeOnCancellation { cancellationSource.cancel() }
         }
+
+    private suspend fun lastKnownLocation(client: FusedLocationProviderClient): Location? =
+        suspendCancellableCoroutine { cont ->
+        try {
+            client.lastLocation
+                .addOnSuccessListener { location -> if (cont.isActive) cont.resume(location) }
+                .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+        } catch (e: SecurityException) {
+            cont.resume(null)
+        }
+    }
 
     /** Streams the extract straight to disk rather than buffering it in
      * memory — a 40km-radius extract can run into the tens of MB. */
