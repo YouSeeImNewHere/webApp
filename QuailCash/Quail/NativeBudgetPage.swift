@@ -1018,6 +1018,9 @@ private struct FinancingPlanRow: View {
                 }
             }
             .frame(height: 6)
+
+            Button("Delete", role: .destructive, action: onDelete)
+                .buttonStyle(BudgetSmallButtonStyle())
         }
         .padding(10)
         .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

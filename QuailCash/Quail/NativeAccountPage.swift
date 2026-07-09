@@ -193,6 +193,8 @@ private final class NativeAccountPageModel: ObservableObject {
     @Published var upcomingLoading = true
     @Published var upcomingError: String?
     @Published var transactions: [TransactionItem] = []
+    @Published var startingBalance: Double?
+    @Published var endingBalance: Double?
     @Published var txLoading = true
     @Published var txError: String?
     @Published var addOpen = false
@@ -205,6 +207,7 @@ private final class NativeAccountPageModel: ObservableObject {
     @Published var verifyDate = ""
     @Published var isSavingAdd = false
     @Published var isVerifying = false
+    @Published var checkedIDs: Set<String> = []
 
     let selectedAccount: BankAccountPayload
     let auditMode: Bool
@@ -218,6 +221,7 @@ private final class NativeAccountPageModel: ObservableObject {
         self.auditMode = auditMode
         self.verifyDate = nativeIsoYesterday()
         resetCurrentMonth()
+        checkedIDs = Self.loadCheckedIDs(accountID: selectedAccount.id)
     }
 
     func startIfNeeded() {
@@ -336,6 +340,9 @@ private final class NativeAccountPageModel: ObservableObject {
 
     func loadEverything() async {
         await loadAccountInfo()
+        if auditMode {
+            applyAuditRange()
+        }
         await loadAccountSwitchOptions()
         await reloadChart()
         await reloadUpcoming()
@@ -348,6 +355,20 @@ private final class NativeAccountPageModel: ObservableObject {
         } catch {
             info = nil
         }
+    }
+
+    /// Mirrors Android's AccountDetailViewModel.applyAuditRange(): narrows the
+    /// working date range to [last_manual_verified_at + 1 day, today] so audit
+    /// mode only surfaces transactions since the last confirmed statement.
+    func applyAuditRange() {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        var start = cal.startOfDay(for: Self.dateFormatter.date(from: "2000-01-01") ?? Date())
+        if let verifiedISO = info?.lastManualVerifiedAt, let verifiedDate = nativeDateFromISO(String(verifiedISO.prefix(10))) {
+            start = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: verifiedDate)) ?? start
+        }
+        startDate = min(start, today)
+        endDate = today
     }
 
     func loadAccountSwitchOptions() async {
@@ -399,6 +420,8 @@ private final class NativeAccountPageModel: ObservableObject {
         do {
             let payload = try await api.fetchAccountTransactionsRange(accountID: currentAccountID, start: Self.isoDate(startDate), end: Self.isoDate(endDate), limit: 500)
             transactions = payload.transactions
+            startingBalance = payload.startingBalance
+            endingBalance = payload.endingBalance
         } catch QuailAPIError.unauthorized {
             txError = "Sign in to load transactions."
         } catch {
@@ -527,6 +550,33 @@ private final class NativeAccountPageModel: ObservableObject {
 
     func verifyBalance(on date: String) async throws {
         _ = try await api.verifyAccountBalance(accountID: currentAccountID, verifiedDate: date)
+        await loadAccountInfo()
+    }
+
+    /// Client-side reconciliation checkbox toggle, mirroring Android's
+    /// AccountDetailViewModel.toggleChecked() (SharedPreferences there,
+    /// UserDefaults here). Never sent to the server — purely a personal
+    /// scratch pad while auditing a statement.
+    func toggleChecked(_ id: String) {
+        if checkedIDs.contains(id) {
+            checkedIDs.remove(id)
+        } else {
+            checkedIDs.insert(id)
+        }
+        Self.saveCheckedIDs(checkedIDs, accountID: currentAccountID)
+    }
+
+    private static func checkedIDsKey(accountID: Int) -> String {
+        "quail.account.auditChecks.\(accountID)"
+    }
+
+    private static func loadCheckedIDs(accountID: Int) -> Set<String> {
+        let raw = UserDefaults.standard.stringArray(forKey: checkedIDsKey(accountID: accountID)) ?? []
+        return Set(raw)
+    }
+
+    private static func saveCheckedIDs(_ ids: Set<String>, accountID: Int) {
+        UserDefaults.standard.set(Array(ids), forKey: checkedIDsKey(accountID: accountID))
     }
 
     private func resetCurrentMonth() {
@@ -577,6 +627,7 @@ struct NativeAccountPageView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @StateObject private var model: NativeAccountPageModel
     @State private var selectedTransaction: TransactionItem?
+    @State private var pendingVerifyDateISO: String?
 
     init(account: BankAccountPayload, auditMode: Bool) {
         _model = StateObject(wrappedValue: NativeAccountPageModel(selectedAccount: account, auditMode: auditMode))
@@ -660,7 +711,9 @@ struct NativeAccountPageView: View {
                 let route = AppRoute.account(BankAccountPayload(id: model.currentAccountID, name: model.accountLabel, total: 0, lastCsvUploadAt: nil, lastManualVerifiedAt: nil, creditLimit: nil), audit: next ?? false)
                 navigator.show(route)
             },
-            onVerified: { model.showVerifySheet = true },
+            onVerified: { pendingVerifyDateISO = nil; model.showVerifySheet = true },
+            onVerifyDay: { dateISO in pendingVerifyDateISO = dateISO; model.showVerifySheet = true },
+            onToggleChecked: { model.toggleChecked($0) },
             onSelectTransaction: { selectedTransaction = $0 }
         )
     }
@@ -668,7 +721,7 @@ struct NativeAccountPageView: View {
     private var verifyBalanceSheet: some View {
         VerifyBalanceSheetView(
             accountName: model.accountLabel,
-            initialVerifiedDateISO: model.verifyDate,
+            initialVerifiedDateISO: pendingVerifyDateISO ?? model.verifyDate,
             isSaving: model.isVerifying,
             statusText: model.addMessage.isEmpty ? nil : model.addMessage,
             onCancel: { model.showVerifySheet = false },
@@ -678,7 +731,11 @@ struct NativeAccountPageView: View {
                 do {
                     try await model.verifyBalance(on: dateISO)
                     model.showVerifySheet = false
-                    await model.loadAccountInfo()
+                    if model.auditMode {
+                        model.applyAuditRange()
+                        await model.reloadTransactions()
+                        await model.reloadChart()
+                    }
                 } catch {
                     model.addMessage = error.localizedDescription
                     throw error
@@ -1108,6 +1165,8 @@ private struct AccountTransactionsCard: View {
     let onExport: () -> Void
     let onAudit: () -> Void
     let onVerified: () -> Void
+    let onVerifyDay: (String) -> Void
+    let onToggleChecked: (String) -> Void
     let onSelectTransaction: (TransactionItem) -> Void
 
     var body: some View {
@@ -1125,6 +1184,10 @@ private struct AccountTransactionsCard: View {
                         .background(palette.primaryButton, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .foregroundStyle(palette.primaryButtonText)
                 }
+            }
+
+            if !model.auditMode, model.startingBalance != nil || model.endingBalance != nil {
+                balanceSummaryRow
             }
 
             HStack {
@@ -1152,6 +1215,9 @@ private struct AccountTransactionsCard: View {
                     .foregroundStyle(.secondary)
             } else {
                 txList
+                if model.auditMode {
+                    auditStartAnchor
+                }
             }
         }
         .padding(14)
@@ -1159,14 +1225,81 @@ private struct AccountTransactionsCard: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(palette.border, lineWidth: 1))
     }
 
+    private var balanceSummaryRow: some View {
+        let palette = nativeAccountPalette()
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Starting")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text(nativeMoneyValue(model.startingBalance ?? 0))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Ending")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text(nativeMoneyValue(model.endingBalance ?? 0))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
     private var auditBanner: some View {
         let palette = nativeAccountPalette()
-        return Text("Audit mode")
-            .font(.system(size: 11, weight: .bold, design: .rounded))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(palette.elevatedSurface, in: Capsule())
-            .overlay(Capsule().stroke(palette.border, lineWidth: 1))
+        let subtitle: String = {
+            if let iso = model.info?.lastManualVerifiedAt, let date = nativeDateFromISO(String(iso.prefix(10))) {
+                return "Last verified: \(nativeMonthDayShort(date))"
+            }
+            return "Never verified — showing everything since 2000-01-01."
+        }()
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Audit mode")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+            Text("Showing everything since you last verified. Tap each transaction to check it off against your statement, then tap Verify on the day the balance matches.")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(subtitle)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    /// Mirrors Android's AuditStartAnchor: the running balance right after the
+    /// last verified date — the number to start reconciling from.
+    private var auditStartAnchor: some View {
+        let palette = nativeAccountPalette()
+        let dateLabel: String = {
+            if let iso = model.info?.lastManualVerifiedAt, let date = nativeDateFromISO(String(iso.prefix(10))) {
+                return nativeDayHeaderLabel(nativeIso(from: date))
+            }
+            return "the beginning"
+        }()
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Audit starts here")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+            Text("Balance as of \(dateLabel) (your last verified date):")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(nativeMoneyValue(model.startingBalance ?? 0))
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+        .padding(.top, 4)
     }
 
     private var addTransactionPanel: some View {
@@ -1216,7 +1349,8 @@ private struct AccountTransactionsCard: View {
     }
 
     private var txList: some View {
-        VStack(spacing: 12) {
+        let palette = nativeAccountPalette()
+        return VStack(spacing: 12) {
             let grouped = groupTransactions(model.transactions)
             ForEach(grouped, id: \.id) { section in
                 VStack(alignment: .leading, spacing: 10) {
@@ -1224,6 +1358,10 @@ private struct AccountTransactionsCard: View {
                         Text(section.title)
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                         Spacer()
+                        if model.auditMode, section.id != "pending" {
+                            Button("Verify") { onVerifyDay(section.id) }
+                                .buttonStyle(NativeAccountChipButtonStyle())
+                        }
                         if let bal = section.balance {
                             Text(model.isCreditAccount ? nativeFormatAccountBalance(bal) : nativeMoneyValue(abs(bal)))
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -1231,12 +1369,40 @@ private struct AccountTransactionsCard: View {
                         }
                     }
                     ForEach(section.rows) { tx in
-                        Button {
-                            onSelectTransaction(tx)
-                        } label: {
-                            NativeAccountTransactionRow(transaction: tx, isCreditAccount: model.isCreditAccount)
+                        if model.auditMode {
+                            Button {
+                                onToggleChecked(tx.id)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: model.checkedIDs.contains(tx.id) ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(model.checkedIDs.contains(tx.id) ? palette.positive : .secondary)
+                                    NativeAccountTransactionRow(transaction: tx, isCreditAccount: model.isCreditAccount)
+                                    Button {
+                                        onSelectTransaction(tx)
+                                    } label: {
+                                        Image(systemName: "info.circle")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .background(
+                                model.checkedIDs.contains(tx.id)
+                                    ? palette.elevatedSurface.opacity(0.6)
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            )
+                        } else {
+                            Button {
+                                onSelectTransaction(tx)
+                            } label: {
+                                NativeAccountTransactionRow(transaction: tx, isCreditAccount: model.isCreditAccount)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.top, 4)
