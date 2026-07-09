@@ -15,6 +15,7 @@ struct HomeView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
     @StateObject private var model = HomeViewModel()
+    @StateObject private var financingStore = FinancingStore.shared
     @State private var activePopup: HomePopup?
     @State private var activeSheet: HomeSheet?
     @State private var verifyAccountSheet: BankAccountPayload?
@@ -30,7 +31,10 @@ struct HomeView: View {
             onSelectTab: selectTab
         ) {
             AppPageScroll(contentPadding: 12, refreshAction: {
-                await model.reload()
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { await model.reload() }
+                    group.addTask { await financingStore.refresh() }
+                }
             }) {
                     chartSection
 
@@ -47,7 +51,8 @@ struct HomeView: View {
                         monthlySpendingCard(
                             home: home,
                             onCategory: { navigate(.category($0)) },
-                            onUnassigned: { activeSheet = .unassigned }
+                            onUnassigned: { activeSheet = .unassigned },
+                            onFinancing: { activeSheet = .financing }
                         )
                         bankTotalsCard(home: home,
                                        onImport: { activeSheet = .csvImport },
@@ -67,6 +72,7 @@ struct HomeView: View {
         .onAppear {
             print("[Quail] HomeView appeared")
             model.startIfNeeded()
+            Task { await financingStore.refresh() }
         }
         .sheet(isPresented: $model.showAuthSheet) {
             AuthSessionView(
@@ -250,15 +256,18 @@ struct HomeView: View {
     private func monthlySpendingCard(
         home: HomePayload,
         onCategory: @escaping (String) -> Void,
-        onUnassigned: @escaping () -> Void
+        onUnassigned: @escaping () -> Void,
+        onFinancing: @escaping () -> Void
     ) -> some View {
         MonthlySpendingCard(
             totals: home.categoryTotalsMonth?.categories ?? [],
             unknownMerchantTotal: home.unknownMerchantTotalMonth,
             unassignedAllTime: home.categoryTotalsMonth?.unassignedAllTime,
+            financingPlans: financingStore.plans,
             onCategory: onCategory,
             onUnknownMerchants: { onCategory("Unknown merchants") },
-            onUnassigned: onUnassigned
+            onUnassigned: onUnassigned,
+            onFinancing: onFinancing
         )
     }
 
@@ -739,9 +748,11 @@ private struct MonthlySpendingCard: View {
     let totals: [CategoryTotalItem]
     let unknownMerchantTotal: UnknownMerchantTotalMonth?
     let unassignedAllTime: Int?
+    var financingPlans: [FinancingPlan] = []
     let onCategory: (String) -> Void
     let onUnknownMerchants: () -> Void
     let onUnassigned: () -> Void
+    var onFinancing: () -> Void = {}
     @State private var isExpanded = true
 
     var body: some View {
@@ -766,6 +777,36 @@ private struct MonthlySpendingCard: View {
 
             if isExpanded {
                 VStack(spacing: 8) {
+                    if !financingPlans.isEmpty {
+                        let financedThisMonth = financingPlans.filter { !$0.isComplete }.reduce(0.0) { $0 + $1.monthlyPayment }
+                        Button(action: onFinancing) {
+                            HStack(spacing: 8) {
+                                Text("Financed")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                Text("\(financingPlans.count)")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                                    .frame(minWidth: 22, minHeight: 22)
+                                    .background(palette.selectedTabFill, in: Capsule())
+                                Spacer(minLength: 8)
+                                Text(moneyValue(financedThisMonth))
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(palette.elevatedSurface)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(palette.border, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     if totals.isEmpty {
                         Text("No spending yet this month.")
                             .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -1756,6 +1797,7 @@ private struct BankTotalsAccordionCard: View {
                 sectionCard(title: "Savings", key: "savings", group: bankTotals.savings)
                 sectionCard(title: "Credit", key: "credit", group: bankTotals.credit)
                 sectionCard(title: "Investment", key: "investment", group: bankTotals.investment)
+                sectionCard(title: "Other", key: "other", group: bankTotals.other)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3113,6 +3155,7 @@ private enum HomeSheet: Identifiable {
     case bankInfo
     case csvImport
     case unassigned
+    case financing
     case upcomingDay(UpcomingDayGroup)
 
     var id: String {
@@ -3125,6 +3168,8 @@ private enum HomeSheet: Identifiable {
             return "sheet-csv-import"
         case .unassigned:
             return "sheet-unassigned"
+        case .financing:
+            return "sheet-financing"
         case .upcomingDay(let group):
             return "sheet-upcoming-\(group.id)"
         }
@@ -3132,7 +3177,7 @@ private enum HomeSheet: Identifiable {
 
     var detents: Set<PresentationDetent> {
         switch self {
-        case .upcomingDay:
+        case .upcomingDay, .financing:
             return [.medium, .large]
         default:
             return [.large]
@@ -3155,8 +3200,104 @@ private struct HomeSheetHost: View {
             CsvImportSheetView(onDismiss: onDismiss, onRefresh: onRefresh)
         case .unassigned:
             UnassignedWizardSheetView(onDismiss: onDismiss, onRefresh: onRefresh)
+        case .financing:
+            FinancingSheetView(onDismiss: onDismiss)
         case .upcomingDay(let group):
             UpcomingDaySheetView(group: group, onDismiss: onDismiss)
+        }
+    }
+}
+
+private struct FinancingSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var financingStore = FinancingStore.shared
+    let onDismiss: () -> Void
+
+    var body: some View {
+        let palette = homeThemePalette()
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if financingStore.plans.isEmpty {
+                        Text("No financed purchases")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(financingStore.plans) { plan in
+                            FinancingHomeRow(plan: plan, palette: palette) {
+                                Task { await financingStore.deletePlan(plan) }
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Financing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { close() }
+                }
+            }
+        }
+        .task { await financingStore.refresh() }
+    }
+
+    private func close() {
+        dismiss()
+        onDismiss()
+    }
+}
+
+private struct FinancingHomeRow: View {
+    let plan: FinancingPlan
+    let palette: QuailThemePalette
+    let onDelete: () -> Void
+    @State private var showDeleteConfirm = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(plan.label)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text(plan.isComplete ? "Paid off" : "\(plan.monthsRemaining) months left • \(moneyValue(plan.monthlyPayment))/mo")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(moneyValue(plan.amountPaid)) / \(moneyValue(plan.totalAmount))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(plan.isComplete ? palette.positive : .secondary)
+                Button {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.negative)
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(palette.border)
+                        .frame(height: 6)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(plan.isComplete ? palette.positive : palette.accent)
+                        .frame(width: geo.size.width * plan.progressFraction, height: 6)
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(12)
+        .background(palette.elevatedSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.border, lineWidth: 1))
+        .confirmationDialog("Remove this financing plan?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Remove", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) {}
         }
     }
 }
