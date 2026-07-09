@@ -67,8 +67,11 @@ def get_lists():
                 GROUP BY l.id
                 ORDER BY l.created_at ASC
             """, (tid,))
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            # db.py's pool uses row_factory=dict_row, so rows here are
+            # already dicts — re-zipping against cur.description zips
+            # column names against a dict's keys, not its values, silently
+            # replacing every field with its own column name.
+            rows = [dict(r) for r in cur.fetchall()]
     for r in rows:
         v = r.get("created_at")
         if v and not isinstance(v, str):
@@ -125,8 +128,7 @@ def get_places(list_id: int):
                 SELECT id, name, address, latitude, longitude, notes, saved_at
                 FROM saved_places WHERE list_id=%s AND tenant_id=%s ORDER BY saved_at DESC
             """, (list_id, tid))
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
     for r in rows:
         v = r.get("saved_at")
         if v and not isinstance(v, str):

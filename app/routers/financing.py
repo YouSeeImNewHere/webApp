@@ -41,6 +41,12 @@ class RecordPaymentIn(BaseModel):
 
 
 def _serialize(row: dict) -> dict:
+    # `row` here is already a dict — db.py's pool is configured with
+    # row_factory=dict_row, so cur.fetchone()/fetchall() never return plain
+    # tuples. Re-zipping against cur.description (as this file used to)
+    # zips column names against a dict's keys instead of its values,
+    # silently replacing every field with its own column name and blowing
+    # up downstream float()/comparison calls with a 500.
     for k in ("start_date", "created_at"):
         v = row.get(k)
         if v and not isinstance(v, str):
@@ -60,8 +66,7 @@ def get_plans():
                 WHERE tenant_id = %s
                 ORDER BY created_at DESC
             """, (tid,))
-            cols = [d[0] for d in cur.description]
-            rows = [_serialize(dict(zip(cols, r))) for r in cur.fetchall()]
+            rows = [_serialize(r) for r in cur.fetchall()]
     # Compute derived fields
     for r in rows:
         r["total_amount"] = float(r["total_amount"])
@@ -88,7 +93,7 @@ def create_plan(body: FinancingPlanIn):
                 RETURNING id, label, total_amount, monthly_payment, total_months,
                           months_paid, start_date, transaction_id, created_at
             """, (tid, body.label, body.total_amount, monthly, body.total_months, body.transaction_id))
-            row = _serialize(dict(zip([d[0] for d in cur.description], cur.fetchone())))
+            row = _serialize(cur.fetchone())
         conn.commit()
     row["total_amount"] = float(row["total_amount"])
     row["monthly_payment"] = float(row["monthly_payment"])
