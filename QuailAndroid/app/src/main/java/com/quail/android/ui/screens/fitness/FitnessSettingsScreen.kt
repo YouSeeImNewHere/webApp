@@ -100,6 +100,7 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
     var showGarminConnect by remember { mutableStateOf(false) }
     var showCustomExerciseManager by remember { mutableStateOf(false) }
     var selectedExercise by remember { mutableStateOf<com.quail.android.data.model.Exercise?>(null) }
+    var showProgressionPaths by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshGarminStatus() }
 
@@ -214,7 +215,7 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
                     HorizontalDivider(color = QuailSurfaceRaised, modifier = Modifier.padding(horizontal = 14.dp))
                     SettingsRow(icon = Icons.Filled.List, title = "Routines", subtitle = "${data?.routines?.size ?: 0} saved routines", onClick = null)
                     HorizontalDivider(color = QuailSurfaceRaised, modifier = Modifier.padding(horizontal = 14.dp))
-                    SettingsRow(icon = Icons.Filled.TrendingUp, title = "Progression Paths", subtitle = "${DEFAULT_PROGRESSION_PATHS.size} paths — see Home tab", onClick = null)
+                    SettingsRow(icon = Icons.Filled.TrendingUp, title = "Progression Paths", subtitle = "${DEFAULT_PROGRESSION_PATHS.size} paths") { showProgressionPaths = true }
                 }
             }
         }
@@ -256,6 +257,30 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
             onDismiss = { selectedExercise = null; showCustomExerciseManager = true },
         )
     }
+
+    if (showProgressionPaths) {
+        data?.let { ProgressionPathsSheet(it) { showProgressionPaths = false } }
+    }
+}
+
+@Composable
+private fun ProgressionPathsSheet(data: FitnessData, onDismiss: () -> Unit) {
+    val content: @Composable () -> Unit = {
+        Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Progression Paths", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Close") }
+            }
+            Text(
+                "Your current step in each skill progression, based on your logged personal bests.",
+                color = QuailTextDim,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            ProgressionsSection(data)
+        }
+    }
+    SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
+    DisposableEffect(Unit) { onDispose { AppOverlayHost.dismiss() } }
 }
 
 @Composable

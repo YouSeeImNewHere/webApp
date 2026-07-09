@@ -55,7 +55,7 @@ fun ExerciseDetailSheet(
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    var showAllInstructions by remember { mutableStateOf(false) }
+    var showAllInstructions by remember { mutableStateOf(true) }
     val context = LocalContext.current
     val recentSessions = sessions
         .filter { session -> session.exercises.any { it.exerciseId == exercise.id } }

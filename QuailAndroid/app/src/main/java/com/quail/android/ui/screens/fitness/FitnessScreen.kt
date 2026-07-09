@@ -424,7 +424,7 @@ private fun RoutinesSection(routines: List<RoutineRecord>, onOpenSheet: (Fitness
 }
 
 @Composable
-private fun ProgressionsSection(data: FitnessData) {
+fun ProgressionsSection(data: FitnessData) {
     Column {
         SectionHeader("Progressions")
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
