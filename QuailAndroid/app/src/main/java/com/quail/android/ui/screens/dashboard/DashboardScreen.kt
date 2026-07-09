@@ -65,7 +65,7 @@ private val TILES = listOf(
     DashboardTile("Cash", Icons.Filled.AttachMoney, enabled = true),
     DashboardTile("Car", Icons.Filled.DirectionsCar, enabled = true),
     DashboardTile("Fitness", Icons.Filled.FitnessCenter, enabled = true),
-    DashboardTile("Maps", Icons.Filled.Map, enabled = false),
+    DashboardTile("Maps", Icons.Filled.Map, enabled = true),
     DashboardTile("Admin", Icons.Filled.AdminPanelSettings, enabled = true),
     DashboardTile("Bugs", Icons.Filled.BugReport, enabled = true),
     DashboardTile("Projects", Icons.Filled.Assignment, enabled = true),
@@ -82,6 +82,7 @@ fun DashboardScreen(
     onOpenProjects: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAdmin: () -> Unit,
+    onOpenMaps: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -127,6 +128,7 @@ fun DashboardScreen(
                                 tile.label == "Bugs" && tile.enabled -> onOpenBugs()
                                 tile.label == "Projects" && tile.enabled -> onOpenProjects()
                                 tile.label == "Admin" && tile.enabled -> onOpenAdmin()
+                                tile.label == "Maps" && tile.enabled -> onOpenMaps()
                                 else -> Toast.makeText(context, "${tile.label} isn't built yet", Toast.LENGTH_SHORT).show()
                             }
                         }

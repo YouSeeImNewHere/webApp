@@ -38,6 +38,7 @@ import com.quail.android.data.model.GarminStatusResponse
 import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.FinancingPlanPayResponse
 import com.quail.android.data.model.GoalRecord
+import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.AvailabilityRecord
 import com.quail.android.data.model.AvailabilityUpsertRequest
@@ -763,4 +764,17 @@ interface QuailApi {
 
     @POST("email-parser/trial/test-run")
     suspend fun runParserTest(@Body request: ParserTestRunRequest): ParserTestRunResponse
+
+    // ---- Quail Maps ----
+
+    @GET("api/maps/status")
+    suspend fun getMapsStatus(): MapsStatusResponse
+
+    @Streaming
+    @GET("api/maps/extract")
+    suspend fun getMapsExtract(
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+        @Query("radius_km") radiusKm: Double,
+    ): ResponseBody
 }
