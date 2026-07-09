@@ -57,6 +57,14 @@ class Goal:
     target_distance_km: Optional[float] = None
     target_pace_sec_per_mile: Optional[int] = None
     baseline_value: Optional[float] = None
+    # Which PUSHUP_PROGRESSION/LSIT_PROGRESSION variant the baseline test was
+    # actually performed at (e.g. "archer_pushup") — captured from the user's
+    # real Progression Paths standing (see FitnessViewModel.kt's
+    # currentProgressionStep()) rather than assumed from a raw rep count.
+    # Without this, a strong user testing on a harder variant would produce a
+    # low rep number that the old threshold-based guess misread as a
+    # beginner, regressing them to an easier variant they'd already mastered.
+    baseline_exercise_id: Optional[str] = None
 
 
 @dataclass
@@ -212,7 +220,20 @@ _PUSHUP_VARIANT_THRESHOLDS = [
 ]
 
 
-def _pushup_variant_for(estimated_max: float) -> str:
+def _pushup_variant_for(estimated_max: float, baseline_exercise_id: Optional[str], week_index: int) -> str:
+    """Starts from the user's real current Progression Paths standing
+    (baseline_exercise_id, captured from their actual session history at
+    testing-week time — see FitnessViewModel.kt's currentProgressionStep())
+    when known, advancing one step every 4 weeks. Falls back to the
+    threshold guess only when no such standing was captured (e.g. an older
+    goal predating this). Re-deriving a variant from a raw rep count alone
+    would misread a low rep count on a hard variant (e.g. 8 archer push-ups)
+    as beginner-level and regress the user to an easier one they'd already
+    mastered."""
+    if baseline_exercise_id in PUSHUP_PROGRESSION:
+        start_index = PUSHUP_PROGRESSION.index(baseline_exercise_id)
+        steps_advanced = week_index // 4
+        return PUSHUP_PROGRESSION[min(start_index + steps_advanced, len(PUSHUP_PROGRESSION) - 1)]
     variant = _PUSHUP_VARIANT_THRESHOLDS[0][1]
     for threshold, step in _PUSHUP_VARIANT_THRESHOLDS:
         if estimated_max >= threshold:
@@ -231,7 +252,7 @@ def _pushup_week_plan(goal: Goal, week_index: int) -> list[dict]:
         }]
     pct_tiers = [0.6, 0.5, 0.4, 0.4, 0.3]
     sets = [{"reps": max(1, round(estimated_max * pct))} for pct in pct_tiers]
-    variant = _pushup_variant_for(estimated_max)
+    variant = _pushup_variant_for(estimated_max, goal.baseline_exercise_id, week_index)
     return [{
         "workout_type": WORKOUT_PUSHUP_SESSION,
         "prescription": {"type": "pushups", "exercise_id": variant, "sets": sets, "rest_seconds": 90},
@@ -242,7 +263,10 @@ def _lsit_week_plan(goal: Goal, week_index: int) -> list[dict]:
     baseline_hold = goal.baseline_value or 5.0
     target_hold = goal.target_duration_seconds or 60
     hold = min(baseline_hold * (1.10 ** week_index), target_hold)
-    variant = "lsit" if hold >= 15 else "tuck_lsit"
+    # Never regress below the variant the user actually tested at (see
+    # Goal.baseline_exercise_id) — only the hold-time threshold can advance
+    # it from there.
+    variant = "lsit" if (goal.baseline_exercise_id == "lsit" or hold >= 15) else "tuck_lsit"
     sets = [{"hold_seconds": round(hold * 0.75)} for _ in range(5)]
     return [{
         "workout_type": WORKOUT_LSIT_SESSION,

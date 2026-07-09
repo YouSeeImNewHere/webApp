@@ -13,7 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /** Small helpers for reading a ScheduledWorkoutRecord.prescription
  * (Map<String, JsonElement>) — shapes are produced by
  * app/core/fitness_plan_engine.py and kept loosely typed on the wire since
- * they vary by workout_type (run/pushups/lsit_hold/*_test). */
+ * they vary by workout_type: run, pushups, lsit_hold, and the *_test kinds. */
 
 fun Map<String, JsonElement>.str(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
 fun Map<String, JsonElement>.int(key: String): Int? = this[key]?.jsonPrimitive?.intOrNull

@@ -13,6 +13,7 @@ import com.quail.android.data.model.GarminDailyHealthRecord
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.MilestoneRecord
 import com.quail.android.data.model.MuscleGroup
+import com.quail.android.data.model.DEFAULT_PROGRESSION_PATHS
 import com.quail.android.data.model.ProgressionPath
 import com.quail.android.data.model.RoutineRecord
 import com.quail.android.data.model.ScheduledWorkoutRecord
@@ -208,6 +209,17 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
      * so the strength/hold-based portion of the plan flows straight into the
      * normal workout logger. Run prescriptions aren't started this way (see
      * markScheduledWorkoutDone). */
+    /** Which variant to start a fresh AMRAP/hold test at — the user's real
+     * current standing in the matching Progression Path (see
+     * currentProgressionStep() below), not always the easiest step. Ties the
+     * training plan to progress already made instead of re-testing from
+     * scratch every time. */
+    private fun currentPathExerciseId(pathId: String): String? {
+        val data = uiState.value ?: return null
+        val path = DEFAULT_PROGRESSION_PATHS.firstOrNull { it.id == pathId } ?: return null
+        return currentProgressionStep(path, data.sessions, data.allExercises)?.first?.id
+    }
+
     fun startWorkoutFromScheduled(scheduled: ScheduledWorkoutRecord) {
         val type = scheduled.prescription.str("type")
         val exercises = when (type) {
@@ -218,8 +230,14 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
                 }
                 listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, sets))
             }
-            "pushup_test" -> listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), "pushup", listOf(WorkoutSet(id = UUID.randomUUID().toString()))))
-            "lsit_test" -> listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), "tuck_lsit", listOf(WorkoutSet(id = UUID.randomUUID().toString()))))
+            "pushup_test" -> {
+                val exerciseId = currentPathExerciseId("path_pushup") ?: "pushup"
+                listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, listOf(WorkoutSet(id = UUID.randomUUID().toString()))))
+            }
+            "lsit_test" -> {
+                val exerciseId = currentPathExerciseId("path_lsit") ?: "tuck_lsit"
+                listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, listOf(WorkoutSet(id = UUID.randomUUID().toString()))))
+            }
             else -> emptyList()
         }
         _activeWorkout.value = ActiveWorkout(exercises = exercises, scheduledWorkoutId = scheduled.id)

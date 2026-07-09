@@ -328,7 +328,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
         }
 
         composable(ROUTE_GOAL_SETUP_WIZARD) {
-            val viewModel: GoalSetupWizardViewModel = viewModel(factory = GoalSetupWizardViewModel.Factory(fitnessRepository))
+            val viewModel: GoalSetupWizardViewModel = viewModel(factory = GoalSetupWizardViewModel.Factory(fitnessRepository, context))
             GoalSetupWizardScreen(
                 viewModel = viewModel,
                 onDone = { navController.popBackStack(ROUTE_FITNESS_PLAN, inclusive = false) },

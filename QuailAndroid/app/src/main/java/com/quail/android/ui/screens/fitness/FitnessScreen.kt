@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
@@ -161,41 +162,42 @@ fun FitnessBottomBar(
     onSelectPlan: () -> Unit,
     onOpenDashboard: () -> Unit,
 ) {
+    // Scrolls instead of squeezing tabs to fit — matches Quail Cash's
+    // QuailBottomBar (HomeScreen.kt), since a fixed number of equally-weighted
+    // tabs stops scaling once there are enough of them (Plan made it five).
     Surface(color = QuailSurface) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(vertical = 8.dp),
         ) {
-            FitnessBottomBarTab("Home", Icons.Filled.FitnessCenter, selected = selectedTab == FitnessTab.HOME, onClick = onSelectHome, modifier = Modifier.weight(1f))
-            FitnessBottomBarTab("Plan", Icons.Filled.EmojiEvents, selected = selectedTab == FitnessTab.PLAN, onClick = onSelectPlan, modifier = Modifier.weight(1f))
-            FitnessBottomBarTab("Calendar", Icons.Filled.CalendarMonth, selected = selectedTab == FitnessTab.CALENDAR, onClick = onSelectCalendar, modifier = Modifier.weight(1f))
-            FitnessBottomBarTab("Analytics", Icons.Filled.BarChart, selected = selectedTab == FitnessTab.ANALYTICS, onClick = onSelectAnalytics, modifier = Modifier.weight(1f))
-            Surface(onClick = onOpenDashboard, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(12.dp)) {
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Dashboard, contentDescription = null, tint = Color.Black)
-                    Text("Dashboard", color = Color.Black, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
-                }
-            }
+            FitnessBottomBarTab("Home", Icons.Filled.FitnessCenter, selected = selectedTab == FitnessTab.HOME, onClick = onSelectHome)
+            FitnessBottomBarTab("Plan", Icons.Filled.EmojiEvents, selected = selectedTab == FitnessTab.PLAN, onClick = onSelectPlan)
+            FitnessBottomBarTab("Calendar", Icons.Filled.CalendarMonth, selected = selectedTab == FitnessTab.CALENDAR, onClick = onSelectCalendar)
+            FitnessBottomBarTab("Analytics", Icons.Filled.BarChart, selected = selectedTab == FitnessTab.ANALYTICS, onClick = onSelectAnalytics)
+            FitnessBottomBarTab("Dashboard", Icons.Filled.Dashboard, selected = false, onClick = onOpenDashboard)
         }
     }
 }
 
 @Composable
-private fun FitnessBottomBarTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        color = if (selected) QuailSurfaceRaised else Color.Transparent,
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier,
+private fun FitnessBottomBarTab(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
+    val color = if (selected) MaterialTheme.colorScheme.primary else QuailTextDim
+    Column(
+        modifier = Modifier
+            .width(76.dp)
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(icon, contentDescription = label, tint = if (selected) MaterialTheme.colorScheme.onSurface else QuailTextDim)
-            Text(label, color = if (selected) MaterialTheme.colorScheme.onSurface else QuailTextDim, style = MaterialTheme.typography.labelSmall)
-        }
+        Icon(icon, contentDescription = label, tint = color)
+        Text(label, color = color, style = MaterialTheme.typography.labelSmall)
     }
 }
 

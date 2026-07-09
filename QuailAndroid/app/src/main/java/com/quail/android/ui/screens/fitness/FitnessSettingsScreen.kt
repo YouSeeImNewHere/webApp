@@ -57,7 +57,11 @@ import com.quail.android.bugreport.BugReportTopBarAction
 
 private const val FITNESS_PROFILE_PREFS = "quail_fitness_profile"
 
-private object FitnessProfilePrefs {
+/** Not private: also read by GoalSetupWizardViewModel to seed sensible
+ * defaults for which training-plan goals to pre-select — the one place this
+ * previously-inert Settings preference actually ties into the rest of the
+ * app today. */
+object FitnessProfilePrefs {
     fun get(context: Context) = context.getSharedPreferences(FITNESS_PROFILE_PREFS, Context.MODE_PRIVATE)
 
     fun primaryGoal(context: Context): FitnessGoalTypeOption =
@@ -95,6 +99,7 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
     var showLogWeight by remember { mutableStateOf(false) }
     var showGarminConnect by remember { mutableStateOf(false) }
     var showCustomExerciseManager by remember { mutableStateOf(false) }
+    var selectedExercise by remember { mutableStateOf<com.quail.android.data.model.Exercise?>(null) }
 
     LaunchedEffect(Unit) { viewModel.refreshGarminStatus() }
 
@@ -209,7 +214,7 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
                     HorizontalDivider(color = QuailSurfaceRaised, modifier = Modifier.padding(horizontal = 14.dp))
                     SettingsRow(icon = Icons.Filled.List, title = "Routines", subtitle = "${data?.routines?.size ?: 0} saved routines", onClick = null)
                     HorizontalDivider(color = QuailSurfaceRaised, modifier = Modifier.padding(horizontal = 14.dp))
-                    SettingsRow(icon = Icons.Filled.TrendingUp, title = "Progression Paths", subtitle = "${DEFAULT_PROGRESSION_PATHS.size} paths", onClick = null)
+                    SettingsRow(icon = Icons.Filled.TrendingUp, title = "Progression Paths", subtitle = "${DEFAULT_PROGRESSION_PATHS.size} paths — see Home tab", onClick = null)
                 }
             }
         }
@@ -234,10 +239,21 @@ fun FitnessSettingsScreen(viewModel: FitnessViewModel, onBack: () -> Unit) {
     }
 
     if (showCustomExerciseManager) {
-        CustomExerciseManagerSheet(
-            customExercises = data?.customExercises ?: emptyList(),
+        ExerciseLibrarySheet(
+            allExercises = data?.allExercises ?: DEFAULT_EXERCISES,
             onDelete = { clientId -> viewModel.deleteCustomExercise(clientId) },
+            onSelect = { exercise -> selectedExercise = exercise; showCustomExerciseManager = false },
             onDismiss = { showCustomExerciseManager = false },
+        )
+    }
+
+    selectedExercise?.let { exercise ->
+        ExerciseDetailSheet(
+            exercise = exercise,
+            sessions = data?.sessions ?: emptyList(),
+            personalBest = personalBest(exercise.id, data?.sessions ?: emptyList()),
+            onDelete = exercise.customClientId?.let { clientId -> { viewModel.deleteCustomExercise(clientId); selectedExercise = null } },
+            onDismiss = { selectedExercise = null; showCustomExerciseManager = true },
         )
     }
 }
@@ -387,19 +403,19 @@ private fun GarminConnectSheet(
 }
 
 @Composable
-private fun CustomExerciseManagerSheet(
-    customExercises: List<com.quail.android.data.model.Exercise>,
+private fun ExerciseLibrarySheet(
+    allExercises: List<com.quail.android.data.model.Exercise>,
     onDelete: (String) -> Unit,
+    onSelect: (com.quail.android.data.model.Exercise) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val content: @Composable () -> Unit = {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Text("Custom Exercises", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
-            if (customExercises.isEmpty()) {
-                Text("No custom exercises yet — add one from the exercise picker during a workout.", color = QuailTextDim)
-            } else {
-                Column {
-                    customExercises.forEachIndexed { idx, exercise ->
+        Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Text("Exercise Library", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp))
+            Text("Tap an exercise to see how to perform it.", color = QuailTextDim, modifier = Modifier.padding(bottom = 12.dp))
+            Column {
+                allExercises.forEachIndexed { idx, exercise ->
+                    Surface(onClick = { onSelect(exercise) }, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -409,12 +425,14 @@ private fun CustomExerciseManagerSheet(
                                 Text(exercise.name, fontWeight = FontWeight.SemiBold)
                                 Text("${exercise.category.displayName} · ${exercise.difficulty.displayName}", color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
                             }
-                            Surface(onClick = { exercise.customClientId?.let(onDelete) }, color = Color.Transparent) {
-                                Text("Delete", color = QuailTextDim)
+                            if (exercise.customClientId != null) {
+                                Surface(onClick = { onDelete(exercise.customClientId) }, color = Color.Transparent) {
+                                    Text("Delete", color = QuailTextDim)
+                                }
                             }
                         }
-                        if (idx < customExercises.size - 1) HorizontalDivider(color = QuailSurfaceRaised)
                     }
+                    if (idx < allExercises.size - 1) HorizontalDivider(color = QuailSurfaceRaised)
                 }
             }
         }

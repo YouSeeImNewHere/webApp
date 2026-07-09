@@ -1,12 +1,15 @@
 package com.quail.android.ui.screens.wizards
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.fitness.FitnessRepository
 import com.quail.android.data.model.FitnessGoalType
+import com.quail.android.data.model.FitnessGoalTypeOption
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.WeekdayAvailability
+import com.quail.android.ui.screens.fitness.FitnessProfilePrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,8 +50,23 @@ private fun parseMilePaceSeconds(text: String): Int? {
     return minutes * 60 + seconds
 }
 
-class GoalSetupWizardViewModel(private val repository: FitnessRepository) : ViewModel() {
-    private val _form = MutableStateFlow(GoalSetupFormState())
+/** Maps the Settings page's "primary goal" (Muscle Mass/Strength/Endurance/
+ * Fat Loss) onto sensible default goal selections here — the one place that
+ * previously-inert preference actually shapes anything today. Still just a
+ * starting point: every toggle stays fully editable before submitting. */
+private fun defaultsFor(primaryGoal: FitnessGoalTypeOption): GoalSetupFormState = when (primaryGoal) {
+    FitnessGoalTypeOption.ENDURANCE ->
+        GoalSetupFormState(includeRunDistance = true, includeRunPace = true, includeMaxReps = false, includeMaxHold = false)
+    FitnessGoalTypeOption.MUSCLE_MASS, FitnessGoalTypeOption.STRENGTH ->
+        GoalSetupFormState(includeRunDistance = false, includeRunPace = false, includeMaxReps = true, includeMaxHold = true)
+    FitnessGoalTypeOption.FAT_LOSS -> GoalSetupFormState() // mixed cardio + calisthenics — all four on
+}
+
+class GoalSetupWizardViewModel(
+    private val repository: FitnessRepository,
+    appContext: Context,
+) : ViewModel() {
+    private val _form = MutableStateFlow(defaultsFor(FitnessProfilePrefs.primaryGoal(appContext)))
     val form: StateFlow<GoalSetupFormState> = _form.asStateFlow()
 
     private val _submitState = MutableStateFlow<GoalSetupSubmitState>(GoalSetupSubmitState.Idle)
@@ -149,8 +167,8 @@ class GoalSetupWizardViewModel(private val repository: FitnessRepository) : View
         }
     }
 
-    class Factory(private val repository: FitnessRepository) : ViewModelProvider.Factory {
+    class Factory(private val repository: FitnessRepository, private val appContext: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = GoalSetupWizardViewModel(repository) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = GoalSetupWizardViewModel(repository, appContext) as T
     }
 }

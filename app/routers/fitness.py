@@ -173,6 +173,12 @@ def ensure_fitness_tables():
         cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS target_pace_sec_per_mile INTEGER")
         cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS baseline_value DECIMAL(8,2)")
         cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS baseline_captured_at DATE")
+        # Which Progression Paths variant (see FitnessCatalog.kt's
+        # DEFAULT_PROGRESSION_PATHS / FitnessViewModel.kt's
+        # currentProgressionStep()) the baseline test was actually performed
+        # at — ties the plan's starting difficulty to the user's real
+        # demonstrated progress instead of guessing from a raw rep count.
+        cur.execute("ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS baseline_exercise_id TEXT")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS fitness_milestones (
                 id SERIAL PRIMARY KEY,
@@ -854,6 +860,7 @@ def _load_goals(tid: int, goal_types: tuple[str, ...]) -> list[fpe.Goal]:
             target_distance_km=float(r["target_distance_km"]) if r.get("target_distance_km") is not None else None,
             target_pace_sec_per_mile=r.get("target_pace_sec_per_mile"),
             baseline_value=float(r["baseline_value"]) if r.get("baseline_value") is not None else None,
+            baseline_exercise_id=r.get("baseline_exercise_id"),
         )
         for r in rows
     ]
@@ -962,23 +969,23 @@ def start_testing_week():
     return {"status": "TESTING", "scheduled": len(testing_rows)}
 
 
-def _extract_baseline(prescription_type: str, session_row: dict) -> Optional[float]:
-    """Pulls the relevant baseline number out of a logged test session,
-    depending on which test it was. `exercises` is already the parsed
-    list (see _serialize) by the time this runs."""
-    if prescription_type == "pushup_test":
-        best = 0
-        for ex in session_row.get("exercises") or []:
-            for s in ex.get("sets") or []:
-                best = max(best, s.get("reps") or 0)
-        return float(best) if best else None
-    if prescription_type == "lsit_test":
-        best = 0
-        for ex in session_row.get("exercises") or []:
-            for s in ex.get("sets") or []:
-                best = max(best, s.get("durationSeconds") or 0)
-        return float(best) if best else None
-    return None
+def _extract_baseline(prescription_type: str, session_row: dict) -> tuple[Optional[float], Optional[str]]:
+    """Pulls the relevant baseline number (and which exercise variant it was
+    achieved on — see Goal.baseline_exercise_id) out of a logged test
+    session, depending on which test it was. `exercises` is already the
+    parsed list (see _serialize) by the time this runs."""
+    field = "reps" if prescription_type == "pushup_test" else "durationSeconds" if prescription_type == "lsit_test" else None
+    if field is None:
+        return None, None
+    best = 0
+    best_exercise_id: Optional[str] = None
+    for ex in session_row.get("exercises") or []:
+        for s in ex.get("sets") or []:
+            value = s.get(field) or 0
+            if value > best:
+                best = value
+                best_exercise_id = ex.get("exerciseId")
+    return (float(best) if best else None), best_exercise_id
 
 
 @router.post("/fitness/plan/generate")
@@ -1029,16 +1036,21 @@ def generate_real_plan():
                         )
                         goal.baseline_value = pace_per_mile
             else:
-                baseline = _extract_baseline(prescription_type, session_row)
+                baseline, baseline_exercise_id = _extract_baseline(prescription_type, session_row)
                 if baseline is not None:
                     for gid in goal_ids:
                         cur.execute(
-                            "UPDATE fitness_goals SET baseline_value = %s, baseline_captured_at = %s WHERE id = %s AND tenant_id = %s",
-                            (baseline, date.today(), gid, tid),
+                            """
+                            UPDATE fitness_goals
+                            SET baseline_value = %s, baseline_captured_at = %s, baseline_exercise_id = %s
+                            WHERE id = %s AND tenant_id = %s
+                            """,
+                            (baseline, date.today(), baseline_exercise_id, gid, tid),
                         )
                         goal = next((g for g in goals if g.id == gid), None)
                         if goal is not None:
                             goal.baseline_value = baseline
+                            goal.baseline_exercise_id = baseline_exercise_id
         conn.commit()
 
     plan_rows = _regenerate_future_plan(tid, goals)
