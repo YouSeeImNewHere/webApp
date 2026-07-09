@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import Combine
 import Charts
+import UniformTypeIdentifiers
 
 private func nativePagesPalette() -> QuailThemePalette {
     QuailTheme.palette(for: UserDefaults.standard.string(forKey: "quail.settings.theme") ?? "system")
@@ -1908,19 +1909,228 @@ private struct BankInfoPageView: View {
     }
 }
 
+private struct CsvAccountOption: Identifiable, Hashable {
+    let id: Int
+    let label: String
+}
+
+@MainActor
+private final class CsvImportPickerModel: ObservableObject {
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var preview: CsvPreviewPayload?
+    @Published var accounts: [CsvAccountOption] = []
+    @Published var selectedAccountID: Int?
+    @Published var headerSignature = ""
+    @Published var isSubmitting = false
+    @Published var statusMessage = ""
+
+    func load(fileURL: URL) async {
+        isLoading = true
+        errorMessage = nil
+        preview = nil
+        do {
+            async let previewTask = QuailAPI.shared.fetchCsvPreview(fileURL: fileURL)
+            async let bankInfoTask = QuailAPI.shared.fetchBankInfo()
+            let (previewResult, bankInfo) = try await (previewTask, bankInfoTask)
+
+            preview = previewResult
+            headerSignature = previewResult.columns.map(\.label).joined(separator: "|")
+                .lowercased()
+
+            let accountOptions = bankInfo.accounts.map { CsvAccountOption(id: $0.id, label: "\($0.bank) - \($0.name)") }
+            let cardOptions = bankInfo.creditCards.map { CsvAccountOption(id: $0.id, label: "\($0.bank) - \($0.name) (credit)") }
+            accounts = accountOptions + cardOptions
+            if selectedAccountID == nil {
+                selectedAccountID = accounts.first?.id
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    func assignAndQueue(fileURL: URL, originalFileName: String) -> QueuedCsvImportItem? {
+        guard let selectedAccountID, let account = accounts.first(where: { $0.id == selectedAccountID }) else {
+            statusMessage = "Choose an account before queuing this file."
+            return nil
+        }
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let item = try ImportQueueStore.enqueue(
+                sourceURL: fileURL,
+                originalFileName: originalFileName,
+                accountID: account.id,
+                accountLabel: account.label,
+                headerSignature: headerSignature,
+                status: .assigned,
+                detail: "Assigned to \(account.label). Ready for batch processing."
+            )
+            return item
+        } catch {
+            statusMessage = "Could not queue file: \(error.localizedDescription)"
+            return nil
+        }
+    }
+}
+
 private struct CsvImportPageView: View {
+    @EnvironmentObject private var navigator: AppNavigator
+    @AppStorage("quail.settings.theme") private var themeSelection: String = "system"
+    @StateObject private var model = CsvImportPickerModel()
+    @State private var showFileImporter = false
+    @State private var pickedFileURL: URL?
+    @State private var pickedFileName = ""
+
     var body: some View {
-        PageShell(title: "CSV Import", subtitle: "Native shell for the bank file importer") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("This is the native redirect target for the Import CSV/Excel button.")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Text("Next step: port the actual mapping and preview modal.")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+        let palette = QuailTheme.palette(for: themeSelection)
+        PageShell(title: "CSV Import", subtitle: "Pick a bank file, assign it to an account, and queue it for processing.") {
+            VStack(alignment: .leading, spacing: 16) {
+                filePickerCard(palette: palette)
+
+                if pickedFileURL != nil {
+                    if model.isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 100)
+                    } else if let errorMessage = model.errorMessage {
+                        Text(errorMessage)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(palette.negative)
+                    } else if let preview = model.preview {
+                        previewSection(preview: preview, palette: palette)
+                        accountSection(palette: palette)
+                        assignButton(palette: palette)
+                    }
+                }
+
+                if !model.statusMessage.isEmpty {
+                    Text(model.statusMessage)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("CSV Import")
         .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.commaSeparatedText, .plainText, .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                pickedFileURL = url
+                pickedFileName = url.lastPathComponent
+                Task { await model.load(fileURL: url) }
+            case .failure(let error):
+                model.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func filePickerCard(palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Bank file")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Text(pickedFileName.isEmpty ? "No file selected yet." : pickedFileName)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+            Button {
+                showFileImporter = true
+            } label: {
+                Text(pickedFileURL == nil ? "Choose CSV File" : "Choose a Different File")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(ImportQueueActionButtonStyle(primary: true))
+        }
+        .padding(12)
+        .background(palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(palette.border, lineWidth: 1))
+    }
+
+    private func previewSection(preview: CsvPreviewPayload, palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Preview")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 0) {
+                        ForEach(preview.columns) { column in
+                            Text(column.label)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .frame(width: 110, alignment: .leading)
+                                .padding(4)
+                        }
+                    }
+                    ForEach(preview.previewRows.prefix(5)) { row in
+                        HStack(spacing: 0) {
+                            ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                                Text(cell)
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .frame(width: 110, alignment: .leading)
+                                    .padding(4)
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+            }
+            .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func accountSection(palette: QuailThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Assign to account")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Menu {
+                ForEach(model.accounts) { option in
+                    Button(option.label) {
+                        model.selectedAccountID = option.id
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(model.accounts.first(where: { $0.id == model.selectedAccountID })?.label ?? "Select account")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.border, lineWidth: 1))
+            }
+        }
+    }
+
+    private func assignButton(palette: QuailThemePalette) -> some View {
+        Button {
+            guard let pickedFileURL else { return }
+            if let item = model.assignAndQueue(fileURL: pickedFileURL, originalFileName: pickedFileName) {
+                model.statusMessage = "Queued \(item.originalFileName) for \(item.accountLabel)."
+                navigator.show(.importQueue)
+            }
+        } label: {
+            Text(model.isSubmitting ? "Assigning..." : "Assign & Queue")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ImportQueueActionButtonStyle(primary: true))
+        .disabled(model.selectedAccountID == nil || model.isSubmitting)
+        .padding(.top, 4)
     }
 }
 
