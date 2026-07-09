@@ -52,14 +52,14 @@ private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInsta
 private fun Long.toLocalDateUtc(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 @Composable
-fun FitnessSheetHost(sheet: FitnessSheet, viewModel: FitnessViewModel, onDismiss: () -> Unit) {
+fun FitnessSheetHost(sheet: FitnessSheet, viewModel: FitnessViewModel, onDismiss: () -> Unit, onStartWorkout: () -> Unit = {}) {
     val content: @Composable () -> Unit = {
         when (sheet) {
             is FitnessSheet.AddGoal -> AddGoalSheet(viewModel, onDismiss)
             is FitnessSheet.LogBodyweight -> LogBodyweightSheet(viewModel, onDismiss)
             is FitnessSheet.AddMilestone -> AddMilestoneSheet(viewModel, onDismiss)
             is FitnessSheet.CreateRoutine -> CreateRoutineContent(viewModel, onDismiss)
-            is FitnessSheet.ScheduledWorkoutDetail -> ScheduledWorkoutDetailSheet(sheet.record, viewModel, onDismiss)
+            is FitnessSheet.ScheduledWorkoutDetail -> ScheduledWorkoutDetailSheet(sheet.record, viewModel, onDismiss, onStartWorkout)
             is FitnessSheet.EditAvailability -> EditAvailabilitySheet(viewModel, onDismiss)
         }
     }
@@ -386,6 +386,7 @@ private fun ScheduledWorkoutDetailSheet(
     record: com.quail.android.data.model.ScheduledWorkoutRecord,
     viewModel: FitnessViewModel,
     onDismiss: () -> Unit,
+    onStartWorkout: () -> Unit,
 ) {
     val prescriptionType = record.prescription.str("type")
     val canLogInApp = prescriptionType in setOf("pushups", "lsit_hold", "pushup_test", "lsit_test")
@@ -400,6 +401,7 @@ private fun ScheduledWorkoutDetailSheet(
                 SaveButton("Start", enabled = true) {
                     viewModel.startWorkoutFromScheduled(record)
                     onDismiss()
+                    onStartWorkout()
                 }
             } else {
                 SaveButton("Mark as Done", enabled = true) {

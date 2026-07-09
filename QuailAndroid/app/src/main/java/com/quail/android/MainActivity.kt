@@ -314,8 +314,13 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
             )
         }
 
-        composable(ROUTE_FITNESS_PLAN) {
-            val viewModel: FitnessViewModel = viewModel(factory = FitnessViewModel.Factory(fitnessRepository))
+        composable(ROUTE_FITNESS_PLAN) { backStackEntry ->
+            // Shares Home's FitnessViewModel instance (like ROUTE_FITNESS_ACTIVE_WORKOUT
+            // below) rather than getting its own — startWorkoutFromScheduled() sets
+            // in-memory ActiveWorkout state that ActiveWorkoutScreen must read from
+            // the same instance, or "Start" would open an empty workout.
+            val parentEntry = remember(backStackEntry) { navController.getBackStackEntry(ROUTE_FITNESS) }
+            val viewModel: FitnessViewModel = viewModel(parentEntry, factory = FitnessViewModel.Factory(fitnessRepository))
             FitnessPlanScreen(
                 viewModel = viewModel,
                 onOpenHome = { navController.popBackStack(ROUTE_FITNESS, inclusive = false) },
@@ -324,6 +329,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenAnalytics = { navController.navigate(ROUTE_FITNESS_ANALYTICS) },
                 onOpenGoalSetupWizard = { navController.navigate(ROUTE_GOAL_SETUP_WIZARD) },
                 onOpenDashboard = { navController.popBackStack(ROUTE_DASHBOARD, inclusive = false) },
+                onStartWorkout = { navController.navigate(ROUTE_FITNESS_ACTIVE_WORKOUT) },
             )
         }
 

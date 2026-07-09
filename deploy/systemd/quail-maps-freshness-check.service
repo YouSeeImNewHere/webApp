@@ -1,0 +1,10 @@
+[Unit]
+Description=Notify if the removable car map drive is out of date
+After=network.target postgresql.service quail-maps-update.service
+
+[Service]
+Type=oneshot
+User=trevinjc
+WorkingDirectory=/home/trevinjc/webapp
+EnvironmentFile=/home/trevinjc/webapp/.env
+ExecStart=/home/trevinjc/webapp/.venv/bin/python /home/trevinjc/webapp/scripts/maps_check_car_drive_freshness.py

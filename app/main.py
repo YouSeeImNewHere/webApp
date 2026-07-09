@@ -60,6 +60,7 @@ from app.routers import (
     projects,
     saved_places,
     financing,
+    maps,
 )
 
 
@@ -290,6 +291,9 @@ def create_app() -> FastAPI:
         ensure_email_parse_events_table_pg()
         saved_places.ensure_saved_places_tables()
         financing.ensure_financing_tables()
+        from app.core.maps_state import ensure_maps_tables
+
+        ensure_maps_tables()
         initialize_tenancy()
         try:
             r = get_redis()
@@ -337,6 +341,7 @@ def create_app() -> FastAPI:
     app.include_router(page_payloads.router)
     app.include_router(admin.router)
     app.include_router(saved_places.router)
+    app.include_router(maps.router)
     app.include_router(financing.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)

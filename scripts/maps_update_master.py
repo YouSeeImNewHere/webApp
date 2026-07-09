@@ -1,0 +1,86 @@
+"""Pulls each configured Geofabrik region (MAPS_REGION_SOURCES) and rebuilds
+that region's master SQLite database if the upstream extract has changed.
+
+Homelab only — requires `osmium` and real disk space (MAPS_DATA_DIR), not
+run as part of the hosted web app.
+
+Meant to run on a schedule (see deploy/systemd/quail-maps-update.timer).
+"""
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.core.maps_config import MAPS_REGION_SOURCES, city_cache_dir, master_dir, maps_enabled, raw_dir
+from app.core.maps_state import record_region_build
+from app.core.tenancy import initialize_tenancy
+from db import open_pool, close_pool
+
+
+def log(msg: str) -> None:
+    print(f"[maps_update_master] {msg}")
+
+
+def _region_slug(region: str) -> str:
+    return region.strip("/").replace("/", "_")
+
+
+def main() -> None:
+    if not maps_enabled():
+        log("MAPS_DATA_DIR is not set — nothing to do")
+        return
+    if not MAPS_REGION_SOURCES:
+        log("MAPS_REGION_SOURCES is empty — configure at least one Geofabrik region, e.g. "
+            "north-america/us/california")
+        return
+
+    from maps_pipeline.geofabrik import fetch_region
+    from maps_pipeline.osm_import import import_region
+
+    open_pool()
+    initialize_tenancy()
+    try:
+        any_changed = False
+        for region in MAPS_REGION_SOURCES:
+            log(f"checking {region}")
+
+            def _download_progress(downloaded: int, total: int | None):
+                mb = downloaded / 1_048_576
+                if total:
+                    pct = 100.0 * downloaded / total
+                    log(f"  downloading... {mb:,.0f} MB / {total / 1_048_576:,.0f} MB ({pct:.0f}%)")
+                else:
+                    log(f"  downloading... {mb:,.0f} MB")
+
+            pbf_path, changed = fetch_region(region, raw_dir(), on_progress=_download_progress)
+            if not changed:
+                log(f"  up to date, skipping rebuild")
+                continue
+            any_changed = True
+            log(f"  download complete ({pbf_path.stat().st_size / 1_048_576:,.0f} MB), importing...")
+
+            def _import_progress(way_count: int, place_count: int):
+                log(f"  importing... {way_count:,} roads, {place_count:,} places so far")
+
+            slug = _region_slug(region)
+            master_db_path = master_dir() / f"{slug}.sqlite3"
+            stats = import_region(pbf_path, master_db_path, on_progress=_import_progress)
+            md5_path = raw_dir() / f"{slug}.osm.pbf.md5"
+            source_md5 = md5_path.read_text().strip() if md5_path.exists() else ""
+            record_region_build(0, region, stats, source_md5)
+            log(f"  done: {region}: {stats}")
+
+        if any_changed and city_cache_dir().exists():
+            log("master data changed — clearing stale city extract cache")
+            shutil.rmtree(city_cache_dir())
+            city_cache_dir().mkdir(parents=True, exist_ok=True)
+        log("all regions processed")
+    finally:
+        close_pool()
+
+
+if __name__ == "__main__":
+    main()

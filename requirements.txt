@@ -48,3 +48,7 @@ garminconnect==0.3.6
 # Optional higher-accuracy local receipt OCR (Python < 3.13 recommended)
 paddleocr==2.7.3; python_version < "3.13"
 paddlepaddle==2.6.2; python_version < "3.13"
+
+# Quail Maps OSM ingestion pipeline (homelab only — not needed for the main
+# web app, so it's kept optional rather than a hard import-time dependency)
+osmium==4.3.1

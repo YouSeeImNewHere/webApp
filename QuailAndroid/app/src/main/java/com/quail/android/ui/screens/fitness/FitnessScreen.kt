@@ -127,7 +127,7 @@ fun FitnessScreen(
     }
 
     activeSheet?.let { sheet ->
-        FitnessSheetHost(sheet = sheet, viewModel = viewModel, onDismiss = { activeSheet = null })
+        FitnessSheetHost(sheet = sheet, viewModel = viewModel, onDismiss = { activeSheet = null }, onStartWorkout = onStartWorkout)
     }
 }
 

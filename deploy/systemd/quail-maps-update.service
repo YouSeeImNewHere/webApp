@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull configured OSM regions and rebuild Quail Maps master database(s)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=trevinjc
+WorkingDirectory=/home/trevinjc/webapp
+EnvironmentFile=/home/trevinjc/webapp/.env
+ExecStart=/home/trevinjc/webapp/.venv/bin/python /home/trevinjc/webapp/scripts/maps_update_master.py

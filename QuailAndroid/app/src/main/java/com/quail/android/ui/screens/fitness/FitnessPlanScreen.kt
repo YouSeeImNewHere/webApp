@@ -49,6 +49,7 @@ fun FitnessPlanScreen(
     onOpenAnalytics: () -> Unit,
     onOpenGoalSetupWizard: () -> Unit,
     onOpenDashboard: () -> Unit,
+    onStartWorkout: () -> Unit,
 ) {
     val planState by viewModel.planState.collectAsState()
     val actionInFlight by viewModel.planActionInFlight.collectAsState()
@@ -92,7 +93,12 @@ fun FitnessPlanScreen(
     }
 
     activeSheet?.let { sheet ->
-        FitnessSheetHost(sheet = sheet, viewModel = viewModel, onDismiss = { activeSheet = null; viewModel.loadPlan() })
+        FitnessSheetHost(
+            sheet = sheet,
+            viewModel = viewModel,
+            onDismiss = { activeSheet = null; viewModel.loadPlan() },
+            onStartWorkout = onStartWorkout,
+        )
     }
 }
 

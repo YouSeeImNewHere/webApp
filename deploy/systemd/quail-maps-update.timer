@@ -1,0 +1,9 @@
+[Unit]
+Description=Run quail-maps-update weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00 America/Los_Angeles
+Persistent=true
+
+[Install]
+WantedBy=timers.target

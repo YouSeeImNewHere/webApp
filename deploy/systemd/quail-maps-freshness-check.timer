@@ -1,0 +1,9 @@
+[Unit]
+Description=Run quail-maps-freshness-check weekly, after the update job
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 America/Los_Angeles
+Persistent=true
+
+[Install]
+WantedBy=timers.target
