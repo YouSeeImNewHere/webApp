@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.maps_config import MAPS_REGION_SOURCES, city_cache_dir, master_dir, maps_enabled, raw_dir
 from app.core.maps_state import record_region_build
-from app.core.tenancy import initialize_tenancy
+from app.core.tenancy import get_owner_tenant_id, initialize_tenancy
 from db import open_pool, close_pool
 
 
@@ -43,6 +43,13 @@ def main() -> None:
     open_pool()
     initialize_tenancy()
     try:
+        # record_region_build() takes an explicit tenant_id (unlike the
+        # contextvar current_tenant_id() other routers read) since this runs
+        # standalone via cron, not through an authenticated request — resolve
+        # the household's one owner tenant so /api/maps/status (which reads
+        # under the logged-in session's real tenant_id under multi-tenant
+        # mode) actually finds what got built here.
+        tenant_id = get_owner_tenant_id() or 0
         any_changed = False
         for region in MAPS_REGION_SOURCES:
             log(f"checking {region}")
@@ -70,7 +77,7 @@ def main() -> None:
             stats = import_region(pbf_path, master_db_path, on_progress=_import_progress)
             md5_path = raw_dir() / f"{slug}.osm.pbf.md5"
             source_md5 = md5_path.read_text().strip() if md5_path.exists() else ""
-            record_region_build(0, region, stats, source_md5)
+            record_region_build(tenant_id, region, stats, source_md5)
             log(f"  done: {region}: {stats}")
 
         if any_changed and city_cache_dir().exists():
