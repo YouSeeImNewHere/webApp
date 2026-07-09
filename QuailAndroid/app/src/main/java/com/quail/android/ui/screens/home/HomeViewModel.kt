@@ -12,6 +12,8 @@ import com.quail.android.data.model.SpentSoFarTransaction
 import com.quail.android.data.model.TransactionDetail
 import com.quail.android.data.model.UpcomingEvent
 import com.quail.android.data.repository.HomeRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,14 +107,21 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
         }
     }
 
+    // getHome/getUpcoming/getFinancingPlans don't depend on each other, so
+    // they run concurrently — each is a separate round trip to a homelab
+    // server over Tailscale, and awaiting them one at a time (as this used
+    // to) stacks their latencies instead of overlapping them, which is
+    // what made Home noticeably slower once the financing fetch was added.
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = HomeUiState.Loading
             try {
-                val payload = repository.getHome()
-                val upcoming = runCatching { repository.getUpcoming() }.getOrDefault(emptyList())
-                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
-                _uiState.value = HomeUiState.Success(payload, upcoming, financingPlans)
+                coroutineScope {
+                    val payloadDeferred = async { repository.getHome() }
+                    val upcomingDeferred = async { runCatching { repository.getUpcoming() }.getOrDefault(emptyList()) }
+                    val financingDeferred = async { runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList()) }
+                    _uiState.value = HomeUiState.Success(payloadDeferred.await(), upcomingDeferred.await(), financingDeferred.await())
+                }
             } catch (e: Exception) {
                 _uiState.value = HomeUiState.Error(e.message ?: "Something went wrong")
             }
@@ -125,10 +134,12 @@ class HomeViewModel(private val repository: HomeRepository) : ViewModel() {
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                val payload = repository.getHome()
-                val upcoming = runCatching { repository.getUpcoming() }.getOrDefault(emptyList())
-                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
-                _uiState.value = HomeUiState.Success(payload, upcoming, financingPlans)
+                coroutineScope {
+                    val payloadDeferred = async { repository.getHome() }
+                    val upcomingDeferred = async { runCatching { repository.getUpcoming() }.getOrDefault(emptyList()) }
+                    val financingDeferred = async { runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList()) }
+                    _uiState.value = HomeUiState.Success(payloadDeferred.await(), upcomingDeferred.await(), financingDeferred.await())
+                }
             } catch (e: Exception) {
                 // Keep whatever was already showing.
             }

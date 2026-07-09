@@ -440,7 +440,20 @@ private fun TransactionDetailBody(
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
-            Text(tx.merchant ?: "Transaction", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tx.merchant ?: "Transaction", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (tx.financingPlanId != null) {
+                    Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), shape = RoundedCornerShape(999.dp)) {
+                        Text(
+                            "Financed",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
             Text(
                 listOfNotNull(currency.format(tx.amount), tx.bank, tx.card).joinToString(" • "),
                 color = QuailTextDim,
@@ -509,7 +522,11 @@ private fun TransactionDetailBody(
         ActionPill("Delete", enabled = !actionInFlight, destructive = true) { showDeleteConfirm = true }
     }
     Row(modifier = Modifier.padding(top = 8.dp)) {
-        ActionPill("Finance this purchase", enabled = !actionInFlight) { financing = !financing }
+        if (tx.financingPlanId == null) {
+            ActionPill("Finance this purchase", enabled = !actionInFlight) { financing = !financing }
+        } else {
+            ActionPill("Already financed", enabled = false) {}
+        }
     }
 
     if (editingMeta) {

@@ -61,6 +61,7 @@ data class TransactionDetail(
     @SerialName("is_ignored") val isIgnored: Boolean = false,
     @SerialName("category_rule_id") val categoryRuleId: Int? = null,
     @SerialName("category_rule_pattern") val categoryRulePattern: String? = null,
+    @SerialName("financing_plan_id") val financingPlanId: Int? = null,
 )
 
 @Serializable

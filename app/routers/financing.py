@@ -42,6 +42,18 @@ class RecordPaymentIn(BaseModel):
     plan_id: int
 
 
+def _elapsed_months(start_date_val, as_of: date) -> int:
+    """Whole calendar months between start_date and as_of. Plans auto-finish
+    once this reaches total_months — nothing ever calls POST .../pay (not
+    from this app, not from iOS either — recordPayment() there is defined
+    but unused), so months_paid alone would stay 0 forever and the
+    installment would keep counting against Safe to Spend indefinitely."""
+    if isinstance(start_date_val, str):
+        start_date_val = datetime.strptime(start_date_val, "%Y-%m-%d").date()
+    months = (as_of.year - start_date_val.year) * 12 + (as_of.month - start_date_val.month)
+    return max(0, months)
+
+
 def _serialize(row: dict) -> dict:
     # `row` here is already a dict — db.py's pool is configured with
     # row_factory=dict_row, so cur.fetchone()/fetchall() never return plain
@@ -69,8 +81,13 @@ def get_plans():
                 ORDER BY created_at DESC
             """, (tid,))
             rows = [_serialize(r) for r in cur.fetchall()]
-    # Compute derived fields
+    # Compute derived fields. months_paid reflects elapsed time since
+    # start_date (capped at total_months), not the stored counter — see
+    # _elapsed_months for why the stored value alone can't be trusted.
+    today = date.today()
     for r in rows:
+        elapsed = min(r["total_months"], _elapsed_months(r["start_date"], today))
+        r["months_paid"] = max(int(r["months_paid"] or 0), elapsed)
         r["total_amount"] = float(r["total_amount"])
         r["monthly_payment"] = float(r["monthly_payment"])
         r["months_remaining"] = max(0, r["total_months"] - r["months_paid"])
@@ -165,7 +182,10 @@ def delete_plan(plan_id: int):
 
 
 def get_active_monthly_financing_total(tid: int, year: int, month: int) -> float:
-    """Returns sum of monthly payments for plans active in the given month."""
+    """Returns sum of monthly payments for plans still active as of the given
+    month — active meaning fewer than total_months have elapsed since
+    start_date, computed from the calendar (not from months_paid, which
+    nothing ever increments — see _elapsed_months)."""
     check_date = date(year, month, 1)
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -173,8 +193,11 @@ def get_active_monthly_financing_total(tid: int, year: int, month: int) -> float
                 SELECT COALESCE(SUM(monthly_payment), 0)
                 FROM financing_plans
                 WHERE tenant_id = %s
-                  AND months_paid < total_months
                   AND start_date <= %s
-            """, (tid, check_date))
+                  AND (
+                    (EXTRACT(YEAR FROM %s::date) - EXTRACT(YEAR FROM start_date)) * 12
+                    + (EXTRACT(MONTH FROM %s::date) - EXTRACT(MONTH FROM start_date))
+                  ) < total_months
+            """, (tid, check_date, check_date, check_date))
             row = cur.fetchone()
     return float(list(row.values())[0]) if row else 0.0

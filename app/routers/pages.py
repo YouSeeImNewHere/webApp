@@ -222,6 +222,20 @@ def transaction_detail(tx_id: str):
         )
         row = cur.fetchone()
 
+        financing_plan_id = None
+        if row:
+            cur.execute(
+                f"""
+                SELECT id FROM financing_plans
+                WHERE transaction_id = %s
+                {"AND tenant_id = %s" if tid else ""}
+                LIMIT 1
+                """,
+                ((tx_id, int(tid)) if tid else (tx_id,)),
+            )
+            plan_row = cur.fetchone()
+            financing_plan_id = int(plan_row["id"]) if plan_row else None
+
     if not row:
         # txInspect.js throws on !res.ok, so make it a real 404
         raise HTTPException(status_code=404, detail={"ok": False, "error": "not_found", "id": tx_id})
@@ -233,6 +247,7 @@ def transaction_detail(tx_id: str):
     )
     tx["category_rule_id"] = matched_rule["id"] if matched_rule else None
     tx["category_rule_pattern"] = matched_rule["pattern"] if matched_rule else None
+    tx["financing_plan_id"] = financing_plan_id
 
     return {"ok": True, "transaction": tx}
 

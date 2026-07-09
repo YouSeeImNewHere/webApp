@@ -9,6 +9,8 @@ import com.quail.android.data.model.PageBudgetResponse
 import com.quail.android.data.model.RoundUpSettings
 import com.quail.android.data.model.SinkingFund
 import com.quail.android.data.repository.HomeRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,10 +88,12 @@ class BudgetViewModel(private val repository: HomeRepository) : ViewModel() {
         viewModelScope.launch {
             _uiState.value = BudgetUiState.Loading
             try {
-                val payload = repository.getPageBudget(year, month, recalc)
-                val roundUps = runCatching { repository.getRoundUps() }.getOrDefault(RoundUpSettings())
-                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
-                _uiState.value = BudgetUiState.Success(year, month, payload, roundUps, financingPlans)
+                coroutineScope {
+                    val payloadDeferred = async { repository.getPageBudget(year, month, recalc) }
+                    val roundUpsDeferred = async { runCatching { repository.getRoundUps() }.getOrDefault(RoundUpSettings()) }
+                    val financingDeferred = async { runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList()) }
+                    _uiState.value = BudgetUiState.Success(year, month, payloadDeferred.await(), roundUpsDeferred.await(), financingDeferred.await())
+                }
                 loadTrend()
             } catch (e: Exception) {
                 _uiState.value = BudgetUiState.Error(e.message ?: "Couldn't load budget")
@@ -103,10 +107,12 @@ class BudgetViewModel(private val repository: HomeRepository) : ViewModel() {
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
-                val payload = repository.getPageBudget(year, month)
-                val roundUps = runCatching { repository.getRoundUps() }.getOrDefault(RoundUpSettings())
-                val financingPlans = runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList())
-                _uiState.value = BudgetUiState.Success(year, month, payload, roundUps, financingPlans)
+                coroutineScope {
+                    val payloadDeferred = async { repository.getPageBudget(year, month) }
+                    val roundUpsDeferred = async { runCatching { repository.getRoundUps() }.getOrDefault(RoundUpSettings()) }
+                    val financingDeferred = async { runCatching { repository.getFinancingPlans() }.getOrDefault(emptyList()) }
+                    _uiState.value = BudgetUiState.Success(year, month, payloadDeferred.await(), roundUpsDeferred.await(), financingDeferred.await())
+                }
                 loadTrend()
             } catch (e: Exception) {
                 // Keep whatever was already showing.
