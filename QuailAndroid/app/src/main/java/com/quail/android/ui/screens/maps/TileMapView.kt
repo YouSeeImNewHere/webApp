@@ -312,10 +312,17 @@ fun TileMapView(
         }
 
         Column(
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            // While navigating, the bottom stat bar (TileMapScreen's
+            // NavigationBottomBar) occupies this same corner — lift the
+            // recenter button clear of it instead of overlapping, and drop
+            // the zoom buttons entirely (Apple/Google Maps don't show them
+            // in turn-by-turn mode either; the driving zoom is automatic).
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = if (navigating) 110.dp else 16.dp, end = 16.dp, top = 16.dp),
         ) {
-            MapControlButton(icon = Icons.Filled.Add, contentDescription = "Zoom in", onClick = { stepZoom(1) })
-            MapControlButton(icon = Icons.Filled.Remove, contentDescription = "Zoom out", onClick = { stepZoom(-1) })
+            if (!navigating) {
+                MapControlButton(icon = Icons.Filled.Add, contentDescription = "Zoom in", onClick = { stepZoom(1) })
+                MapControlButton(icon = Icons.Filled.Remove, contentDescription = "Zoom out", onClick = { stepZoom(-1) })
+            }
             MapControlButton(
                 icon = if (navigating && !following) Icons.Filled.Navigation else Icons.Filled.MyLocation,
                 contentDescription = "Recenter",

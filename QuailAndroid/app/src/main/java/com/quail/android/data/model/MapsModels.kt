@@ -62,6 +62,8 @@ data class MapsPlaceResult(
     // Ratings/reviews aren't in this field or anywhere else: OpenStreetMap
     // has no rating data source at all, unlike Google/Yelp.
     @SerialName("opening_hours") val openingHours: String = "",
+    val phone: String = "",
+    val website: String = "",
 )
 
 @Serializable

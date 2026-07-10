@@ -152,7 +152,7 @@ def search_places(
         conn.row_factory = sqlite3.Row
         try:
             sql = (
-                "SELECT osm_id, lat, lon, name, address, icon, category, opening_hours FROM places "
+                "SELECT osm_id, lat, lon, name, address, icon, category, opening_hours, phone, website FROM places "
                 "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
             )
             params: list = [lat_min, lat_max, lon_min, lon_max]
@@ -176,6 +176,8 @@ def search_places(
                             "lon": r["lon"],
                             "distance_km": round(dist, 2),
                             "opening_hours": r["opening_hours"],
+                            "phone": r["phone"],
+                            "website": r["website"],
                         }
                     )
         finally:

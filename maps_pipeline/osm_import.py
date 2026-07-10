@@ -67,8 +67,8 @@ class _MasterImportHandler(osmium.SimpleHandler):
         if self._place_rows:
             self.cur.executemany(
                 """INSERT OR REPLACE INTO places
-                   (osm_id, node_id, lat, lon, name, address, icon, category, opening_hours)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   (osm_id, node_id, lat, lon, name, address, icon, category, opening_hours, phone, website)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 self._place_rows,
             )
             self._place_rows.clear()
@@ -118,8 +118,11 @@ class _MasterImportHandler(osmium.SimpleHandler):
         street = tags.get("addr:street", "")
         address = f"{housenumber} {street}".strip()
         opening_hours = tags.get("opening_hours", "")
+        phone = tags.get("phone", "") or tags.get("contact:phone", "")
+        website = tags.get("website", "") or tags.get("contact:website", "")
         self._place_rows.append(
-            (f"n{n.id}", n.id, n.location.lat, n.location.lon, name, address, icon, category, opening_hours)
+            (f"n{n.id}", n.id, n.location.lat, n.location.lon, name, address, icon, category,
+             opening_hours, phone, website)
         )
         self.place_count += 1
         if self.place_count % _FLUSH_EVERY == 0:

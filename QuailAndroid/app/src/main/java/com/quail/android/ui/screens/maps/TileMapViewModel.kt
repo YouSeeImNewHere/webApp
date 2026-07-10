@@ -28,6 +28,8 @@ sealed interface RouteUiState {
     data class Error(val message: String) : RouteUiState
 }
 
+private const val MAX_RECENTS = 8
+
 /** Backs TileMapScreen: place discovery/search, a trip made of an ordered
  * list of stops + a final destination, routing with alternatives, and
  * turn-by-turn driving mode (live location + progressive step tracking).
@@ -42,6 +44,19 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
 
     private val _selectedPlace = MutableStateFlow<MapsPlaceResult?>(null)
     val selectedPlace: StateFlow<MapsPlaceResult?> = _selectedPlace.asStateFlow()
+
+    // Places whose detail sheet was actually opened this session — backs the
+    // "Recent Places" row on the landing sheet. Session-only (no saved-places
+    // backend exists yet), most-recent-first, deduped by id.
+    private val _recents = MutableStateFlow<List<MapsPlaceResult>>(emptyList())
+    val recents: StateFlow<List<MapsPlaceResult>> = _recents.asStateFlow()
+
+    // Quick "how long to drive there" estimate shown on the detail sheet's
+    // Drive pill, fetched the moment a place is opened — same routing call
+    // requestRoutes() makes, just for a single leg and not tied to the trip.
+    private val _previewRoute = MutableStateFlow<MapsRouteOption?>(null)
+    val previewRoute: StateFlow<MapsRouteOption?> = _previewRoute.asStateFlow()
+    private var previewJob: Job? = null
 
     // Ordered intermediate waypoints — the trip is fromLat/fromLon -> stops -> destination.
     private val _stops = MutableStateFlow<List<MapsPlaceResult>>(emptyList())
@@ -82,12 +97,26 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
         _selectedCategory.value = if (_selectedCategory.value == category) null else category
     }
 
-    fun showPlaceDetail(place: MapsPlaceResult) {
+    fun showPlaceDetail(place: MapsPlaceResult, fromLat: Double, fromLon: Double) {
         _selectedPlace.value = place
+        _recents.value = (listOf(place) + _recents.value.filterNot { it.id == place.id }).take(MAX_RECENTS)
+
+        _previewRoute.value = null
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch {
+            _previewRoute.value = try {
+                repository.getRoutes(listOf(fromLat to fromLon, place.lat to place.lon))
+                    .minByOrNull { it.durationSec }
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
     fun dismissPlaceDetail() {
         _selectedPlace.value = null
+        previewJob?.cancel()
+        _previewRoute.value = null
     }
 
     /** Adds a stop, or if there's no destination yet, sets it as the
@@ -102,6 +131,8 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
             _destination.value = place
         }
         _selectedPlace.value = null
+        previewJob?.cancel()
+        _previewRoute.value = null
     }
 
     fun removeStop(place: MapsPlaceResult) {
