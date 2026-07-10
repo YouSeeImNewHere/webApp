@@ -43,6 +43,9 @@ import com.quail.android.data.model.MapsPlacesResponse
 import com.quail.android.data.model.MapsRouteRequest
 import com.quail.android.data.model.MapsRoutesResponse
 import com.quail.android.data.model.MapsStatusResponse
+import com.quail.android.data.model.MusicDeleteResponse
+import com.quail.android.data.model.MusicRecommendedResponse
+import com.quail.android.data.model.MusicSearchResult
 import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.AvailabilityRecord
 import com.quail.android.data.model.AvailabilityUpsertRequest
@@ -808,4 +811,15 @@ interface QuailApi {
         @Query("lon") lon: Double,
         @Query("radius_km") radiusKm: Double = 60.0,
     ): MapsCitiesResponse
+
+    // ---- Quail Music ----
+
+    @GET("api/music/recommended")
+    suspend fun getMusicRecommended(): MusicRecommendedResponse
+
+    @GET("api/music/search")
+    suspend fun searchMusic(@Query("q") q: String): List<MusicSearchResult>
+
+    @DELETE("api/music/tracks/{id}")
+    suspend fun deleteMusicTrack(@Path("id") id: String): MusicDeleteResponse
 }

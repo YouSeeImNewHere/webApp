@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-import httpx
+import requests
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/api/music", tags=["music"])
@@ -25,36 +25,36 @@ def _require_music_enabled():
         )
 
 
-async def _mm_request(method: str, path: str, params: dict | None = None):
+def _mm_request(method: str, path: str, params: dict | None = None):
     _require_music_enabled()
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.request(
-            method,
-            f"{MUSIC_MANAGER_URL}{path}",
-            params=params or {},
-            auth=(MUSIC_MANAGER_USERNAME, MUSIC_MANAGER_PASSWORD),
-        )
-        if r.status_code == 404:
-            raise HTTPException(status_code=404, detail="Not found")
-        r.raise_for_status()
-        return r.json()
+    r = requests.request(
+        method,
+        f"{MUSIC_MANAGER_URL}{path}",
+        params=params or {},
+        auth=(MUSIC_MANAGER_USERNAME, MUSIC_MANAGER_PASSWORD),
+        timeout=30,
+    )
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="Not found")
+    r.raise_for_status()
+    return r.json()
 
 
 @router.get("/stats")
-async def music_stats():
-    return await _mm_request("GET", "/api/stats")
+def music_stats():
+    return _mm_request("GET", "/api/stats")
 
 
 @router.get("/recommended")
-async def music_recommended():
-    return await _mm_request("GET", "/api/recommended")
+def music_recommended():
+    return _mm_request("GET", "/api/recommended")
 
 
 @router.get("/search")
-async def music_search(q: str = Query("")):
-    return await _mm_request("GET", "/api/search", {"q": q})
+def music_search(q: str = Query("")):
+    return _mm_request("GET", "/api/search", {"q": q})
 
 
 @router.delete("/tracks/{item_id}")
-async def music_delete_track(item_id: str):
-    return await _mm_request("DELETE", f"/api/tracks/{item_id}")
+def music_delete_track(item_id: str):
+    return _mm_request("DELETE", f"/api/tracks/{item_id}")

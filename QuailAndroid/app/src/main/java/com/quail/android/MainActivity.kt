@@ -45,6 +45,7 @@ import com.quail.android.data.projects.ProjectsDatabase
 import com.quail.android.data.projects.ProjectsRepository
 import com.quail.android.data.repository.AuthStore
 import com.quail.android.data.maps.MapsRepository
+import com.quail.android.data.music.MusicRepository
 import com.quail.android.data.repository.HomeRepository
 import com.quail.android.data.repository.VehicleLocalStore
 import com.quail.android.data.vehicle.VehicleOfflineDatabase
@@ -54,6 +55,8 @@ import com.quail.android.ui.screens.admin.AdminViewModel
 import com.quail.android.ui.screens.maps.MapsScreen
 import com.quail.android.ui.screens.maps.MapsViewModel
 import com.quail.android.ui.screens.maps.TileMapScreen
+import com.quail.android.ui.screens.music.MusicScreen
+import com.quail.android.ui.screens.music.MusicViewModel
 import com.quail.android.ui.screens.budget.BudgetScreen
 import com.quail.android.ui.screens.budget.BudgetViewModel
 import com.quail.android.ui.screens.bugs.BugsScreen
@@ -129,6 +132,7 @@ private const val ROUTE_EMAIL_PARSER_WIZARD = "email_parser_wizard"
 private const val ROUTE_ADMIN = "admin"
 private const val ROUTE_MAPS = "maps"
 private const val ROUTE_MAPS_TILE_VIEW = "maps_tile_view/{lat}/{lon}"
+private const val ROUTE_MUSIC = "music"
 private const val ROUTE_CSV_IMPORT_QUEUE = "csv_import_queue"
 private const val ROUTE_CSV_MAPPING_SETUP = "csv_mapping_setup/{itemId}"
 private const val ROUTE_ACCOUNT_DETAIL = "account_detail/{accountId}/{auditMode}"
@@ -230,6 +234,7 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
     val projectsRepository = remember { ProjectsRepository(api, ProjectsDatabase.getInstance(context), context) }
     val csvImportRepository = remember { CsvImportRepository(api, CsvImportDatabase.getInstance(context), context) }
     val mapsRepository = remember { MapsRepository(api, context) }
+    val musicRepository = remember { MusicRepository(api) }
     val onSignOut: () -> Unit = {
         scope.launch {
             authStore.clear()
@@ -253,7 +258,13 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
                 onOpenSettings = { navController.navigate(ROUTE_DASHBOARD_SETTINGS) },
                 onOpenAdmin = { navController.navigate(ROUTE_ADMIN) },
                 onOpenMaps = { navController.navigate(ROUTE_MAPS) },
+                onOpenMusic = { navController.navigate(ROUTE_MUSIC) },
             )
+        }
+
+        composable(ROUTE_MUSIC) {
+            val viewModel: MusicViewModel = viewModel(factory = MusicViewModel.Factory(musicRepository))
+            MusicScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
 
         composable(ROUTE_MAPS) {

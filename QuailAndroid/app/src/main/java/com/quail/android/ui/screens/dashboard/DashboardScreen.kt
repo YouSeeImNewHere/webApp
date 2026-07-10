@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +67,7 @@ private val TILES = listOf(
     DashboardTile("Car", Icons.Filled.DirectionsCar, enabled = true),
     DashboardTile("Fitness", Icons.Filled.FitnessCenter, enabled = true),
     DashboardTile("Maps", Icons.Filled.Map, enabled = true),
+    DashboardTile("Music", Icons.Filled.MusicNote, enabled = true),
     DashboardTile("Admin", Icons.Filled.AdminPanelSettings, enabled = true),
     DashboardTile("Bugs", Icons.Filled.BugReport, enabled = true),
     DashboardTile("Projects", Icons.Filled.Assignment, enabled = true),
@@ -83,6 +85,7 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit,
     onOpenAdmin: () -> Unit,
     onOpenMaps: () -> Unit,
+    onOpenMusic: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -129,6 +132,7 @@ fun DashboardScreen(
                                 tile.label == "Projects" && tile.enabled -> onOpenProjects()
                                 tile.label == "Admin" && tile.enabled -> onOpenAdmin()
                                 tile.label == "Maps" && tile.enabled -> onOpenMaps()
+                                tile.label == "Music" && tile.enabled -> onOpenMusic()
                                 else -> Toast.makeText(context, "${tile.label} isn't built yet", Toast.LENGTH_SHORT).show()
                             }
                         }
