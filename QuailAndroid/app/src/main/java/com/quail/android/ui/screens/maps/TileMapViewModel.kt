@@ -110,6 +110,17 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
     private val _citiesState = MutableStateFlow<CitiesUiState>(CitiesUiState.Idle)
     val citiesState: StateFlow<CitiesUiState> = _citiesState.asStateFlow()
 
+    // "route" or "explore" — the docked panel's two tabs, matching the real
+    // iOS Quail Maps flow (NativeMapPage.swift).
+    private val _activeTab = MutableStateFlow("route")
+    val activeTab: StateFlow<String> = _activeTab.asStateFlow()
+
+    // null = "My Location" (route starts from wherever the phone actually
+    // is); set when the user explicitly picks a different starting point
+    // via the Route tab's "Starting location" field.
+    private val _routeOrigin = MutableStateFlow<MapsPlaceResult?>(null)
+    val routeOrigin: StateFlow<MapsPlaceResult?> = _routeOrigin.asStateFlow()
+
     private var searchJob: Job? = null
     private var locationJob: Job? = null
     private var routeJob: Job? = null
@@ -118,6 +129,27 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
     fun setMode(newMode: String) {
         if (_mode.value == newMode) return
         _mode.value = newMode
+    }
+
+    fun setActiveTab(tab: String) {
+        _activeTab.value = tab
+    }
+
+    fun setRouteOrigin(place: MapsPlaceResult?) {
+        _routeOrigin.value = place
+    }
+
+    /** Reverses the whole trip: old destination becomes the new starting
+     * point, old origin becomes the new destination, stop order flips too.
+     * If origin was "My Location" (null), the destination becomes null —
+     * i.e. "route back to where I am now", the only sensible meaning of
+     * swapping when one side wasn't a real place to begin with. */
+    fun swapRouteEndpoints() {
+        val oldOrigin = _routeOrigin.value
+        val oldDestination = _destination.value
+        _routeOrigin.value = oldDestination
+        _destination.value = oldOrigin
+        _stops.value = _stops.value.reversed()
     }
 
     /** Loads the expanded landing sheet's discovery content — call once
@@ -161,6 +193,21 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
         _selectedCategory.value = if (_selectedCategory.value == category) null else category
     }
 
+    fun clearCategoryFilter() {
+        _selectedCategory.value = null
+        _placesState.value = PlacesUiState.Idle
+    }
+
+    /** Replaces the destination outright — distinct from [addStop], which
+     * inserts before whatever destination already exists. Used when the
+     * user explicitly taps the Route tab's "Destination" field or an
+     * Explore-tab result's quick-route shortcut, both of which mean
+     * "route to this place instead", not "route to this place as well". */
+    fun setDestination(place: MapsPlaceResult) {
+        _destination.value = place
+        _selectedPlace.value = null
+    }
+
     fun showPlaceDetail(place: MapsPlaceResult, fromLat: Double, fromLon: Double) {
         _selectedPlace.value = place
         _recents.value = (listOf(place) + _recents.value.filterNot { it.id == place.id }).take(MAX_RECENTS)
@@ -186,13 +233,24 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
     /** Adds a stop, or if there's no destination yet, sets it as the
      * destination directly — "Add Stop" on the very first place picked has
      * nothing to be a waypoint *before*, so it's just the destination until
-     * a second place gets added. */
+     * a second place gets added.
+     *
+     * Real bug fixed here: this used to push the CURRENT destination into
+     * [stops] and make the newly-picked place the new destination — so
+     * adding any stop silently changed where the trip ended, which only
+     * went unnoticed while nothing surfaced multi-stop adds directly (the
+     * old "+Add Stop" button always immediately re-requested routes, and
+     * with a 2-point trip the wrong-looking result was indistinguishable
+     * from a correct one). The "stops along the way" flow made the bug
+     * obvious: picking a coffee shop "along the way" to Costco was ending
+     * the trip AT the coffee shop instead of treating it as a waypoint
+     * before Costco. Now the new place is simply inserted before whatever
+     * destination already exists, which is what "add a stop" should mean. */
     fun addStop(place: MapsPlaceResult) {
         if (_destination.value == null) {
             _destination.value = place
         } else {
-            _stops.value = _stops.value + _destination.value!!
-            _destination.value = place
+            _stops.value = _stops.value + place
         }
         _selectedPlace.value = null
         previewJob?.cancel()
@@ -207,12 +265,17 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
         stopNavigation()
         _stops.value = emptyList()
         _destination.value = null
+        _routeOrigin.value = null
         _routeState.value = RouteUiState.Idle
     }
 
-    /** points: fromLat/fromLon, every stop in order, then the destination. */
-    fun requestRoutes(fromLat: Double, fromLon: Double) {
+    /** [fallbackLat]/[fallbackLon] are used as the starting point only when
+     * no explicit [routeOrigin] has been picked (i.e. still "My Location"). */
+    fun requestRoutes(fallbackLat: Double, fallbackLon: Double) {
         val destination = _destination.value ?: return
+        val origin = _routeOrigin.value
+        val fromLat = origin?.lat ?: fallbackLat
+        val fromLon = origin?.lon ?: fallbackLon
         routeJob?.cancel()
         routeJob = viewModelScope.launch {
             _routeState.value = RouteUiState.Loading

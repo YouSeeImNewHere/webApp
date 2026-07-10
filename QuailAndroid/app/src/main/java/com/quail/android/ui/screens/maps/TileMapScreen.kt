@@ -2,12 +2,8 @@ package com.quail.android.ui.screens.maps
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,14 +21,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -41,10 +37,12 @@ import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LocationCity
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Straight
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TurnLeft
 import androidx.compose.material.icons.filled.TurnRight
 import androidx.compose.material3.Button
@@ -66,17 +64,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,7 +86,6 @@ import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailTextDim
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -110,6 +103,7 @@ private const val SEARCH_DEBOUNCE_MS = 300L
 private val SheetBg = Color(0xFF11151D)
 private val CardBg = Color(0xFF171C26)
 private val ChipBg = Color(0xFF232A38)
+private val PANEL_MAX_HEIGHT = 560.dp
 
 /** Feet under ~0.1mi (Apple/Google Maps' rough switchover point), miles
  * with one decimal above that — feet rounded to the nearest 25ft to avoid
@@ -168,6 +162,16 @@ private fun currentStepIndexFor(steps: List<MapsRouteStep>, nearestPointIndex: I
     return idx
 }
 
+/** Persistent docked Route/Explore panel, matching the real iOS Quail Maps
+ * screen (QuailCash/Quail/NativeMapPage.swift) rather than the earlier
+ * search-first floating-sheet design: a Route tab (Starting location / swap
+ * / Destination fields, mode toggle, ranked route cards, stops-along-the-
+ * way suggestions) and an Explore tab (search, category chips, results with
+ * a quick-route shortcut). The colorful terrain/land-use basemap in the iOS
+ * screenshots is NOT replicated here — this server's tile renderer
+ * (maps_pipeline/tile_render.py) only draws roads on a plain dark
+ * background; matching that look would mean ingesting OSM landuse/water/
+ * building polygons and rewriting the renderer, a separate backend project. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: () -> Unit) {
@@ -176,13 +180,14 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     var currentLat by remember { mutableStateOf(lat) }
     var currentLon by remember { mutableStateOf(lon) }
     var searchQuery by remember { mutableStateOf("") }
-    var searchFocused by remember { mutableStateOf(false) }
-    // True while the user tapped "+ Add Stop" from an already-started trip —
-    // reopens the search sheet without losing the trip already in progress.
-    var addingStop by remember { mutableStateOf(false) }
-    // Two-state bottom sheet (collapsed/expanded), pulled up via the handle
-    // — see BottomSheetChrome.
-    var sheetExpanded by remember { mutableStateOf(false) }
+    // "origin" | "destination" | null — which Route-tab field a tap opened
+    // the shared search UI for.
+    var pickingField by remember { mutableStateOf<String?>(null) }
+    // "map" (search centered on wherever the map is panned to) or
+    // "location" (search centered on the real GPS fix from opening this
+    // screen — not re-fetched live, same fix used for the "you are here"
+    // marker).
+    var exploreCenterMode by remember { mutableStateOf("map") }
 
     val placesState by viewModel.placesState.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
@@ -193,6 +198,8 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     val nearbyThingsToDo by viewModel.nearbyThingsToDo.collectAsState()
     val citiesState by viewModel.citiesState.collectAsState()
     val mode by viewModel.mode.collectAsState()
+    val activeTab by viewModel.activeTab.collectAsState()
+    val routeOrigin by viewModel.routeOrigin.collectAsState()
     val stops by viewModel.stops.collectAsState()
     val destination by viewModel.destination.collectAsState()
     val routeState by viewModel.routeState.collectAsState()
@@ -203,31 +210,34 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     val selectedRoute = (routeState as? RouteUiState.Success)?.let { it.options.getOrNull(it.selectedIndex) }
     val destinationLatLon = destination?.let { it.lat to it.lon }
     val routePoints = selectedRoute?.points?.map { it.lat to it.lon }
-    val showResults = searchFocused || searchQuery.isNotBlank() || selectedCategory != null
+    val showExploreResults = pickingField == null && activeTab == "explore" &&
+        (searchQuery.isNotBlank() || selectedCategory != null)
+    // Where the "STOPS ALONG THE WAY" suggestions search — the actual
+    // middle of the current route if one exists, otherwise wherever the map
+    // is centered. Not a true polyline-buffer search along the whole route,
+    // just a reasonable single-point approximation.
+    val routeMidpoint = remember(selectedRoute) {
+        val pts = selectedRoute?.points
+        if (pts.isNullOrEmpty()) null else pts[pts.size / 2].let { it.lat to it.lon }
+    }
+
+    fun exitPicker() {
+        pickingField = null
+        searchQuery = ""
+        viewModel.clearCategoryFilter()
+    }
 
     LaunchedEffect(Unit) { viewModel.loadDiscovery(lat, lon) }
 
-    LaunchedEffect(searchQuery) {
+    LaunchedEffect(searchQuery, pickingField, activeTab, exploreCenterMode) {
         if (searchQuery.isBlank()) return@LaunchedEffect
         delay(SEARCH_DEBOUNCE_MS)
-        viewModel.searchPlaces(currentLat, currentLon, q = searchQuery)
-    }
-
-    // Pulling up the sheet, or focusing/typing in search, both mean "show
-    // me more" — expand so results aren't squeezed into the collapsed peek
-    // height (which is also what keeps them from being covered by the
-    // keyboard once combined with imePadding() in BottomSheetChrome).
-    LaunchedEffect(showResults) {
-        if (showResults) sheetExpanded = true
-    }
-    // Detail/directions content is compact — default back to peek height
-    // when either opens, without preventing the user from dragging it back
-    // up if they want more room.
-    LaunchedEffect(selectedPlace) {
-        if (selectedPlace != null) sheetExpanded = false
-    }
-    LaunchedEffect(destination) {
-        if (destination != null && selectedPlace == null) sheetExpanded = false
+        val (slat, slon) = if (pickingField == null && activeTab == "explore" && exploreCenterMode == "location") {
+            lat to lon
+        } else {
+            currentLat to currentLon
+        }
+        viewModel.searchPlaces(slat, slon, q = searchQuery)
     }
 
     val nearestPointIndex = remember(liveLocation, selectedRoute) {
@@ -307,78 +317,153 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                 )
             }
         } else {
-            RoundIconButton(
-                icon = Icons.Filled.ArrowBack,
-                contentDescription = "Back",
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
-            )
+            MapsTopBar(onBack = onBack, modifier = Modifier.align(Alignment.TopCenter))
 
             val place = selectedPlace
-            val dest = destination
-            val sheetHeightMode = if (place != null || (dest != null && !addingStop)) {
-                SheetHeightMode.WrapContent
-            } else {
-                SheetHeightMode.Resizable(sheetExpanded, onExpandedChange = { sheetExpanded = it })
-            }
-            BottomSheetChrome(
-                heightMode = sheetHeightMode,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
+            DockedPanel(modifier = Modifier.align(Alignment.BottomCenter)) {
                 when {
                     place != null -> PlaceDetailContent(
                         place = place,
-                        hasExistingTrip = dest != null,
+                        hasExistingTrip = destination != null,
                         previewRoute = previewRoute,
                         onDismiss = { viewModel.dismissPlaceDetail() },
                         onAddStop = {
                             viewModel.addStop(place)
                             viewModel.requestRoutes(currentLat, currentLon)
-                            addingStop = false
                         },
                     )
-                    dest != null && !addingStop -> DirectionsContent(
-                        stops = stops,
-                        destination = dest,
-                        routeState = routeState,
-                        mode = mode,
-                        onModeChange = { m ->
-                            viewModel.setMode(m)
-                            viewModel.requestRoutes(currentLat, currentLon)
-                        },
-                        onAddStop = { addingStop = true },
-                        onRemoveStop = { stop ->
-                            viewModel.removeStop(stop)
-                            viewModel.requestRoutes(currentLat, currentLon)
-                        },
-                        onSelectRoute = { i -> viewModel.selectRoute(i) },
-                        onStart = { viewModel.startNavigation() },
-                        onClose = { viewModel.clearTrip(); addingStop = false },
-                    )
-                    else -> SearchSheetContent(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        onFocusChanged = { searchFocused = it },
-                        onSubmit = { viewModel.searchPlaces(currentLat, currentLon, q = searchQuery.ifBlank { null }) },
-                        showResults = showResults,
-                        expanded = sheetExpanded,
-                        placesState = placesState,
-                        selectedCategory = selectedCategory,
-                        onCategoryClick = { category ->
-                            viewModel.setCategoryFilter(category)
-                            viewModel.searchPlaces(currentLat, currentLon, q = searchQuery.ifBlank { null })
-                        },
-                        onPlaceClick = { p ->
-                            viewModel.showPlaceDetail(p, currentLat, currentLon)
-                            searchFocused = false
-                        },
-                        recents = recents,
-                        nearbyFood = nearbyFood,
-                        nearbyThingsToDo = nearbyThingsToDo,
-                        citiesState = citiesState,
-                        showCancel = addingStop,
-                        onCancel = { addingStop = false; searchQuery = ""; searchFocused = false },
-                    )
+                    else -> {
+                        Box(Modifier.padding(horizontal = 16.dp)) {
+                            RouteExploreToggle(
+                                activeTab = activeTab,
+                                onTabChange = { tab ->
+                                    viewModel.setActiveTab(tab)
+                                    pickingField = null
+                                    searchQuery = ""
+                                    viewModel.clearCategoryFilter()
+                                },
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (activeTab == "route") {
+                            RouteTabContent(
+                                routeOrigin = routeOrigin,
+                                destination = destination,
+                                stops = stops,
+                                routeState = routeState,
+                                mode = mode,
+                                onModeChange = { m ->
+                                    viewModel.setMode(m)
+                                    viewModel.requestRoutes(currentLat, currentLon)
+                                },
+                                pickingField = pickingField,
+                                fieldQuery = searchQuery,
+                                onFieldQueryChange = { searchQuery = it },
+                                onFieldSubmit = { viewModel.searchPlaces(currentLat, currentLon, q = searchQuery.ifBlank { null }) },
+                                fieldPlacesState = placesState,
+                                fieldSelectedCategory = selectedCategory,
+                                onFieldCategoryClick = { category ->
+                                    viewModel.setCategoryFilter(category)
+                                    viewModel.searchPlaces(currentLat, currentLon, q = searchQuery.ifBlank { null })
+                                },
+                                onFieldPlaceClick = { p ->
+                                    when (pickingField) {
+                                        "origin" -> {
+                                            viewModel.setRouteOrigin(p)
+                                            if (destination != null) viewModel.requestRoutes(currentLat, currentLon)
+                                        }
+                                        "destination" -> {
+                                            viewModel.setDestination(p)
+                                            viewModel.requestRoutes(currentLat, currentLon)
+                                        }
+                                    }
+                                    exitPicker()
+                                },
+                                onPickCurrentLocation = {
+                                    when (pickingField) {
+                                        // Origin's "current location" IS the null/default state — a
+                                        // live GPS fallback resolved at request time, not a frozen
+                                        // coordinate — so this just clears any custom origin back to it.
+                                        "origin" -> {
+                                            viewModel.setRouteOrigin(null)
+                                            if (destination != null) viewModel.requestRoutes(currentLat, currentLon)
+                                        }
+                                        // Destination has no such "null means here" concept — it must
+                                        // be a concrete point to route to, so build one from the real
+                                        // GPS fix this screen opened with.
+                                        "destination" -> {
+                                            viewModel.setDestination(
+                                                MapsPlaceResult(id = "current_location", name = "Current Location", lat = lat, lon = lon),
+                                            )
+                                            viewModel.requestRoutes(currentLat, currentLon)
+                                        }
+                                    }
+                                    exitPicker()
+                                },
+                                onCancelPicking = { exitPicker() },
+                                onPickOrigin = { pickingField = "origin"; searchQuery = ""; viewModel.clearCategoryFilter() },
+                                onPickDestination = { pickingField = "destination"; searchQuery = ""; viewModel.clearCategoryFilter() },
+                                onSwap = {
+                                    viewModel.swapRouteEndpoints()
+                                    viewModel.requestRoutes(currentLat, currentLon)
+                                },
+                                onRemoveStop = { stop ->
+                                    viewModel.removeStop(stop)
+                                    viewModel.requestRoutes(currentLat, currentLon)
+                                },
+                                onSelectRoute = { i -> viewModel.selectRoute(i) },
+                                onStart = { viewModel.startNavigation() },
+                                onClearTrip = { viewModel.clearTrip() },
+                                stopsCategory = selectedCategory,
+                                onStopsCategoryClick = { category ->
+                                    viewModel.setCategoryFilter(category)
+                                    val (mlat, mlon) = routeMidpoint ?: (currentLat to currentLon)
+                                    viewModel.searchPlaces(mlat, mlon, radiusKm = 3.0, q = null)
+                                },
+                                stopsPlacesState = placesState,
+                                onStopsPlaceClick = { p ->
+                                    viewModel.addStop(p)
+                                    viewModel.requestRoutes(currentLat, currentLon)
+                                    viewModel.clearCategoryFilter()
+                                },
+                            )
+                        } else {
+                            ExploreTabContent(
+                                query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                onSubmit = {
+                                    val (slat, slon) = if (exploreCenterMode == "location") lat to lon else currentLat to currentLon
+                                    viewModel.searchPlaces(slat, slon, q = searchQuery.ifBlank { null })
+                                },
+                                centerMode = exploreCenterMode,
+                                onCenterModeChange = { m ->
+                                    exploreCenterMode = m
+                                    if (showExploreResults) {
+                                        val (slat, slon) = if (m == "location") lat to lon else currentLat to currentLon
+                                        viewModel.searchPlaces(slat, slon, q = searchQuery.ifBlank { null })
+                                    }
+                                },
+                                showResults = showExploreResults,
+                                placesState = placesState,
+                                selectedCategory = selectedCategory,
+                                onCategoryClick = { category ->
+                                    viewModel.setCategoryFilter(category)
+                                    val (slat, slon) = if (exploreCenterMode == "location") lat to lon else currentLat to currentLon
+                                    viewModel.searchPlaces(slat, slon, q = searchQuery.ifBlank { null })
+                                },
+                                onPlaceClick = { p -> viewModel.showPlaceDetail(p, currentLat, currentLon) },
+                                onQuickRoute = { p ->
+                                    viewModel.setDestination(p)
+                                    viewModel.requestRoutes(currentLat, currentLon)
+                                    viewModel.setActiveTab("route")
+                                },
+                                recents = recents,
+                                nearbyFood = nearbyFood,
+                                nearbyThingsToDo = nearbyThingsToDo,
+                                citiesState = citiesState,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -400,93 +485,43 @@ private fun RoundIconButton(
     }
 }
 
-private val SHEET_SPRING = spring<Float>(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)
-private val SHEET_COLLAPSED_HEIGHT = 230.dp
-private val SHEET_WRAP_MAX_HEIGHT = 460.dp
-
-/** Which of the two ways a sheet can size itself:
- * - [Resizable]: the search/discovery content, which genuinely has more to
- *   reveal — drag the handle between a small peek and ~82% of the screen.
- * - [WrapContent]: place-detail / directions content, which has a fixed
- *   amount to show and nothing more behind a drag. Forcing this into the
- *   same two states as Resizable was the actual bug a real screenshot
- *   caught: the 230dp peek clipped the bottom of a place card (hours/
- *   distance/address cut off below the visible edge), while dragging it to
- *   the 82%-screen expanded height left most of that space empty since
- *   there was never more content to fill it with — "cut short" and "wasted
- *   space" are two symptoms of the same root cause. */
-private sealed interface SheetHeightMode {
-    data class Resizable(val expanded: Boolean, val onExpandedChange: (Boolean) -> Unit) : SheetHeightMode
-    data object WrapContent : SheetHeightMode
-}
-
-/** A real drag-to-expand bottom sheet, not a fixed-height card — pulling
- * the handle up reveals the full discovery/search content, matching the
- * iOS Quail Maps reference (NativeMapPage.swift's RoutePanel: a custom
- * capsule-handle drag, not SwiftUI .presentationDetents, two states rather
- * than a free-form continuum, with height computed per-content-type there
- * too). The drag gesture is bound ONLY to the handle's own hit box, same
- * reasoning as the iOS version — binding it to the whole sheet would fight
- * the results list's own scroll gestures. */
 @Composable
-private fun BottomSheetChrome(
-    heightMode: SheetHeightMode,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
-    val scope = rememberCoroutineScope()
-
-    val collapsedPx = with(density) { SHEET_COLLAPSED_HEIGHT.toPx() }
-    val expandedPx = with(density) { (configuration.screenHeightDp * 0.82f).dp.toPx() }
-    // Declared unconditionally (Compose disallows a remember call that's
-    // sometimes skipped at the same call site) — only actually driven when
-    // heightMode is Resizable; WrapContent ignores it entirely in favor of
-    // heightIn(max=...) below.
-    val heightPx = remember { Animatable(collapsedPx) }
-
-    if (heightMode is SheetHeightMode.Resizable) {
-        LaunchedEffect(heightMode.expanded, collapsedPx, expandedPx) {
-            heightPx.animateTo(if (heightMode.expanded) expandedPx else collapsedPx, animationSpec = SHEET_SPRING)
+private fun MapsTopBar(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(color = SheetBg.copy(alpha = 0.94f), modifier = modifier.fillMaxWidth()) {
+        Box(Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text(
+                "Quail Maps",
+                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
     }
+}
 
-    val sheetModifier = when (heightMode) {
-        is SheetHeightMode.WrapContent -> modifier.fillMaxWidth().heightIn(max = SHEET_WRAP_MAX_HEIGHT)
-        is SheetHeightMode.Resizable -> modifier.fillMaxWidth().height(with(density) { heightPx.value.toDp() })
-    }
-
-    Surface(color = SheetBg, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp), modifier = sheetModifier) {
-        Column(Modifier.navigationBarsPadding().imePadding()) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp)
-                    .then(
-                        if (heightMode is SheetHeightMode.Resizable) {
-                            Modifier.pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onDragEnd = {
-                                        val goExpanded = heightPx.value > (collapsedPx + expandedPx) / 2
-                                        heightMode.onExpandedChange(goExpanded)
-                                        scope.launch {
-                                            heightPx.animateTo(if (goExpanded) expandedPx else collapsedPx, animationSpec = SHEET_SPRING)
-                                        }
-                                    },
-                                ) { change, dragAmount ->
-                                    change.consume()
-                                    scope.launch {
-                                        heightPx.snapTo((heightPx.value - dragAmount).coerceIn(collapsedPx, expandedPx))
-                                    }
-                                }
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
+/** Content sizes itself (wraps up to [PANEL_MAX_HEIGHT], scrolls internally
+ * beyond that) instead of being forced into fixed states — a real bug two
+ * rounds ago (a place-detail card clipped in a too-short fixed "peek"
+ * height, then wasted empty space in a too-tall fixed "expanded" height)
+ * came directly from forcing every content type into the same two sizes. */
+@Composable
+private fun DockedPanel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Surface(
+        color = SheetBg,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        modifier = modifier.fillMaxWidth().heightIn(max = PANEL_MAX_HEIGHT),
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
                 Box(Modifier.size(width = 36.dp, height = 4.dp).background(Color(0xFF3A4150), RoundedCornerShape(2.dp)))
             }
             content()
@@ -495,17 +530,38 @@ private fun BottomSheetChrome(
 }
 
 @Composable
+private fun RouteExploreToggle(activeTab: String, onTabChange: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().background(ChipBg, RoundedCornerShape(12.dp)).padding(4.dp)) {
+        TabPill("Route", selected = activeTab == "route", onClick = { onTabChange("route") }, modifier = Modifier.weight(1f))
+        TabPill("Explore", selected = activeTab == "explore", onClick = { onTabChange("explore") }, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) QuailAccent else Color.Transparent,
+        shape = RoundedCornerShape(10.dp),
+        modifier = modifier,
+    ) {
+        Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text(label, color = if (selected) Color.Black else Color.White, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
-    onFocusChanged: (Boolean) -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        placeholder = { Text("Search Maps", color = QuailTextDim) },
+        placeholder = { Text("Search restaurants, stores...", color = QuailTextDim) },
         singleLine = true,
         shape = RoundedCornerShape(14.dp),
         colors = OutlinedTextFieldDefaults.colors(
@@ -516,7 +572,7 @@ private fun SearchField(
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
         ),
-        modifier = modifier.onFocusChanged { onFocusChanged(it.isFocused) },
+        modifier = modifier,
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = QuailTextDim) },
         trailingIcon = {
             if (query.isNotBlank()) {
@@ -533,96 +589,6 @@ private fun SearchField(
 }
 
 @Composable
-private fun SearchSheetContent(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onFocusChanged: (Boolean) -> Unit,
-    onSubmit: () -> Unit,
-    showResults: Boolean,
-    expanded: Boolean,
-    placesState: PlacesUiState,
-    selectedCategory: String?,
-    onCategoryClick: (String) -> Unit,
-    onPlaceClick: (MapsPlaceResult) -> Unit,
-    recents: List<MapsPlaceResult>,
-    nearbyFood: List<MapsPlaceResult>,
-    nearbyThingsToDo: List<MapsPlaceResult>,
-    citiesState: CitiesUiState,
-    showCancel: Boolean,
-    onCancel: () -> Unit,
-) {
-    val scrollState = rememberScrollState()
-    Column(
-        Modifier
-            .padding(16.dp)
-            .let { if (showResults) it else it.verticalScroll(scrollState) },
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SearchField(query, onQueryChange, onFocusChanged, onSubmit, modifier = Modifier.weight(1f))
-            if (showCancel) {
-                TextButton(onClick = onCancel) { Text("Cancel", color = QuailAccent) }
-            }
-        }
-
-        if (showResults) {
-            Spacer(Modifier.height(12.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(CATEGORY_FILTERS) { (category, icon) ->
-                    FilterChip(
-                        selected = selectedCategory == category,
-                        onClick = { onCategoryClick(category) },
-                        label = { Text("$icon ${category.replaceFirstChar { it.uppercase() }}") },
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            when (placesState) {
-                is PlacesUiState.Idle -> {}
-                is PlacesUiState.Loading -> {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                }
-                is PlacesUiState.Error -> {
-                    Text(placesState.message, color = QuailBadRed, modifier = Modifier.padding(16.dp))
-                }
-                is PlacesUiState.Success -> {
-                    if (placesState.places.isEmpty()) {
-                        Text("Nothing found nearby.", color = QuailTextDim, modifier = Modifier.padding(16.dp))
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.heightIn(max = 440.dp),
-                        ) {
-                            items(placesState.places) { place -> PlaceRow(place, onClick = { onPlaceClick(place) }) }
-                        }
-                    }
-                }
-            }
-        } else {
-            if (recents.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                DiscoveryRow("Recent Places", recents, onPlaceClick)
-            }
-            if (expanded) {
-                CitiesSection(citiesState)
-                if (nearbyThingsToDo.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    DiscoveryRow("Things to Do Near You", nearbyThingsToDo, onPlaceClick)
-                }
-                if (nearbyFood.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    // Deliberately "near you", not "top" — OpenStreetMap has
-                    // no rating/review data source to rank these by.
-                    DiscoveryRow("Restaurants Near You", nearbyFood, onPlaceClick)
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-        }
-    }
-}
-
-@Composable
 private fun DiscoveryRow(title: String, places: List<MapsPlaceResult>, onPlaceClick: (MapsPlaceResult) -> Unit) {
     Text(title, color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
     Spacer(Modifier.height(8.dp))
@@ -635,7 +601,6 @@ private fun DiscoveryRow(title: String, places: List<MapsPlaceResult>, onPlaceCl
 private fun CitiesSection(citiesState: CitiesUiState) {
     val cities = (citiesState as? CitiesUiState.Success)?.cities ?: return
     if (cities.current == null && cities.nearby.isEmpty()) return
-    Spacer(Modifier.height(16.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.LocationCity, contentDescription = null, tint = QuailTextDim, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
@@ -714,6 +679,37 @@ private fun PlaceRow(place: MapsPlaceResult, onClick: () -> Unit) {
                 }
             }
             Text(formatDistanceImperial(place.distanceKm * 1000.0), color = QuailGoodGreen, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** Explore tab's result row — a "route here" shortcut (the blue circular
+ * arrow) alongside the normal tap-for-detail row, matching the iOS
+ * reference's PlaceRow. */
+@Composable
+private fun ExplorePlaceRow(place: MapsPlaceResult, onClick: () -> Unit, onQuickRoute: () -> Unit) {
+    Surface(color = CardBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).background(ChipBg, CircleShape), contentAlignment = Alignment.Center) {
+                Text(place.icon.ifBlank { "📍" }, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(place.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val subtitle = listOfNotNull(
+                    place.category.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() },
+                    place.address.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, color = QuailTextDim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(formatDistanceImperial(place.distanceKm * 1000.0), color = QuailGoodGreen, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = onQuickRoute, modifier = Modifier.size(32.dp).background(QuailAccent, CircleShape)) {
+                Icon(Icons.Filled.ArrowForward, contentDescription = "Route here", tint = Color.Black, modifier = Modifier.size(16.dp))
+            }
         }
     }
 }
@@ -801,59 +797,171 @@ private fun StatBlock(label: String, value: String) {
 }
 
 @Composable
-private fun StopRow(icon: ImageVector, iconTint: Color, label: String, onRemove: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(28.dp).background(iconTint.copy(alpha = 0.18f), CircleShape), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
+private fun RouteFieldRow(icon: ImageVector, tint: Color, label: String, isPlaceholder: Boolean, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = ChipBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(label, color = if (isPlaceholder) QuailTextDim else Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Spacer(Modifier.width(10.dp))
-        Text(label, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (onRemove != null) {
-            IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "Remove stop", tint = QuailTextDim, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** Pinned above the field picker's search results, regardless of query —
+ * lets a field be set to (or reset to) wherever the phone actually is,
+ * same as every real map app's "Current Location" search entry. */
+@Composable
+private fun CurrentLocationRow(onClick: () -> Unit) {
+    Surface(color = CardBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).background(QuailAccent.copy(alpha = 0.18f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.MyLocation, contentDescription = null, tint = QuailAccent, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text("Current Location", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun SwapButton(onClick: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+        IconButton(onClick = onClick, modifier = Modifier.size(32.dp).background(ChipBg, CircleShape)) {
+            Icon(Icons.Filled.SwapVert, contentDescription = "Swap start and destination", tint = QuailAccent, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun RemovableChip(label: String, onRemove: () -> Unit) {
+    Surface(color = ChipBg, shape = RoundedCornerShape(10.dp)) {
+        Row(Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label, color = Color.White, style = MaterialTheme.typography.labelSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 100.dp),
+            )
+            IconButton(onClick = onRemove, modifier = Modifier.size(20.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Remove stop", tint = QuailTextDim, modifier = Modifier.size(14.dp))
             }
         }
     }
 }
 
 @Composable
-private fun DirectionsContent(
+private fun RouteTabContent(
+    routeOrigin: MapsPlaceResult?,
+    destination: MapsPlaceResult?,
     stops: List<MapsPlaceResult>,
-    destination: MapsPlaceResult,
     routeState: RouteUiState,
     mode: String,
     onModeChange: (String) -> Unit,
-    onAddStop: () -> Unit,
+    // Which field (if any) is being actively edited in place — "origin",
+    // "destination", or null. Editing a field replaces JUST that field's
+    // row with a search box + inline results; the tab toggle, the other
+    // field, and the swap button all stay visible around it. Earlier this
+    // opened a completely separate full-panel search screen (hiding the
+    // Route/Explore toggle entirely), which — since it reused the same
+    // search field + category chip styling as the old search-first
+    // design — looked and felt like "the old search bar" reappearing
+    // rather than an in-place edit of one field.
+    pickingField: String?,
+    fieldQuery: String,
+    onFieldQueryChange: (String) -> Unit,
+    onFieldSubmit: () -> Unit,
+    fieldPlacesState: PlacesUiState,
+    fieldSelectedCategory: String?,
+    onFieldCategoryClick: (String) -> Unit,
+    onFieldPlaceClick: (MapsPlaceResult) -> Unit,
+    onPickCurrentLocation: () -> Unit,
+    onCancelPicking: () -> Unit,
+    onPickOrigin: () -> Unit,
+    onPickDestination: () -> Unit,
+    onSwap: () -> Unit,
     onRemoveStop: (MapsPlaceResult) -> Unit,
     onSelectRoute: (Int) -> Unit,
     onStart: () -> Unit,
-    onClose: () -> Unit,
+    onClearTrip: () -> Unit,
+    stopsCategory: String?,
+    onStopsCategoryClick: (String) -> Unit,
+    stopsPlacesState: PlacesUiState,
+    onStopsPlaceClick: (MapsPlaceResult) -> Unit,
 ) {
-    Column(Modifier.padding(20.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Directions", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
-            IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
-        }
-        Spacer(Modifier.height(10.dp))
-
-        ModeToggle(mode = mode, onModeChange = onModeChange)
-        Spacer(Modifier.height(10.dp))
-
-        StopRow(Icons.Filled.MyLocation, QuailAccent, "My Location")
-        stops.forEach { stop -> StopRow(Icons.Filled.Place, QuailAccent, stop.name, onRemove = { onRemoveStop(stop) }) }
-        StopRow(Icons.Filled.Place, QuailBadRed, destination.name)
-
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onAddStop).padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = null, tint = QuailAccent, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Text("Add Stop", color = QuailAccent, fontWeight = FontWeight.Bold)
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        if (pickingField == "origin") {
+            EditableFieldSearch(fieldQuery, onFieldQueryChange, onFieldSubmit, onCancelPicking)
+        } else {
+            RouteFieldRow(Icons.Filled.MyLocation, QuailAccent, routeOrigin?.name ?: "My Location", isPlaceholder = routeOrigin == null, onClick = onPickOrigin)
         }
 
-        Spacer(Modifier.height(10.dp))
-        RouteSummarySection(routeState = routeState, onSelectRoute = onSelectRoute, onStart = onStart)
+        if (pickingField == null) SwapButton(onSwap)
+
+        if (pickingField == "destination") {
+            EditableFieldSearch(fieldQuery, onFieldQueryChange, onFieldSubmit, onCancelPicking)
+        } else {
+            RouteFieldRow(Icons.Filled.Place, QuailBadRed, destination?.name ?: "Destination", isPlaceholder = destination == null, onClick = onPickDestination)
+        }
+
+        if (pickingField != null) {
+            Spacer(Modifier.height(10.dp))
+            CurrentLocationRow(onClick = onPickCurrentLocation)
+            Spacer(Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(CATEGORY_FILTERS) { (category, icon) ->
+                    FilterChip(
+                        selected = fieldSelectedCategory == category,
+                        onClick = { onFieldCategoryClick(category) },
+                        label = { Text("$icon ${category.replaceFirstChar { it.uppercase() }}") },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            when (fieldPlacesState) {
+                is PlacesUiState.Idle -> Text("Search for a place", color = QuailTextDim, modifier = Modifier.padding(vertical = 12.dp))
+                is PlacesUiState.Loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                is PlacesUiState.Error -> Text(fieldPlacesState.message, color = QuailBadRed)
+                is PlacesUiState.Success -> {
+                    if (fieldPlacesState.places.isEmpty()) {
+                        Text("Nothing found.", color = QuailTextDim, modifier = Modifier.padding(vertical = 12.dp))
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            fieldPlacesState.places.forEach { p -> PlaceRow(p, onClick = { onFieldPlaceClick(p) }) }
+                        }
+                    }
+                }
+            }
+        } else {
+            if (stops.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(stops) { stop -> RemovableChip(stop.name, onRemove = { onRemoveStop(stop) }) }
+                }
+            }
+
+            if (destination != null) {
+                Spacer(Modifier.height(12.dp))
+                ModeToggle(mode = mode, onModeChange = onModeChange)
+                Spacer(Modifier.height(10.dp))
+                RouteResultsSection(routeState = routeState, onSelectRoute = onSelectRoute, onStart = onStart)
+                Spacer(Modifier.height(14.dp))
+                StopsAlongSection(
+                    selectedCategory = stopsCategory,
+                    onCategoryClick = onStopsCategoryClick,
+                    placesState = stopsPlacesState,
+                    onPlaceClick = onStopsPlaceClick,
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onClearTrip) { Text("Clear Route", color = QuailTextDim) }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun EditableFieldSearch(query: String, onQueryChange: (String) -> Unit, onSubmit: () -> Unit, onCancel: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
+        SearchField(query, onQueryChange, onSubmit, modifier = Modifier.weight(1f))
+        TextButton(onClick = onCancel) { Text("Cancel", color = QuailAccent) }
     }
 }
 
@@ -870,15 +978,8 @@ private fun ModeToggle(mode: String, onModeChange: (String) -> Unit) {
 
 @Composable
 private fun ModePill(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        color = if (selected) QuailAccent else ChipBg,
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    Surface(onClick = onClick, color = if (selected) QuailAccent else ChipBg, shape = RoundedCornerShape(12.dp)) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = if (selected) Color.Black else Color.White, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text(label, color = if (selected) Color.Black else Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
@@ -887,11 +988,7 @@ private fun ModePill(label: String, icon: ImageVector, selected: Boolean, onClic
 }
 
 @Composable
-private fun RouteSummarySection(
-    routeState: RouteUiState,
-    onSelectRoute: (Int) -> Unit,
-    onStart: () -> Unit,
-) {
+private fun RouteResultsSection(routeState: RouteUiState, onSelectRoute: (Int) -> Unit, onStart: () -> Unit) {
     when (routeState) {
         is RouteUiState.Loading -> {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -899,51 +996,16 @@ private fun RouteSummarySection(
                 Text("Finding routes...", color = Color.White)
             }
         }
-        is RouteUiState.Error -> {
-            Text(routeState.message, color = QuailBadRed)
-        }
+        is RouteUiState.Error -> Text(routeState.message, color = QuailBadRed)
         is RouteUiState.Success -> {
-            val selected = routeState.options.getOrNull(routeState.selectedIndex)
-            if (selected != null) {
-                val etaMillis = System.currentTimeMillis() + (selected.durationSec * 1000).toLong()
-                Surface(color = CardBg, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column {
-                            Text(
-                                "${(selected.durationSec / 60.0).roundToInt()} min",
-                                color = Color.White,
-                                fontWeight = FontWeight.ExtraBold,
-                                style = MaterialTheme.typography.headlineSmall,
-                            )
-                            Text(
-                                "${formatClockTime(etaMillis)} ETA · ${formatDistanceImperial(selected.distanceM)}",
-                                color = QuailTextDim,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Text(selected.label, color = QuailAccent, style = MaterialTheme.typography.labelSmall)
-                        }
-                        Button(
-                            onClick = onStart,
-                            colors = ButtonDefaults.buttonColors(containerColor = QuailGoodGreen),
-                        ) {
-                            Text("GO", color = Color.Black, fontWeight = FontWeight.ExtraBold)
-                        }
-                    }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                routeState.options.forEachIndexed { i, option ->
+                    RankedRouteCard(rank = i + 1, option = option, selected = i == routeState.selectedIndex, onClick = { onSelectRoute(i) })
                 }
-                if (routeState.options.size > 1) {
-                    Spacer(Modifier.height(8.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        routeState.options.forEachIndexed { i, option ->
-                            if (i != routeState.selectedIndex) {
-                                AltRouteRow(option, onClick = { onSelectRoute(i) })
-                            }
-                        }
-                    }
-                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = QuailGoodGreen)) {
+                Text("GO", color = Color.Black, fontWeight = FontWeight.ExtraBold)
             }
         }
         is RouteUiState.Idle -> {}
@@ -951,19 +1013,141 @@ private fun RouteSummarySection(
 }
 
 @Composable
-private fun AltRouteRow(option: MapsRouteOption, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = Color(0xFF0F131B), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+private fun RankedRouteCard(rank: Int, option: MapsRouteOption, selected: Boolean, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = if (selected) CardBg else Color(0xFF0F131B), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            Modifier.padding(12.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(option.label, color = Color.White, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "${(option.durationSec / 60.0).roundToInt()} min · ${formatDistanceImperial(option.distanceM)}",
-                color = QuailTextDim,
-                style = MaterialTheme.typography.bodySmall,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(24.dp).background(if (selected) QuailAccent else ChipBg, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("$rank", color = if (selected) Color.Black else Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        "${(option.durationSec / 60.0).roundToInt()} min · ${formatDistanceImperial(option.distanceM)}",
+                        color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(option.label, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            if (selected) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = QuailAccent)
+        }
+    }
+}
+
+@Composable
+private fun StopsAlongSection(
+    selectedCategory: String?,
+    onCategoryClick: (String) -> Unit,
+    placesState: PlacesUiState,
+    onPlaceClick: (MapsPlaceResult) -> Unit,
+) {
+    Text("STOPS ALONG THE WAY", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+    Spacer(Modifier.height(8.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(CATEGORY_FILTERS) { (category, icon) ->
+            FilterChip(
+                selected = selectedCategory == category,
+                onClick = { onCategoryClick(category) },
+                label = { Text("$icon ${category.replaceFirstChar { it.uppercase() }}") },
             )
+        }
+    }
+    if (selectedCategory != null) {
+        Spacer(Modifier.height(8.dp))
+        when (placesState) {
+            is PlacesUiState.Loading -> {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                }
+            }
+            is PlacesUiState.Error -> Text(placesState.message, color = QuailBadRed)
+            is PlacesUiState.Success -> {
+                if (placesState.places.isEmpty()) {
+                    Text("Nothing found along the way.", color = QuailTextDim, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        placesState.places.take(5).forEach { p -> PlaceRow(p, onClick = { onPlaceClick(p) }) }
+                    }
+                }
+            }
+            is PlacesUiState.Idle -> {}
+        }
+    }
+}
+
+@Composable
+private fun ExploreTabContent(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    centerMode: String,
+    onCenterModeChange: (String) -> Unit,
+    showResults: Boolean,
+    placesState: PlacesUiState,
+    selectedCategory: String?,
+    onCategoryClick: (String) -> Unit,
+    onPlaceClick: (MapsPlaceResult) -> Unit,
+    onQuickRoute: (MapsPlaceResult) -> Unit,
+    recents: List<MapsPlaceResult>,
+    nearbyFood: List<MapsPlaceResult>,
+    nearbyThingsToDo: List<MapsPlaceResult>,
+    citiesState: CitiesUiState,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        SearchField(query, onQueryChange, onSubmit, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModePill("Map view", Icons.Filled.Map, selected = centerMode == "map", onClick = { onCenterModeChange("map") })
+            ModePill("My Location", Icons.Filled.MyLocation, selected = centerMode == "location", onClick = { onCenterModeChange("location") })
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(CATEGORY_FILTERS) { (category, icon) ->
+                FilterChip(
+                    selected = selectedCategory == category,
+                    onClick = { onCategoryClick(category) },
+                    label = { Text("$icon ${category.replaceFirstChar { it.uppercase() }}") },
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
+        if (showResults) {
+            when (placesState) {
+                is PlacesUiState.Idle -> {}
+                is PlacesUiState.Loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                is PlacesUiState.Error -> Text(placesState.message, color = QuailBadRed)
+                is PlacesUiState.Success -> {
+                    if (placesState.places.isEmpty()) {
+                        Text("Nothing found nearby.", color = QuailTextDim)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            placesState.places.forEach { p -> ExplorePlaceRow(p, onClick = { onPlaceClick(p) }, onQuickRoute = { onQuickRoute(p) }) }
+                        }
+                    }
+                }
+            }
+        } else {
+            if (recents.isNotEmpty()) {
+                DiscoveryRow("Recent Places", recents, onPlaceClick)
+                Spacer(Modifier.height(16.dp))
+            }
+            CitiesSection(citiesState)
+            if (nearbyThingsToDo.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                DiscoveryRow("Things to Do Near You", nearbyThingsToDo, onPlaceClick)
+            }
+            if (nearbyFood.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                // Deliberately "near you", not "top" — OpenStreetMap has no
+                // rating/review data source to rank these by.
+                DiscoveryRow("Restaurants Near You", nearbyFood, onPlaceClick)
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

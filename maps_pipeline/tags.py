@@ -75,6 +75,15 @@ POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
     ("shop", "supermarket"): ("grocery", "\U0001f6d2"),
     ("shop", "grocery"): ("grocery", "\U0001f6d2"),
     ("shop", "convenience"): ("store", "\U0001f3ea"),
+    # Big-box / department stores — verified via live OSM data that this
+    # gap was real: the Walmart nearest a real test coordinate is tagged
+    # shop=department_store (a different Walmart 5mi away is
+    # shop=supermarket, already covered above), and with no
+    # (shop, department_store) entry here classify_poi() returned None for
+    # it unconditionally — dropped regardless of node-vs-way handling.
+    ("shop", "department_store"): ("shopping", "\U0001f3ec"),
+    ("shop", "variety_store"): ("shopping", "\U0001f3ec"),
+    ("shop", "mall"): ("shopping", "\U0001f3ec"),
     ("amenity", "pharmacy"): ("pharmacy", "\U0001f48a"),
     # Tourism / points of attraction
     ("tourism", "attraction"): ("attraction", "\U0001f3a1"),
