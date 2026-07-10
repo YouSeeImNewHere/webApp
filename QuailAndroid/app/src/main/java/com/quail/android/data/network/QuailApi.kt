@@ -43,6 +43,7 @@ import com.quail.android.data.model.MapsPlacesResponse
 import com.quail.android.data.model.MapsRouteRequest
 import com.quail.android.data.model.MapsRoutesResponse
 import com.quail.android.data.model.MapsStatusResponse
+import com.quail.android.data.model.MusicAnalyticsResponse
 import com.quail.android.data.model.MusicDeleteResponse
 import com.quail.android.data.model.MusicRecommendedResponse
 import com.quail.android.data.model.MusicSearchResult
@@ -822,4 +823,7 @@ interface QuailApi {
 
     @DELETE("api/music/tracks/{id}")
     suspend fun deleteMusicTrack(@Path("id") id: String): MusicDeleteResponse
+
+    @GET("api/music/analytics")
+    suspend fun getMusicAnalytics(): MusicAnalyticsResponse
 }

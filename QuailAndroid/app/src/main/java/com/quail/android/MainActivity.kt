@@ -55,6 +55,8 @@ import com.quail.android.ui.screens.admin.AdminViewModel
 import com.quail.android.ui.screens.maps.MapsScreen
 import com.quail.android.ui.screens.maps.MapsViewModel
 import com.quail.android.ui.screens.maps.TileMapScreen
+import com.quail.android.ui.screens.music.MusicAnalyticsScreen
+import com.quail.android.ui.screens.music.MusicAnalyticsViewModel
 import com.quail.android.ui.screens.music.MusicScreen
 import com.quail.android.ui.screens.music.MusicViewModel
 import com.quail.android.ui.screens.budget.BudgetScreen
@@ -133,6 +135,7 @@ private const val ROUTE_ADMIN = "admin"
 private const val ROUTE_MAPS = "maps"
 private const val ROUTE_MAPS_TILE_VIEW = "maps_tile_view/{lat}/{lon}"
 private const val ROUTE_MUSIC = "music"
+private const val ROUTE_MUSIC_ANALYTICS = "music_analytics"
 private const val ROUTE_CSV_IMPORT_QUEUE = "csv_import_queue"
 private const val ROUTE_CSV_MAPPING_SETUP = "csv_mapping_setup/{itemId}"
 private const val ROUTE_ACCOUNT_DETAIL = "account_detail/{accountId}/{auditMode}"
@@ -264,7 +267,16 @@ private fun AppNav(navController: NavHostController, authStore: AuthStore) {
 
         composable(ROUTE_MUSIC) {
             val viewModel: MusicViewModel = viewModel(factory = MusicViewModel.Factory(musicRepository))
-            MusicScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            MusicScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenAnalytics = { navController.navigate(ROUTE_MUSIC_ANALYTICS) },
+            )
+        }
+
+        composable(ROUTE_MUSIC_ANALYTICS) {
+            val viewModel: MusicAnalyticsViewModel = viewModel(factory = MusicAnalyticsViewModel.Factory(musicRepository))
+            MusicAnalyticsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
 
         composable(ROUTE_MAPS) {

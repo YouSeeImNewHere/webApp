@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import com.quail.android.data.model.MusicRecommendedPlaylist
 import com.quail.android.data.model.MusicRecommendedTrack
 import com.quail.android.data.model.MusicSearchResult
+import com.quail.android.ui.overlay.AppOverlayHost
+import com.quail.android.ui.overlay.InlineConfirmCard
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailSurface
@@ -49,7 +52,7 @@ private fun formatBytes(bytes: Long): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MusicScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
+fun MusicScreen(viewModel: MusicViewModel, onBack: () -> Unit, onOpenAnalytics: () -> Unit) {
     val recommendedState by viewModel.recommendedState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchState by viewModel.searchState.collectAsState()
@@ -62,6 +65,11 @@ fun MusicScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onOpenAnalytics) {
+                        Icon(Icons.Filled.BarChart, contentDescription = "Listening analytics")
                     }
                 },
             )
@@ -189,7 +197,20 @@ private fun SearchResultRow(track: MusicSearchResult, onDelete: (String) -> Unit
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            IconButton(onClick = { onDelete(track.id) }) {
+            IconButton(onClick = {
+                AppOverlayHost.showDialog {
+                    InlineConfirmCard(
+                        title = "Delete \"${track.name}\"?",
+                        text = "This removes the file from the server permanently.",
+                        confirmLabel = "Delete",
+                        onConfirm = {
+                            onDelete(track.id)
+                            AppOverlayHost.dismiss()
+                        },
+                        onCancel = { AppOverlayHost.dismiss() },
+                    )
+                }
+            }) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = QuailBadRed)
             }
         }

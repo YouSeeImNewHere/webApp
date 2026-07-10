@@ -50,6 +50,11 @@ def music_recommended():
     return _mm_request("GET", "/api/recommended")
 
 
+@router.get("/analytics")
+def music_analytics():
+    return _mm_request("GET", "/api/analytics")
+
+
 @router.get("/search")
 def music_search(q: str = Query("")):
     return _mm_request("GET", "/api/search", {"q": q})
