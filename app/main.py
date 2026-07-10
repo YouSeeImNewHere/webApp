@@ -61,6 +61,7 @@ from app.routers import (
     saved_places,
     financing,
     maps,
+    music,
 )
 
 
@@ -342,6 +343,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(saved_places.router)
     app.include_router(maps.router)
+    app.include_router(music.router)
     app.include_router(financing.router)
     app.include_router(onboarding.router)
     app.include_router(email_parser_trial.router)

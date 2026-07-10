@@ -177,12 +177,25 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
         }
     }
 
-    fun searchPlaces(lat: Double, lon: Double, radiusKm: Double = 5.0, q: String? = null) {
+    /** [radiusKm] defaults to a wide search when there's a real text query
+     * (someone searching "Walmart" expects it found regardless of whether
+     * it's 3 miles or 20 miles away, same as any real map app) and a tight
+     * "near me" radius for pure category browsing (tapping the "Food" chip
+     * with no query should mean nearby, not every restaurant in the
+     * county). Real bug this fixes: every call site in TileMapScreen.kt
+     * left radiusKm at this function's old flat 5.0 default regardless of
+     * whether a query was typed, so a named-store search silently searched
+     * only ~3 miles — indistinguishable from "there's only one" unless you
+     * already know there should be more. Caller-supplied [radiusKm]
+     * (stops-along-the-way's deliberately tight 3km along-route search)
+     * still overrides this. */
+    fun searchPlaces(lat: Double, lon: Double, radiusKm: Double? = null, q: String? = null) {
+        val effectiveRadiusKm = radiusKm ?: if (!q.isNullOrBlank()) 48.0 else 5.0
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _placesState.value = PlacesUiState.Loading
             _placesState.value = try {
-                PlacesUiState.Success(repository.searchPlaces(lat, lon, radiusKm, _selectedCategory.value, q))
+                PlacesUiState.Success(repository.searchPlaces(lat, lon, effectiveRadiusKm, _selectedCategory.value, q))
             } catch (e: Exception) {
                 PlacesUiState.Error(e.message ?: "Couldn't load nearby places")
             }
