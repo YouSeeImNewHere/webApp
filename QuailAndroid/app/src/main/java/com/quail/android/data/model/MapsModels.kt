@@ -69,6 +69,7 @@ data class MapsRouteStep(
     val instruction: String,
     @SerialName("street") val street: String = "",
     @SerialName("distance_m") val distanceM: Double = 0.0,
+    @SerialName("point_index") val pointIndex: Int = 0,
 )
 
 @Serializable

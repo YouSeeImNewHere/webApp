@@ -6,8 +6,12 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -18,7 +22,10 @@ import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.network.QuailApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -168,6 +175,31 @@ class MapsRepository(private val api: QuailApi, private val context: Context) {
             ?: throw LocationUnavailableException(
                 "No location fix available — check Location is on (High accuracy mode) and try again",
             )
+    }
+
+    /** Live position stream for driving mode — one fix every [intervalMs],
+     * used to follow the user and derive heading (Location.bearing, which
+     * Fused Location populates from movement) so the map can rotate to keep
+     * direction-of-travel "up" the way Apple/Google Maps do while
+     * navigating. Distinct from getCurrentLocation()'s one-shot fix. */
+    fun observeLocation(intervalMs: Long = 2000L): Flow<Location> = callbackFlow {
+        if (!hasLocationPermission()) {
+            close(LocationUnavailableException("Location permission not granted"))
+            return@callbackFlow
+        }
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs).build()
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { trySend(it) }
+            }
+        }
+        try {
+            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+        } catch (e: SecurityException) {
+            close(e)
+        }
+        awaitClose { client.removeLocationUpdates(callback) }
     }
 
     private fun hasLocationPermission(): Boolean {

@@ -164,7 +164,7 @@ def _turn_word(delta: float) -> str:
 
 def _build_turns(path_nodes: list[int], path_edges: list[tuple[str, float]], nodes: dict[int, tuple[float, float]]) -> list[dict]:
     if not path_edges:
-        return [{"instruction": "You have arrived", "street": "", "distance_m": 0.0}]
+        return [{"instruction": "You have arrived", "street": "", "distance_m": 0.0, "point_index": 0}]
 
     # Merge consecutive edges that share a street name into one leg.
     legs: list[list] = []  # [street, total_dist_m, start_node_idx, end_node_idx]
@@ -186,10 +186,14 @@ def _build_turns(path_nodes: list[int], path_edges: list[tuple[str, float]], nod
         else:
             delta = ((bearing - prev_bearing) + 180) % 360 - 180
             instruction = f"{_turn_word(delta)} {street}"
-        steps.append({"instruction": instruction, "street": street, "distance_m": round(leg_dist, 1)})
+        # point_index: where in the returned `points` list this leg starts —
+        # lets the client find "which step am I on" from a live GPS fix by
+        # matching it to the nearest point, without recomputing anything
+        # route-shaped on-device.
+        steps.append({"instruction": instruction, "street": street, "distance_m": round(leg_dist, 1), "point_index": start_i})
         prev_bearing = bearing
 
-    steps.append({"instruction": "Arrive at destination", "street": "", "distance_m": 0.0})
+    steps.append({"instruction": "Arrive at destination", "street": "", "distance_m": 0.0, "point_index": len(path_nodes) - 1})
     return steps
 
 

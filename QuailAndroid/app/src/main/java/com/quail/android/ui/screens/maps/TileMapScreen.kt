@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,16 +50,48 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quail.android.data.maps.MapsRepository
 import com.quail.android.data.model.MapsPlaceResult
+import com.quail.android.data.model.MapsRoutePoint
+import com.quail.android.data.model.MapsRouteStep
+import com.quail.android.ui.theme.QuailAccent
 import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailTextDim
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 private val CATEGORY_FILTERS = listOf(
     "gas" to "⛽", "food" to "🍔", "coffee" to "☕", "attraction" to "🎡",
     "museum" to "🏛️", "viewpoint" to "🌆", "park" to "🌳",
     "historic" to "🗿", "lodging" to "🏨",
 )
+
+private fun approxDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val dLat = (lat2 - lat1) * 110_540.0
+    val dLon = (lon2 - lon1) * 111_320.0 * cos(Math.toRadians(lat1))
+    return sqrt(dLat * dLat + dLon * dLon)
+}
+
+private fun findNearestPointIndex(points: List<MapsRoutePoint>, lat: Double, lon: Double): Int {
+    var bestIdx = 0
+    var bestDist = Double.MAX_VALUE
+    points.forEachIndexed { i, p ->
+        val d = approxDistanceMeters(lat, lon, p.lat, p.lon)
+        if (d < bestDist) {
+            bestDist = d
+            bestIdx = i
+        }
+    }
+    return bestIdx
+}
+
+private fun currentStepIndexFor(steps: List<MapsRouteStep>, nearestPointIndex: Int): Int {
+    var idx = 0
+    for (i in steps.indices) {
+        if (steps[i].pointIndex <= nearestPointIndex) idx = i else break
+    }
+    return idx
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,9 +106,29 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val destination by viewModel.destination.collectAsState()
     val routeState by viewModel.routeState.collectAsState()
+    val navigating by viewModel.navigating.collectAsState()
+    val liveLocation by viewModel.liveLocation.collectAsState()
+    val locationError by viewModel.locationError.collectAsState()
 
     val destinationLatLon = destination?.let { it.lat to it.lon }
-    val routePoints = (routeState as? RouteUiState.Success)?.route?.points?.map { it.lat to it.lon }
+    val route = (routeState as? RouteUiState.Success)?.route
+    val routePoints = route?.points?.map { it.lat to it.lon }
+
+    val nearestPointIndex = remember(liveLocation, route) {
+        val r = route ?: return@remember 0
+        val loc = liveLocation ?: return@remember 0
+        findNearestPointIndex(r.points, loc.latitude, loc.longitude)
+    }
+    val currentStepIndex = remember(nearestPointIndex, route) {
+        route?.let { currentStepIndexFor(it.steps, nearestPointIndex) } ?: 0
+    }
+    val distanceToManeuverM = remember(liveLocation, route, currentStepIndex) {
+        val r = route ?: return@remember 0.0
+        val loc = liveLocation ?: return@remember 0.0
+        val nextPointIndex = r.steps.getOrNull(currentStepIndex + 1)?.pointIndex ?: (r.points.size - 1)
+        val target = r.points.getOrNull(nextPointIndex) ?: return@remember 0.0
+        approxDistanceMeters(loc.latitude, loc.longitude, target.lat, target.lon)
+    }
 
     Scaffold(
         topBar = {
@@ -90,7 +143,7 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
             )
         },
         floatingActionButton = {
-            if (!discoverOpen) {
+            if (!discoverOpen && !navigating) {
                 ExtendedFloatingActionButton(
                     onClick = {
                         discoverOpen = true
@@ -109,16 +162,30 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                 initialLon = lon,
                 destination = destinationLatLon,
                 routePoints = routePoints,
+                navigating = navigating,
+                liveLocation = liveLocation,
                 onCenterChanged = { newLat, newLon -> currentLat = newLat; currentLon = newLon },
                 modifier = Modifier.fillMaxSize(),
             )
 
-            RouteSummaryOverlay(
-                routeState = routeState,
-                destinationName = destination?.name,
-                onClear = { viewModel.clearDestination() },
-                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
-            )
+            if (navigating) {
+                NavigationBanner(
+                    currentStep = route?.steps?.getOrNull(currentStepIndex),
+                    nextStep = route?.steps?.getOrNull(currentStepIndex + 1),
+                    distanceToManeuverM = distanceToManeuverM,
+                    locationError = locationError,
+                    onExit = { viewModel.clearDestination() },
+                    modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+                )
+            } else {
+                RouteSummaryOverlay(
+                    routeState = routeState,
+                    destinationName = destination?.name,
+                    onClear = { viewModel.clearDestination() },
+                    onStart = { viewModel.startNavigation() },
+                    modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+                )
+            }
 
             if (discoverOpen) {
                 DiscoverPanel(
@@ -142,56 +209,112 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
 }
 
 @Composable
-private fun RouteSummaryOverlay(
-    routeState: RouteUiState,
-    destinationName: String?,
-    onClear: () -> Unit,
+private fun NavigationBanner(
+    currentStep: MapsRouteStep?,
+    nextStep: MapsRouteStep?,
+    distanceToManeuverM: Double,
+    locationError: String?,
+    onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (routeState is RouteUiState.Idle) return
-    Surface(color = Color(0xFF171C26), shape = RoundedCornerShape(14.dp), modifier = modifier.fillMaxWidth()) {
+    Surface(color = Color(0xFF171C26), shape = RoundedCornerShape(16.dp), modifier = modifier.fillMaxWidth()) {
         Row(
-            Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            when (routeState) {
-                is RouteUiState.Loading -> {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                        Text("Finding a route...", color = Color.White)
-                    }
+            Column(Modifier.weight(1f)) {
+                if (locationError != null) {
+                    Text(locationError, color = QuailBadRed, style = MaterialTheme.typography.bodySmall)
                 }
-                is RouteUiState.Success -> {
-                    val route = routeState.route
-                    val km = route.distanceM / 1000.0
-                    val minutes = (route.durationSec / 60.0).roundToInt()
-                    Column {
-                        Text(destinationName ?: "Route", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(
-                            "%.1f km · %d min".format(km, minutes),
-                            color = QuailTextDim,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
+                Text(
+                    "${distanceToManeuverM.roundToInt()} m",
+                    color = QuailAccent,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    currentStep?.instruction ?: "Finding your route...",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (nextStep != null) {
+                    Text(
+                        "Then ${nextStep.instruction}",
+                        color = QuailTextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
-                is RouteUiState.Error -> {
-                    Text(routeState.message, color = QuailBadRed)
-                }
-                is RouteUiState.Idle -> {}
             }
-            IconButton(onClick = onClear) {
-                Icon(Icons.Filled.Close, contentDescription = "Clear route", tint = Color.White)
+            IconButton(onClick = onExit) {
+                Icon(Icons.Filled.Close, contentDescription = "Exit navigation", tint = Color.White)
             }
-        }
-        if (routeState is RouteUiState.Success) {
-            TurnByTurnList(steps = routeState.route.steps)
         }
     }
 }
 
 @Composable
-private fun TurnByTurnList(steps: List<com.quail.android.data.model.MapsRouteStep>) {
+private fun RouteSummaryOverlay(
+    routeState: RouteUiState,
+    destinationName: String?,
+    onClear: () -> Unit,
+    onStart: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (routeState is RouteUiState.Idle) return
+    Surface(color = Color(0xFF171C26), shape = RoundedCornerShape(14.dp), modifier = modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                when (routeState) {
+                    is RouteUiState.Loading -> {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                            Text("Finding a route...", color = Color.White)
+                        }
+                    }
+                    is RouteUiState.Success -> {
+                        val route = routeState.route
+                        val km = route.distanceM / 1000.0
+                        val minutes = (route.durationSec / 60.0).roundToInt()
+                        Column {
+                            Text(destinationName ?: "Route", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(
+                                "%.1f km · %d min".format(km, minutes),
+                                color = QuailTextDim,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Button(onClick = onStart) {
+                                Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Start")
+                            }
+                        }
+                    }
+                    is RouteUiState.Error -> {
+                        Text(routeState.message, color = QuailBadRed)
+                    }
+                    is RouteUiState.Idle -> {}
+                }
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Filled.Close, contentDescription = "Clear route", tint = Color.White)
+                }
+            }
+            if (routeState is RouteUiState.Success) {
+                TurnByTurnList(steps = routeState.route.steps)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TurnByTurnList(steps: List<MapsRouteStep>) {
     if (steps.isEmpty()) return
     LazyColumn(modifier = Modifier.heightIn(max = 160.dp)) {
         items(steps) { step ->
