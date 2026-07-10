@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -108,3 +110,100 @@ def get_tile(z: int, x: int, y: int):
         cache_path.write_bytes(png_bytes)
 
     return FileResponse(cache_path, media_type="image/png")
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+@router.get("/places")
+def search_places(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(5.0, gt=0, le=50),
+    category: str | None = Query(None),
+    q: str | None = Query(None),
+    limit: int = Query(50, gt=0, le=200),
+):
+    """Nearby POIs — gas/food/coffee/parking/grocery plus the tourism/
+    leisure/historic/natural categories maps_pipeline/tags.py classifies
+    (attractions, museums, viewpoints, parks, historic sites, etc.)."""
+    _require_maps_enabled()
+    master_db_paths = _master_db_paths()
+    if not master_db_paths:
+        raise HTTPException(status_code=404, detail="No map regions have been built yet")
+
+    meters_per_deg_lat = 110_540.0
+    meters_per_deg_lon = 111_320.0 * math.cos(math.radians(lat))
+    dlat = (radius_km * 1000.0) / meters_per_deg_lat
+    dlon = (radius_km * 1000.0) / meters_per_deg_lon
+    lat_min, lat_max = lat - dlat, lat + dlat
+    lon_min, lon_max = lon - dlon, lon + dlon
+
+    results = []
+    for db_path in master_db_paths:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            sql = (
+                "SELECT osm_id, lat, lon, name, address, icon, category FROM places "
+                "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
+            )
+            params: list = [lat_min, lat_max, lon_min, lon_max]
+            if category:
+                sql += " AND category = ?"
+                params.append(category)
+            if q:
+                sql += " AND name LIKE ?"
+                params.append(f"%{q}%")
+            for r in conn.execute(sql, params).fetchall():
+                dist = _haversine_km(lat, lon, r["lat"], r["lon"])
+                if dist <= radius_km:
+                    results.append(
+                        {
+                            "id": r["osm_id"],
+                            "name": r["name"],
+                            "address": r["address"],
+                            "icon": r["icon"],
+                            "category": r["category"],
+                            "lat": r["lat"],
+                            "lon": r["lon"],
+                            "distance_km": round(dist, 2),
+                        }
+                    )
+        finally:
+            conn.close()
+
+    results.sort(key=lambda p: p["distance_km"])
+    return {"places": results[:limit]}
+
+
+@router.get("/route")
+def get_route(
+    from_lat: float = Query(..., ge=-90, le=90),
+    from_lon: float = Query(..., ge=-180, le=180),
+    to_lat: float = Query(..., ge=-90, le=90),
+    to_lon: float = Query(..., ge=-180, le=180),
+):
+    """Real Dijkstra routing + turn-by-turn over the master road graph —
+    see maps_pipeline/routing.py."""
+    _require_maps_enabled()
+    master_db_paths = _master_db_paths()
+    if not master_db_paths:
+        raise HTTPException(status_code=404, detail="No map regions have been built yet")
+
+    straight_km = _haversine_km(from_lat, from_lon, to_lat, to_lon)
+    if straight_km > 80:
+        raise HTTPException(status_code=400, detail="Start and end are too far apart (max ~80km)")
+
+    from maps_pipeline.routing import RouteNotFoundError, compute_route
+
+    try:
+        return compute_route(master_db_paths, from_lat, from_lon, to_lat, to_lon)
+    except RouteNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))

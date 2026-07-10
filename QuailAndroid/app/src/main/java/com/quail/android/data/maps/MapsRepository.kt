@@ -12,39 +12,141 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.quail.android.data.model.MapsExtractResult
+import com.quail.android.data.model.MapsPlaceResult
+import com.quail.android.data.model.MapsRouteResponse
 import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.network.QuailApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.coroutines.resume
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.tan
 
 class LocationUnavailableException(message: String) : Exception(message)
+
+data class TilePackProgress(val done: Int, val total: Int)
 
 class MapsRepository(private val api: QuailApi, private val context: Context) {
 
     private val tileCache = TileCache()
+    private val tileDiskStore = TileDiskStore(context)
 
     suspend fun getStatus(): MapsStatusResponse = api.getMapsStatus()
 
-    /** Fetches one slippy-map tile (or returns it from the in-memory
-     * cache). Deliberately small and self-contained: unlike the old
-     * whole-extract approach, a single tile miss is cheap to retry and
-     * never risks blocking the UI for more than one small image fetch. */
+    suspend fun searchPlaces(
+        lat: Double,
+        lon: Double,
+        radiusKm: Double = 5.0,
+        category: String? = null,
+        q: String? = null,
+    ): List<MapsPlaceResult> =
+        api.getMapsPlaces(lat, lon, radiusKm, category, q).places
+
+    suspend fun getRoute(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): MapsRouteResponse =
+        api.getMapsRoute(fromLat, fromLon, toLat, toLon)
+
+    /** Fetches one slippy-map tile: memory cache, then disk cache (works
+     * fully offline once a tile has been seen once — either from ordinary
+     * browsing or a bulk downloadTilePack() call), then the network. */
     suspend fun fetchTile(z: Int, x: Int, y: Int): Bitmap? {
         tileCache[z, x, y]?.let { return it }
         return withContext(Dispatchers.IO) {
+            tileDiskStore.readBitmap(z, x, y)?.let { bitmap ->
+                tileCache.put(z, x, y, bitmap)
+                return@withContext bitmap
+            }
             try {
                 val bytes = api.getMapTile(z, x, y).bytes()
+                tileDiskStore.write(z, x, y, bytes)
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
                 tileCache.put(z, x, y, bitmap)
                 bitmap
             } catch (e: Exception) {
                 null
             }
+        }
+    }
+
+    private fun lonLatToTile(lon: Double, lat: Double, zoom: Int): Pair<Double, Double> {
+        val latRad = Math.toRadians(lat)
+        val n = 2.0.pow(zoom)
+        val x = (lon + 180.0) / 360.0 * n
+        val y = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) / 2.0 * n
+        return x to y
+    }
+
+    /** Downloads every tile covering a radius around (lat, lon) across
+     * [minZoom]..[maxZoom], writing straight to TileDiskStore — after this
+     * completes, that area works with the network off. Runs with bounded
+     * concurrency (8 in flight) since a several-km-radius pack at street
+     * zoom can be thousands of individual tile requests; even on a fast
+     * local network, doing them one at a time would be painfully slow. */
+    suspend fun downloadTilePack(
+        centerLat: Double,
+        centerLon: Double,
+        radiusKm: Double,
+        minZoom: Int = 13,
+        maxZoom: Int = 16,
+        onProgress: (TilePackProgress) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val metersPerDegLat = 110_540.0
+        val metersPerDegLon = 111_320.0 * cos(Math.toRadians(centerLat))
+        val dLat = (radiusKm * 1000.0) / metersPerDegLat
+        val dLon = (radiusKm * 1000.0) / metersPerDegLon
+
+        val needed = mutableListOf<Triple<Int, Int, Int>>()
+        for (z in minZoom..maxZoom) {
+            val (txWest, tyNorth) = lonLatToTile(centerLon - dLon, centerLat + dLat, z)
+            val (txEast, tySouth) = lonLatToTile(centerLon + dLon, centerLat - dLat, z)
+            val tileCount = 1 shl z
+            val minTx = floor(txWest).toInt().coerceIn(0, tileCount - 1)
+            val maxTx = floor(txEast).toInt().coerceIn(0, tileCount - 1)
+            val minTy = floor(tyNorth).toInt().coerceIn(0, tileCount - 1)
+            val maxTy = floor(tySouth).toInt().coerceIn(0, tileCount - 1)
+            for (tx in minTx..maxTx) {
+                for (ty in minTy..maxTy) {
+                    if (!tileDiskStore.has(z, tx, ty)) needed.add(Triple(z, tx, ty))
+                }
+            }
+        }
+
+        val total = needed.size
+        var done = 0
+        val progressMutex = Mutex()
+        val semaphore = Semaphore(8)
+        coroutineScope {
+            needed.map { (z, x, y) ->
+                async {
+                    semaphore.withPermit {
+                        try {
+                            val bytes = api.getMapTile(z, x, y).bytes()
+                            tileDiskStore.write(z, x, y, bytes)
+                        } catch (e: Exception) {
+                            // Best-effort: one missing tile shouldn't abort
+                            // the whole pack, it'll just fall back to a live
+                            // fetch (or stay blank offline) for that tile.
+                        }
+                    }
+                    progressMutex.withLock {
+                        done++
+                        onProgress(TilePackProgress(done, total))
+                    }
+                }
+            }.forEach { it.await() }
         }
     }
 

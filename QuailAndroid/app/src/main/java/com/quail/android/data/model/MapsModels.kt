@@ -46,3 +46,38 @@ data class MapsExtractResult(
     val lon: Double,
     val radiusKm: Double,
 )
+
+@Serializable
+data class MapsPlaceResult(
+    val id: String,
+    val name: String,
+    val address: String = "",
+    val icon: String = "",
+    val category: String = "",
+    val lat: Double,
+    val lon: Double,
+    @SerialName("distance_km") val distanceKm: Double = 0.0,
+)
+
+@Serializable
+data class MapsPlacesResponse(
+    val places: List<MapsPlaceResult> = emptyList(),
+)
+
+@Serializable
+data class MapsRouteStep(
+    val instruction: String,
+    @SerialName("street") val street: String = "",
+    @SerialName("distance_m") val distanceM: Double = 0.0,
+)
+
+@Serializable
+data class MapsRoutePoint(val lat: Double, val lon: Double)
+
+@Serializable
+data class MapsRouteResponse(
+    val points: List<MapsRoutePoint> = emptyList(),
+    val steps: List<MapsRouteStep> = emptyList(),
+    @SerialName("distance_m") val distanceM: Double = 0.0,
+    @SerialName("duration_sec") val durationSec: Double = 0.0,
+)

@@ -22,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -53,7 +54,7 @@ private fun formatBytes(bytes: Long): String {
 @Composable
 fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit, onOpenMap: (Double, Double) -> Unit) {
     val statusState by viewModel.status.collectAsState()
-    val downloadState by viewModel.downloadState.collectAsState()
+    val tilePackState by viewModel.tilePackState.collectAsState()
     val openMapLoading by viewModel.openMapLoading.collectAsState()
     val openMapError by viewModel.openMapError.collectAsState()
 
@@ -61,10 +62,10 @@ fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit, onOpenMap: (Double,
         viewModel.openMapEvent.collect { (lat, lon) -> onOpenMap(lat, lon) }
     }
 
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
+    val tilePackPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) viewModel.downloadCurrentCity()
+        if (granted) viewModel.downloadOfflinePack()
     }
     val openMapPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -98,10 +99,9 @@ fun MapsScreen(viewModel: MapsViewModel, onBack: () -> Unit, onOpenMap: (Double,
             }
 
             item {
-                DownloadCard(
-                    downloadState = downloadState,
-                    onDownload = { locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
-                    onViewMap = { lat, lon -> onOpenMap(lat, lon) },
+                OfflinePackCard(
+                    state = tilePackState,
+                    onDownload = { tilePackPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
                 )
             }
 
@@ -173,50 +173,45 @@ private fun OpenMapCard(loading: Boolean, error: String?, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun DownloadCard(
-    downloadState: DownloadUiState,
-    onDownload: () -> Unit,
-    onViewMap: (Double, Double) -> Unit,
-) {
+private fun OfflinePackCard(state: TilePackUiState, onDownload: () -> Unit) {
     Surface(color = QuailSurfaceRaised, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Offline city map", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Offline map tiles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Downloads roads and places around your current location for a future fully-offline mode.",
+                "Downloads map tiles around your current location (~5km) so the live map keeps working with no network.",
                 color = QuailTextDim,
                 style = MaterialTheme.typography.bodySmall,
             )
-            when (downloadState) {
-                is DownloadUiState.Idle -> {
-                    Button(onClick = onDownload) { Text("Download current city") }
+            when (state) {
+                is TilePackUiState.Idle -> {
+                    Button(onClick = onDownload) { Text("Download area for offline use") }
                 }
-                is DownloadUiState.RequestingLocation -> {
+                is TilePackUiState.RequestingLocation -> {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CircularProgressIndicator(modifier = Modifier.padding(2.dp))
                         Text("Finding your location...", color = QuailTextDim)
                     }
                 }
-                is DownloadUiState.Downloading -> {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.padding(2.dp))
-                        Text("Downloading map data...", color = QuailTextDim)
-                    }
-                }
-                is DownloadUiState.Success -> {
+                is TilePackUiState.Downloading -> {
+                    val p = state.progress
+                    val fraction = if (p.total > 0) p.done.toFloat() / p.total else 0f
                     Text(
-                        "Saved ${formatBytes(downloadState.result.sizeBytes)} for this area.",
+                        "Downloading tiles... ${p.done} / ${p.total}",
+                        color = QuailTextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                }
+                is TilePackUiState.Success -> {
+                    Text(
+                        if (state.tileCount > 0) "Saved ${state.tileCount} new tiles for offline use." else "This area was already fully downloaded.",
                         color = QuailGoodGreen,
                         fontWeight = FontWeight.Bold,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onViewMap(downloadState.result.lat, downloadState.result.lon) }) {
-                            Text("View on map")
-                        }
-                        Button(onClick = onDownload) { Text("Re-download") }
-                    }
+                    Button(onClick = onDownload) { Text("Refresh offline area") }
                 }
-                is DownloadUiState.Error -> {
-                    Text(downloadState.message, color = QuailBadRed)
+                is TilePackUiState.Error -> {
+                    Text(state.message, color = QuailBadRed)
                     Button(onClick = onDownload) { Text("Try again") }
                 }
             }

@@ -4,9 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.maps.MapsRepository
-import com.quail.android.data.model.MapsExtractResult
+import com.quail.android.data.maps.TilePackProgress
 import com.quail.android.data.model.MapsStatusResponse
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -14,7 +13,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed interface MapsStatusUiState {
     data object Loading : MapsStatusUiState
@@ -22,20 +20,20 @@ sealed interface MapsStatusUiState {
     data class Error(val message: String) : MapsStatusUiState
 }
 
-sealed interface DownloadUiState {
-    data object Idle : DownloadUiState
-    data object RequestingLocation : DownloadUiState
-    data object Downloading : DownloadUiState
-    data class Success(val result: MapsExtractResult) : DownloadUiState
-    data class Error(val message: String) : DownloadUiState
+sealed interface TilePackUiState {
+    data object Idle : TilePackUiState
+    data object RequestingLocation : TilePackUiState
+    data class Downloading(val progress: TilePackProgress) : TilePackUiState
+    data class Success(val tileCount: Int) : TilePackUiState
+    data class Error(val message: String) : TilePackUiState
 }
 
 class MapsViewModel(private val repository: MapsRepository) : ViewModel() {
     private val _status = MutableStateFlow<MapsStatusUiState>(MapsStatusUiState.Loading)
     val status: StateFlow<MapsStatusUiState> = _status.asStateFlow()
 
-    private val _downloadState = MutableStateFlow<DownloadUiState>(DownloadUiState.Idle)
-    val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
+    private val _tilePackState = MutableStateFlow<TilePackUiState>(TilePackUiState.Idle)
+    val tilePackState: StateFlow<TilePackUiState> = _tilePackState.asStateFlow()
 
     private val _openMapEvent = MutableSharedFlow<Pair<Double, Double>>(extraBufferCapacity = 1)
     val openMapEvent: SharedFlow<Pair<Double, Double>> = _openMapEvent.asSharedFlow()
@@ -48,16 +46,6 @@ class MapsViewModel(private val repository: MapsRepository) : ViewModel() {
 
     init {
         refreshStatus()
-        checkForExistingDownload()
-    }
-
-    private fun checkForExistingDownload() {
-        viewModelScope.launch {
-            val existing = withContext(Dispatchers.IO) { repository.mostRecentExtract() }
-            if (existing != null) {
-                _downloadState.value = DownloadUiState.Success(existing)
-            }
-        }
     }
 
     fun refreshStatus() {
@@ -71,28 +59,35 @@ class MapsViewModel(private val repository: MapsRepository) : ViewModel() {
         }
     }
 
-    fun downloadCurrentCity(radiusKm: Double = 15.0) {
+    /** Downloads every tile within [radiusKm] of the current location across
+     * a street-to-neighborhood zoom range — once this finishes, the live
+     * map (TileMapView) works fully offline for that area, since it always
+     * checks the on-disk tile store before the network. */
+    fun downloadOfflinePack(radiusKm: Double = 5.0) {
         viewModelScope.launch {
-            _downloadState.value = DownloadUiState.RequestingLocation
+            _tilePackState.value = TilePackUiState.RequestingLocation
             try {
                 val location = repository.getCurrentLocation()
-                _downloadState.value = DownloadUiState.Downloading
-                val result = repository.downloadExtract(location.latitude, location.longitude, radiusKm)
-                _downloadState.value = DownloadUiState.Success(result)
+                repository.downloadTilePack(location.latitude, location.longitude, radiusKm) { progress ->
+                    _tilePackState.value = TilePackUiState.Downloading(progress)
+                }
+                val finalCount = (_tilePackState.value as? TilePackUiState.Downloading)?.progress?.total ?: 0
+                _tilePackState.value = TilePackUiState.Success(finalCount)
             } catch (e: Exception) {
-                _downloadState.value = DownloadUiState.Error(e.message ?: "Download failed")
+                _tilePackState.value = TilePackUiState.Error(e.message ?: "Download failed")
             }
         }
     }
 
-    fun resetDownloadState() {
-        _downloadState.value = DownloadUiState.Idle
+    fun resetTilePackState() {
+        _tilePackState.value = TilePackUiState.Idle
     }
 
     /** Gets a fresh GPS fix and emits a one-shot event to open the live
      * tile map there — the tile view needs nothing else (no download, no
      * parsing) since it fetches only the small handful of tiles actually
-     * on screen from the server as you pan/zoom. */
+     * on screen from the server as you pan/zoom (or from the on-disk pack
+     * cache if you've downloaded one and have no network). */
     fun openLiveMap() {
         viewModelScope.launch {
             _openMapLoading.value = true

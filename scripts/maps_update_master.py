@@ -4,10 +4,16 @@ that region's master SQLite database if the upstream extract has changed.
 Homelab only — requires `osmium` and real disk space (MAPS_DATA_DIR), not
 run as part of the hosted web app.
 
+Pass --force to reimport every configured region from its already-downloaded
+.osm.pbf even if Geofabrik's upstream data hasn't changed — needed after
+editing maps_pipeline/tags.py (e.g. adding new POI categories), since that's
+a code change the md5-based "is there anything new to pull" check can't see.
+
 Meant to run on a schedule (see deploy/systemd/quail-maps-update.timer).
 """
 from __future__ import annotations
 
+import argparse
 import shutil
 import sys
 from pathlib import Path
@@ -29,6 +35,14 @@ def _region_slug(region: str) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="reimport every region from its existing .osm.pbf even if unchanged upstream",
+    )
+    args = parser.parse_args()
+
     if not maps_enabled():
         log("MAPS_DATA_DIR is not set — nothing to do")
         return
@@ -63,9 +77,11 @@ def main() -> None:
                     log(f"  downloading... {mb:,.0f} MB")
 
             pbf_path, changed = fetch_region(region, raw_dir(), on_progress=_download_progress)
-            if not changed:
+            if not changed and not args.force:
                 log(f"  up to date, skipping rebuild")
                 continue
+            if not changed:
+                log(f"  up to date upstream, reimporting anyway (--force)")
             any_changed = True
             log(f"  download complete ({pbf_path.stat().st_size / 1_048_576:,.0f} MB), importing...")
 

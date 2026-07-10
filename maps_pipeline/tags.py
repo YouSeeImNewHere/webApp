@@ -60,7 +60,10 @@ def parse_maxspeed(raw: str | None) -> float | None:
 
 # (osm tag key, osm tag value) -> (category, icon) — mirrors and extends
 # quail_maps_car/geo/search_db.py's DISCOVER_CATEGORIES so a real extract
-# drops into that schema unchanged.
+# drops into that schema unchanged. Extended beyond the original
+# errand-running set (gas/food/coffee/parking/grocery/pharmacy) to cover
+# tourism/leisure/historic/natural tags, for "discover nearby places" and
+# "points of attraction" rather than just fuel-and-groceries.
 POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
     ("amenity", "fuel"): ("gas", "⛽"),
     ("amenity", "charging_station"): ("ev", "\U0001f50c"),
@@ -73,11 +76,49 @@ POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
     ("shop", "grocery"): ("grocery", "\U0001f6d2"),
     ("shop", "convenience"): ("store", "\U0001f3ea"),
     ("amenity", "pharmacy"): ("pharmacy", "\U0001f48a"),
+    # Tourism / points of attraction
+    ("tourism", "attraction"): ("attraction", "\U0001f3a1"),
+    ("tourism", "museum"): ("museum", "\U0001f3db️"),
+    ("tourism", "gallery"): ("museum", "\U0001f5bc️"),
+    ("tourism", "viewpoint"): ("viewpoint", "\U0001f306"),
+    ("tourism", "artwork"): ("attraction", "\U0001f3a8"),
+    ("tourism", "zoo"): ("attraction", "\U0001f981"),
+    ("tourism", "aquarium"): ("attraction", "\U0001f420"),
+    ("tourism", "theme_park"): ("attraction", "\U0001f3a2"),
+    ("tourism", "hotel"): ("lodging", "\U0001f3e8"),
+    ("tourism", "motel"): ("lodging", "\U0001f3e8"),
+    ("tourism", "guest_house"): ("lodging", "\U0001f3e8"),
+    ("tourism", "hostel"): ("lodging", "\U0001f3e8"),
+    ("tourism", "camp_site"): ("lodging", "⛺"),
+    # Leisure / outdoors
+    ("leisure", "park"): ("park", "\U0001f333"),
+    ("leisure", "garden"): ("park", "\U0001f33c"),
+    ("leisure", "playground"): ("park", "\U0001fa81"),
+    ("leisure", "nature_reserve"): ("park", "\U0001f332"),
+    ("leisure", "golf_course"): ("recreation", "⛳"),
+    ("leisure", "stadium"): ("recreation", "\U0001f3df️"),
+    # Historic / landmarks
+    ("historic", "monument"): ("historic", "\U0001f5ff"),
+    ("historic", "memorial"): ("historic", "\U0001f5ff"),
+    ("historic", "castle"): ("historic", "\U0001f3f0"),
+    ("historic", "ruins"): ("historic", "\U0001f3db️"),
+    ("historic", "fort"): ("historic", "\U0001f3f0"),
+    ("historic", "archaeological_site"): ("historic", "\U0001f3fa"),
+    # Natural landmarks
+    ("natural", "beach"): ("beach", "\U0001f3d6️"),
+    ("natural", "peak"): ("viewpoint", "⛰️"),
+    ("natural", "waterfall"): ("viewpoint", "\U0001f4a7"),
+    # Entertainment
+    ("amenity", "theatre"): ("entertainment", "\U0001f3ad"),
+    ("amenity", "cinema"): ("entertainment", "\U0001f3ac"),
 }
+
+# OSM tag keys checked, in order, when classifying a node's POI category.
+_POI_TAG_KEYS = ("amenity", "shop", "tourism", "leisure", "historic", "natural")
 
 
 def classify_poi(tags: dict[str, str]) -> tuple[str, str] | None:
-    for key in ("amenity", "shop"):
+    for key in _POI_TAG_KEYS:
         value = tags.get(key)
         if value and (key, value) in POI_TAG_CATEGORY:
             return POI_TAG_CATEGORY[(key, value)]
