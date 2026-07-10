@@ -8,7 +8,7 @@ from typing import Callable
 import osmium
 
 from .schema import open_master_db
-from .tags import EXCLUDE_IF_TRUTHY, classify_highway, classify_poi, parse_maxspeed
+from .tags import CITY_PLACE_TYPES, EXCLUDE_IF_TRUTHY, classify_highway, classify_poi, parse_maxspeed
 
 _FLUSH_EVERY = 20_000
 _PROGRESS_INTERVAL_SEC = 5.0
@@ -33,9 +33,11 @@ class _MasterImportHandler(osmium.SimpleHandler):
         self._way_rows: list[tuple] = []
         self._way_node_rows: list[tuple] = []
         self._place_rows: list[tuple] = []
+        self._city_rows: list[tuple] = []
         self.way_count = 0
         self.node_count = 0
         self.place_count = 0
+        self.city_count = 0
         self._on_progress = on_progress
         self._last_report = time.monotonic()
 
@@ -72,34 +74,74 @@ class _MasterImportHandler(osmium.SimpleHandler):
                 self._place_rows,
             )
             self._place_rows.clear()
+        if self._city_rows:
+            self.cur.executemany(
+                "INSERT OR REPLACE INTO cities (osm_id, lat, lon, name, place_type, population) VALUES (?,?,?,?,?,?)",
+                self._city_rows,
+            )
+            self._city_rows.clear()
         self.conn.commit()
 
     def way(self, w):
         if any(w.tags.get(k) for k in EXCLUDE_IF_TRUTHY):
             return
-        highway = w.tags.get("highway")
-        if not highway:
-            return
-        classified = classify_highway(highway, parse_maxspeed(w.tags.get("maxspeed")))
-        if classified is None:
-            return
-        road_class, speed_kph = classified
-        street = w.tags.get("name") or highway.replace("_", " ").title()
 
-        seq_nodes: list[int] = []
-        for seq, n in enumerate(w.nodes):
-            if not n.location.valid():
-                continue
-            self._node_rows.append((n.ref, n.location.lat, n.location.lon))
-            self._way_node_rows.append((w.id, seq, n.ref))
-            seq_nodes.append(n.ref)
-            self.node_count += 1
-        if len(seq_nodes) < 2:
-            return
+        tags = {t.k: t.v for t in w.tags}
 
-        self._way_rows.append((w.id, street, road_class, speed_kph))
-        self.way_count += 1
-        if self.way_count % _FLUSH_EVERY == 0:
+        highway = tags.get("highway")
+        if highway:
+            classified = classify_highway(highway, parse_maxspeed(tags.get("maxspeed")))
+            if classified is not None:
+                road_class, speed_kph = classified
+                street = tags.get("name") or highway.replace("_", " ").title()
+
+                seq_nodes: list[int] = []
+                for seq, n in enumerate(w.nodes):
+                    if not n.location.valid():
+                        continue
+                    self._node_rows.append((n.ref, n.location.lat, n.location.lon))
+                    self._way_node_rows.append((w.id, seq, n.ref))
+                    seq_nodes.append(n.ref)
+                    self.node_count += 1
+                if len(seq_nodes) >= 2:
+                    self._way_rows.append((w.id, street, road_class, speed_kph))
+                    self.way_count += 1
+
+        # Buildings mapped as an outline (way) rather than a single point
+        # node — the norm for anything with a real footprint (big-box
+        # stores, standalone restaurants, malls). Verified against live OSM
+        # data: a real Dairy Queen near a test coordinate was exactly this
+        # shape (amenity=fast_food + name on a closed way, no separate
+        # node), and was silently dropped before this branch existed since
+        # only node() checked classify_poi(). The ring's node-average is a
+        # good-enough marker position without needing real polygon-centroid
+        # math for typically-rectangular building footprints.
+        name = tags.get("name")
+        poi_classified = classify_poi(tags)
+        if poi_classified is not None and name:
+            lats: list[float] = []
+            lons: list[float] = []
+            for n in w.nodes:
+                if n.location.valid():
+                    lats.append(n.location.lat)
+                    lons.append(n.location.lon)
+            if lats:
+                category, icon = poi_classified
+                housenumber = tags.get("addr:housenumber", "")
+                street_addr = tags.get("addr:street", "")
+                address = f"{housenumber} {street_addr}".strip()
+                opening_hours = tags.get("opening_hours", "")
+                phone = tags.get("phone", "") or tags.get("contact:phone", "")
+                website = tags.get("website", "") or tags.get("contact:website", "")
+                self._place_rows.append(
+                    (f"w{w.id}", None, sum(lats) / len(lats), sum(lons) / len(lons), name, address,
+                     icon, category, opening_hours, phone, website)
+                )
+                self.place_count += 1
+
+        if (self.way_count and self.way_count % _FLUSH_EVERY == 0) or (
+            self.place_count and self.place_count % _FLUSH_EVERY == 0
+        ):
             self._flush()
         self._maybe_report()
 
@@ -107,10 +149,22 @@ class _MasterImportHandler(osmium.SimpleHandler):
         if not n.location.valid() or len(n.tags) == 0:
             return
         tags = {t.k: t.v for t in n.tags}
+        name = tags.get("name")
+
+        place = tags.get("place")
+        if place in CITY_PLACE_TYPES and name:
+            try:
+                population = int(tags.get("population", "0") or 0)
+            except ValueError:
+                population = 0
+            self._city_rows.append((f"n{n.id}", n.location.lat, n.location.lon, name, place, population))
+            self.city_count += 1
+            if self.city_count % _FLUSH_EVERY == 0:
+                self._flush()
+
         classified = classify_poi(tags)
         if classified is None:
             return
-        name = tags.get("name")
         if not name:
             return
         category, icon = classified
@@ -160,11 +214,13 @@ def import_region(
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_latlon ON nodes(lat, lon)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_places_latlon ON places(lat, lon)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cities_latlon ON cities(lat, lon)")
     conn.commit()
 
     way_count = conn.execute("SELECT COUNT(*) FROM ways").fetchone()[0]
     node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
     place_count = conn.execute("SELECT COUNT(*) FROM places").fetchone()[0]
+    city_count = conn.execute("SELECT COUNT(*) FROM cities").fetchone()[0]
     conn.close()
 
     elapsed = round(time.time() - started, 1)
@@ -172,6 +228,7 @@ def import_region(
         "way_count": way_count,
         "node_count": node_count,
         "place_count": place_count,
+        "city_count": city_count,
         "elapsed_sec": elapsed,
         "size_bytes": master_db_path.stat().st_size,
     }

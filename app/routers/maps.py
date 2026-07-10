@@ -157,8 +157,14 @@ def search_places(
             )
             params: list = [lat_min, lat_max, lon_min, lon_max]
             if category:
-                sql += " AND category = ?"
-                params.append(category)
+                # Comma-separated list supported (e.g. "attraction,museum,park")
+                # so the Android "Things to do near me" discovery row can pull
+                # several categories in one request instead of one per chip.
+                categories = [c.strip() for c in category.split(",") if c.strip()]
+                if categories:
+                    placeholders = ",".join("?" for _ in categories)
+                    sql += f" AND category IN ({placeholders})"
+                    params.extend(categories)
             if q:
                 sql += " AND name LIKE ?"
                 params.append(f"%{q}%")
@@ -187,6 +193,62 @@ def search_places(
     return {"places": results[:limit]}
 
 
+@router.get("/cities")
+def nearby_cities(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(60.0, gt=0, le=300),
+    limit: int = Query(8, gt=0, le=30),
+):
+    """Nearest city/town/village (best-effort "what city am I in" via
+    nearest-node distance, NOT true administrative-boundary containment —
+    no boundary polygons are imported, just place=city/town/village point
+    nodes) plus other nearby ones, for the discovery panel's "Nearby
+    Cities" section."""
+    _require_maps_enabled()
+    master_db_paths = _master_db_paths()
+    if not master_db_paths:
+        raise HTTPException(status_code=404, detail="No map regions have been built yet")
+
+    meters_per_deg_lat = 110_540.0
+    meters_per_deg_lon = 111_320.0 * math.cos(math.radians(lat))
+    dlat = (radius_km * 1000.0) / meters_per_deg_lat
+    dlon = (radius_km * 1000.0) / meters_per_deg_lon
+    lat_min, lat_max = lat - dlat, lat + dlat
+    lon_min, lon_max = lon - dlon, lon + dlon
+
+    results = []
+    for db_path in master_db_paths:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            for r in conn.execute(
+                "SELECT osm_id, lat, lon, name, place_type, population FROM cities "
+                "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+                (lat_min, lat_max, lon_min, lon_max),
+            ).fetchall():
+                dist = _haversine_km(lat, lon, r["lat"], r["lon"])
+                if dist <= radius_km:
+                    results.append(
+                        {
+                            "id": r["osm_id"],
+                            "name": r["name"],
+                            "place_type": r["place_type"],
+                            "population": r["population"],
+                            "lat": r["lat"],
+                            "lon": r["lon"],
+                            "distance_km": round(dist, 2),
+                        }
+                    )
+        finally:
+            conn.close()
+
+    results.sort(key=lambda c: c["distance_km"])
+    current = results[0] if results else None
+    nearby = results[1 : limit + 1] if results else []
+    return {"current": current, "nearby": nearby}
+
+
 class RoutePointIn(BaseModel):
     lat: float
     lon: float
@@ -194,14 +256,19 @@ class RoutePointIn(BaseModel):
 
 class RouteRequestIn(BaseModel):
     points: list[RoutePointIn]
+    mode: str = "drive"
 
 
 @router.post("/route")
 def get_route(request: RouteRequestIn = Body(...)):
     """Real Dijkstra routing + turn-by-turn over the master road graph, with
-    up to 3 labeled alternatives (fastest/shortest/avoid-highways) and
-    multi-stop support (2+ ordered points) — see maps_pipeline/routing.py."""
+    up to 3 labeled alternatives (fastest/shortest/avoid-highways for
+    driving, fastest/shortest for walking) and multi-stop support (2+
+    ordered points) — see maps_pipeline/routing.py. No transit mode: this
+    engine has no real transit schedule data (GTFS) to route over."""
     _require_maps_enabled()
+    if request.mode not in ("drive", "walk"):
+        raise HTTPException(status_code=400, detail="mode must be 'drive' or 'walk'")
     if len(request.points) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 points (start and destination)")
 
@@ -218,6 +285,6 @@ def get_route(request: RouteRequestIn = Body(...)):
     from maps_pipeline.routing import RouteNotFoundError, compute_routes
 
     try:
-        return {"routes": compute_routes(master_db_paths, points)}
+        return {"routes": compute_routes(master_db_paths, points, mode=request.mode)}
     except RouteNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

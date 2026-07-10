@@ -2,8 +2,14 @@ package com.quail.android.ui.screens.maps
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,8 +37,10 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
@@ -57,18 +66,23 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quail.android.data.maps.MapsRepository
+import com.quail.android.data.model.MapsCityResult
 import com.quail.android.data.model.MapsPlaceResult
 import com.quail.android.data.model.MapsRouteOption
 import com.quail.android.data.model.MapsRoutePoint
@@ -78,6 +92,7 @@ import com.quail.android.ui.theme.QuailBadRed
 import com.quail.android.ui.theme.QuailGoodGreen
 import com.quail.android.ui.theme.QuailTextDim
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -165,12 +180,19 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     // True while the user tapped "+ Add Stop" from an already-started trip —
     // reopens the search sheet without losing the trip already in progress.
     var addingStop by remember { mutableStateOf(false) }
+    // Two-state bottom sheet (collapsed/expanded), pulled up via the handle
+    // — see BottomSheetChrome.
+    var sheetExpanded by remember { mutableStateOf(false) }
 
     val placesState by viewModel.placesState.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val selectedPlace by viewModel.selectedPlace.collectAsState()
     val previewRoute by viewModel.previewRoute.collectAsState()
     val recents by viewModel.recents.collectAsState()
+    val nearbyFood by viewModel.nearbyFood.collectAsState()
+    val nearbyThingsToDo by viewModel.nearbyThingsToDo.collectAsState()
+    val citiesState by viewModel.citiesState.collectAsState()
+    val mode by viewModel.mode.collectAsState()
     val stops by viewModel.stops.collectAsState()
     val destination by viewModel.destination.collectAsState()
     val routeState by viewModel.routeState.collectAsState()
@@ -183,10 +205,29 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     val routePoints = selectedRoute?.points?.map { it.lat to it.lon }
     val showResults = searchFocused || searchQuery.isNotBlank() || selectedCategory != null
 
+    LaunchedEffect(Unit) { viewModel.loadDiscovery(lat, lon) }
+
     LaunchedEffect(searchQuery) {
         if (searchQuery.isBlank()) return@LaunchedEffect
         delay(SEARCH_DEBOUNCE_MS)
         viewModel.searchPlaces(currentLat, currentLon, q = searchQuery)
+    }
+
+    // Pulling up the sheet, or focusing/typing in search, both mean "show
+    // me more" — expand so results aren't squeezed into the collapsed peek
+    // height (which is also what keeps them from being covered by the
+    // keyboard once combined with imePadding() in BottomSheetChrome).
+    LaunchedEffect(showResults) {
+        if (showResults) sheetExpanded = true
+    }
+    // Detail/directions content is compact — default back to peek height
+    // when either opens, without preventing the user from dragging it back
+    // up if they want more room.
+    LaunchedEffect(selectedPlace) {
+        if (selectedPlace != null) sheetExpanded = false
+    }
+    LaunchedEffect(destination) {
+        if (destination != null && selectedPlace == null) sheetExpanded = false
     }
 
     val nearestPointIndex = remember(liveLocation, selectedRoute) {
@@ -273,9 +314,17 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
             )
 
-            BottomSheetChrome(modifier = Modifier.align(Alignment.BottomCenter)) {
-                val place = selectedPlace
-                val dest = destination
+            val place = selectedPlace
+            val dest = destination
+            val sheetHeightMode = if (place != null || (dest != null && !addingStop)) {
+                SheetHeightMode.WrapContent
+            } else {
+                SheetHeightMode.Resizable(sheetExpanded, onExpandedChange = { sheetExpanded = it })
+            }
+            BottomSheetChrome(
+                heightMode = sheetHeightMode,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
                 when {
                     place != null -> PlaceDetailContent(
                         place = place,
@@ -292,6 +341,11 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                         stops = stops,
                         destination = dest,
                         routeState = routeState,
+                        mode = mode,
+                        onModeChange = { m ->
+                            viewModel.setMode(m)
+                            viewModel.requestRoutes(currentLat, currentLon)
+                        },
                         onAddStop = { addingStop = true },
                         onRemoveStop = { stop ->
                             viewModel.removeStop(stop)
@@ -307,6 +361,7 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                         onFocusChanged = { searchFocused = it },
                         onSubmit = { viewModel.searchPlaces(currentLat, currentLon, q = searchQuery.ifBlank { null }) },
                         showResults = showResults,
+                        expanded = sheetExpanded,
                         placesState = placesState,
                         selectedCategory = selectedCategory,
                         onCategoryClick = { category ->
@@ -318,6 +373,9 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                             searchFocused = false
                         },
                         recents = recents,
+                        nearbyFood = nearbyFood,
+                        nearbyThingsToDo = nearbyThingsToDo,
+                        citiesState = citiesState,
                         showCancel = addingStop,
                         onCancel = { addingStop = false; searchQuery = ""; searchFocused = false },
                     )
@@ -342,21 +400,95 @@ private fun RoundIconButton(
     }
 }
 
+private val SHEET_SPRING = spring<Float>(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)
+private val SHEET_COLLAPSED_HEIGHT = 230.dp
+private val SHEET_WRAP_MAX_HEIGHT = 460.dp
+
+/** Which of the two ways a sheet can size itself:
+ * - [Resizable]: the search/discovery content, which genuinely has more to
+ *   reveal — drag the handle between a small peek and ~82% of the screen.
+ * - [WrapContent]: place-detail / directions content, which has a fixed
+ *   amount to show and nothing more behind a drag. Forcing this into the
+ *   same two states as Resizable was the actual bug a real screenshot
+ *   caught: the 230dp peek clipped the bottom of a place card (hours/
+ *   distance/address cut off below the visible edge), while dragging it to
+ *   the 82%-screen expanded height left most of that space empty since
+ *   there was never more content to fill it with — "cut short" and "wasted
+ *   space" are two symptoms of the same root cause. */
+private sealed interface SheetHeightMode {
+    data class Resizable(val expanded: Boolean, val onExpandedChange: (Boolean) -> Unit) : SheetHeightMode
+    data object WrapContent : SheetHeightMode
+}
+
+/** A real drag-to-expand bottom sheet, not a fixed-height card — pulling
+ * the handle up reveals the full discovery/search content, matching the
+ * iOS Quail Maps reference (NativeMapPage.swift's RoutePanel: a custom
+ * capsule-handle drag, not SwiftUI .presentationDetents, two states rather
+ * than a free-form continuum, with height computed per-content-type there
+ * too). The drag gesture is bound ONLY to the handle's own hit box, same
+ * reasoning as the iOS version — binding it to the whole sheet would fight
+ * the results list's own scroll gestures. */
 @Composable
-private fun BottomSheetChrome(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Surface(
-        color = SheetBg,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        modifier = modifier.fillMaxWidth().heightIn(max = 520.dp),
-    ) {
-        Column(Modifier.navigationBarsPadding()) {
+private fun BottomSheetChrome(
+    heightMode: SheetHeightMode,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val scope = rememberCoroutineScope()
+
+    val collapsedPx = with(density) { SHEET_COLLAPSED_HEIGHT.toPx() }
+    val expandedPx = with(density) { (configuration.screenHeightDp * 0.82f).dp.toPx() }
+    // Declared unconditionally (Compose disallows a remember call that's
+    // sometimes skipped at the same call site) — only actually driven when
+    // heightMode is Resizable; WrapContent ignores it entirely in favor of
+    // heightIn(max=...) below.
+    val heightPx = remember { Animatable(collapsedPx) }
+
+    if (heightMode is SheetHeightMode.Resizable) {
+        LaunchedEffect(heightMode.expanded, collapsedPx, expandedPx) {
+            heightPx.animateTo(if (heightMode.expanded) expandedPx else collapsedPx, animationSpec = SHEET_SPRING)
+        }
+    }
+
+    val sheetModifier = when (heightMode) {
+        is SheetHeightMode.WrapContent -> modifier.fillMaxWidth().heightIn(max = SHEET_WRAP_MAX_HEIGHT)
+        is SheetHeightMode.Resizable -> modifier.fillMaxWidth().height(with(density) { heightPx.value.toDp() })
+    }
+
+    Surface(color = SheetBg, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp), modifier = sheetModifier) {
+        Column(Modifier.navigationBarsPadding().imePadding()) {
             Box(
                 Modifier
-                    .padding(top = 8.dp)
-                    .align(Alignment.CenterHorizontally)
-                    .size(width = 36.dp, height = 4.dp)
-                    .background(Color(0xFF3A4150), RoundedCornerShape(2.dp)),
-            )
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp)
+                    .then(
+                        if (heightMode is SheetHeightMode.Resizable) {
+                            Modifier.pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        val goExpanded = heightPx.value > (collapsedPx + expandedPx) / 2
+                                        heightMode.onExpandedChange(goExpanded)
+                                        scope.launch {
+                                            heightPx.animateTo(if (goExpanded) expandedPx else collapsedPx, animationSpec = SHEET_SPRING)
+                                        }
+                                    },
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    scope.launch {
+                                        heightPx.snapTo((heightPx.value - dragAmount).coerceIn(collapsedPx, expandedPx))
+                                    }
+                                }
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(width = 36.dp, height = 4.dp).background(Color(0xFF3A4150), RoundedCornerShape(2.dp)))
+            }
             content()
         }
     }
@@ -407,15 +539,24 @@ private fun SearchSheetContent(
     onFocusChanged: (Boolean) -> Unit,
     onSubmit: () -> Unit,
     showResults: Boolean,
+    expanded: Boolean,
     placesState: PlacesUiState,
     selectedCategory: String?,
     onCategoryClick: (String) -> Unit,
     onPlaceClick: (MapsPlaceResult) -> Unit,
     recents: List<MapsPlaceResult>,
+    nearbyFood: List<MapsPlaceResult>,
+    nearbyThingsToDo: List<MapsPlaceResult>,
+    citiesState: CitiesUiState,
     showCancel: Boolean,
     onCancel: () -> Unit,
 ) {
-    Column(Modifier.padding(16.dp)) {
+    val scrollState = rememberScrollState()
+    Column(
+        Modifier
+            .padding(16.dp)
+            .let { if (showResults) it else it.verticalScroll(scrollState) },
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SearchField(query, onQueryChange, onFocusChanged, onSubmit, modifier = Modifier.weight(1f))
             if (showCancel) {
@@ -451,21 +592,73 @@ private fun SearchSheetContent(
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.heightIn(max = 340.dp),
+                            modifier = Modifier.heightIn(max = 440.dp),
                         ) {
                             items(placesState.places) { place -> PlaceRow(place, onClick = { onPlaceClick(place) }) }
                         }
                     }
                 }
             }
-        } else if (recents.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            Text("Recent Places", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(recents) { place -> RecentPlaceChip(place, onClick = { onPlaceClick(place) }) }
+        } else {
+            if (recents.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                DiscoveryRow("Recent Places", recents, onPlaceClick)
             }
-            Spacer(Modifier.height(8.dp))
+            if (expanded) {
+                CitiesSection(citiesState)
+                if (nearbyThingsToDo.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    DiscoveryRow("Things to Do Near You", nearbyThingsToDo, onPlaceClick)
+                }
+                if (nearbyFood.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    // Deliberately "near you", not "top" — OpenStreetMap has
+                    // no rating/review data source to rank these by.
+                    DiscoveryRow("Restaurants Near You", nearbyFood, onPlaceClick)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryRow(title: String, places: List<MapsPlaceResult>, onPlaceClick: (MapsPlaceResult) -> Unit) {
+    Text(title, color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    Spacer(Modifier.height(8.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(places) { place -> RecentPlaceChip(place, onClick = { onPlaceClick(place) }) }
+    }
+}
+
+@Composable
+private fun CitiesSection(citiesState: CitiesUiState) {
+    val cities = (citiesState as? CitiesUiState.Success)?.cities ?: return
+    if (cities.current == null && cities.nearby.isEmpty()) return
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.LocationCity, contentDescription = null, tint = QuailTextDim, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Nearby Cities", color = QuailTextDim, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    }
+    Spacer(Modifier.height(8.dp))
+    cities.current?.let { current ->
+        Text("You're near ${current.name}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(8.dp))
+    }
+    if (cities.nearby.isNotEmpty()) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(cities.nearby) { city -> CityChip(city) }
+        }
+    }
+}
+
+@Composable
+private fun CityChip(city: MapsCityResult) {
+    Surface(color = ChipBg, shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(city.name, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+            Text(formatDistanceImperial(city.distanceKm * 1000.0), color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -628,6 +821,8 @@ private fun DirectionsContent(
     stops: List<MapsPlaceResult>,
     destination: MapsPlaceResult,
     routeState: RouteUiState,
+    mode: String,
+    onModeChange: (String) -> Unit,
     onAddStop: () -> Unit,
     onRemoveStop: (MapsPlaceResult) -> Unit,
     onSelectRoute: (Int) -> Unit,
@@ -639,6 +834,9 @@ private fun DirectionsContent(
             Text("Directions", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
             IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
         }
+        Spacer(Modifier.height(10.dp))
+
+        ModeToggle(mode = mode, onModeChange = onModeChange)
         Spacer(Modifier.height(10.dp))
 
         StopRow(Icons.Filled.MyLocation, QuailAccent, "My Location")
@@ -656,6 +854,35 @@ private fun DirectionsContent(
 
         Spacer(Modifier.height(10.dp))
         RouteSummarySection(routeState = routeState, onSelectRoute = onSelectRoute, onStart = onStart)
+    }
+}
+
+/** Drive/Walk only — no Transit pill. This routing engine is Dijkstra over
+ * the OSM road/path graph, not backed by any real transit schedule feed
+ * (GTFS); a "Transit" option here would have nothing to route with. */
+@Composable
+private fun ModeToggle(mode: String, onModeChange: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ModePill("Drive", Icons.Filled.DirectionsCar, selected = mode == "drive", onClick = { onModeChange("drive") })
+        ModePill("Walk", Icons.Filled.DirectionsWalk, selected = mode == "walk", onClick = { onModeChange("walk") })
+    }
+}
+
+@Composable
+private fun ModePill(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) QuailAccent else ChipBg,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = if (selected) Color.Black else Color.White, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = if (selected) Color.Black else Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

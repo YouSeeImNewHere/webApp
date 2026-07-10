@@ -18,11 +18,24 @@ from pathlib import Path
 
 _COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
 
-STRATEGIES: list[tuple[str, str]] = [
+DRIVE_STRATEGIES: list[tuple[str, str]] = [
     ("Fastest", "fastest"),
     ("Shortest", "shortest"),
     ("Avoid highways", "avoid_highways"),
 ]
+# Walking has no meaningful "avoid highways" strategy — highways are already
+# strongly penalized for every walking strategy (see _CLASS_PENALTY), not
+# just one of them, since pedestrians can't legally/physically use most of
+# them regardless of preference.
+WALK_STRATEGIES: list[tuple[str, str]] = [
+    ("Fastest", "fastest"),
+    ("Shortest", "shortest"),
+]
+# Backwards-compat alias — existing callers that don't pass a mode keep
+# getting the driving strategy set.
+STRATEGIES = DRIVE_STRATEGIES
+
+WALK_SPEED_KPH = 4.8
 
 
 class RouteNotFoundError(Exception):
@@ -111,16 +124,31 @@ def _nearest_node(nodes: dict[int, tuple[float, float]], lat: float, lon: float)
     return best_id
 
 
-def _edge_weight_h(dist_m: float, speed_kph: float, road_class: str, strategy: str) -> float:
+def _class_penalty(mode: str, road_class: str) -> float:
+    """Multiplicative cost penalty for road classes that are the wrong mode
+    for the trip — not a hard exclusion (a pedestrian bridge alongside a
+    motorway is technically "on" the same way in sparse OSM data
+    occasionally), just heavily discouraged so Dijkstra only picks it when
+    there's truly no other path."""
+    if mode == "walk" and road_class == "highway":
+        return 50.0
+    if mode == "drive" and road_class == "foot":
+        return 50.0
+    return 1.0
+
+
+def _edge_weight_h(dist_m: float, speed_kph: float, road_class: str, strategy: str, mode: str = "drive") -> float:
+    penalty = _class_penalty(mode, road_class)
+    effective_speed = WALK_SPEED_KPH if mode == "walk" else speed_kph
     if strategy == "shortest":
         # Not really "hours", just a monotonic cost in meters — fine since
         # Dijkstra only cares about relative ordering, and the caller always
         # recomputes real distance/time from the resulting path afterward.
-        return dist_m
-    time_h = (dist_m / 1000.0) / max(speed_kph, 1.0)
+        return dist_m * penalty
+    time_h = (dist_m / 1000.0) / max(effective_speed, 1.0)
     if strategy == "avoid_highways" and road_class == "highway":
-        return time_h * 25.0
-    return time_h
+        time_h *= 25.0
+    return time_h * penalty
 
 
 # path edge tuple: (street, road_class, distance_m, speed_kph)
@@ -128,7 +156,7 @@ _PathEdge = tuple[str, str, float, float]
 
 
 def _dijkstra(
-    adjacency: dict[int, list[_Edge]], start_id: int, goal_id: int, strategy: str
+    adjacency: dict[int, list[_Edge]], start_id: int, goal_id: int, strategy: str, mode: str = "drive"
 ) -> tuple[list[int], list[_PathEdge]] | None:
     dist: dict[int, float] = {start_id: 0.0}
     prev: dict[int, tuple[int, _PathEdge]] = {}
@@ -143,7 +171,7 @@ def _dijkstra(
         if node == goal_id:
             break
         for neighbor, dist_m, speed_kph, street, road_class in adjacency.get(node, []):
-            weight = _edge_weight_h(dist_m, speed_kph, road_class, strategy)
+            weight = _edge_weight_h(dist_m, speed_kph, road_class, strategy, mode)
             nd = d + weight
             if neighbor not in dist or nd < dist[neighbor]:
                 dist[neighbor] = nd
@@ -168,7 +196,8 @@ def _dijkstra(
 
 
 def _route_leg(
-    master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float, strategy: str
+    master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float,
+    strategy: str, mode: str = "drive",
 ) -> tuple[list[int], list[_PathEdge], dict[int, tuple[float, float]]]:
     straight_km = _haversine_m(from_lat, from_lon, to_lat, to_lon) / 1000.0
     bbox = _bbox_around(from_lat, from_lon, to_lat, to_lon, pad_km=max(1.0, straight_km * 0.15))
@@ -181,7 +210,7 @@ def _route_leg(
     if start_id is None or goal_id is None:
         raise RouteNotFoundError("No road data near these points")
 
-    result = _dijkstra(adjacency, start_id, goal_id, strategy)
+    result = _dijkstra(adjacency, start_id, goal_id, strategy, mode)
     if result is None:
         raise RouteNotFoundError("No route found between these points")
     path_nodes, path_edges = result
@@ -253,7 +282,9 @@ def _build_turns(
     return steps
 
 
-def _route_for_strategy(master_db_paths: list[Path], points: list[tuple[float, float]], strategy: str) -> dict:
+def _route_for_strategy(
+    master_db_paths: list[Path], points: list[tuple[float, float]], strategy: str, mode: str = "drive",
+) -> dict:
     all_path_nodes: list[int] = []
     all_path_edges: list[_PathEdge] = []
     all_nodes: dict[int, tuple[float, float]] = {}
@@ -262,7 +293,9 @@ def _route_for_strategy(master_db_paths: list[Path], points: list[tuple[float, f
     for i in range(len(points) - 1):
         from_lat, from_lon = points[i]
         to_lat, to_lon = points[i + 1]
-        leg_nodes, leg_edges, leg_node_coords = _route_leg(master_db_paths, from_lat, from_lon, to_lat, to_lon, strategy)
+        leg_nodes, leg_edges, leg_node_coords = _route_leg(
+            master_db_paths, from_lat, from_lon, to_lat, to_lon, strategy, mode,
+        )
         all_nodes.update(leg_node_coords)
 
         if all_path_nodes and all_path_nodes[-1] == leg_nodes[0]:
@@ -275,7 +308,8 @@ def _route_for_strategy(master_db_paths: list[Path], points: list[tuple[float, f
             stop_markers.add(len(all_path_nodes) - 1)
 
     total_dist_m = sum(e[2] for e in all_path_edges)
-    total_time_h = sum((e[2] / 1000.0) / max(e[3], 1.0) for e in all_path_edges)
+    effective_speed = (lambda speed: WALK_SPEED_KPH if mode == "walk" else speed)
+    total_time_h = sum((e[2] / 1000.0) / max(effective_speed(e[3]), 1.0) for e in all_path_edges)
     steps = _build_turns(all_path_nodes, all_path_edges, all_nodes, stop_markers)
 
     return {
@@ -286,21 +320,31 @@ def _route_for_strategy(master_db_paths: list[Path], points: list[tuple[float, f
     }
 
 
-def compute_routes(master_db_paths: list[Path], points: list[tuple[float, float]], max_options: int = 3) -> list[dict]:
+def compute_routes(
+    master_db_paths: list[Path], points: list[tuple[float, float]], mode: str = "drive", max_options: int = 3,
+) -> list[dict]:
     """[points] is an ordered list of (lat, lon) — 2 for a simple A-to-B
-    trip, more for multi-stop. Returns up to [max_options] labeled route
-    alternatives (fastest/shortest/avoid-highways), deduped when two
-    strategies land on the identical street sequence."""
+    trip, more for multi-stop. [mode] is "drive" or "walk" — walking uses a
+    fixed ~4.8kph pace instead of each road's tagged driving speed, and
+    strongly discourages (not hard-excludes) motorway/trunk-class ways,
+    while driving does the same for footway/path/pedestrian/steps-class
+    ways (present in the graph for the walking use case, but not something a
+    car should be routed down). Returns up to [max_options] labeled route
+    alternatives, deduped when two strategies land on the identical street
+    sequence. No transit mode: this routing engine is Dijkstra over the OSM
+    road/path graph, not backed by any real transit schedule data (GTFS) —
+    there's nothing to route "transit" over yet."""
     if len(points) < 2:
         raise RouteNotFoundError("Need at least two points to route between")
 
+    strategies = WALK_STRATEGIES if mode == "walk" else DRIVE_STRATEGIES
     options: list[dict] = []
     seen_signatures: set[tuple[str, ...]] = set()
     last_error: RouteNotFoundError | None = None
 
-    for label, strategy in STRATEGIES:
+    for label, strategy in strategies:
         try:
-            route = _route_for_strategy(master_db_paths, points, strategy)
+            route = _route_for_strategy(master_db_paths, points, strategy, mode)
         except RouteNotFoundError as e:
             last_error = e
             continue

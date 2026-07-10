@@ -104,4 +104,21 @@ data class MapsRoutesResponse(
 data class MapsRoutePointRequest(val lat: Double, val lon: Double)
 
 @Serializable
-data class MapsRouteRequest(val points: List<MapsRoutePointRequest>)
+data class MapsRouteRequest(val points: List<MapsRoutePointRequest>, val mode: String = "drive")
+
+@Serializable
+data class MapsCityResult(
+    val id: String,
+    val name: String,
+    @SerialName("place_type") val placeType: String = "",
+    val population: Int = 0,
+    val lat: Double,
+    val lon: Double,
+    @SerialName("distance_km") val distanceKm: Double = 0.0,
+)
+
+@Serializable
+data class MapsCitiesResponse(
+    val current: MapsCityResult? = null,
+    val nearby: List<MapsCityResult> = emptyList(),
+)

@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS places (
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_latlon ON nodes(lat, lon);
 CREATE INDEX IF NOT EXISTS idx_places_latlon ON places(lat, lon);
+CREATE TABLE IF NOT EXISTS cities (
+    osm_id TEXT PRIMARY KEY,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    name TEXT NOT NULL,
+    place_type TEXT NOT NULL,
+    population INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cities_latlon ON cities(lat, lon);
 CREATE TABLE IF NOT EXISTS region_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

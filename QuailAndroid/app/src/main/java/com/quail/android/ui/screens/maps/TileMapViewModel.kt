@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.maps.MapsRepository
+import com.quail.android.data.model.MapsCitiesResponse
 import com.quail.android.data.model.MapsPlaceResult
 import com.quail.android.data.model.MapsRouteOption
 import kotlinx.coroutines.Job
@@ -28,7 +29,21 @@ sealed interface RouteUiState {
     data class Error(val message: String) : RouteUiState
 }
 
+sealed interface CitiesUiState {
+    data object Idle : CitiesUiState
+    data object Loading : CitiesUiState
+    data class Success(val cities: MapsCitiesResponse) : CitiesUiState
+    data class Error(val message: String) : CitiesUiState
+}
+
 private const val MAX_RECENTS = 8
+
+// Multi-category filter passed to /api/maps/places for the "Things to do
+// near me" discovery row — every non-errand category maps_pipeline/tags.py
+// classifies. Deliberately excludes gas/food/coffee/parking/grocery/etc.,
+// those are errands, not "things to do".
+private const val THINGS_TO_DO_CATEGORIES =
+    "attraction,museum,viewpoint,park,historic,entertainment,recreation,beach"
 
 /** Backs TileMapScreen: place discovery/search, a trip made of an ordered
  * list of stops + a final destination, routing with alternatives, and
@@ -77,9 +92,58 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
     private val _locationError = MutableStateFlow<String?>(null)
     val locationError: StateFlow<String?> = _locationError.asStateFlow()
 
+    // "drive" or "walk" — no "transit" option, this routing engine has no
+    // real transit schedule data (GTFS) to route over.
+    private val _mode = MutableStateFlow("drive")
+    val mode: StateFlow<String> = _mode.asStateFlow()
+
+    // Expanded-landing-sheet discovery content: nearby unranked restaurants
+    // (no OSM rating data exists, so this is "near you", not "top"),
+    // unranked things-to-do, and nearby cities/towns. Loaded once per
+    // screen open, not tied to the search flow.
+    private val _nearbyFood = MutableStateFlow<List<MapsPlaceResult>>(emptyList())
+    val nearbyFood: StateFlow<List<MapsPlaceResult>> = _nearbyFood.asStateFlow()
+
+    private val _nearbyThingsToDo = MutableStateFlow<List<MapsPlaceResult>>(emptyList())
+    val nearbyThingsToDo: StateFlow<List<MapsPlaceResult>> = _nearbyThingsToDo.asStateFlow()
+
+    private val _citiesState = MutableStateFlow<CitiesUiState>(CitiesUiState.Idle)
+    val citiesState: StateFlow<CitiesUiState> = _citiesState.asStateFlow()
+
     private var searchJob: Job? = null
     private var locationJob: Job? = null
     private var routeJob: Job? = null
+    private var discoveryJob: Job? = null
+
+    fun setMode(newMode: String) {
+        if (_mode.value == newMode) return
+        _mode.value = newMode
+    }
+
+    /** Loads the expanded landing sheet's discovery content — call once
+     * when a real location becomes available (not on every recomposition;
+     * the caller is responsible for not spamming this on every pan). */
+    fun loadDiscovery(lat: Double, lon: Double) {
+        discoveryJob?.cancel()
+        discoveryJob = viewModelScope.launch {
+            launch {
+                runCatching { repository.searchPlaces(lat, lon, 8.0, "food", null) }
+                    .onSuccess { _nearbyFood.value = it.take(10) }
+            }
+            launch {
+                runCatching { repository.searchPlaces(lat, lon, 15.0, THINGS_TO_DO_CATEGORIES, null) }
+                    .onSuccess { _nearbyThingsToDo.value = it.take(10) }
+            }
+            launch {
+                _citiesState.value = CitiesUiState.Loading
+                _citiesState.value = try {
+                    CitiesUiState.Success(repository.getNearbyCities(lat, lon))
+                } catch (e: Exception) {
+                    CitiesUiState.Error(e.message ?: "Couldn't load nearby cities")
+                }
+            }
+        }
+    }
 
     fun searchPlaces(lat: Double, lon: Double, radiusKm: Double = 5.0, q: String? = null) {
         searchJob?.cancel()
@@ -158,7 +222,7 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
                 add(destination.lat to destination.lon)
             }
             _routeState.value = try {
-                val options = repository.getRoutes(points)
+                val options = repository.getRoutes(points, _mode.value)
                 if (options.isEmpty()) {
                     RouteUiState.Error("Couldn't find a route there")
                 } else {

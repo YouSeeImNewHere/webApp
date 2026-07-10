@@ -216,9 +216,24 @@ fun TileMapView(
                 if (tileBitmaps.containsKey(key) || key in loadingTiles) continue
                 loadingTiles.add(key)
                 launch {
-                    val bmp = repository.fetchTile(zoom, tx, ty)
-                    loadingTiles.remove(key)
-                    if (bmp != null) tileBitmaps[key] = bmp
+                    // finally, not just a line after the fetch: this whole
+                    // LaunchedEffect restarts (cancelling every in-flight
+                    // launch{} started by the previous run) every time
+                    // centerTileXFloor/Y changes, which happens continuously
+                    // while panning. Without finally, a tile fetch cancelled
+                    // mid-flight never reached the loadingTiles.remove()
+                    // line, so that key stayed in loadingTiles forever — the
+                    // guard above then skipped it on every future pass,
+                    // permanently blanking that tile even on a perfectly
+                    // fine connection. Reproduced this exact way: panning
+                    // quickly leaves scattered tiles that never load no
+                    // matter how long you wait or pan back over them.
+                    try {
+                        val bmp = repository.fetchTile(zoom, tx, ty)
+                        if (bmp != null) tileBitmaps[key] = bmp
+                    } finally {
+                        loadingTiles.remove(key)
+                    }
                 }
             }
         }

@@ -15,6 +15,7 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.quail.android.data.model.MapsCitiesResponse
 import com.quail.android.data.model.MapsExtractResult
 import com.quail.android.data.model.MapsPlaceResult
 import com.quail.android.data.model.MapsRouteOption
@@ -67,9 +68,19 @@ class MapsRepository(private val api: QuailApi, private val context: Context) {
 
     /** [points] is the ordered trip: current location, then any stops, then
      * the final destination (2+ entries) — returns up to 3 labeled route
-     * alternatives (fastest/shortest/avoid-highways). */
-    suspend fun getRoutes(points: List<Pair<Double, Double>>): List<MapsRouteOption> =
-        api.getMapsRoute(MapsRouteRequest(points.map { (lat, lon) -> MapsRoutePointRequest(lat, lon) })).routes
+     * alternatives (fastest/shortest/avoid-highways for "drive",
+     * fastest/shortest for "walk" — no transit mode, the routing engine has
+     * no real transit schedule data to route over). */
+    suspend fun getRoutes(points: List<Pair<Double, Double>>, mode: String = "drive"): List<MapsRouteOption> =
+        api.getMapsRoute(
+            MapsRouteRequest(points.map { (lat, lon) -> MapsRoutePointRequest(lat, lon) }, mode),
+        ).routes
+
+    /** Nearest city/town/village (best-effort "what city am I in", not true
+     * administrative-boundary containment) plus other nearby ones, for the
+     * discovery panel's "Nearby Cities" section. */
+    suspend fun getNearbyCities(lat: Double, lon: Double, radiusKm: Double = 60.0): MapsCitiesResponse =
+        api.getMapsCities(lat, lon, radiusKm)
 
     /** Fetches one slippy-map tile: memory cache, then disk cache (works
      * fully offline once a tile has been seen once — either from ordinary

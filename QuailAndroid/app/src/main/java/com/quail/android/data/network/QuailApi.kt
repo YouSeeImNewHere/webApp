@@ -38,6 +38,7 @@ import com.quail.android.data.model.GarminStatusResponse
 import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.FinancingPlanPayResponse
 import com.quail.android.data.model.GoalRecord
+import com.quail.android.data.model.MapsCitiesResponse
 import com.quail.android.data.model.MapsPlacesResponse
 import com.quail.android.data.model.MapsRouteRequest
 import com.quail.android.data.model.MapsRoutesResponse
@@ -800,4 +801,11 @@ interface QuailApi {
 
     @POST("api/maps/route")
     suspend fun getMapsRoute(@Body request: MapsRouteRequest): MapsRoutesResponse
+
+    @GET("api/maps/cities")
+    suspend fun getMapsCities(
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+        @Query("radius_km") radiusKm: Double = 60.0,
+    ): MapsCitiesResponse
 }

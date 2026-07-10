@@ -116,6 +116,11 @@ POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
 # OSM tag keys checked, in order, when classifying a node's POI category.
 _POI_TAG_KEYS = ("amenity", "shop", "tourism", "leisure", "historic", "natural")
 
+# place=* values captured into the separate `cities` table (city/discovery
+# UI's "nearby cities" section) — deliberately excludes hamlet/suburb/etc.,
+# which are too dense/noisy for a "nearby cities" list to be useful.
+CITY_PLACE_TYPES = {"city", "town", "village"}
+
 
 def classify_poi(tags: dict[str, str]) -> tuple[str, str] | None:
     for key in _POI_TAG_KEYS:
