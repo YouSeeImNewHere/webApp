@@ -39,7 +39,8 @@ import com.quail.android.data.model.FinancingPlanResponse
 import com.quail.android.data.model.FinancingPlanPayResponse
 import com.quail.android.data.model.GoalRecord
 import com.quail.android.data.model.MapsPlacesResponse
-import com.quail.android.data.model.MapsRouteResponse
+import com.quail.android.data.model.MapsRouteRequest
+import com.quail.android.data.model.MapsRoutesResponse
 import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.model.GoalUpsertRequest
 import com.quail.android.data.model.AvailabilityRecord
@@ -797,11 +798,6 @@ interface QuailApi {
         @Query("q") q: String? = null,
     ): MapsPlacesResponse
 
-    @GET("api/maps/route")
-    suspend fun getMapsRoute(
-        @Query("from_lat") fromLat: Double,
-        @Query("from_lon") fromLon: Double,
-        @Query("to_lat") toLat: Double,
-        @Query("to_lon") toLon: Double,
-    ): MapsRouteResponse
+    @POST("api/maps/route")
+    suspend fun getMapsRoute(@Body request: MapsRouteRequest): MapsRoutesResponse
 }

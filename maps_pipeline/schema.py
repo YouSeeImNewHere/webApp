@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS places (
     name TEXT NOT NULL,
     address TEXT NOT NULL DEFAULT '',
     icon TEXT NOT NULL,
-    category TEXT NOT NULL
+    category TEXT NOT NULL,
+    opening_hours TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_latlon ON nodes(lat, lon);
 CREATE INDEX IF NOT EXISTS idx_places_latlon ON places(lat, lon);

@@ -57,6 +57,11 @@ data class MapsPlaceResult(
     val lat: Double,
     val lon: Double,
     @SerialName("distance_km") val distanceKm: Double = 0.0,
+    // Real OSM opening_hours tag when present (~30% of POIs in early
+    // testing) — blank means OSM just doesn't have it, not "closed".
+    // Ratings/reviews aren't in this field or anywhere else: OpenStreetMap
+    // has no rating data source at all, unlike Google/Yelp.
+    @SerialName("opening_hours") val openingHours: String = "",
 )
 
 @Serializable
@@ -75,10 +80,26 @@ data class MapsRouteStep(
 @Serializable
 data class MapsRoutePoint(val lat: Double, val lon: Double)
 
+/** One labeled route alternative (e.g. "Fastest", "Shortest", "Avoid
+ * highways") — /api/maps/route returns up to 3 of these, deduped when two
+ * strategies land on an identical street sequence, so there may be fewer
+ * than 3 when the road network doesn't offer real alternatives. */
 @Serializable
-data class MapsRouteResponse(
+data class MapsRouteOption(
+    val label: String = "",
     val points: List<MapsRoutePoint> = emptyList(),
     val steps: List<MapsRouteStep> = emptyList(),
     @SerialName("distance_m") val distanceM: Double = 0.0,
     @SerialName("duration_sec") val durationSec: Double = 0.0,
 )
+
+@Serializable
+data class MapsRoutesResponse(
+    val routes: List<MapsRouteOption> = emptyList(),
+)
+
+@Serializable
+data class MapsRoutePointRequest(val lat: Double, val lon: Double)
+
+@Serializable
+data class MapsRouteRequest(val points: List<MapsRoutePointRequest>)

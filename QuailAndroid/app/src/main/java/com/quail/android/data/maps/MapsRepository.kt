@@ -17,7 +17,9 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.quail.android.data.model.MapsExtractResult
 import com.quail.android.data.model.MapsPlaceResult
-import com.quail.android.data.model.MapsRouteResponse
+import com.quail.android.data.model.MapsRouteOption
+import com.quail.android.data.model.MapsRoutePointRequest
+import com.quail.android.data.model.MapsRouteRequest
 import com.quail.android.data.model.MapsStatusResponse
 import com.quail.android.data.network.QuailApi
 import kotlinx.coroutines.Dispatchers
@@ -63,8 +65,11 @@ class MapsRepository(private val api: QuailApi, private val context: Context) {
     ): List<MapsPlaceResult> =
         api.getMapsPlaces(lat, lon, radiusKm, category, q).places
 
-    suspend fun getRoute(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): MapsRouteResponse =
-        api.getMapsRoute(fromLat, fromLon, toLat, toLon)
+    /** [points] is the ordered trip: current location, then any stops, then
+     * the final destination (2+ entries) — returns up to 3 labeled route
+     * alternatives (fastest/shortest/avoid-highways). */
+    suspend fun getRoutes(points: List<Pair<Double, Double>>): List<MapsRouteOption> =
+        api.getMapsRoute(MapsRouteRequest(points.map { (lat, lon) -> MapsRoutePointRequest(lat, lon) })).routes
 
     /** Fetches one slippy-map tile: memory cache, then disk cache (works
      * fully offline once a tile has been seen once — either from ordinary

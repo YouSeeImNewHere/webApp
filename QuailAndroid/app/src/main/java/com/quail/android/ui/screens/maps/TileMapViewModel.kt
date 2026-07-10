@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quail.android.data.maps.MapsRepository
 import com.quail.android.data.model.MapsPlaceResult
-import com.quail.android.data.model.MapsRouteResponse
+import com.quail.android.data.model.MapsRouteOption
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,20 +24,28 @@ sealed interface PlacesUiState {
 sealed interface RouteUiState {
     data object Idle : RouteUiState
     data object Loading : RouteUiState
-    data class Success(val route: MapsRouteResponse) : RouteUiState
+    data class Success(val options: List<MapsRouteOption>, val selectedIndex: Int) : RouteUiState
     data class Error(val message: String) : RouteUiState
 }
 
-/** Backs TileMapScreen: place discovery near the current map view, routing
- * to a selected destination, and turn-by-turn driving mode (live location +
- * progressive step tracking). Separate from MapsViewModel, which backs the
- * earlier "Maps" landing screen (status/offline-pack). */
+/** Backs TileMapScreen: place discovery/search, a trip made of an ordered
+ * list of stops + a final destination, routing with alternatives, and
+ * turn-by-turn driving mode (live location + progressive step tracking).
+ * Separate from MapsViewModel, which backs the earlier "Maps" landing
+ * screen (status/offline-pack). */
 class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
     private val _placesState = MutableStateFlow<PlacesUiState>(PlacesUiState.Idle)
     val placesState: StateFlow<PlacesUiState> = _placesState.asStateFlow()
 
     private val _selectedCategory = MutableStateFlow<String?>(null)
     val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
+
+    private val _selectedPlace = MutableStateFlow<MapsPlaceResult?>(null)
+    val selectedPlace: StateFlow<MapsPlaceResult?> = _selectedPlace.asStateFlow()
+
+    // Ordered intermediate waypoints — the trip is fromLat/fromLon -> stops -> destination.
+    private val _stops = MutableStateFlow<List<MapsPlaceResult>>(emptyList())
+    val stops: StateFlow<List<MapsPlaceResult>> = _stops.asStateFlow()
 
     private val _destination = MutableStateFlow<MapsPlaceResult?>(null)
     val destination: StateFlow<MapsPlaceResult?> = _destination.asStateFlow()
@@ -56,6 +64,7 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
 
     private var searchJob: Job? = null
     private var locationJob: Job? = null
+    private var routeJob: Job? = null
 
     fun searchPlaces(lat: Double, lon: Double, radiusKm: Double = 5.0, q: String? = null) {
         searchJob?.cancel()
@@ -73,25 +82,67 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
         _selectedCategory.value = if (_selectedCategory.value == category) null else category
     }
 
-    fun selectDestination(place: MapsPlaceResult, fromLat: Double, fromLon: Double) {
-        _destination.value = place
-        requestRoute(fromLat, fromLon, place.lat, place.lon)
+    fun showPlaceDetail(place: MapsPlaceResult) {
+        _selectedPlace.value = place
     }
 
-    fun clearDestination() {
+    fun dismissPlaceDetail() {
+        _selectedPlace.value = null
+    }
+
+    /** Adds a stop, or if there's no destination yet, sets it as the
+     * destination directly — "Add Stop" on the very first place picked has
+     * nothing to be a waypoint *before*, so it's just the destination until
+     * a second place gets added. */
+    fun addStop(place: MapsPlaceResult) {
+        if (_destination.value == null) {
+            _destination.value = place
+        } else {
+            _stops.value = _stops.value + _destination.value!!
+            _destination.value = place
+        }
+        _selectedPlace.value = null
+    }
+
+    fun removeStop(place: MapsPlaceResult) {
+        _stops.value = _stops.value.filterNot { it.id == place.id }
+    }
+
+    fun clearTrip() {
         stopNavigation()
+        _stops.value = emptyList()
         _destination.value = null
         _routeState.value = RouteUiState.Idle
     }
 
-    fun requestRoute(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double) {
-        viewModelScope.launch {
+    /** points: fromLat/fromLon, every stop in order, then the destination. */
+    fun requestRoutes(fromLat: Double, fromLon: Double) {
+        val destination = _destination.value ?: return
+        routeJob?.cancel()
+        routeJob = viewModelScope.launch {
             _routeState.value = RouteUiState.Loading
+            val points = buildList {
+                add(fromLat to fromLon)
+                addAll(_stops.value.map { it.lat to it.lon })
+                add(destination.lat to destination.lon)
+            }
             _routeState.value = try {
-                RouteUiState.Success(repository.getRoute(fromLat, fromLon, toLat, toLon))
+                val options = repository.getRoutes(points)
+                if (options.isEmpty()) {
+                    RouteUiState.Error("Couldn't find a route there")
+                } else {
+                    RouteUiState.Success(options, selectedIndex = 0)
+                }
             } catch (e: Exception) {
                 RouteUiState.Error(e.message ?: "Couldn't find a route there")
             }
+        }
+    }
+
+    fun selectRoute(index: Int) {
+        val state = _routeState.value
+        if (state is RouteUiState.Success && index in state.options.indices) {
+            _routeState.value = state.copy(selectedIndex = index)
         }
     }
 

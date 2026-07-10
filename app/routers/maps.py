@@ -5,8 +5,9 @@ import math
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.core.maps_config import (
     MAPS_CAR_DRIVE_STALE_DAYS,
@@ -151,7 +152,7 @@ def search_places(
         conn.row_factory = sqlite3.Row
         try:
             sql = (
-                "SELECT osm_id, lat, lon, name, address, icon, category FROM places "
+                "SELECT osm_id, lat, lon, name, address, icon, category, opening_hours FROM places "
                 "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
             )
             params: list = [lat_min, lat_max, lon_min, lon_max]
@@ -174,6 +175,7 @@ def search_places(
                             "lat": r["lat"],
                             "lon": r["lon"],
                             "distance_km": round(dist, 2),
+                            "opening_hours": r["opening_hours"],
                         }
                     )
         finally:
@@ -183,27 +185,37 @@ def search_places(
     return {"places": results[:limit]}
 
 
-@router.get("/route")
-def get_route(
-    from_lat: float = Query(..., ge=-90, le=90),
-    from_lon: float = Query(..., ge=-180, le=180),
-    to_lat: float = Query(..., ge=-90, le=90),
-    to_lon: float = Query(..., ge=-180, le=180),
-):
-    """Real Dijkstra routing + turn-by-turn over the master road graph —
-    see maps_pipeline/routing.py."""
+class RoutePointIn(BaseModel):
+    lat: float
+    lon: float
+
+
+class RouteRequestIn(BaseModel):
+    points: list[RoutePointIn]
+
+
+@router.post("/route")
+def get_route(request: RouteRequestIn = Body(...)):
+    """Real Dijkstra routing + turn-by-turn over the master road graph, with
+    up to 3 labeled alternatives (fastest/shortest/avoid-highways) and
+    multi-stop support (2+ ordered points) — see maps_pipeline/routing.py."""
     _require_maps_enabled()
+    if len(request.points) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 points (start and destination)")
+
     master_db_paths = _master_db_paths()
     if not master_db_paths:
         raise HTTPException(status_code=404, detail="No map regions have been built yet")
 
-    straight_km = _haversine_km(from_lat, from_lon, to_lat, to_lon)
-    if straight_km > 80:
-        raise HTTPException(status_code=400, detail="Start and end are too far apart (max ~80km)")
+    points = [(p.lat, p.lon) for p in request.points]
+    for i in range(len(points) - 1):
+        (lat1, lon1), (lat2, lon2) = points[i], points[i + 1]
+        if _haversine_km(lat1, lon1, lat2, lon2) > 80:
+            raise HTTPException(status_code=400, detail="Two consecutive stops are too far apart (max ~80km)")
 
-    from maps_pipeline.routing import RouteNotFoundError, compute_route
+    from maps_pipeline.routing import RouteNotFoundError, compute_routes
 
     try:
-        return compute_route(master_db_paths, from_lat, from_lon, to_lat, to_lon)
+        return {"routes": compute_routes(master_db_paths, points)}
     except RouteNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

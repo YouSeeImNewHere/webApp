@@ -178,7 +178,7 @@ private fun OfflinePackCard(state: TilePackUiState, onDownload: () -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Offline map tiles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Downloads map tiles around your current location (~5km) so the live map keeps working with no network.",
+                "Downloads map tiles around your current location (~3 miles) so the live map keeps working with no network.",
                 color = QuailTextDim,
                 style = MaterialTheme.typography.bodySmall,
             )

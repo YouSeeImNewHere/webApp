@@ -9,11 +9,20 @@ from pathlib import Path
 # turn-by-turn instructions generated from bearing changes between
 # consecutive same-street legs — the same approach
 # quail_maps_car/geo/routing.py already uses over its synthetic local graph,
-# ported here for real lat/lon data server-side. Doesn't model oneway
-# restrictions (roads are treated as bidirectional), matching the client's
-# existing simplification.
+# ported here for real lat/lon data server-side, and extended to: multiple
+# strategy-based route alternatives (fastest/shortest/avoid-highways, same
+# three quail_maps_car already defines) and multi-stop routing (an ordered
+# list of waypoints, each consecutive pair routed as its own leg and
+# concatenated). Doesn't model oneway restrictions (roads are treated as
+# bidirectional), matching the client's existing simplification.
 
 _COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
+
+STRATEGIES: list[tuple[str, str]] = [
+    ("Fastest", "fastest"),
+    ("Shortest", "shortest"),
+    ("Avoid highways", "avoid_highways"),
+]
 
 
 class RouteNotFoundError(Exception):
@@ -40,13 +49,16 @@ def _bbox_around(lat1: float, lon1: float, lat2: float, lon2: float, pad_km: flo
     return lat_min - dlat, lat_max + dlat, lon_min - dlon, lon_max + dlon
 
 
+# adjacency value tuple: (neighbor_id, distance_m, speed_kph, street, road_class)
+_Edge = tuple[int, float, float, str, str]
+
+
 def _load_graph(
     master_db_paths: list[Path], bbox: tuple[float, float, float, float]
-) -> tuple[dict[int, tuple[float, float]], dict[int, list[tuple[int, float, float, str]]]]:
+) -> tuple[dict[int, tuple[float, float]], dict[int, list[_Edge]]]:
     lat_min, lat_max, lon_min, lon_max = bbox
     nodes: dict[int, tuple[float, float]] = {}
-    # node -> [(neighbor_id, distance_m, speed_kph, street)]
-    adjacency: dict[int, list[tuple[int, float, float, str]]] = {}
+    adjacency: dict[int, list[_Edge]] = {}
 
     for db_path in master_db_paths:
         conn = sqlite3.connect(str(db_path))
@@ -59,7 +71,7 @@ def _load_graph(
             )
             way_rows = conn.execute(
                 """
-                SELECT wn.way_id, wn.seq, wn.node_id, n.lat, n.lon, w.street, w.speed_kph
+                SELECT wn.way_id, wn.seq, wn.node_id, n.lat, n.lon, w.street, w.speed_kph, w.road_class
                 FROM way_nodes wn
                 JOIN nodes n ON n.id = wn.node_id
                 JOIN ways w ON w.id = wn.way_id
@@ -83,8 +95,9 @@ def _load_graph(
                 dist_m = _haversine_m(a["lat"], a["lon"], b["lat"], b["lon"])
                 street = a["street"]
                 speed = a["speed_kph"]
-                adjacency.setdefault(na, []).append((nb, dist_m, speed, street))
-                adjacency.setdefault(nb, []).append((na, dist_m, speed, street))
+                road_class = a["road_class"]
+                adjacency.setdefault(na, []).append((nb, dist_m, speed, street, road_class))
+                adjacency.setdefault(nb, []).append((na, dist_m, speed, street, road_class))
 
     return nodes, adjacency
 
@@ -98,11 +111,27 @@ def _nearest_node(nodes: dict[int, tuple[float, float]], lat: float, lon: float)
     return best_id
 
 
+def _edge_weight_h(dist_m: float, speed_kph: float, road_class: str, strategy: str) -> float:
+    if strategy == "shortest":
+        # Not really "hours", just a monotonic cost in meters — fine since
+        # Dijkstra only cares about relative ordering, and the caller always
+        # recomputes real distance/time from the resulting path afterward.
+        return dist_m
+    time_h = (dist_m / 1000.0) / max(speed_kph, 1.0)
+    if strategy == "avoid_highways" and road_class == "highway":
+        return time_h * 25.0
+    return time_h
+
+
+# path edge tuple: (street, road_class, distance_m, speed_kph)
+_PathEdge = tuple[str, str, float, float]
+
+
 def _dijkstra(
-    adjacency: dict[int, list[tuple[int, float, float, str]]], start_id: int, goal_id: int
-) -> tuple[list[int], list[tuple[str, float]], float] | None:
+    adjacency: dict[int, list[_Edge]], start_id: int, goal_id: int, strategy: str
+) -> tuple[list[int], list[_PathEdge]] | None:
     dist: dict[int, float] = {start_id: 0.0}
-    prev: dict[int, tuple[int, str, float]] = {}
+    prev: dict[int, tuple[int, _PathEdge]] = {}
     visited: set[int] = set()
     heap: list[tuple[float, int]] = [(0.0, start_id)]
 
@@ -113,29 +142,50 @@ def _dijkstra(
         visited.add(node)
         if node == goal_id:
             break
-        for neighbor, dist_m, speed_kph, street in adjacency.get(node, []):
-            weight_h = (dist_m / 1000.0) / max(speed_kph, 1.0)
-            nd = d + weight_h
+        for neighbor, dist_m, speed_kph, street, road_class in adjacency.get(node, []):
+            weight = _edge_weight_h(dist_m, speed_kph, road_class, strategy)
+            nd = d + weight
             if neighbor not in dist or nd < dist[neighbor]:
                 dist[neighbor] = nd
-                prev[neighbor] = (node, street, dist_m)
+                prev[neighbor] = (node, (street, road_class, dist_m, speed_kph))
                 heapq.heappush(heap, (nd, neighbor))
 
     if goal_id not in dist:
         return None
 
     path_nodes = [goal_id]
-    path_edges: list[tuple[str, float]] = []
+    path_edges: list[_PathEdge] = []
     cur = goal_id
     while cur != start_id:
-        parent, street, dist_m = prev[cur]
-        path_edges.append((street, dist_m))
+        parent, edge = prev[cur]
+        path_edges.append(edge)
         path_nodes.append(parent)
         cur = parent
     path_nodes.reverse()
     path_edges.reverse()
 
-    return path_nodes, path_edges, dist[goal_id]
+    return path_nodes, path_edges
+
+
+def _route_leg(
+    master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float, strategy: str
+) -> tuple[list[int], list[_PathEdge], dict[int, tuple[float, float]]]:
+    straight_km = _haversine_m(from_lat, from_lon, to_lat, to_lon) / 1000.0
+    bbox = _bbox_around(from_lat, from_lon, to_lat, to_lon, pad_km=max(1.0, straight_km * 0.15))
+    nodes, adjacency = _load_graph(master_db_paths, bbox)
+    if not nodes:
+        raise RouteNotFoundError("No road data near these points")
+
+    start_id = _nearest_node(nodes, from_lat, from_lon)
+    goal_id = _nearest_node(nodes, to_lat, to_lon)
+    if start_id is None or goal_id is None:
+        raise RouteNotFoundError("No road data near these points")
+
+    result = _dijkstra(adjacency, start_id, goal_id, strategy)
+    if result is None:
+        raise RouteNotFoundError("No route found between these points")
+    path_nodes, path_edges = result
+    return path_nodes, path_edges, nodes
 
 
 def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -162,14 +212,22 @@ def _turn_word(delta: float) -> str:
     return "Continue onto"
 
 
-def _build_turns(path_nodes: list[int], path_edges: list[tuple[str, float]], nodes: dict[int, tuple[float, float]]) -> list[dict]:
+def _build_turns(
+    path_nodes: list[int],
+    path_edges: list[_PathEdge],
+    nodes: dict[int, tuple[float, float]],
+    stop_markers: set[int],
+) -> list[dict]:
+    """[stop_markers] is the set of path_nodes indices where a waypoint
+    (an intermediate stop, not the final destination) was reached — used to
+    insert an "Arrive at stop" instruction mid-route for multi-stop trips."""
     if not path_edges:
         return [{"instruction": "You have arrived", "street": "", "distance_m": 0.0, "point_index": 0}]
 
-    # Merge consecutive edges that share a street name into one leg.
-    legs: list[list] = []  # [street, total_dist_m, start_node_idx, end_node_idx]
-    for i, (street, dist_m) in enumerate(path_edges):
-        if legs and legs[-1][0] == street:
+    legs: list[list] = []  # [street, total_dist_m, start_i, end_i]
+    for i, (street, _road_class, dist_m, _speed) in enumerate(path_edges):
+        breaks_leg = (i in stop_markers) if legs else False
+        if legs and legs[-1][0] == street and not breaks_leg:
             legs[-1][1] += dist_m
             legs[-1][3] = i + 1
         else:
@@ -186,41 +244,74 @@ def _build_turns(path_nodes: list[int], path_edges: list[tuple[str, float]], nod
         else:
             delta = ((bearing - prev_bearing) + 180) % 360 - 180
             instruction = f"{_turn_word(delta)} {street}"
-        # point_index: where in the returned `points` list this leg starts —
-        # lets the client find "which step am I on" from a live GPS fix by
-        # matching it to the nearest point, without recomputing anything
-        # route-shaped on-device.
         steps.append({"instruction": instruction, "street": street, "distance_m": round(leg_dist, 1), "point_index": start_i})
         prev_bearing = bearing
+        if end_i in stop_markers:
+            steps.append({"instruction": "Arrive at stop", "street": "", "distance_m": 0.0, "point_index": end_i})
 
     steps.append({"instruction": "Arrive at destination", "street": "", "distance_m": 0.0, "point_index": len(path_nodes) - 1})
     return steps
 
 
-def compute_route(master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float) -> dict:
-    straight_km = _haversine_m(from_lat, from_lon, to_lat, to_lon) / 1000.0
-    bbox = _bbox_around(from_lat, from_lon, to_lat, to_lon, pad_km=max(1.0, straight_km * 0.15))
-    nodes, adjacency = _load_graph(master_db_paths, bbox)
-    if not nodes:
-        raise RouteNotFoundError("No road data near these points")
+def _route_for_strategy(master_db_paths: list[Path], points: list[tuple[float, float]], strategy: str) -> dict:
+    all_path_nodes: list[int] = []
+    all_path_edges: list[_PathEdge] = []
+    all_nodes: dict[int, tuple[float, float]] = {}
+    stop_markers: set[int] = set()
 
-    start_id = _nearest_node(nodes, from_lat, from_lon)
-    goal_id = _nearest_node(nodes, to_lat, to_lon)
-    if start_id is None or goal_id is None:
-        raise RouteNotFoundError("No road data near these points")
+    for i in range(len(points) - 1):
+        from_lat, from_lon = points[i]
+        to_lat, to_lon = points[i + 1]
+        leg_nodes, leg_edges, leg_node_coords = _route_leg(master_db_paths, from_lat, from_lon, to_lat, to_lon, strategy)
+        all_nodes.update(leg_node_coords)
 
-    result = _dijkstra(adjacency, start_id, goal_id)
-    if result is None:
-        raise RouteNotFoundError("No route found between these points")
-    path_nodes, path_edges, total_time_h = result
+        if all_path_nodes and all_path_nodes[-1] == leg_nodes[0]:
+            all_path_nodes.extend(leg_nodes[1:])
+        else:
+            all_path_nodes.extend(leg_nodes)
+        all_path_edges.extend(leg_edges)
 
-    points = [{"lat": nodes[n][0], "lon": nodes[n][1]} for n in path_nodes]
-    steps = _build_turns(path_nodes, path_edges, nodes)
-    total_dist_m = sum(d for _, d in path_edges)
+        if i < len(points) - 2:
+            stop_markers.add(len(all_path_nodes) - 1)
+
+    total_dist_m = sum(e[2] for e in all_path_edges)
+    total_time_h = sum((e[2] / 1000.0) / max(e[3], 1.0) for e in all_path_edges)
+    steps = _build_turns(all_path_nodes, all_path_edges, all_nodes, stop_markers)
 
     return {
-        "points": points,
+        "points": [{"lat": all_nodes[n][0], "lon": all_nodes[n][1]} for n in all_path_nodes],
         "steps": steps,
         "distance_m": round(total_dist_m, 1),
         "duration_sec": round(total_time_h * 3600, 1),
     }
+
+
+def compute_routes(master_db_paths: list[Path], points: list[tuple[float, float]], max_options: int = 3) -> list[dict]:
+    """[points] is an ordered list of (lat, lon) — 2 for a simple A-to-B
+    trip, more for multi-stop. Returns up to [max_options] labeled route
+    alternatives (fastest/shortest/avoid-highways), deduped when two
+    strategies land on the identical street sequence."""
+    if len(points) < 2:
+        raise RouteNotFoundError("Need at least two points to route between")
+
+    options: list[dict] = []
+    seen_signatures: set[tuple[str, ...]] = set()
+    last_error: RouteNotFoundError | None = None
+
+    for label, strategy in STRATEGIES:
+        try:
+            route = _route_for_strategy(master_db_paths, points, strategy)
+        except RouteNotFoundError as e:
+            last_error = e
+            continue
+        signature = tuple(step["street"] for step in route["steps"])
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
+        options.append({"label": label, **route})
+        if len(options) >= max_options:
+            break
+
+    if not options:
+        raise last_error or RouteNotFoundError("No route found")
+    return options
