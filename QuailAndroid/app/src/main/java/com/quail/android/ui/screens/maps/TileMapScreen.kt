@@ -326,6 +326,21 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                         place = place,
                         hasExistingTrip = destination != null,
                         previewRoute = previewRoute,
+                        selectAction = when (pickingField) {
+                            "origin" -> "Set as Starting Point" to {
+                                viewModel.setRouteOrigin(place)
+                                if (destination != null) viewModel.requestRoutes(currentLat, currentLon)
+                                viewModel.dismissPlaceDetail()
+                                exitPicker()
+                            }
+                            "destination" -> "Set as Destination" to {
+                                viewModel.setDestination(place)
+                                viewModel.requestRoutes(currentLat, currentLon)
+                                viewModel.dismissPlaceDetail()
+                                exitPicker()
+                            }
+                            else -> null
+                        },
                         onDismiss = { viewModel.dismissPlaceDetail() },
                         onAddStop = {
                             viewModel.addStop(place)
@@ -379,6 +394,7 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
                                     }
                                     exitPicker()
                                 },
+                                onFieldPlaceInfo = { p -> viewModel.showPlaceDetail(p, currentLat, currentLon) },
                                 onPickCurrentLocation = {
                                     when (pickingField) {
                                         // Origin's "current location" IS the null/default state — a
@@ -683,11 +699,23 @@ private fun PlaceRow(place: MapsPlaceResult, onClick: () -> Unit) {
     }
 }
 
-/** Explore tab's result row — a "route here" shortcut (the blue circular
- * arrow) alongside the normal tap-for-detail row, matching the iOS
- * reference's PlaceRow. */
+/** A result row with two distinct taps — the row body opens the place's
+ * detail card (view info, hours, phone, website — without committing to
+ * anything), the trailing circular button performs a quick action
+ * immediately (route there, or select this field). Used by both the
+ * Explore tab (quick-route arrow) and the Route tab's field picker (quick-
+ * select checkmark) — previously the field picker only had the instant-
+ * select tap, so there was no way to see a place's info without it
+ * immediately becoming your destination. */
 @Composable
-private fun ExplorePlaceRow(place: MapsPlaceResult, onClick: () -> Unit, onQuickRoute: () -> Unit) {
+private fun QuickActionPlaceRow(
+    place: MapsPlaceResult,
+    onClick: () -> Unit,
+    actionIcon: ImageVector,
+    actionColor: Color,
+    actionContentDescription: String,
+    onAction: () -> Unit,
+) {
     Surface(color = CardBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(), onClick = onClick) {
         Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(40.dp).background(ChipBg, CircleShape), contentAlignment = Alignment.Center) {
@@ -707,8 +735,8 @@ private fun ExplorePlaceRow(place: MapsPlaceResult, onClick: () -> Unit, onQuick
             Spacer(Modifier.width(8.dp))
             Text(formatDistanceImperial(place.distanceKm * 1000.0), color = QuailGoodGreen, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onQuickRoute, modifier = Modifier.size(32.dp).background(QuailAccent, CircleShape)) {
-                Icon(Icons.Filled.ArrowForward, contentDescription = "Route here", tint = Color.Black, modifier = Modifier.size(16.dp))
+            IconButton(onClick = onAction, modifier = Modifier.size(32.dp).background(actionColor, CircleShape)) {
+                Icon(actionIcon, contentDescription = actionContentDescription, tint = Color.Black, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -719,6 +747,12 @@ private fun PlaceDetailContent(
     place: MapsPlaceResult,
     hasExistingTrip: Boolean,
     previewRoute: MapsRouteOption?,
+    // Non-null when this detail card was opened from the Route tab's field
+    // picker (label, onClick) — replaces the normal Drive/Add-Stop pill
+    // with an explicit "Set as Starting Point"/"Set as Destination" pill,
+    // so viewing a place's info from that flow doesn't itself commit it to
+    // anything; picking it is now a separate, deliberate action.
+    selectAction: Pair<String, () -> Unit>?,
     onDismiss: () -> Unit,
     onAddStop: () -> Unit,
 ) {
@@ -742,13 +776,18 @@ private fun PlaceDetailContent(
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PillButton(
-                icon = Icons.Filled.DirectionsCar,
-                label = previewRoute?.let { "${(it.durationSec / 60.0).roundToInt()} min" } ?: (if (hasExistingTrip) "Add Stop" else "Drive"),
-                containerColor = QuailAccent,
-                contentColor = Color.Black,
-                onClick = onAddStop,
-            )
+            if (selectAction != null) {
+                val (label, onClick) = selectAction
+                PillButton(icon = Icons.Filled.Check, label = label, containerColor = QuailGoodGreen, contentColor = Color.Black, onClick = onClick)
+            } else {
+                PillButton(
+                    icon = Icons.Filled.DirectionsCar,
+                    label = previewRoute?.let { "${(it.durationSec / 60.0).roundToInt()} min" } ?: (if (hasExistingTrip) "Add Stop" else "Drive"),
+                    containerColor = QuailAccent,
+                    contentColor = Color.Black,
+                    onClick = onAddStop,
+                )
+            }
             if (place.phone.isNotBlank()) {
                 PillButton(Icons.Filled.Call, "Call", ChipBg, Color.White) {
                     runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${place.phone}"))) }
@@ -872,6 +911,7 @@ private fun RouteTabContent(
     fieldSelectedCategory: String?,
     onFieldCategoryClick: (String) -> Unit,
     onFieldPlaceClick: (MapsPlaceResult) -> Unit,
+    onFieldPlaceInfo: (MapsPlaceResult) -> Unit,
     onPickCurrentLocation: () -> Unit,
     onCancelPicking: () -> Unit,
     onPickOrigin: () -> Unit,
@@ -924,7 +964,14 @@ private fun RouteTabContent(
                         Text("Nothing found.", color = QuailTextDim, modifier = Modifier.padding(vertical = 12.dp))
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            fieldPlacesState.places.forEach { p -> PlaceRow(p, onClick = { onFieldPlaceClick(p) }) }
+                            val fieldColor = if (pickingField == "origin") QuailAccent else QuailBadRed
+                            fieldPlacesState.places.forEach { p ->
+                                QuickActionPlaceRow(
+                                    place = p, onClick = { onFieldPlaceInfo(p) },
+                                    actionIcon = Icons.Filled.Check, actionColor = fieldColor,
+                                    actionContentDescription = "Select", onAction = { onFieldPlaceClick(p) },
+                                )
+                            }
                         }
                     }
                 }
@@ -1126,7 +1173,13 @@ private fun ExploreTabContent(
                         Text("Nothing found nearby.", color = QuailTextDim)
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            placesState.places.forEach { p -> ExplorePlaceRow(p, onClick = { onPlaceClick(p) }, onQuickRoute = { onQuickRoute(p) }) }
+                            placesState.places.forEach { p ->
+                                QuickActionPlaceRow(
+                                    place = p, onClick = { onPlaceClick(p) },
+                                    actionIcon = Icons.Filled.ArrowForward, actionColor = QuailAccent,
+                                    actionContentDescription = "Route here", onAction = { onQuickRoute(p) },
+                                )
+                            }
                         }
                     }
                 }

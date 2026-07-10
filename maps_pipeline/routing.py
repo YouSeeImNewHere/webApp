@@ -195,26 +195,48 @@ def _dijkstra(
     return path_nodes, path_edges
 
 
+_BBOX_PAD_MULTIPLIERS = (0.5, 1.5, 3.0)
+
+
 def _route_leg(
     master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float,
     strategy: str, mode: str = "drive",
 ) -> tuple[list[int], list[_PathEdge], dict[int, tuple[float, float]]]:
     straight_km = _haversine_m(from_lat, from_lon, to_lat, to_lon) / 1000.0
-    bbox = _bbox_around(from_lat, from_lon, to_lat, to_lon, pad_km=max(1.0, straight_km * 0.15))
-    nodes, adjacency = _load_graph(master_db_paths, bbox)
-    if not nodes:
-        raise RouteNotFoundError("No road data near these points")
 
-    start_id = _nearest_node(nodes, from_lat, from_lon)
-    goal_id = _nearest_node(nodes, to_lat, to_lon)
-    if start_id is None or goal_id is None:
-        raise RouteNotFoundError("No road data near these points")
+    # Real driving distance is routinely 1.5-3x+ the straight-line distance
+    # around water/mountains — this server's regions include the Puget
+    # Sound / Kitsap Peninsula area, where a store a few miles away as the
+    # crow flies can need a much longer detour around an inlet. A single
+    # fixed padding either wastes time loading a huge graph for routes that
+    # didn't need it, or (the real bug this fixes) silently fails whenever
+    # the real route needs more room than that fixed padding gave it — the
+    # detour road segments were never loaded, so Dijkstra correctly reports
+    # no path within the (too-small) subgraph it was given, even though a
+    # real route exists. Start tight, widen only if that attempt actually
+    # fails to connect start and goal.
+    last_error: RouteNotFoundError | None = None
+    for pad_multiplier in _BBOX_PAD_MULTIPLIERS:
+        pad_km = max(3.0, straight_km * pad_multiplier)
+        bbox = _bbox_around(from_lat, from_lon, to_lat, to_lon, pad_km=pad_km)
+        nodes, adjacency = _load_graph(master_db_paths, bbox)
+        if not nodes:
+            last_error = RouteNotFoundError("No road data near these points")
+            continue
 
-    result = _dijkstra(adjacency, start_id, goal_id, strategy, mode)
-    if result is None:
-        raise RouteNotFoundError("No route found between these points")
-    path_nodes, path_edges = result
-    return path_nodes, path_edges, nodes
+        start_id = _nearest_node(nodes, from_lat, from_lon)
+        goal_id = _nearest_node(nodes, to_lat, to_lon)
+        if start_id is None or goal_id is None:
+            last_error = RouteNotFoundError("No road data near these points")
+            continue
+
+        result = _dijkstra(adjacency, start_id, goal_id, strategy, mode)
+        if result is not None:
+            path_nodes, path_edges = result
+            return path_nodes, path_edges, nodes
+        last_error = RouteNotFoundError("No route found between these points")
+
+    raise last_error or RouteNotFoundError("No route found between these points")
 
 
 def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
