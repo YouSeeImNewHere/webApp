@@ -196,28 +196,51 @@ def _dijkstra(
 
 
 _BBOX_PAD_MULTIPLIERS = (0.5, 1.5, 3.0)
+# Absolute ceiling on padding regardless of trip length — without this, a
+# 20+ mile trip's last-resort widening attempt (straight_km * 3.0) could
+# demand a bbox spanning 100+ km per side, which is both slow to query and
+# rarely actually necessary (real detours add a bounded amount of extra
+# distance, not a multiple of the whole trip).
+_BBOX_PAD_MAX_KM = 50.0
+
+# One graph-loading result, reusable across every strategy for a leg —
+# (nodes, adjacency, start_id, goal_id, fastest_result). fastest_result is
+# cached because loading already had to run a "fastest" Dijkstra as its
+# connectivity check; reusing it means the "Fastest" strategy option below
+# doesn't redo that same search a second time.
+_LegGraph = tuple[dict[int, tuple[float, float]], dict[int, list[_Edge]], int, int, tuple[list[int], list[_PathEdge]]]
 
 
-def _route_leg(
-    master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float,
-    strategy: str, mode: str = "drive",
-) -> tuple[list[int], list[_PathEdge], dict[int, tuple[float, float]]]:
+def _load_leg_graph(
+    master_db_paths: list[Path], from_lat: float, from_lon: float, to_lat: float, to_lon: float, mode: str,
+) -> _LegGraph:
+    """Loads a graph big enough to connect (from_lat,from_lon) to
+    (to_lat,to_lon), widening the search area if the first attempt can't
+    connect them. Runs ONCE per leg — every strategy's Dijkstra reuses this
+    same loaded graph, since strategy only changes edge *weights*, not
+    which edges exist, so a graph that connects start and goal for one
+    strategy connects them for all of them.
+
+    Real bug this replaces: the previous version (see git history) re-ran
+    this entire load-and-widen process independently for every strategy
+    (fastest/shortest/avoid-highways), each of which could itself retry up
+    to 3 times — up to 9 redundant SQL loads + adjacency-dict builds for a
+    single 2-point route request. That's what made a real ~21-mile trip
+    (which needed a widened, and therefore expensive, load) time out:
+    the same expensive load was happening as many as 9 times instead of 1.
+
+    Real driving distance is routinely 1.5-3x+ the straight-line distance
+    around water/mountains (this server's regions include the Puget Sound /
+    Kitsap Peninsula, where a store a few miles away as the crow flies can
+    need a much longer detour around an inlet) — start tight and widen only
+    if that attempt actually fails to connect start and goal, capped so a
+    long trip's worst case doesn't demand an unbounded bbox.
+    """
     straight_km = _haversine_m(from_lat, from_lon, to_lat, to_lon) / 1000.0
 
-    # Real driving distance is routinely 1.5-3x+ the straight-line distance
-    # around water/mountains — this server's regions include the Puget
-    # Sound / Kitsap Peninsula area, where a store a few miles away as the
-    # crow flies can need a much longer detour around an inlet. A single
-    # fixed padding either wastes time loading a huge graph for routes that
-    # didn't need it, or (the real bug this fixes) silently fails whenever
-    # the real route needs more room than that fixed padding gave it — the
-    # detour road segments were never loaded, so Dijkstra correctly reports
-    # no path within the (too-small) subgraph it was given, even though a
-    # real route exists. Start tight, widen only if that attempt actually
-    # fails to connect start and goal.
     last_error: RouteNotFoundError | None = None
     for pad_multiplier in _BBOX_PAD_MULTIPLIERS:
-        pad_km = max(3.0, straight_km * pad_multiplier)
+        pad_km = min(_BBOX_PAD_MAX_KM, max(3.0, straight_km * pad_multiplier))
         bbox = _bbox_around(from_lat, from_lon, to_lat, to_lon, pad_km=pad_km)
         nodes, adjacency = _load_graph(master_db_paths, bbox)
         if not nodes:
@@ -230,13 +253,24 @@ def _route_leg(
             last_error = RouteNotFoundError("No road data near these points")
             continue
 
-        result = _dijkstra(adjacency, start_id, goal_id, strategy, mode)
-        if result is not None:
-            path_nodes, path_edges = result
-            return path_nodes, path_edges, nodes
+        # "fastest" doubles as the connectivity check — if even the
+        # cheapest-to-traverse weighting can't connect start and goal in
+        # this subgraph, no other strategy will either.
+        fastest_result = _dijkstra(adjacency, start_id, goal_id, "fastest", mode)
+        if fastest_result is not None:
+            return nodes, adjacency, start_id, goal_id, fastest_result
         last_error = RouteNotFoundError("No route found between these points")
 
     raise last_error or RouteNotFoundError("No route found between these points")
+
+
+def _route_leg(leg_graph: _LegGraph, strategy: str, mode: str) -> tuple[list[int], list[_PathEdge], dict[int, tuple[float, float]]]:
+    nodes, adjacency, start_id, goal_id, fastest_result = leg_graph
+    result = fastest_result if strategy == "fastest" else _dijkstra(adjacency, start_id, goal_id, strategy, mode)
+    if result is None:
+        raise RouteNotFoundError("No route found between these points")
+    path_nodes, path_edges = result
+    return path_nodes, path_edges, nodes
 
 
 def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -305,19 +339,15 @@ def _build_turns(
 
 
 def _route_for_strategy(
-    master_db_paths: list[Path], points: list[tuple[float, float]], strategy: str, mode: str = "drive",
+    leg_graphs: list[_LegGraph], strategy: str, mode: str = "drive",
 ) -> dict:
     all_path_nodes: list[int] = []
     all_path_edges: list[_PathEdge] = []
     all_nodes: dict[int, tuple[float, float]] = {}
     stop_markers: set[int] = set()
 
-    for i in range(len(points) - 1):
-        from_lat, from_lon = points[i]
-        to_lat, to_lon = points[i + 1]
-        leg_nodes, leg_edges, leg_node_coords = _route_leg(
-            master_db_paths, from_lat, from_lon, to_lat, to_lon, strategy, mode,
-        )
+    for i, leg_graph in enumerate(leg_graphs):
+        leg_nodes, leg_edges, leg_node_coords = _route_leg(leg_graph, strategy, mode)
         all_nodes.update(leg_node_coords)
 
         if all_path_nodes and all_path_nodes[-1] == leg_nodes[0]:
@@ -326,7 +356,7 @@ def _route_for_strategy(
             all_path_nodes.extend(leg_nodes)
         all_path_edges.extend(leg_edges)
 
-        if i < len(points) - 2:
+        if i < len(leg_graphs) - 1:
             stop_markers.add(len(all_path_nodes) - 1)
 
     total_dist_m = sum(e[2] for e in all_path_edges)
@@ -359,6 +389,15 @@ def compute_routes(
     if len(points) < 2:
         raise RouteNotFoundError("Need at least two points to route between")
 
+    # Load each leg's graph exactly once, shared across every strategy tried
+    # below — see _load_leg_graph's docstring for why this replaced loading
+    # per-strategy (up to 9x redundant work for a single request).
+    leg_graphs: list[_LegGraph] = []
+    for i in range(len(points) - 1):
+        from_lat, from_lon = points[i]
+        to_lat, to_lon = points[i + 1]
+        leg_graphs.append(_load_leg_graph(master_db_paths, from_lat, from_lon, to_lat, to_lon, mode))
+
     strategies = WALK_STRATEGIES if mode == "walk" else DRIVE_STRATEGIES
     options: list[dict] = []
     seen_signatures: set[tuple[str, ...]] = set()
@@ -366,7 +405,7 @@ def compute_routes(
 
     for label, strategy in strategies:
         try:
-            route = _route_for_strategy(master_db_paths, points, strategy, mode)
+            route = _route_for_strategy(leg_graphs, strategy, mode)
         except RouteNotFoundError as e:
             last_error = e
             continue
