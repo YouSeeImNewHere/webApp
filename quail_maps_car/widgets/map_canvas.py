@@ -23,7 +23,15 @@ from ..theme import ACCENT
 from .tile_cache import TileCache
 
 MIN_SCALE = 0.02
-MAX_SCALE = 0.6
+# This used to be 0.6, which was quietly clamping every close-zoom request
+# (including nav mode's driving view) down to whatever 0.6 px/m actually
+# shows — on an 800px-tall screen that's ±667m, nowhere near "just my road
+# and its intersections." Raised (with real margin — the first attempt at
+# 6.0 was itself still clamping a 45m driving-view request, caught by
+# actually checking the resulting displayed radius instead of assuming a
+# bigger number was automatically enough) so a genuine street-level view is
+# actually reachable instead of silently capped.
+MAX_SCALE = 10.0
 
 # Discrete zoom "snap points" the tile cache renders at, geometrically
 # spaced by the same 1.3x step zoom_in()/zoom_out() already used — mirrors
@@ -185,7 +193,11 @@ class MapCanvas(QWidget):
         every place that happens to be loaded; the user zooms out manually
         if they want to see farther."""
         self._center = (east, north)
-        half_span = max(radius_m, 50.0)
+        # Floor only guards against a literal zero/negative radius, not a
+        # deliberately tight one — this used to be 50.0, which was quietly
+        # overriding nav mode's 45m driving-view request the same way the
+        # old MAX_SCALE was, just from the other direction.
+        half_span = max(radius_m, 5.0)
         scale = min(self.width(), self.height()) / 2 / half_span
         self._scale = max(MIN_SCALE, min(MAX_SCALE, scale))
         self.update()

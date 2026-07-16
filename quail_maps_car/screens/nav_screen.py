@@ -19,10 +19,12 @@ from ..widgets.map_canvas import MapCanvas
 
 STEP_INTERVAL_MS = 4000
 
-# Tight driving zoom — just the current road and what's immediately next,
-# not several blocks of context that just reads as clutter/confusion at a
-# glance while actually driving.
-NAV_VIEW_RADIUS_M = 90.0
+# Genuine street-level zoom — just the current road and its immediate
+# intersections, not several blocks of context. This used to be clamped to
+# whatever the app's old zoom ceiling allowed regardless of what was
+# requested here (see MAX_SCALE in map_canvas.py) — now that the ceiling
+# itself is high enough, this value actually takes effect.
+NAV_VIEW_RADIUS_M = 45.0
 
 
 class NavScreen(QWidget):
