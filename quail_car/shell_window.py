@@ -50,7 +50,8 @@ class ShellWindow(QMainWindow):
         root_layout.addWidget(self.stack, 1)
 
         self._screens: dict[str, QWidget] = {}
-        self._add_screen("home", DashboardScreen())
+        self._dashboard = DashboardScreen()
+        self._add_screen("home", self._dashboard)
 
         # MapsMainWindow is a QMainWindow purely so quail_maps_car can also
         # run standalone (see its own main.py) — here we only want its
@@ -60,8 +61,16 @@ class ShellWindow(QMainWindow):
         self._maps_window = MapsMainWindow()
         self._add_screen("maps", self._maps_window.centralWidget())
 
-        self._add_screen("music", MusicScreen())
+        self._music_screen = MusicScreen()
+        self._add_screen("music", self._music_screen)
         self._add_screen("car", PlaceholderScreen("Quail Car"))
+
+        # Dashboard's now-playing card mirrors Music's playback state —
+        # wired here in the shell since both screens are otherwise unaware
+        # of each other.
+        self._music_screen.track_changed.connect(self._dashboard.now_playing_card.set_track)
+        self._music_screen.playing_changed.connect(self._dashboard.now_playing_card.set_playing)
+        self._dashboard.now_playing_card.play_pause_requested.connect(self._music_screen.toggle_play_pause)
 
         self._show_screen("home")
 

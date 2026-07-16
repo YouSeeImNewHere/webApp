@@ -364,10 +364,30 @@ class TileMapViewModel(
         if (_navigating.value) return
         _navigating.value = true
         _locationError.value = null
+        // While connected to the car, this is the one signal that turns
+        // "destination sent" into "actually driving" there — the car
+        // otherwise just sits on its own route-confirmation screen
+        // waiting for a second, redundant tap made directly on it.
+        if (carLink?.connected?.value == true) {
+            val selected = (_routeState.value as? RouteUiState.Success)
+                ?.let { it.options.getOrNull(it.selectedIndex) }
+            val minutes = selected?.let { (it.durationSec / 60).toInt() }
+            val distanceMi = selected?.let { it.distanceM / 1609.34 }
+            viewModelScope.launch { carLink.sendStartDrive(minutes, distanceMi) }
+        }
         locationJob = viewModelScope.launch {
             repository.observeLocation()
                 .catch { e -> _locationError.value = e.message ?: "Lost location updates" }
-                .collect { location -> _liveLocation.value = location }
+                .collect { location ->
+                    _liveLocation.value = location
+                    // Real GPS, streamed to the car so ITS nav progress
+                    // (map position, ETA, "arrived" state) tracks actual
+                    // movement instead of a fixed-interval simulation —
+                    // the car has no GPS of its own.
+                    if (carLink?.connected?.value == true) {
+                        carLink.sendPosition(location.latitude, location.longitude)
+                    }
+                }
         }
     }
 

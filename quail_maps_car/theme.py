@@ -177,4 +177,42 @@ QPushButton#navEndButton {{
     color: white;
     padding: 0 28px;
 }}
+
+*[role="dashboardCard"] {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 20px;
+}}
+
+*[role="dashboardLabel"] {{
+    font-size: 16px;
+    font-weight: 700;
+}}
+
+QSlider::groove:horizontal {{
+    height: 8px;
+    background: {SURFACE_RAISED};
+    border-radius: 4px;
+}}
+QSlider::sub-page:horizontal {{
+    background: {ACCENT};
+    border-radius: 4px;
+}}
+QSlider::handle:horizontal {{
+    background: white;
+    width: 28px;
+    height: 28px;
+    margin: -10px 0;
+    border-radius: 14px;
+}}
+
+*[role="nowPlayingTitle"] {{
+    font-size: 20px;
+    font-weight: 800;
+}}
+*[role="nowPlayingArtist"] {{
+    font-size: 15px;
+    font-weight: 600;
+    color: {TEXT_DIM};
+}}
 """

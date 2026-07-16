@@ -30,6 +30,18 @@ class BluetoothCarLink(QObject):
 
     connected = Signal(bool)
     destination_received = Signal(float, float, str)  # lat, lon, name
+    # (minutes, distance_mi) — the phone's own already-computed route
+    # numbers, or (-1, -1.0) when the phone didn't include them (older
+    # client, or its own route wasn't ready yet). The car's local routing
+    # engine and the phone's server-backed one can legitimately disagree
+    # (different road data/algorithm), which is exactly the mismatch this
+    # exists to paper over: displayed ETA/distance defer to the phone
+    # whenever it sent real numbers, since that's the one the user is
+    # actually looking at and trusting.
+    start_drive_requested = Signal(int, float)
+    # Real GPS fix streamed from the phone — replaces the fake timer-driven
+    # progress simulation NavScreen used to run on its own.
+    position_received = Signal(float, float)  # lat, lon
 
     def __init__(self, allowed_mac: str, parent=None):
         super().__init__(parent)
@@ -63,21 +75,31 @@ class BluetoothCarLink(QObject):
                         pass
 
     def _serve_forever(self) -> None:
+        print(f"[carlink] listening on RFCOMM channel {RFCOMM_CHANNEL}, allowed phone {self._allowed_mac}", flush=True)
         while self._running:
             try:
                 self._accept_and_handle()
-            except OSError:
-                pass  # socket closed during stop(), or a transient BT error — just retry
+            except OSError as e:
+                # TEMPORARY DIAGNOSTIC — was silently swallowing bind/
+                # listen/accept errors (e.g. "Address already in use" from
+                # a socket not cleanly released on a previous run), which
+                # made a permanently-failing listener indistinguishable
+                # from "nothing has connected yet" from the outside.
+                print(f"[carlink] server loop error: {e!r}", flush=True)
 
     def _accept_and_handle(self) -> None:
         server = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-        server.bind(("", RFCOMM_CHANNEL))
+        # "" isn't accepted as a local BT address here (confirmed on
+        # device: raises "bad bluetooth address") — the all-zeros address
+        # is AF_BLUETOOTH's actual "bind to any local adapter" wildcard.
+        server.bind(("00:00:00:00:00:00", RFCOMM_CHANNEL))
         server.listen(1)
         with self._lock:
             self._server_sock = server
         try:
             client, addr = server.accept()
-        except OSError:
+        except OSError as e:
+            print(f"[carlink] accept() failed: {e!r}", flush=True)
             return
         finally:
             server.close()
@@ -85,12 +107,15 @@ class BluetoothCarLink(QObject):
                 self._server_sock = None
 
         remote_mac = addr[0].upper()
+        print(f"[carlink] incoming connection from {remote_mac}", flush=True)
         if remote_mac != self._allowed_mac:
+            print(f"[carlink] rejected — does not match allowed {self._allowed_mac}", flush=True)
             client.close()
             return
 
         with self._lock:
             self._client_sock = client
+        print("[carlink] connected", flush=True)
         self.connected.emit(True)
         try:
             self._read_loop(client)
@@ -98,6 +123,7 @@ class BluetoothCarLink(QObject):
             client.close()
             with self._lock:
                 self._client_sock = None
+            print("[carlink] disconnected", flush=True)
             self.connected.emit(False)
 
     def _read_loop(self, client: socket.socket) -> None:
@@ -116,10 +142,25 @@ class BluetoothCarLink(QObject):
             msg = json.loads(line.decode(_ENCODING))
         except (ValueError, UnicodeDecodeError):
             return
-        if msg.get("type") == "destination":
+        print(f"[carlink] received: {msg}", flush=True)
+        msg_type = msg.get("type")
+        if msg_type == "destination":
             lat, lon = msg.get("lat"), msg.get("lon")
             if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
                 self.destination_received.emit(float(lat), float(lon), str(msg.get("name", "")))
+        elif msg_type == "start_drive":
+            minutes = msg.get("minutes")
+            distance_mi = msg.get("distance_mi")
+            has_minutes = isinstance(minutes, (int, float))
+            has_distance = isinstance(distance_mi, (int, float))
+            self.start_drive_requested.emit(
+                int(minutes) if has_minutes else -1,
+                float(distance_mi) if has_distance else -1.0,
+            )
+        elif msg_type == "position":
+            lat, lon = msg.get("lat"), msg.get("lon")
+            if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+                self.position_received.emit(float(lat), float(lon))
 
     def _send(self, payload: dict) -> None:
         with self._lock:

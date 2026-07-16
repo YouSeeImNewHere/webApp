@@ -408,6 +408,42 @@ def point_and_heading_at_fraction(
     return points[-1], 0.0
 
 
+def fraction_at_nearest_point(points: list[tuple[float, float]], x: float, y: float) -> float:
+    """Inverse of point_at_fraction() — given an arbitrary (east, north)
+    position (a real GPS fix projected into local coordinates, not
+    necessarily exactly on the route), finds how far along the route's
+    total length its closest point is, as a 0..1 fraction. Used to drive
+    nav progress off the phone's real position instead of a timer-based
+    simulation."""
+    if len(points) < 2:
+        return 0.0
+    seg_lengths = [
+        math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1])
+        for i in range(len(points) - 1)
+    ]
+    total = sum(seg_lengths)
+    if total <= 0:
+        return 0.0
+    best_dist_sq = float("inf")
+    best_len_along = 0.0
+    acc = 0.0
+    for i, seg_len in enumerate(seg_lengths):
+        ax, ay = points[i]
+        bx, by = points[i + 1]
+        dx, dy = bx - ax, by - ay
+        if seg_len == 0:
+            t = 0.0
+        else:
+            t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (seg_len * seg_len)))
+        px, py = ax + dx * t, ay + dy * t
+        dist_sq = (x - px) ** 2 + (y - py) ** 2
+        if dist_sq < best_dist_sq:
+            best_dist_sq = dist_sq
+            best_len_along = acc + t * seg_len
+        acc += seg_len
+    return best_len_along / total
+
+
 def shortest_path(start: str, goal: str, strategy: Strategy) -> PathResult | None:
     loaded = _load_leg_graph(start, goal)
     if loaded is None:

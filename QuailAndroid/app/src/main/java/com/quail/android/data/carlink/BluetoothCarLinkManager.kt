@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,6 +89,13 @@ class BluetoothCarLinkManager(private val context: Context) {
                     // giving up, since "reconnect automatically once back
                     // in range" is the whole point of this being
                     // connection-state-driven rather than one-shot.
+                } catch (e: SecurityException) {
+                    // BLUETOOTH_CONNECT not granted (yet, or revoked
+                    // mid-session) — stop retrying instead of spinning in
+                    // a tight loop throwing the same exception every 3s;
+                    // TileMapScreen re-invokes connectToCar() once the
+                    // permission launcher actually grants it.
+                    return@launch
                 } finally {
                     _connected.value = false
                     closeQuietly()
@@ -112,7 +120,11 @@ class BluetoothCarLinkManager(private val context: Context) {
 
     private suspend fun readLoop(sock: BluetoothSocket) {
         val reader = BufferedReader(InputStreamReader(sock.inputStream, Charsets.UTF_8))
-        while (isActive) {
+        // Plain suspend fun, not a CoroutineScope-receiver lambda like the
+        // scope.launch{} block in connectToCar() — bare `isActive` here is
+        // ambiguous between CoroutineContext.isActive and
+        // CoroutineScope.isActive, hence the explicit currentCoroutineContext().
+        while (currentCoroutineContext().isActive) {
             val line = try {
                 reader.readLine()
             } catch (e: IOException) {
@@ -150,12 +162,48 @@ class BluetoothCarLinkManager(private val context: Context) {
      * TileMapViewModel.setDestination() (or a "Send to Car" affordance)
      * whenever [connected] is true, instead of routing locally. */
     suspend fun sendDestination(lat: Double, lon: Double, name: String) {
-        val payload = JSONObject().apply {
+        send(JSONObject().apply {
             put("type", "destination")
             put("lat", lat)
             put("lon", lon)
             put("name", name)
-        }
+        })
+    }
+
+    /** Tells the car to actually start driving the route it already
+     * computed for the destination just sent — without this, picking a
+     * destination on the phone only opens the car's route-confirmation
+     * screen; a second, separate tap was otherwise needed directly on the
+     * car to ever start moving.
+     *
+     * [minutes]/[distanceMi], when known, are this phone's own
+     * already-computed route numbers (server-backed, via
+     * MapsRepository.getRoutes — a different routing engine than the
+     * car's own local one) — the car substitutes these for its own
+     * ETA/distance display so the two screens don't show two different
+     * arrival times for what's meant to be the same drive. Omit either
+     * when the phone's own route wasn't ready yet; the car just keeps
+     * showing its own numbers in that case. */
+    suspend fun sendStartDrive(minutes: Int? = null, distanceMi: Double? = null) {
+        send(JSONObject().apply {
+            put("type", "start_drive")
+            if (minutes != null) put("minutes", minutes)
+            if (distanceMi != null) put("distance_mi", distanceMi)
+        })
+    }
+
+    /** Streams a real GPS fix to the car — replaces the car's own
+     * timer-driven fake progress simulation with actual phone location,
+     * since the phone has real GPS and the car (a fixed mini PC) doesn't. */
+    suspend fun sendPosition(lat: Double, lon: Double) {
+        send(JSONObject().apply {
+            put("type", "position")
+            put("lat", lat)
+            put("lon", lon)
+        })
+    }
+
+    private suspend fun send(payload: JSONObject) {
         withContext(Dispatchers.IO) {
             try {
                 outputStream?.write((payload.toString() + "\n").toByteArray(Charsets.UTF_8))

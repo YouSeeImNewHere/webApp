@@ -273,3 +273,15 @@ class RoutesScreen(QWidget):
         if self._place is None or not self._routes:
             return
         self.start_drive_requested.emit(self._place, self._routes[self._selected_index])
+
+    def start_selected_route(self) -> bool:
+        """Public trigger for BluetoothCarLink's start_drive_requested — the
+        phone tapped "start" on its own copy of this same route pick, and
+        expects the car to actually start driving rather than sit on the
+        confirmation screen waiting for a second, redundant tap here.
+        Returns False if routes aren't loaded yet (still fetching, or
+        nothing open) so the caller can decide whether to retry."""
+        if self._place is None or not self._routes:
+            return False
+        self._start_drive()
+        return True

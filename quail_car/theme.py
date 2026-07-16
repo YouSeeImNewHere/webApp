@@ -68,6 +68,63 @@ QLabel#dashboardDate {{
     color: {TEXT_DIM};
 }}
 
+#dashboardNowPlaying {{
+    background-color: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+}}
+QLabel#dashboardNowPlayingCover {{
+    background-color: {SURFACE};
+    border-radius: 10px;
+    font-size: 28px;
+    color: {TEXT_DIM};
+}}
+QLabel#dashboardNowPlayingTitle {{
+    font-size: 17px;
+    font-weight: 700;
+    color: {TEXT};
+}}
+QLabel#dashboardNowPlayingArtist {{
+    font-size: 14px;
+    font-weight: 600;
+    color: {TEXT_DIM};
+}}
+QPushButton#dashboardNowPlayingButton {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 24px;
+    font-size: 18px;
+    color: {TEXT};
+}}
+QPushButton#dashboardNowPlayingButton:pressed {{
+    background-color: {ACCENT};
+}}
+
+QLabel#dashboardSliderIcon {{
+    font-size: 18px;
+    color: {TEXT_DIM};
+}}
+QSlider#dashboardSlider::groove:horizontal {{
+    height: 6px;
+    background: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 3px;
+}}
+QSlider#dashboardSlider::sub-page:horizontal {{
+    background: {ACCENT};
+    border-radius: 3px;
+}}
+QSlider#dashboardSlider::handle:horizontal {{
+    width: 26px;
+    height: 26px;
+    margin: -10px 0;
+    background: {TEXT};
+    border-radius: 13px;
+}}
+QSlider#dashboardSlider::handle:horizontal:pressed {{
+    background: {ACCENT};
+}}
+
 QLabel#placeholderTitle {{
     font-size: 26px;
     font-weight: 800;

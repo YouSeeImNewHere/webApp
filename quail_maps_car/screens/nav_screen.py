@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -13,11 +13,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..geo.routing import RouteOption, path_points, point_and_heading_at_fraction
+from ..geo.routing import RouteOption, fraction_at_nearest_point, path_points, point_and_heading_at_fraction
 from ..geo.search_db import Place
 from ..widgets.map_canvas import MapCanvas
-
-STEP_INTERVAL_MS = 4000
 
 # Genuine street-level zoom — just the current road and its immediate
 # intersections, not several blocks of context. This used to be clamped to
@@ -45,9 +43,6 @@ class NavScreen(QWidget):
         self._route_points: list[tuple[float, float]] = []
         self._total_distance_m = 0.0
         self._step_index = 0
-
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._advance_step)
 
         base = QGridLayout(self)
         base.setContentsMargins(0, 0, 0, 0)
@@ -191,6 +186,11 @@ class NavScreen(QWidget):
         self._route_points = path_points(route.path)
         self._total_distance_m = sum(s.distance_m for s in self._steps)
         self._step_index = 0
+        # Reset on every new drive — otherwise a locally-started drive
+        # right after a phone-triggered one would inherit a stale override
+        # from the previous trip.
+        self._minutes_override: int | None = None
+        self._distance_mi_override: float | None = None
         self.arrived_btn.hide()
 
         self.recenter_btn.hide()
@@ -202,16 +202,48 @@ class NavScreen(QWidget):
         if self._route_points:
             self.map_bg.center_on_with_radius(*self._route_points[0], NAV_VIEW_RADIUS_M)
 
-        self._render_step()
-        self._timer.start(STEP_INTERVAL_MS)
+        self._render_at_fraction(0.0)
 
     def stop(self):
-        self._timer.stop()
         self.map_bg.clear_route()
         self.map_bg.set_nav_mode(False)
         self.recenter_btn.hide()
 
-    def _render_step(self):
+    def set_display_overrides(self, minutes: int, distance_mi: float) -> None:
+        """Substitutes the phone's own already-computed route numbers for
+        the car's, in the ETA/remaining-distance display only — the car
+        still drives its own actual path/steps (real turn-by-turn needs
+        the car's own road graph regardless), this just stops the two
+        screens from showing two different arrival times for what the
+        driver thinks is the same drive."""
+        self._minutes_override = minutes
+        self._distance_mi_override = distance_mi
+        # Always called right after start() (still at fraction 0) — see
+        # main_window.py's _start_navigation().
+        self._render_at_fraction(0.0)
+
+    def update_from_real_position(self, east: float, north: float) -> None:
+        """Advances nav progress off a real position fix — from the phone's
+        GPS, forwarded over BluetoothCarLink — instead of the old
+        QTimer-driven simulation that pushed progress forward on a fixed
+        clock regardless of whether the car was actually moving at all."""
+        if not self._route_points or self._total_distance_m <= 0:
+            return
+        fraction = fraction_at_nearest_point(self._route_points, east, north)
+        self._render_at_fraction(fraction)
+
+    def _step_index_for_fraction(self, fraction_done: float) -> int:
+        completed_m = fraction_done * self._total_distance_m
+        acc = 0.0
+        for i, step in enumerate(self._steps):
+            acc += step.distance_m
+            if completed_m <= acc or i == len(self._steps) - 1:
+                return i
+        return len(self._steps) - 1
+
+    def _render_at_fraction(self, fraction_done: float) -> None:
+        fraction_done = max(0.0, min(1.0, fraction_done))
+        self._step_index = self._step_index_for_fraction(fraction_done)
         step = self._steps[self._step_index]
         has_next = self._step_index + 1 < len(self._steps)
         next_step = self._steps[self._step_index + 1] if has_next else None
@@ -223,23 +255,22 @@ class NavScreen(QWidget):
         )
         self.next_label.setText(f"Then: {next_step.instruction}" if next_step else "")
 
-        completed_m = sum(s.distance_m for s in self._steps[: self._step_index])
-        remaining_m = max(0.0, self._total_distance_m - completed_m)
-        fraction_done = completed_m / self._total_distance_m if self._total_distance_m else 1.0
-        minutes_left = max(0, round(self._route.minutes * (1 - fraction_done)))
+        # When set, these are the phone's own already-computed numbers
+        # (see set_display_overrides()) — used here in place of the car's
+        # own route.minutes/total_distance_m so the two screens agree.
+        total_minutes = self._minutes_override if self._minutes_override is not None else self._route.minutes
+        total_distance_mi = (
+            self._distance_mi_override if self._distance_mi_override is not None
+            else self._total_distance_m / 1609.34
+        )
+        remaining_mi = max(0.0, total_distance_mi * (1 - fraction_done))
+        minutes_left = max(0, round(total_minutes * (1 - fraction_done)))
         eta = datetime.now() + timedelta(minutes=minutes_left)
         self.eta_label.setText(eta.strftime("%-I:%M %p"))
-        self.remaining_label.setText(f"{minutes_left} min · {remaining_m / 1609.34:.1f} mi")
+        self.remaining_label.setText(f"{minutes_left} min · {remaining_mi:.1f} mi")
 
         point, heading = point_and_heading_at_fraction(self._route_points, fraction_done)
         self.map_bg.follow(*point, heading)
-        self.position_updated.emit(point[0], point[1], heading, minutes_left, remaining_m / 1609.34)
+        self.position_updated.emit(point[0], point[1], heading, minutes_left, remaining_mi)
 
         self.arrived_btn.setVisible(self._step_index >= len(self._steps) - 1)
-
-    def _advance_step(self):
-        if self._step_index >= len(self._steps) - 1:
-            self._timer.stop()
-            return
-        self._step_index += 1
-        self._render_step()

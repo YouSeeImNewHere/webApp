@@ -1,7 +1,11 @@
 package com.quail.android.ui.screens.maps
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -184,9 +188,26 @@ fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: 
     // down when this screen leaves composition, independent of the
     // ViewModel's own lifecycle.
     val carLink = remember { BluetoothCarLinkManager(carLinkContext) }
+    // BLUETOOTH_CONNECT is a runtime-requestable ("dangerous") permission
+    // on API 31+ despite also being declared in the manifest — declaring
+    // it alone isn't enough, BluetoothSocket.connect() throws
+    // SecurityException at call time without this. Below 31 it's a normal
+    // install-time permission (already granted by the manifest entry), so
+    // this launcher is simply never invoked there.
+    val carLinkPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted && PAIRED_CAR_MAC.isNotBlank()) {
+            carLink.connectToCar(PAIRED_CAR_MAC)
+        }
+    }
     DisposableEffect(Unit) {
         if (PAIRED_CAR_MAC.isNotBlank()) {
-            carLink.connectToCar(PAIRED_CAR_MAC)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                carLinkPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                carLink.connectToCar(PAIRED_CAR_MAC)
+            }
         }
         onDispose { carLink.disconnect() }
     }

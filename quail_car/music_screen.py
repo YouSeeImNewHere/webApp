@@ -127,6 +127,11 @@ class MusicScreen(QWidget):
     a full Spotify-style Now Playing screen with cover art and Like/Skip.
     """
 
+    # Mirrors playback state to the outside world so the dashboard's
+    # now-playing card can stay in sync without reaching into internals.
+    track_changed = Signal(object)  # Track | None
+    playing_changed = Signal(bool)
+
     def __init__(self):
         super().__init__()
 
@@ -575,8 +580,13 @@ class MusicScreen(QWidget):
 
         self.now_playing_screen.set_track(track)
         self.now_playing_screen.set_liked(self._is_liked(track))
+        self.track_changed.emit(track)
         self._set_playing_ui(is_playing)
 
     def _set_playing_ui(self, is_playing: bool):
         self.mini_play_button.setText("⏸" if is_playing else "▶")
         self.now_playing_screen.set_playing(is_playing)
+        self.playing_changed.emit(is_playing)
+
+    def toggle_play_pause(self):
+        self._toggle_play_pause()
