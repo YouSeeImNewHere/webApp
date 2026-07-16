@@ -2,9 +2,25 @@ from __future__ import annotations
 
 import heapq
 import math
+import sqlite3
 from dataclasses import dataclass
 
-from .roadnet import GRAPH, Edge, Node
+from .data_source import EXTRACT_PATH
+from .roadnet import GRAPH, Edge, Graph, Node
+
+# Ported from maps_pipeline/routing.py (the same engine Android's server
+# calls actually use) instead of staying a separately-invented Dijkstra —
+# same algorithm and process, the only real difference being that this one
+# queries the already-downloaded local extract.sqlite3 file instead of a
+# live master database over HTTP. The key behavior worth porting: adaptive
+# bounding-box widening per routing request. A destination a few tenths of
+# a mile away as the crow flies can genuinely need a much longer drivable
+# path around water or terrain — this server region includes the Kitsap
+# Peninsula, where that's routine, not an edge case — so a route request
+# that only ever looks at a fixed small box around the start point (what
+# this file used to do, and what roadnet.py's GRAPH still does for
+# rendering/POI-listing purposes) can fail to find a route that's actually
+# right there, just not reachable without briefly leaving that box.
 
 Strategy = str  # "fastest" | "shortest" | "avoid_highways"
 
@@ -13,6 +29,15 @@ STRATEGIES: list[tuple[str, Strategy]] = [
     ("Shortest", "shortest"),
     ("Avoid highways", "avoid_highways"),
 ]
+
+# Fixed increasing steps, not a straight-line-distance multiplier (what
+# this used to be, mirroring the server) — for a short trip (most real
+# destinations here are well under a mile), a multiplier of even 3x a tiny
+# straight-line distance still lands under a several-km floor, so every
+# "widened" attempt ended up using the exact same box. Verified: a synthetic
+# 500m-straight-line trip needing a 6km detour around an obstacle failed to
+# route at all under the multiplier version, and succeeds under this one.
+_BBOX_PAD_STEPS_M = (3000.0, 8000.0, 20_000.0)
 
 
 def _edge_weight(edge: Edge, length_m: float, strategy: Strategy) -> float:
@@ -30,10 +55,10 @@ class PathResult:
     edge_path: list[Edge]
     distance_m: float
     time_h: float
+    graph: Graph  # the (possibly leg-scoped) graph the path was found in
 
 
-def shortest_path(start: str, goal: str, strategy: Strategy) -> PathResult | None:
-    graph = GRAPH
+def _dijkstra(graph: Graph, start: str, goal: str, strategy: Strategy) -> PathResult | None:
     dist: dict[str, float] = {start: 0.0}
     prev: dict[str, tuple[str, Edge]] = {}
     visited: set[str] = set()
@@ -71,7 +96,99 @@ def shortest_path(start: str, goal: str, strategy: Strategy) -> PathResult | Non
 
     distance_m = sum(graph.edge_length(e) for e in edge_path)
     time_h = sum((graph.edge_length(e) / 1000.0) / e.speed_kph for e in edge_path)
-    return PathResult(node_path=node_path, edge_path=edge_path, distance_m=distance_m, time_h=time_h)
+    return PathResult(node_path=node_path, edge_path=edge_path, distance_m=distance_m, time_h=time_h, graph=graph)
+
+
+def _resolve_node_coords(node_id: str) -> tuple[float, float] | None:
+    node = GRAPH.nodes.get(node_id)
+    if node is not None:
+        return node.east, node.north
+    if not EXTRACT_PATH.exists():
+        return None
+    # Not in the (3mi-bounded, render/listing-focused) global GRAPH — the
+    # full downloaded extract on disk covers a much wider radius, so look
+    # the single node up there directly instead of giving up.
+    conn = sqlite3.connect(EXTRACT_PATH)
+    try:
+        row = conn.execute("SELECT east, north FROM nodes WHERE id = ?", (node_id,)).fetchone()
+    finally:
+        conn.close()
+    return (row[0], row[1]) if row else None
+
+
+def _load_leg_graph(start_id: str, goal_id: str) -> Graph | None:
+    """Loads a graph big enough to connect start and goal, widening the
+    search area if the first (tight) attempt can't. Runs once per routing
+    request — every strategy's Dijkstra below reuses this same graph, since
+    strategy only changes edge weights, not which edges exist."""
+    if not EXTRACT_PATH.exists():
+        # Synthetic/offline fallback — GRAPH already holds the whole
+        # (small) network, no widening needed or possible.
+        return GRAPH
+
+    start_coords = _resolve_node_coords(start_id)
+    goal_coords = _resolve_node_coords(goal_id)
+    if start_coords is None or goal_coords is None:
+        return None
+
+    conn = sqlite3.connect(EXTRACT_PATH)
+    try:
+        for pad in _BBOX_PAD_STEPS_M:
+            min_e = min(start_coords[0], goal_coords[0]) - pad
+            max_e = max(start_coords[0], goal_coords[0]) + pad
+            min_n = min(start_coords[1], goal_coords[1]) - pad
+            max_n = max(start_coords[1], goal_coords[1]) + pad
+
+            node_rows = conn.execute(
+                "SELECT id, east, north, label FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?",
+                (min_e, max_e, min_n, max_n),
+            ).fetchall()
+            if not node_rows:
+                continue
+            nodes = {
+                str(nid): Node(str(nid), east, north, label or "") for nid, east, north, label in node_rows
+            }
+            if start_id not in nodes:
+                nodes[start_id] = Node(start_id, *start_coords)
+            if goal_id not in nodes:
+                nodes[goal_id] = Node(goal_id, *goal_coords)
+
+            # Same UNION-of-two-indexed-lookups shape as roadnet.py's
+            # bounded load (see that file for why: an OR-across-JOINs
+            # version defeats SQLite's ability to use its indices at all).
+            edge_rows = conn.execute(
+                """
+                SELECT a, b, street, road_class, speed_kph FROM edges
+                WHERE a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                UNION
+                SELECT a, b, street, road_class, speed_kph FROM edges
+                WHERE b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                """,
+                (min_e, max_e, min_n, max_n, min_e, max_e, min_n, max_n),
+            ).fetchall()
+
+            adjacency: dict[str, list[Edge]] = {node_id: [] for node_id in nodes}
+            edges: list[Edge] = []
+            for a, b, street, road_class, speed_kph in edge_rows:
+                a, b = str(a), str(b)
+                if a not in nodes or b not in nodes:
+                    continue
+                edge = Edge(a, b, street or "", road_class or "local", float(speed_kph or 40.0))
+                edges.append(edge)
+                adjacency[a].append(edge)
+                adjacency[b].append(Edge(b, a, edge.street, edge.road_class, edge.speed_kph))
+
+            leg_graph = Graph(nodes=nodes, edges=edges, adjacency=adjacency)
+            # "fastest" doubles as the connectivity check — if even the
+            # cheapest-to-traverse weighting can't connect start and goal
+            # in this subgraph, no other strategy will either, so it's not
+            # worth trying them before widening further.
+            if _dijkstra(leg_graph, start_id, goal_id, "fastest") is not None:
+                return leg_graph
+    finally:
+        conn.close()
+
+    return None
 
 
 @dataclass
@@ -119,7 +236,7 @@ def _turn_word(delta: float) -> str:
 
 
 def build_turn_by_turn(path: PathResult) -> list[TurnStep]:
-    graph = GRAPH
+    graph = path.graph
     edges = path.edge_path
     if not edges:
         return [TurnStep("You have arrived", 0.0, "▪")]
@@ -177,7 +294,7 @@ class RouteOption:
 
 
 def path_points(path: PathResult) -> list[tuple[float, float]]:
-    return [(GRAPH.nodes[n].east, GRAPH.nodes[n].north) for n in path.node_path]
+    return [(path.graph.nodes[n].east, path.graph.nodes[n].north) for n in path.node_path]
 
 
 def point_at_fraction(points: list[tuple[float, float]], fraction: float) -> tuple[float, float]:
@@ -202,11 +319,22 @@ def point_at_fraction(points: list[tuple[float, float]], fraction: float) -> tup
     return points[-1]
 
 
+def shortest_path(start: str, goal: str, strategy: Strategy) -> PathResult | None:
+    graph = _load_leg_graph(start, goal)
+    if graph is None:
+        return None
+    return _dijkstra(graph, start, goal, strategy)
+
+
 def compute_routes(start: str, goal: str) -> list[RouteOption]:
+    graph = _load_leg_graph(start, goal)
+    if graph is None:
+        return []
+
     results: list[RouteOption] = []
     seen_signatures: set[tuple[str, ...]] = set()
     for label, strategy in STRATEGIES:
-        path = shortest_path(start, goal, strategy)
+        path = _dijkstra(graph, start, goal, strategy)
         if path is None:
             continue
         signature = tuple(e.street for e in path.edge_path)
