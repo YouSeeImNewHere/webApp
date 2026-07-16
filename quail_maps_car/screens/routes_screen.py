@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 from ..geo.routing import RouteOption, compute_routes
 from ..geo.search_db import Place
 from ..theme import (
+    BORDER,
     DIM_TEXT_STYLE,
     ROUTE_ARRIVAL_TIME_STYLE,
     ROUTE_CARD_SELECTED_STYLE,
@@ -22,12 +24,18 @@ from ..theme import (
     ROUTE_DURATION_STYLE,
     ROUTE_RANK_SELECTED_STYLE,
     ROUTE_RANK_STYLE,
+    SURFACE,
 )
 from ..widgets.clickable import ClickableWidget
-from ..widgets.opaque_screen import OpaqueScreen
 
 
-class RoutesScreen(OpaqueScreen):
+class RoutesScreen(QWidget):
+    """A bottom-sheet overlay (same pattern as PlaceDetailScreen), not a
+    full page — hosted directly in MainWindow layered above the screen
+    stack so it works the same whether it was opened from the Idle
+    shortcuts or from Search's place-detail overlay, without covering
+    whatever's behind it."""
+
     back_requested = Signal()
     start_drive_requested = Signal(object, object)  # Place, RouteOption
 
@@ -37,16 +45,34 @@ class RoutesScreen(OpaqueScreen):
         self._routes: list[RouteOption] = []
         self._selected_index = 0
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addStretch(1)
+
+        card = QWidget()
+        card.setObjectName("routesCard")
+        card.setStyleSheet(
+            f"""
+            #routesCard {{
+                background-color: {SURFACE};
+                border-top-left-radius: 24px;
+                border-top-right-radius: 24px;
+                border: 1px solid {BORDER};
+            }}
+            """
+        )
+        outer.addWidget(card)
+
+        root = QVBoxLayout(card)
         root.setContentsMargins(0, 0, 0, 0)
-        root.addStretch(1)
 
         header = QWidget()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(20, 16, 20, 16)
         header_layout.setSpacing(14)
 
-        back_btn = QPushButton("←")
+        back_btn = QPushButton("✕")
         back_btn.setProperty("role", "iconButton")
         back_btn.setFixedSize(56, 56)
         back_btn.setCursor(Qt.PointingHandCursor)
@@ -92,12 +118,21 @@ class RoutesScreen(OpaqueScreen):
         start_wrap_layout.addWidget(self.start_btn)
         root.addWidget(start_wrap)
 
+    def paintEvent(self, event):
+        # Dims whatever's behind this overlay instead of covering it with
+        # an opaque background — same treatment as PlaceDetailScreen.
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 140))
+        super().paintEvent(event)
+
     def open_for(self, place: Place):
         self._place = place
         self._routes = compute_routes("START", place.node_id)
         self._selected_index = 0
         self.destination_label.setText(place.name)
         self._render_routes()
+        self.show()
+        self.raise_()
 
     def _render_routes(self):
         while self.route_list_layout.count():
