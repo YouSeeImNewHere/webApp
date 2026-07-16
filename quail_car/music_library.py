@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -23,6 +24,28 @@ _tag_cache: dict[str, tuple[float, int, str, str, str]] = {}
 # media happens to be connected today.
 PLAYLISTS_DIR = Path.home() / ".local" / "share" / "quail_music" / "playlists"
 
+# Written by scripts/music_genre_sync.py (run on the Mac, where there's
+# actual internet — this car computer has none of its own, same reason
+# feedback_log.py writes to the drive instead of submitting anything
+# directly) as {"artist|||title": "genre"}. Read here, never written.
+GENRE_FILENAME = "quail_genres.json"
+_GENRE_KEY_SEP = "|||"
+
+
+def genre_key(artist: str, title: str) -> str:
+    return f"{artist}{_GENRE_KEY_SEP}{title}"
+
+
+def _load_genre_map(volume: Path) -> dict[str, str]:
+    path = volume / GENRE_FILENAME
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
 
 @dataclass(frozen=True)
 class Track:
@@ -30,6 +53,10 @@ class Track:
     artist: str
     title: str
     album: str
+    # Populated from GENRE_FILENAME on the drive (see _load_genre_map) if
+    # scripts/music_genre_sync.py has been run for this artist/title —
+    # never looked up live here, since the car has no internet of its own.
+    genre: str = "Unknown Genre"
 
     @property
     def display(self) -> str:
@@ -66,10 +93,11 @@ def _read_tags(path: Path) -> tuple[str, str, str]:
     )
 
 
-def scan_directory(root: Path) -> list[Track]:
+def scan_directory(root: Path, genre_map: dict[str, str] | None = None) -> list[Track]:
     tracks: list[Track] = []
     if not root.exists():
         return tracks
+    genre_map = genre_map or {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d.lower() not in _EXCLUDED_DIR_NAMES]
         for name in filenames:
@@ -92,7 +120,8 @@ def scan_directory(root: Path) -> list[Track]:
             else:
                 artist, title, album = _read_tags(path)
                 _tag_cache[cache_key] = (signature[0], signature[1], artist, title, album)
-            tracks.append(Track(path=path, artist=artist, title=title, album=album))
+            genre = genre_map.get(genre_key(artist, title), "Unknown Genre")
+            tracks.append(Track(path=path, artist=artist, title=title, album=album, genre=genre))
     tracks.sort(key=lambda t: (t.artist.lower(), t.album.lower(), t.title.lower()))
     return tracks
 
@@ -104,7 +133,7 @@ def scan_library() -> list[Track]:
             continue
         for volume in root.iterdir():
             if volume.is_dir():
-                tracks.extend(scan_directory(volume))
+                tracks.extend(scan_directory(volume, _load_genre_map(volume)))
     tracks.sort(key=lambda t: (t.artist.lower(), t.album.lower(), t.title.lower()))
     return tracks
 

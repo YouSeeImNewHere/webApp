@@ -1,15 +1,6 @@
 from __future__ import annotations
 
-import os
 import sys
-
-# Must be set before QApplication is constructed. This switches from the
-# earlier "onboard" external-app approach (which stole window-manager focus
-# on every tap, so keystrokes never actually reached the field) to Qt's own
-# virtual keyboard, which renders as an overlay inside this app's own window
-# instead of a separate top-level window — no focus stealing, real key
-# events land directly in the focused widget, and it docks properly.
-os.environ.setdefault("QT_IM_MODULE", "qtvirtualkeyboard")
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication

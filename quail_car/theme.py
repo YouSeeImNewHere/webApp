@@ -100,29 +100,80 @@ QPushButton#dashboardNowPlayingButton:pressed {{
     background-color: {ACCENT};
 }}
 
+QLabel#dashboardShuffleIcon {{
+    font-size: 36px;
+}}
+QPushButton#dashboardShuffleButton {{
+    background-color: {ACCENT};
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    color: white;
+    padding: 0 24px;
+}}
+QPushButton#dashboardShuffleButton:pressed {{
+    background-color: {SURFACE_RAISED};
+}}
+
+QLabel#dashboardNowPlayingTime {{
+    font-size: 12px;
+    font-weight: 600;
+    color: {TEXT_DIM};
+}}
+QSlider#dashboardProgressSlider::groove:horizontal {{
+    height: 5px;
+    background: {SURFACE};
+    border-radius: 2px;
+}}
+QSlider#dashboardProgressSlider::sub-page:horizontal {{
+    background: {ACCENT};
+    border-radius: 2px;
+}}
+QSlider#dashboardProgressSlider::handle:horizontal {{
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    background: {TEXT};
+    border-radius: 8px;
+}}
+QSlider#dashboardProgressSlider::handle:horizontal:pressed {{
+    background: {ACCENT};
+}}
+
+#dashboardRoadCard {{
+    background-color: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+}}
+
 QLabel#dashboardSliderIcon {{
     font-size: 18px;
     color: {TEXT_DIM};
 }}
-QSlider#dashboardSlider::groove:horizontal {{
-    height: 6px;
+QSlider#dashboardSlider::groove:vertical {{
+    width: 6px;
     background: {SURFACE_RAISED};
     border: 1px solid {BORDER};
     border-radius: 3px;
 }}
-QSlider#dashboardSlider::sub-page:horizontal {{
+QSlider#dashboardSlider::sub-page:vertical {{
     background: {ACCENT};
     border-radius: 3px;
 }}
-QSlider#dashboardSlider::handle:horizontal {{
+QSlider#dashboardSlider::handle:vertical {{
     width: 26px;
     height: 26px;
-    margin: -10px 0;
+    margin: 0 -10px;
     background: {TEXT};
     border-radius: 13px;
 }}
-QSlider#dashboardSlider::handle:horizontal:pressed {{
+QSlider#dashboardSlider::handle:vertical:pressed {{
     background: {ACCENT};
+}}
+
+#dashboardSliderRail {{
+    background-color: {SURFACE};
+    border-right: 1px solid {BORDER};
 }}
 
 QLabel#placeholderTitle {{
@@ -268,6 +319,21 @@ QPushButton#nowPlayingTransportButton {{
     color: {TEXT};
 }}
 QPushButton#nowPlayingTransportButton:pressed {{
+    background-color: {ACCENT};
+}}
+
+#virtualKeyboard {{
+    background-color: {SURFACE};
+    border-top: 1px solid {BORDER};
+}}
+QPushButton#virtualKeyboardKey {{
+    background-color: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    font-size: 20px;
+    color: {TEXT};
+}}
+QPushButton#virtualKeyboardKey:pressed {{
     background-color: {ACCENT};
 }}
 """

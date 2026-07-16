@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import random
+
 from PySide6.QtCore import QSize, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QGuiApplication, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -22,8 +24,10 @@ from PySide6.QtWidgets import (
 from . import album_art, feedback_log, music_library
 from .music_library import Playlist, Track
 from .now_playing_screen import NowPlayingScreen
+from .virtual_keyboard import VirtualKeyboard
 
 _BACK_TO_ARTISTS = "‹ Back to Artists"
+_BACK_TO_GENRES = "‹ Back to Genres"
 _LIKED_PLAYLIST_NAME = "Liked Songs"
 _MINI_COVER_SIZE = 48
 
@@ -91,26 +95,35 @@ class MiniPlayerBar(QWidget):
 
 
 class TouchLineEdit(QLineEdit):
-    """A QLineEdit that pops Qt's own virtual keyboard on focus — there's no
-    physical keyboard in the car, so tapping into search needs to bring one
-    up itself.
+    """A QLineEdit that signals when it gains/loses focus, so a
+    VirtualKeyboard elsewhere in the screen can attach/detach itself —
+    there's no physical keyboard in the car, so tapping into search needs
+    to bring one up on its own.
 
-    This used to shell out to the external "onboard" app, but that's a
-    separate top-level window: tapping a key on it handed window-manager
-    focus to *onboard*, so keystrokes never reached this field, and the
-    focus bouncing back and forth caused visible flashing. Qt's built-in
-    virtual keyboard (enabled via QT_IM_MODULE=qtvirtualkeyboard in
-    main.py) renders as an overlay inside this app's own window instead —
-    no separate window, no focus stealing, keys land directly in whatever's
-    focused.
+    Two prior approaches to this both failed badly enough to need
+    replacing:
+    - Shelling out to an external "onboard" app — a separate top-level
+      window, so tapping a key handed window-manager focus to *onboard*
+      itself, keystrokes never reached this field, and the focus bouncing
+      back and forth caused visible flashing.
+    - Qt's own virtual keyboard (QT_IM_MODULE=qtvirtualkeyboard) — no
+      external window, but it hung the whole app on this hardware
+      (confirmed: the app stopped responding entirely once it opened).
+
+    This connects to quail_car.virtual_keyboard.VirtualKeyboard instead —
+    ordinary QPushButtons in this app's own widget tree, nothing external
+    and nothing depending on a separate input-method plugin.
     """
 
+    focused_in = Signal()
+    focused_out = Signal()
+
     def focusInEvent(self, event):
-        QGuiApplication.inputMethod().show()
+        self.focused_in.emit()
         super().focusInEvent(event)
 
     def focusOutEvent(self, event):
-        QGuiApplication.inputMethod().hide()
+        self.focused_out.emit()
         super().focusOutEvent(event)
 
 
@@ -131,6 +144,7 @@ class MusicScreen(QWidget):
     # now-playing card can stay in sync without reaching into internals.
     track_changed = Signal(object)  # Track | None
     playing_changed = Signal(bool)
+    position_changed = Signal(int, int)  # position_ms, duration_ms
 
     def __init__(self):
         super().__init__()
@@ -139,19 +153,33 @@ class MusicScreen(QWidget):
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
         self.player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self.player.positionChanged.connect(self._on_position_changed)
+        self.player.durationChanged.connect(self._on_position_changed)
 
         self._library: list[Track] = []
         self._path_index: dict[str, Track] = {}
         self._queue: list[Track] = []
         self._current_index = -1
 
-        self._view_mode = "songs"  # songs | artists | artist_tracks | playlists | playlist_tracks
+        self._view_mode = "songs"  # songs | artists | artist_tracks | genres | genre_tracks | playlists | playlist_tracks
         self._current_artist: str | None = None
+        self._current_genre: str | None = None
         self._current_playlist: str | None = None
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(24, 20, 24, 20)
         root_layout.setSpacing(10)
+
+        # Created before _build_browse_page() below, since that's where
+        # the search box that attaches to this keyboard gets built. Parented
+        # to self but deliberately NOT added to root_layout: at 1280x800 the
+        # keyboard's ~300px height didn't fit alongside the track list, so
+        # laying it out pushed the bottom of the list (and the keyboard
+        # itself) off the visible window. Floating it as an absolutely
+        # positioned overlay avoids that, and also avoids the whole screen's
+        # layout re-flowing on every single key click, which was the
+        # laggy-to-type-in behavior.
+        self.keyboard = VirtualKeyboard(self)
 
         self._inner_stack = QStackedWidget()
         root_layout.addWidget(self._inner_stack, 1)
@@ -193,10 +221,12 @@ class MusicScreen(QWidget):
         mode_row.setSpacing(8)
         self.songs_button = QPushButton("All Songs")
         self.artists_button = QPushButton("Artists")
+        self.genres_button = QPushButton("Genres")
         self.playlists_button = QPushButton("Playlists")
         for button, mode in (
             (self.songs_button, "songs"),
             (self.artists_button, "artists"),
+            (self.genres_button, "genres"),
             (self.playlists_button, "playlists"),
         ):
             button.setObjectName("musicControlButton")
@@ -209,6 +239,8 @@ class MusicScreen(QWidget):
         self.search_box = TouchLineEdit()
         self.search_box.setPlaceholderText("Search artist or song…")
         self.search_box.textChanged.connect(self._refresh_list)
+        self.search_box.focused_in.connect(lambda: self._show_keyboard(self.search_box))
+        self.search_box.focused_out.connect(self._hide_keyboard)
         layout.addWidget(self.search_box)
 
         self.track_list = QListWidget()
@@ -229,19 +261,23 @@ class MusicScreen(QWidget):
 
         playlist_row = QHBoxLayout()
         playlist_row.setSpacing(8)
+        self.shuffle_button = QPushButton("\U0001f500 Shuffle")
         self.new_playlist_button = QPushButton("＋ New Playlist")
         self.add_to_playlist_button = QPushButton("Add to Playlist")
         self.delete_playlist_button = QPushButton("Delete Playlist")
         for button in (
+            self.shuffle_button,
             self.new_playlist_button,
             self.add_to_playlist_button,
             self.delete_playlist_button,
         ):
             button.setObjectName("musicControlButton")
             button.setFixedHeight(40)
+        self.shuffle_button.clicked.connect(self._shuffle_current_view)
         self.new_playlist_button.clicked.connect(self._create_playlist)
         self.add_to_playlist_button.clicked.connect(self._add_selected_to_playlist)
         self.delete_playlist_button.clicked.connect(self._delete_current_playlist)
+        playlist_row.addWidget(self.shuffle_button)
         playlist_row.addWidget(self.new_playlist_button)
         playlist_row.addWidget(self.add_to_playlist_button)
         playlist_row.addWidget(self.delete_playlist_button)
@@ -304,6 +340,24 @@ class MusicScreen(QWidget):
     def _collapse_now_playing(self):
         self._inner_stack.setCurrentWidget(self._browse_page)
 
+    # ---- on-screen keyboard overlay ----------------------------------------
+
+    def _show_keyboard(self, line_edit):
+        self.keyboard.attach(line_edit)
+        self._position_keyboard()
+        self.keyboard.raise_()
+
+    def _hide_keyboard(self):
+        self.keyboard.detach()
+
+    def _position_keyboard(self):
+        height = self.keyboard.sizeHint().height()
+        self.keyboard.setGeometry(0, self.height() - height, self.width(), height)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_keyboard()
+
     # ---- library scanning -------------------------------------------------
 
     def _rescan(self):
@@ -324,15 +378,21 @@ class MusicScreen(QWidget):
     def _set_view_mode(self, mode: str):
         self._view_mode = mode
         self._current_artist = None
+        self._current_genre = None
         self._current_playlist = None
         self.songs_button.setChecked(mode == "songs")
         self.artists_button.setChecked(mode == "artists")
+        self.genres_button.setChecked(mode in ("genres", "genre_tracks"))
         self.playlists_button.setChecked(mode in ("playlists", "playlist_tracks"))
         is_playlists = mode in ("playlists", "playlist_tracks")
         self.new_playlist_button.setVisible(is_playlists)
-        self.add_to_playlist_button.setVisible(mode in ("songs", "artist_tracks", "playlist_tracks"))
+        self.add_to_playlist_button.setVisible(mode in ("songs", "artist_tracks", "genre_tracks", "playlist_tracks"))
         self.delete_playlist_button.setVisible(mode == "playlist_tracks")
-        self.search_box.setVisible(mode in ("songs", "artists", "artist_tracks"))
+        # Only wherever there's an actual list of tracks to shuffle — not
+        # the Artists/Genres/Playlists index views themselves, which list
+        # names, not songs.
+        self.shuffle_button.setVisible(mode in ("songs", "artist_tracks", "genre_tracks", "playlist_tracks"))
+        self.search_box.setVisible(mode in ("songs", "artists", "artist_tracks", "genres", "genre_tracks"))
         self.search_box.clear()
         self._refresh_list()
 
@@ -367,6 +427,29 @@ class MusicScreen(QWidget):
                 if track.artist != self._current_artist:
                     continue
                 if query and query not in track.title.lower():
+                    continue
+                self._add_track_item(track)
+
+        elif self._view_mode == "genres":
+            genres = sorted({t.genre for t in self._library}, key=str.lower)
+            for genre in genres:
+                if query and query not in genre.lower():
+                    continue
+                count = sum(1 for t in self._library if t.genre == genre)
+                self._add_row(
+                    ("genre", genre),
+                    RowWidget(None, "\U0001f3b5", genre, f"{count} song{'s' if count != 1 else ''}"),
+                )
+
+        elif self._view_mode == "genre_tracks":
+            self._add_row(
+                ("back_to_genres", None),
+                RowWidget(None, "‹", _BACK_TO_GENRES),
+            )
+            for track in self._library:
+                if track.genre != self._current_genre:
+                    continue
+                if query and query not in track.title.lower() and query not in track.artist.lower():
                     continue
                 self._add_track_item(track)
 
@@ -415,9 +498,20 @@ class MusicScreen(QWidget):
             self.search_box.clear()
             self.add_to_playlist_button.setVisible(True)
             self.delete_playlist_button.setVisible(False)
+            self.shuffle_button.setVisible(True)
             self._refresh_list()
         elif kind == "back_to_artists":
             self._set_view_mode("artists")
+        elif kind == "genre":
+            self._current_genre = payload
+            self._view_mode = "genre_tracks"
+            self.search_box.clear()
+            self.add_to_playlist_button.setVisible(True)
+            self.delete_playlist_button.setVisible(False)
+            self.shuffle_button.setVisible(True)
+            self._refresh_list()
+        elif kind == "back_to_genres":
+            self._set_view_mode("genres")
         elif kind == "playlist":
             self._current_playlist = payload
             self._view_mode = "playlist_tracks"
@@ -425,6 +519,7 @@ class MusicScreen(QWidget):
             self.new_playlist_button.setVisible(False)
             self.add_to_playlist_button.setVisible(True)
             self.delete_playlist_button.setVisible(True)
+            self.shuffle_button.setVisible(True)
             self._refresh_list()
 
     def _current_view_tracks(self) -> list[Track]:
@@ -437,6 +532,24 @@ class MusicScreen(QWidget):
 
     def _play_queue_from_current_view(self):
         self._queue = self._current_view_tracks()
+
+    def _shuffle_and_play(self, tracks: list[Track]):
+        if not tracks:
+            return
+        shuffled = tracks.copy()
+        random.shuffle(shuffled)
+        self._queue = shuffled
+        self._current_index = -1
+        self._play_index(0)
+
+    def _shuffle_current_view(self):
+        self._shuffle_and_play(self._current_view_tracks())
+
+    def shuffle_all(self):
+        """Public — the dashboard's now-playing card calls this for its
+        "shuffle all songs" idle-state button, independent of whatever
+        browse view Music itself currently has open."""
+        self._shuffle_and_play(self._library)
 
     def _selected_tracks(self) -> list[Track]:
         tracks = []
@@ -560,6 +673,14 @@ class MusicScreen(QWidget):
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self._play_next(is_skip=False)
 
+    def _on_position_changed(self, _value: int):
+        # Both positionChanged(int) and durationChanged(int) land here —
+        # the dashboard's progress bar needs both together to draw a
+        # correct fraction, and re-reading player.position()/.duration()
+        # directly (rather than trusting whichever single value the
+        # signal that fired carried) keeps the two always in sync.
+        self.position_changed.emit(self.player.position(), self.player.duration())
+
     def _update_now_playing_ui(self, track: Track, is_playing: bool):
         self.mini_player_bar.setVisible(True)
         self.mini_title_label.setText(track.title)
@@ -590,3 +711,12 @@ class MusicScreen(QWidget):
 
     def toggle_play_pause(self):
         self._toggle_play_pause()
+
+    def play_next(self):
+        self._play_next()
+
+    def play_previous(self):
+        self._play_previous()
+
+    def seek(self, position_ms: int):
+        self.player.setPosition(position_ms)

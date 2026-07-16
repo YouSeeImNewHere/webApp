@@ -70,9 +70,20 @@ class ShellWindow(QMainWindow):
         # of each other.
         self._music_screen.track_changed.connect(self._dashboard.now_playing_card.set_track)
         self._music_screen.playing_changed.connect(self._dashboard.now_playing_card.set_playing)
+        self._music_screen.position_changed.connect(self._dashboard.now_playing_card.set_position)
+        self._dashboard.now_playing_card.previous_requested.connect(self._music_screen.play_previous)
+        self._dashboard.now_playing_card.next_requested.connect(self._music_screen.play_next)
+        self._dashboard.now_playing_card.seek_requested.connect(self._music_screen.seek)
         self._dashboard.now_playing_card.play_pause_requested.connect(self._music_screen.toggle_play_pause)
+        self._dashboard.now_playing_card.shuffle_all_requested.connect(self._music_screen.shuffle_all)
 
-        self._show_screen("home")
+        # Tapping either dashboard card opens its full app — same
+        # navigation path as tapping the side panel, so the icon there
+        # reflects it too rather than staying stuck on "Home".
+        self._dashboard.maps_requested.connect(lambda: self.navigate_to("maps"))
+        self._dashboard.music_requested.connect(lambda: self.navigate_to("music"))
+
+        self.navigate_to("home")
 
     def _add_screen(self, key: str, widget: QWidget):
         self._screens[key] = widget
@@ -80,6 +91,12 @@ class ShellWindow(QMainWindow):
 
     def _show_screen(self, key: str):
         self.stack.setCurrentWidget(self._screens[key])
+
+    def navigate_to(self, key: str):
+        self._show_screen(key)
+        button = self._nav_buttons.get(key)
+        if button is not None:
+            button.setChecked(True)
 
     def _build_side_panel(self) -> QWidget:
         panel = QWidget()
@@ -93,6 +110,7 @@ class ShellWindow(QMainWindow):
 
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
+        self._nav_buttons: dict[str, QPushButton] = {}
 
         for key, glyph, label in _APPS:
             button = QPushButton(f"{glyph}\n{label}")
@@ -101,6 +119,7 @@ class ShellWindow(QMainWindow):
             button.setFixedHeight(76)
             button.clicked.connect(lambda _checked, k=key: self._show_screen(k))
             self._button_group.addButton(button)
+            self._nav_buttons[key] = button
             layout.addWidget(button)
 
         first_button = self._button_group.buttons()[0]

@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QGridLayout, QMainWindow, QStackedWidget, QVBoxLay
 from .carlink import PAIRED_PHONE_MAC, BluetoothCarLink
 from .geo.latlon import latlon_to_local, local_to_latlon, nearest_routable_node
 from .geo.search_db import Place
-from .screens.dashboard_screen import DashboardScreen
 from .screens.idle_screen import IdleScreen
 from .screens.nav_screen import NavScreen
 from .screens.routes_screen import RoutesScreen
@@ -46,9 +45,8 @@ class MainWindow(QMainWindow):
         self.idle_screen = IdleScreen()
         self.search_screen = SearchScreen()
         self.nav_screen = NavScreen()
-        self.dashboard_screen = DashboardScreen()
 
-        for screen in (self.idle_screen, self.search_screen, self.nav_screen, self.dashboard_screen):
+        for screen in (self.idle_screen, self.search_screen, self.nav_screen):
             self.stack.addWidget(screen)
 
         self.routes_screen = RoutesScreen()
@@ -68,9 +66,6 @@ class MainWindow(QMainWindow):
 
         self.routes_screen.back_requested.connect(self.routes_screen.hide)
         self.routes_screen.start_drive_requested.connect(self._start_navigation)
-
-        self.dashboard_screen.back_requested.connect(self._show_idle)
-        self.status_bar_widget.dashboard_requested.connect(self._open_dashboard)
 
         self.nav_screen.end_requested.connect(self._show_idle)
         self.nav_screen.position_updated.connect(self._on_position_updated)
@@ -160,9 +155,6 @@ class MainWindow(QMainWindow):
     def _open_search(self, category):
         self.search_screen.open_for(category)
         self.stack.setCurrentWidget(self.search_screen)
-
-    def _open_dashboard(self):
-        self.stack.setCurrentWidget(self.dashboard_screen)
 
     def _open_routes(self, place):
         self.routes_screen.open_for(place)

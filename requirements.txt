@@ -52,3 +52,7 @@ paddlepaddle==2.6.2; python_version < "3.13"
 # Quail Maps OSM ingestion pipeline (homelab only — not needed for the main
 # web app, so it's kept optional rather than a hard import-time dependency)
 osmium==4.3.1
+
+# scripts/music_genre_sync.py (Mac only — reads audio tags to look up
+# genres via MusicBrainz whenever the car's MP3 player drive is plugged in)
+mutagen==1.48.1

@@ -194,6 +194,7 @@ class MapCanvas(QWidget):
         # Active touch points by id, for pan (1 finger) and pinch (2).
         self._touch_points: dict[int, QPointF] = {}
         self._pinch_last_dist: float | None = None
+        self._touch_forward_target: QWidget | None = None
 
     # ---- public API ----
 
@@ -403,11 +404,14 @@ class MapCanvas(QWidget):
             points = event.points()
             # Single-finger only — a button press never involves a second
             # finger, and forwarding mid-pinch would be meaningless.
-            if len(points) == 1:
-                target = self._visible_widget_at(points[0].position())
-            else:
-                target = None
+            single_point = points[0] if len(points) == 1 else None
 
+            if et == QEvent.Type.TouchBegin:
+                self._touch_forward_target = (
+                    self._visible_widget_at(single_point.position()) if single_point is not None else None
+                )
+
+            target = self._touch_forward_target
             if target is not None:
                 # Once ANY widget in this ancestry accepts raw touch
                 # (WA_AcceptTouchEvents, set on MapCanvas itself), Qt stops
@@ -419,8 +423,23 @@ class MapCanvas(QWidget):
                 # there was simply no mouse event for Qt to deliver to it.
                 # So instead of hoping Qt does it, forward a real
                 # QMouseEvent to the target widget ourselves.
-                self._forward_touch_as_mouse(event.type(), target, points[0])
+                #
+                # The target is captured once, at TouchBegin, and reused
+                # for the whole gesture rather than re-resolved from the
+                # current finger position on every TouchUpdate — a real
+                # mouse drag keeps delivering moves to whatever widget had
+                # the press even if the cursor drifts outside its bounds
+                # (how QSlider dragging normally works), and re-resolving
+                # per-event would drop that grab the instant a finger
+                # slides a few pixels past the slider's edge.
+                if single_point is not None:
+                    self._forward_touch_as_mouse(et, target, single_point)
+                if et == QEvent.Type.TouchEnd:
+                    self._touch_forward_target = None
                 return True
+
+            if et == QEvent.Type.TouchEnd:
+                self._touch_forward_target = None
 
             # Not over any interactive child — MapCanvas's own pan/pinch
             # handling owns it. Consumed here, deliberately — letting this
@@ -435,6 +454,11 @@ class MapCanvas(QWidget):
         local_pos = target.mapFrom(self, point.position().toPoint())
         if event_type == QEvent.Type.TouchBegin:
             mouse_type, buttons = QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton
+        elif event_type == QEvent.Type.TouchUpdate:
+            # Needed for anything that tracks a drag position while
+            # pressed (QSlider chief among them) — TouchBegin/TouchEnd
+            # alone only ever produced a click, never a drag.
+            mouse_type, buttons = QEvent.Type.MouseMove, Qt.MouseButton.LeftButton
         elif event_type == QEvent.Type.TouchEnd:
             mouse_type, buttons = QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton
         else:
