@@ -349,14 +349,57 @@ class MapCanvas(QWidget):
 
     # ---- touch (pan with 1 finger, pinch-to-zoom with 2) ----
 
+    def _visible_widget_at(self, pos: QPointF) -> QWidget | None:
+        """Manual recursive hit-test — QWidget.childAt() was tried first
+        and turned out to be unreliable (confirmed: returned None for a
+        point that was demonstrably inside a real, visible, properly laid
+        out button's geometry), so this doesn't depend on it.
+
+        Skips past any widget with WA_TransparentForMouseEvents set (the
+        content overlay itself carries this) rather than treating it as a
+        hit — otherwise every point anywhere on screen would "find" that
+        overlay (it spans the whole area) and get treated as blocked, even
+        where there's genuinely no button underneath."""
+        point = pos.toPoint()
+        current: QWidget = self
+        while True:
+            found = None
+            for child in current.children():
+                if not isinstance(child, QWidget) or not child.isVisible():
+                    continue
+                if not child.geometry().contains(point):
+                    continue
+                found = child
+                point = point - child.geometry().topLeft()
+                break
+            if found is None:
+                if current is self or current.testAttribute(Qt.WA_TransparentForMouseEvents):
+                    return None
+                return current
+            current = found
+
     def event(self, event) -> bool:
         et = event.type()
         if et in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
-            self._handle_touch(event)
-            # Consumed here, deliberately — letting this fall through would
-            # let Qt *also* synthesize a mouse event from the same physical
-            # touch, double-handling the same finger movement.
-            return True
+            # Only claimed by MapCanvas's own pan/pinch handling when the
+            # touch isn't actually over one of its child widgets (buttons,
+            # the search bar, etc. all live inside a content overlay that's
+            # a real child of this widget). Real bug this fixes: since
+            # MapCanvas is the only widget in that whole subtree with
+            # WA_AcceptTouchEvents set, Qt was routing every touch in its
+            # bounds straight to this event() override regardless of what
+            # visually sits on top — including buttons — and the old
+            # unconditional "return True" swallowed those touches before
+            # a button ever got a chance to see them at all.
+            points = event.points()
+            over_child = any(self._visible_widget_at(p.position()) is not None for p in points)
+            if not over_child:
+                self._handle_touch(event)
+                # Consumed here, deliberately — letting this fall through
+                # would let Qt *also* synthesize a mouse event from the
+                # same physical touch, double-handling the same finger
+                # movement.
+                return True
         return super().event(event)
 
     def _handle_touch(self, event) -> None:
