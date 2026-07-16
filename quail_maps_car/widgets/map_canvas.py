@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -31,7 +31,7 @@ MIN_SCALE = 0.02
 # actually checking the resulting displayed radius instead of assuming a
 # bigger number was automatically enough) so a genuine street-level view is
 # actually reachable instead of silently capped.
-MAX_SCALE = 25.0
+MAX_SCALE = 50.0
 
 # Discrete zoom "snap points" the tile cache renders at, geometrically
 # spaced by the same 1.3x step zoom_in()/zoom_out() already used — mirrors
@@ -145,6 +145,14 @@ class MapCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
+        # Real touch handling below (event() override) instead of relying
+        # on the platform to synthesize mouse events from touch input —
+        # on this embedded Linux touchscreen, plain single-finger drag was
+        # reportedly doing nothing at all, which points at exactly that
+        # synthesis not happening reliably. This also makes real
+        # multi-touch (pinch-to-zoom) possible at all, which mouse events
+        # fundamentally can't represent.
+        self.setAttribute(Qt.WA_AcceptTouchEvents, True)
         self._center = (0.0, 0.0)
         self._scale = 0.1  # pixels per meter
         self._places: list[Place] = []
@@ -163,6 +171,9 @@ class MapCanvas(QWidget):
         # car automatically every position update; a manual pan/zoom flips
         # this off until recenter() is called (typically via a button tap).
         self._follow_mode = True
+        # Active touch points by id, for pan (1 finger) and pinch (2).
+        self._touch_points: dict[int, QPointF] = {}
+        self._pinch_last_dist: float | None = None
 
     # ---- public API ----
 
@@ -334,6 +345,47 @@ class MapCanvas(QWidget):
             self.zoom_in()
         else:
             self.zoom_out()
+
+    # ---- touch (pan with 1 finger, pinch-to-zoom with 2) ----
+
+    def event(self, event) -> bool:
+        et = event.type()
+        if et in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
+            self._handle_touch(event)
+            # Consumed here, deliberately — letting this fall through would
+            # let Qt *also* synthesize a mouse event from the same physical
+            # touch, double-handling the same finger movement.
+            return True
+        return super().event(event)
+
+    def _handle_touch(self, event) -> None:
+        self._break_follow()
+        current = {p.id(): p.position() for p in event.points()}
+
+        if len(current) == 1:
+            (point_id, pos), = current.items()
+            if self._touch_points.keys() == current.keys() and point_id in self._touch_points:
+                last = self._touch_points[point_id]
+                delta = pos - last
+                cx, cy = self._center
+                self._center = (cx - delta.x() / self._scale, cy + delta.y() / self._scale)
+                self.update()
+        elif len(current) >= 2:
+            ids = sorted(current.keys())[:2]
+            p1, p2 = current[ids[0]], current[ids[1]]
+            dist = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
+            same_pair = self._touch_points.keys() >= set(ids)
+            if same_pair and self._pinch_last_dist and self._pinch_last_dist > 1.0:
+                factor = dist / self._pinch_last_dist
+                self._scale = max(MIN_SCALE, min(MAX_SCALE, self._scale * factor))
+                self.update()
+            self._pinch_last_dist = dist
+
+        if event.type() == QEvent.Type.TouchEnd or not current:
+            self._touch_points = {}
+            self._pinch_last_dist = None
+        else:
+            self._touch_points = current
 
     # ---- painting ----
 
