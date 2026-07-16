@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS cities (
     population INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cities_latlon ON cities(lat, lon);
+CREATE TABLE IF NOT EXISTS areas (
+    osm_id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    ring_json TEXT NOT NULL,
+    lat_min REAL NOT NULL,
+    lat_max REAL NOT NULL,
+    lon_min REAL NOT NULL,
+    lon_max REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_areas_bbox ON areas(lat_min, lat_max, lon_min, lon_max);
 CREATE TABLE IF NOT EXISTS region_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -82,7 +92,10 @@ CREATE TABLE places (
     name TEXT NOT NULL,
     address TEXT NOT NULL,
     icon TEXT NOT NULL,
-    category TEXT NOT NULL
+    category TEXT NOT NULL,
+    opening_hours TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    website TEXT NOT NULL DEFAULT ''
 );
 CREATE VIRTUAL TABLE places_fts USING fts5(
     name, address, category, content='places', content_rowid='rowid'

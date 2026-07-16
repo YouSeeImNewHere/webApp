@@ -35,7 +35,11 @@ class IdleScreen(QWidget):
         base.setContentsMargins(0, 0, 0, 0)
 
         self.map_bg = MapCanvas()
-        self._places = fetch_places()
+        # Bounded to the immediate area on open — a real extract can have
+        # thousands of POIs across its full 40km radius, and neither
+        # fetching nor rendering all of them at once is worth it just to
+        # show the idle screen. Zooming out is one tap away if wanted.
+        self._places = fetch_places(max_distance_mi=1.0)
         self.map_bg.set_places(self._places)
         start = GRAPH.nodes["START"]
         self.map_bg.set_user_position(start.east, start.north)
@@ -124,7 +128,7 @@ class IdleScreen(QWidget):
             return
         self._framed_once = True
         start = GRAPH.nodes["START"]
-        points = [(start.east, start.north)] + [
-            (GRAPH.nodes[p.node_id].east, GRAPH.nodes[p.node_id].north) for p in self._places
-        ]
-        self.map_bg.frame_points(points, margins=(80, 20, 260, 20))
+        # Fixed ~1 mile radius on open, not zoomed out to fit every loaded
+        # place — matches how far away nearby POIs actually are, and the
+        # user can zoom out manually if they want the wider picture.
+        self.map_bg.center_on_with_radius(start.east, start.north, 1609.34)

@@ -1,22 +1,118 @@
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPen, QWheelEvent
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import QWidget
 
 from ..geo.roadnet import GRAPH
 from ..geo.search_db import Place
 from ..theme import ACCENT
+from .tile_cache import TileCache
 
 MIN_SCALE = 0.02
 MAX_SCALE = 0.6
 
+# Discrete zoom "snap points" the tile cache renders at, geometrically
+# spaced by the same 1.3x step zoom_in()/zoom_out() already used — mirrors
+# QuailAndroid's integer z11-z18 slippy-map levels, just adapted to this
+# app's local flat-meter coordinate frame instead of lat/lon Web Mercator.
+# Panning within one zoom level reuses cached tiles; the displayed image is
+# scaled slightly to match the continuous _scale between snap points, the
+# same way real slippy maps look a bit soft until the next zoom snap.
+ZOOM_LEVELS: list[float] = []
+_level = MIN_SCALE
+while _level < MAX_SCALE:
+    ZOOM_LEVELS.append(_level)
+    _level *= 1.3
+ZOOM_LEVELS.append(MAX_SCALE)
+
+TILE_SIZE_PX = 256
+
+# Spatial grid cell size (meters) for indexing GRAPH.edges. Without this,
+# rendering a tile meant scanning *every* edge in the whole graph to find
+# the handful that overlap it — fine against the 18-edge synthetic network,
+# but against a real OSM extract (tens of thousands of edges from
+# way_nodes) that's a whole-graph scan per tile, times every visible tile,
+# times every zoom level ever visited — exactly what froze the app the
+# first time a real extract loaded. Built once and reused for the whole
+# GRAPH's lifetime (rebuilt only if the app restarts with different data).
+_EDGE_GRID_CELL_M = 1000.0
+_edge_grid_cache: dict[tuple[int, int], list] | None = None
+
+
+# If a single edge's bounding box would span more than this many grid
+# cells, it gets bucketed as "long" instead of inserted into every cell it
+# crosses — real OSM ways are almost always short segments between
+# adjacent nodes, but an occasional long one (a highway segment, a bridge,
+# a coastline-following road) shouldn't be able to blow up index-build time
+# by fanning out into thousands of cell insertions.
+_MAX_CELLS_PER_EDGE = 64
+
+_LONG_EDGES_KEY = "__long__"
+
+
+def _edge_grid() -> dict:
+    global _edge_grid_cache
+    if _edge_grid_cache is not None:
+        return _edge_grid_cache
+
+    grid: dict = {_LONG_EDGES_KEY: []}
+    cell = _EDGE_GRID_CELL_M
+    for edge in GRAPH.edges:
+        a = GRAPH.nodes.get(edge.a)
+        b = GRAPH.nodes.get(edge.b)
+        if a is None or b is None:
+            continue
+        min_e, max_e = min(a.east, b.east), max(a.east, b.east)
+        min_n, max_n = min(a.north, b.north), max(a.north, b.north)
+        cx_min, cx_max = math.floor(min_e / cell), math.floor(max_e / cell)
+        cy_min, cy_max = math.floor(min_n / cell), math.floor(max_n / cell)
+
+        cell_count = (cx_max - cx_min + 1) * (cy_max - cy_min + 1)
+        if cell_count > _MAX_CELLS_PER_EDGE:
+            grid[_LONG_EDGES_KEY].append(edge)
+            continue
+
+        for cx in range(cx_min, cx_max + 1):
+            for cy in range(cy_min, cy_max + 1):
+                grid.setdefault((cx, cy), []).append(edge)
+
+    _edge_grid_cache = grid
+    return grid
+
+
+def _edges_near(min_e: float, max_e: float, min_n: float, max_n: float) -> set:
+    cell = _EDGE_GRID_CELL_M
+    grid = _edge_grid()
+    cx_min, cx_max = math.floor(min_e / cell), math.floor(max_e / cell)
+    cy_min, cy_max = math.floor(min_n / cell), math.floor(max_n / cell)
+    found: set = set(grid[_LONG_EDGES_KEY])
+    for cx in range(cx_min, cx_max + 1):
+        for cy in range(cy_min, cy_max + 1):
+            found.update(grid.get((cx, cy), ()))
+    return found
+
 
 class MapCanvas(QWidget):
-    """Renders the local road graph with real QPainter drawing: no tiles,
-    no web view — roads, POIs, the active route, and the user's position
-    are all drawn directly from the routing graph's own coordinates. Pan
-    with drag, zoom with the scroll wheel or the +/- buttons."""
+    """Renders the local road graph via a tile cache: the road network is
+    pre-rendered once per (zoom level, tile) into a QPixmap and reused on
+    every subsequent pan/repaint that revisits it, instead of iterating the
+    full graph and redrawing every edge on every frame. POIs, the active
+    route, and the user's position are drawn as a live overlay on top of
+    the cached tiles, since those change often and are cheap to redraw.
+    Pan with drag, zoom with the scroll wheel or the +/- buttons."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,6 +124,7 @@ class MapCanvas(QWidget):
         self._user_pos = (0.0, 0.0)
         self._dragging = False
         self._drag_last: QPointF | None = None
+        self._tile_cache = TileCache()
 
     # ---- public API ----
 
@@ -49,6 +146,18 @@ class MapCanvas(QWidget):
 
     def center_on(self, east: float, north: float) -> None:
         self._center = (east, north)
+        self.update()
+
+    def center_on_with_radius(self, east: float, north: float, radius_m: float) -> None:
+        """Show a fixed radius around a point — unlike frame_points(), this
+        deliberately ignores how far-flung the loaded data is. The default
+        view on open should be "my immediate area," not zoomed out to fit
+        every place that happens to be loaded; the user zooms out manually
+        if they want to see farther."""
+        self._center = (east, north)
+        half_span = max(radius_m, 50.0)
+        scale = min(self.width(), self.height()) / 2 / half_span
+        self._scale = max(MIN_SCALE, min(MAX_SCALE, scale))
         self.update()
 
     def frame_points(
@@ -141,27 +250,131 @@ class MapCanvas(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), QColor("#0a0d13"))
 
-        self._draw_roads(painter)
+        # Antialiasing + smooth pixmap scaling here would apply to every
+        # single tile blit, on every repaint, including every mouse-move
+        # event during a drag — on Qt's CPU software rasterizer (no GPU on
+        # the mini PC, unlike the Pixel 7a's hardware-accelerated Compose
+        # rendering), that's a real, well-known perf killer for repeated
+        # scaled-pixmap compositing. Off here; only the much cheaper
+        # overlay draws below (route line, a handful of dots, one user
+        # marker) opt back in, since those actually benefit visually and
+        # are cheap regardless of antialiasing.
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, False)
+        self._draw_road_tiles(painter)
+
+        painter.setRenderHint(QPainter.Antialiasing, True)
         if self._route_points:
             self._draw_route(painter)
         self._draw_places(painter)
         self._draw_user(painter)
 
-    def _draw_roads(self, painter: QPainter) -> None:
-        for edge in GRAPH.edges:
+    # ---- tiled road rendering ----
+
+    def _nearest_zoom_index(self) -> int:
+        # Nearest in log-space, since the levels are geometrically spaced.
+        target = math.log(self._scale)
+        return min(
+            range(len(ZOOM_LEVELS)),
+            key=lambda i: abs(math.log(ZOOM_LEVELS[i]) - target),
+        )
+
+    def _draw_road_tiles(self, painter: QPainter) -> None:
+        if not GRAPH.edges:
+            return
+        zoom_idx = self._nearest_zoom_index()
+        tile_scale = ZOOM_LEVELS[zoom_idx]
+        tile_size_m = TILE_SIZE_PX / tile_scale
+
+        half_w_m = self.width() / 2 / self._scale
+        half_h_m = self.height() / 2 / self._scale
+        cx, cy = self._center
+
+        tx_min = math.floor((cx - half_w_m) / tile_size_m)
+        tx_max = math.floor((cx + half_w_m) / tile_size_m)
+        ty_min = math.floor((cy - half_h_m) / tile_size_m)
+        ty_max = math.floor((cy + half_h_m) / tile_size_m)
+
+        for tx in range(tx_min, tx_max + 1):
+            for ty in range(ty_min, ty_max + 1):
+                pixmap = self._get_or_render_tile(zoom_idx, tx, ty, tile_scale, tile_size_m)
+                world_left = tx * tile_size_m
+                world_bottom = ty * tile_size_m
+                world_right = world_left + tile_size_m
+                world_top = world_bottom + tile_size_m
+                # North is up, so the world's top edge is the screen's top —
+                # _to_screen already flips the y axis for us.
+                top_left = self._to_screen(world_left, world_top)
+                bottom_right = self._to_screen(world_right, world_bottom)
+                painter.drawPixmap(QRectF(top_left, bottom_right), pixmap, QRectF(pixmap.rect()))
+
+    def _get_or_render_tile(
+        self, zoom_idx: int, tx: int, ty: int, tile_scale: float, tile_size_m: float
+    ) -> QPixmap:
+        key = (zoom_idx, tx, ty)
+        cached = self._tile_cache.get(key)
+        if cached is not None:
+            return cached
+        pixmap = self._render_tile(tx, ty, tile_scale, tile_size_m)
+        self._tile_cache.put(key, pixmap)
+        return pixmap
+
+    def _render_tile(self, tx: int, ty: int, tile_scale: float, tile_size_m: float) -> QPixmap:
+        pixmap = QPixmap(TILE_SIZE_PX, TILE_SIZE_PX)
+        pixmap.fill(Qt.transparent)
+        tile_painter = QPainter(pixmap)
+        tile_painter.setRenderHint(QPainter.Antialiasing)
+
+        origin_e = tx * tile_size_m
+        origin_n = ty * tile_size_m
+
+        def to_tile_px(east: float, north: float) -> QPointF:
+            px = (east - origin_e) * tile_scale
+            py = TILE_SIZE_PX - (north - origin_n) * tile_scale
+            return QPointF(px, py)
+
+        # Cheap per-edge bounding-box cull against the tile's world bbox
+        # (with a small margin for line width) — a QPixmap paint device
+        # clips anything drawn outside its own bounds automatically, so a
+        # bbox-level overlap check is enough; no need for real line-segment
+        # clipping to get correct-looking tile edges.
+        margin_m = 8.0 / tile_scale
+        tile_min_e, tile_max_e = origin_e - margin_m, origin_e + tile_size_m + margin_m
+        tile_min_n, tile_max_n = origin_n - margin_m, origin_n + tile_size_m + margin_m
+
+        for edge in _edges_near(tile_min_e, tile_max_e, tile_min_n, tile_max_n):
             a = GRAPH.nodes[edge.a]
             b = GRAPH.nodes[edge.b]
-            p1 = self._to_screen(a.east, a.north)
-            p2 = self._to_screen(b.east, b.north)
+            edge_min_e, edge_max_e = min(a.east, b.east), max(a.east, b.east)
+            edge_min_n, edge_max_n = min(a.north, b.north), max(a.north, b.north)
+            if edge_max_e < tile_min_e or edge_min_e > tile_max_e:
+                continue
+            if edge_max_n < tile_min_n or edge_min_n > tile_max_n:
+                continue
+
+            p1 = to_tile_px(a.east, a.north)
+            p2 = to_tile_px(b.east, b.north)
             if edge.road_class == "highway":
                 pen = QPen(QColor("#3a4356"), 6, Qt.SolidLine, Qt.RoundCap)
             else:
                 pen = QPen(QColor("#242c3a"), 4, Qt.SolidLine, Qt.RoundCap)
-            painter.setPen(pen)
-            painter.drawLine(p1, p2)
+            tile_painter.setPen(pen)
+            tile_painter.drawLine(p1, p2)
+
+        tile_painter.end()
+        return pixmap
+
+    def invalidate_tiles(self) -> None:
+        """Call if the underlying road graph is ever reloaded at runtime
+        (e.g. a fresh car-drive sync) — otherwise stale cached tiles (and
+        the stale spatial edge index) from the old data would keep being
+        reused for the rest of the session."""
+        global _edge_grid_cache
+        _edge_grid_cache = None
+        self._tile_cache.clear()
+        self.update()
 
     def _draw_route(self, painter: QPainter) -> None:
         path = QPainterPath()
@@ -175,17 +388,19 @@ class MapCanvas(QWidget):
         painter.drawPath(path)
 
     def _draw_places(self, painter: QPainter) -> None:
-        font = QFont()
-        font.setPixelSize(13)
-        painter.setFont(font)
+        # Plain dots, not emoji-in-a-circle: drawText() with a font lookup
+        # is real per-call overhead in Qt, and with a real extract's POI
+        # count (versus the handful in the old synthetic seed data) that
+        # overhead multiplied by every visible place was a big chunk of the
+        # "everything is slow" feeling. A dot is one drawEllipse() call.
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(ACCENT)))
         for place in self._places:
-            node = GRAPH.nodes[place.node_id]
+            node = GRAPH.nodes.get(place.node_id)
+            if node is None:
+                continue
             pt = self._to_screen(node.east, node.north)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(QColor("#171c26")))
-            painter.drawEllipse(pt, 13, 13)
-            painter.setPen(QPen(QColor("#f4f6fa")))
-            painter.drawText(QRectF(pt.x() - 13, pt.y() - 13, 26, 26), Qt.AlignCenter, place.icon)
+            painter.drawEllipse(pt, 5, 5)
 
     def _draw_user(self, painter: QPainter) -> None:
         pt = self._to_screen(*self._user_pos)

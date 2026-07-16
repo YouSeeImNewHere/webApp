@@ -54,7 +54,8 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
         ).fetchall()
 
         place_rows = master.execute(
-            "SELECT osm_id, node_id, lat, lon, name, address, icon, category FROM places "
+            "SELECT osm_id, node_id, lat, lon, name, address, icon, category, "
+            "opening_hours, phone, website FROM places "
             "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
             (lat_min, lat_max, lon_min, lon_max),
         ).fetchall()
@@ -145,9 +146,13 @@ def build_city_extract(
                 "INSERT OR IGNORE INTO nodes (id, east, north, label) VALUES (?,?,?,?)",
                 (node_id, east, north, r["name"]),
             )
-        place_insert_rows.append((r["osm_id"], node_id, r["name"], r["address"], r["icon"], r["category"]))
+        place_insert_rows.append((
+            r["osm_id"], node_id, r["name"], r["address"], r["icon"], r["category"],
+            r["opening_hours"] or "", r["phone"] or "", r["website"] or "",
+        ))
     cur.executemany(
-        "INSERT INTO places (id, node_id, name, address, icon, category) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO places (id, node_id, name, address, icon, category, opening_hours, phone, website) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         place_insert_rows,
     )
 

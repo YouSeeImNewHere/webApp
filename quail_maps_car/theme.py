@@ -129,6 +129,10 @@ QPushButton#startNavButton {{
     font-weight: 800;
     color: white;
 }}
+QPushButton#startNavButton:disabled {{
+    background-color: {SURFACE_RAISED};
+    color: {TEXT_DIM};
+}}
 
 #navBanner, #navBottomBar {{
     background-color: rgba(17,21,29,0.94);

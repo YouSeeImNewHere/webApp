@@ -85,6 +85,45 @@ POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
     ("shop", "variety_store"): ("shopping", "\U0001f3ec"),
     ("shop", "mall"): ("shopping", "\U0001f3ec"),
     ("amenity", "pharmacy"): ("pharmacy", "\U0001f48a"),
+    # Emergency / breakdown — specifically road-trip relevant, missing
+    # before this pass.
+    ("amenity", "hospital"): ("hospital", "\U0001f3e5"),
+    ("amenity", "clinic"): ("hospital", "\U0001f3e5"),
+    ("amenity", "police"): ("police", "\U0001f46e"),
+    ("shop", "car_repair"): ("repair", "\U0001f527"),
+    # Highway rest areas / service plazas — tagged on the `highway` key,
+    # not `amenity`/`shop`, so `_POI_TAG_KEYS` below needs `"highway"`
+    # added for these to ever be checked. Distinct from routable highway
+    # classification (HIGHWAY_CLASS_SPEED above), which doesn't recognize
+    # these values either — a rest_area/services way is a POI, not a road.
+    ("highway", "rest_area"): ("rest_area", "\U0001f17f️"),
+    ("highway", "services"): ("rest_area", "⛽"),
+    # Civic / errand services — real, user-confirmed gap: these tags exist
+    # in OSM but weren't in _POI_TAG_KEYS/POI_TAG_CATEGORY at all before
+    # this pass, meaning DMV offices, post offices, banks, notaries etc.
+    # weren't just mis-categorized, they were dropped entirely and
+    # unfindable even by name search. "office" added to _POI_TAG_KEYS below
+    # for the office=* entries to ever be checked.
+    ("amenity", "post_office"): ("government", "\U0001f4ee"),
+    ("amenity", "bank"): ("bank", "\U0001f3e6"),
+    ("amenity", "atm"): ("bank", "\U0001f3e7"),
+    ("amenity", "townhall"): ("government", "\U0001f3db️"),
+    ("amenity", "courthouse"): ("government", "\U0001f3db️"),
+    ("amenity", "library"): ("government", "\U0001f4da"),
+    # office=government covers DMV/tax/register offices broadly — OSM's
+    # tagging for exactly which government service a given office=government
+    # node provides is inconsistent in practice (sometimes a `government=*`
+    # subtag like "tax" or "register_office", often just a descriptive
+    # `name`), so this deliberately casts a wide net rather than trying to
+    # enumerate every government= subvalue — once captured, a real place
+    # like a specific DMV branch becomes findable by name search
+    # ("Department of Licensing", "DMV", etc.) even without a precise
+    # category label for it.
+    ("office", "government"): ("government", "\U0001f3db️"),
+    ("office", "notary"): ("notary", "\U0001f58b️"),
+    # UPS Store / FedEx Office etc. are near-universally tagged as a copy
+    # shop in OSM, not anything shipping/notary-specific.
+    ("shop", "copyshop"): ("shipping", "\U0001f4e6"),
     # Tourism / points of attraction
     ("tourism", "attraction"): ("attraction", "\U0001f3a1"),
     ("tourism", "museum"): ("museum", "\U0001f3db️"),
@@ -123,7 +162,11 @@ POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
 }
 
 # OSM tag keys checked, in order, when classifying a node's POI category.
-_POI_TAG_KEYS = ("amenity", "shop", "tourism", "leisure", "historic", "natural")
+# "highway" is here only for the rest_area/services values above — every
+# other highway=* value is road classification (HIGHWAY_CLASS_SPEED), not a
+# POI, and simply won't match anything in POI_TAG_CATEGORY. "office" is for
+# office=government/notary — government/civic services.
+_POI_TAG_KEYS = ("amenity", "shop", "tourism", "leisure", "historic", "natural", "highway", "office")
 
 # place=* values captured into the separate `cities` table (city/discovery
 # UI's "nearby cities" section) — deliberately excludes hamlet/suburb/etc.,
@@ -136,4 +179,32 @@ def classify_poi(tags: dict[str, str]) -> tuple[str, str] | None:
         value = tags.get(key)
         if value and (key, value) in POI_TAG_CATEGORY:
             return POI_TAG_CATEGORY[(key, value)]
+    return None
+
+
+# Way tags that indicate a fillable area — captured now (schema.py's
+# `areas` table) for a future terrain/land-use basemap renderer, even
+# though tile_render.py doesn't draw them yet, so building that renderer
+# later doesn't require another full nationwide reimport just to get the
+# geometry. ("*" means "any non-empty value of this key" — landuse/building
+# have far too many specific values to enumerate individually and none of
+# them matter yet since nothing renders these fills.) Checked against a
+# CLOSED way's tags only — first match wins.
+AREA_TAG_KIND: list[tuple[str, str, str]] = [
+    ("natural", "water", "water"),
+    ("leisure", "park", "park"),
+    ("leisure", "garden", "park"),
+    ("leisure", "nature_reserve", "park"),
+    ("landuse", "*", "landuse"),
+    ("building", "*", "building"),
+]
+
+
+def classify_area(tags: dict[str, str]) -> str | None:
+    for key, value, kind in AREA_TAG_KIND:
+        actual = tags.get(key)
+        if not actual:
+            continue
+        if value == "*" or actual == value:
+            return kind
     return None

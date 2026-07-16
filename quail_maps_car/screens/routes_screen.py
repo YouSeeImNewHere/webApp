@@ -107,6 +107,23 @@ class RoutesScreen(OpaqueScreen):
                 widget.hide()
                 widget.deleteLater()
 
+        self.start_btn.setEnabled(bool(self._routes))
+
+        if not self._routes:
+            # compute_routes() can legitimately come back empty — most
+            # likely the destination is outside the loaded road graph's
+            # radius (roadnet.py bounds it to 3mi for load performance).
+            # This used to fail completely silently: _start_drive() just
+            # returned early with nothing shown, so pressing "Start Drive"
+            # looked like the button was simply broken.
+            empty = QLabel("No route found. This destination may be outside your loaded map area.")
+            empty.setStyleSheet(DIM_TEXT_STYLE)
+            empty.setWordWrap(True)
+            empty.setAlignment(Qt.AlignCenter)
+            self.route_list_layout.addWidget(empty)
+            self.route_list_layout.addStretch(1)
+            return
+
         now = datetime.now()
         for index, route in enumerate(self._routes):
             arrival = now + timedelta(minutes=route.minutes)

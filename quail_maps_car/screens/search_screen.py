@@ -16,6 +16,13 @@ from ..theme import DIM_TEXT_STYLE, RESULT_ICON_STYLE, RESULT_NAME_STYLE, RESULT
 from ..widgets.clickable import ClickableWidget
 from ..widgets.opaque_screen import OpaqueScreen
 
+# Building a real Qt widget (icon + two labels) per result is real
+# per-row cost — against a real extract's POI count (versus a handful in
+# the old synthetic seed data), rendering every match unconditionally was
+# a big part of the app feeling slow to use. Nobody scrolls through
+# hundreds of results in a car anyway.
+_MAX_RESULTS = 40
+
 
 class SearchScreen(OpaqueScreen):
     back_requested = Signal()
@@ -79,7 +86,12 @@ class SearchScreen(OpaqueScreen):
 
     def _refresh_results(self):
         query = self.input.text()
-        results = fetch_places(query, self._category_filter)
+        # Blank query (just browsing, or a category chip like "gas near
+        # me") has no text to narrow the SQL match, so bound it by distance
+        # too — otherwise it's fetching and distance-sorting every place in
+        # the whole extract just to show the nearest 40 of them.
+        max_distance_mi = None if query.strip() else 15.0
+        results = fetch_places(query, self._category_filter, max_distance_mi=max_distance_mi)[:_MAX_RESULTS]
 
         while self.results_layout.count():
             item = self.results_layout.takeAt(0)

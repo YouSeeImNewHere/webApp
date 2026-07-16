@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Callable
 import osmium
 
 from .schema import open_master_db
-from .tags import CITY_PLACE_TYPES, EXCLUDE_IF_TRUTHY, classify_highway, classify_poi, parse_maxspeed
+from .tags import CITY_PLACE_TYPES, EXCLUDE_IF_TRUTHY, classify_area, classify_highway, classify_poi, parse_maxspeed
 
 _FLUSH_EVERY = 20_000
 _PROGRESS_INTERVAL_SEC = 5.0
@@ -34,10 +35,12 @@ class _MasterImportHandler(osmium.SimpleHandler):
         self._way_node_rows: list[tuple] = []
         self._place_rows: list[tuple] = []
         self._city_rows: list[tuple] = []
+        self._area_rows: list[tuple] = []
         self.way_count = 0
         self.node_count = 0
         self.place_count = 0
         self.city_count = 0
+        self.area_count = 0
         self._on_progress = on_progress
         self._last_report = time.monotonic()
 
@@ -80,6 +83,13 @@ class _MasterImportHandler(osmium.SimpleHandler):
                 self._city_rows,
             )
             self._city_rows.clear()
+        if self._area_rows:
+            self.cur.executemany(
+                "INSERT OR REPLACE INTO areas (osm_id, kind, ring_json, lat_min, lat_max, lon_min, lon_max) "
+                "VALUES (?,?,?,?,?,?,?)",
+                self._area_rows,
+            )
+            self._area_rows.clear()
         self.conn.commit()
 
     def way(self, w):
@@ -93,7 +103,11 @@ class _MasterImportHandler(osmium.SimpleHandler):
             classified = classify_highway(highway, parse_maxspeed(tags.get("maxspeed")))
             if classified is not None:
                 road_class, speed_kph = classified
-                street = tags.get("name") or highway.replace("_", " ").title()
+                # Falls back to ref (e.g. "I-90", "US-101") before the
+                # generic label — a lot of interstate/US-route segments
+                # carry no name tag at all, only ref, so without this
+                # fallback they'd render/route as a bare "Motorway".
+                street = tags.get("name") or tags.get("ref") or highway.replace("_", " ").title()
 
                 seq_nodes: list[int] = []
                 for seq, n in enumerate(w.nodes):
@@ -118,7 +132,11 @@ class _MasterImportHandler(osmium.SimpleHandler):
         # math for typically-rectangular building footprints.
         name = tags.get("name")
         poi_classified = classify_poi(tags)
-        if poi_classified is not None and name:
+        housenumber = tags.get("addr:housenumber", "")
+        street_addr = tags.get("addr:street", "")
+        address = f"{housenumber} {street_addr}".strip()
+
+        if (poi_classified is not None and name) or (housenumber and street_addr):
             lats: list[float] = []
             lons: list[float] = []
             for n in w.nodes:
@@ -126,22 +144,56 @@ class _MasterImportHandler(osmium.SimpleHandler):
                     lats.append(n.location.lat)
                     lons.append(n.location.lon)
             if lats:
-                category, icon = poi_classified
-                housenumber = tags.get("addr:housenumber", "")
-                street_addr = tags.get("addr:street", "")
-                address = f"{housenumber} {street_addr}".strip()
+                if poi_classified is not None and name:
+                    category, icon = poi_classified
+                    display_name = name
+                else:
+                    # A pure address building — no business/POI tag at all,
+                    # just addr:housenumber/addr:street on the footprint.
+                    # This is the common shape for an ordinary house: real
+                    # bug this closes is "route to a home address" being
+                    # completely unsupported, since every capture path in
+                    # this importer required a `name` tag before this.
+                    category, icon = "address", "🏠"
+                    display_name = address
                 opening_hours = tags.get("opening_hours", "")
                 phone = tags.get("phone", "") or tags.get("contact:phone", "")
                 website = tags.get("website", "") or tags.get("contact:website", "")
                 self._place_rows.append(
-                    (f"w{w.id}", None, sum(lats) / len(lats), sum(lons) / len(lons), name, address,
+                    (f"w{w.id}", None, sum(lats) / len(lats), sum(lons) / len(lons), display_name, address,
                      icon, category, opening_hours, phone, website)
                 )
                 self.place_count += 1
 
+        # Fillable area geometry (water/parks/landuse/buildings) for a
+        # future terrain/land-use basemap renderer — see classify_area()'s
+        # docstring for why this is captured now despite nothing drawing it
+        # yet. Only a CLOSED way (first and last referenced node match) is
+        # a simple polygon; OSM also represents complex/large areas as
+        # `relation` (multipolygon) features, which osmium.SimpleHandler
+        # gives no callback for here — deliberately deferred, a real but
+        # smaller residual gap than capturing no area data at all.
+        area_kind = classify_area(tags)
+        if area_kind is not None and len(w.nodes) >= 4 and w.nodes[0].ref == w.nodes[-1].ref:
+            ring: list[list[float]] = []
+            area_lats: list[float] = []
+            area_lons: list[float] = []
+            for n in w.nodes:
+                if not n.location.valid():
+                    continue
+                ring.append([n.location.lat, n.location.lon])
+                area_lats.append(n.location.lat)
+                area_lons.append(n.location.lon)
+            if len(ring) >= 4:
+                self._area_rows.append((
+                    f"w{w.id}", area_kind, json.dumps(ring),
+                    min(area_lats), max(area_lats), min(area_lons), max(area_lons),
+                ))
+                self.area_count += 1
+
         if (self.way_count and self.way_count % _FLUSH_EVERY == 0) or (
             self.place_count and self.place_count % _FLUSH_EVERY == 0
-        ):
+        ) or (self.area_count and self.area_count % _FLUSH_EVERY == 0):
             self._flush()
         self._maybe_report()
 
@@ -163,19 +215,29 @@ class _MasterImportHandler(osmium.SimpleHandler):
                 self._flush()
 
         classified = classify_poi(tags)
-        if classified is None:
-            return
-        if not name:
-            return
-        category, icon = classified
         housenumber = tags.get("addr:housenumber", "")
         street = tags.get("addr:street", "")
         address = f"{housenumber} {street}".strip()
+
+        if classified is not None and name:
+            category, icon = classified
+            display_name = name
+        elif housenumber and street:
+            # Pure address node — no business/POI tag at all, the common
+            # shape for standalone residential address points (often
+            # bulk-imported from county GIS/TIGER address data). Same fix
+            # as the way() branch above: without this, "route to a home
+            # address" was unsupported everywhere in this importer.
+            category, icon = "address", "🏠"
+            display_name = address
+        else:
+            return
+
         opening_hours = tags.get("opening_hours", "")
         phone = tags.get("phone", "") or tags.get("contact:phone", "")
         website = tags.get("website", "") or tags.get("contact:website", "")
         self._place_rows.append(
-            (f"n{n.id}", n.id, n.location.lat, n.location.lon, name, address, icon, category,
+            (f"n{n.id}", n.id, n.location.lat, n.location.lon, display_name, address, icon, category,
              opening_hours, phone, website)
         )
         self.place_count += 1
@@ -215,12 +277,14 @@ def import_region(
     conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_latlon ON nodes(lat, lon)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_places_latlon ON places(lat, lon)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cities_latlon ON cities(lat, lon)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_areas_bbox ON areas(lat_min, lat_max, lon_min, lon_max)")
     conn.commit()
 
     way_count = conn.execute("SELECT COUNT(*) FROM ways").fetchone()[0]
     node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
     place_count = conn.execute("SELECT COUNT(*) FROM places").fetchone()[0]
     city_count = conn.execute("SELECT COUNT(*) FROM cities").fetchone()[0]
+    area_count = conn.execute("SELECT COUNT(*) FROM areas").fetchone()[0]
     conn.close()
 
     elapsed = round(time.time() - started, 1)
@@ -229,6 +293,7 @@ def import_region(
         "node_count": node_count,
         "place_count": place_count,
         "city_count": city_count,
+        "area_count": area_count,
         "elapsed_sec": elapsed,
         "size_bytes": master_db_path.stat().st_size,
     }
