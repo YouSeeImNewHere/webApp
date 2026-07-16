@@ -114,6 +114,35 @@ def build_city_extract(
     cur = extract.cursor()
 
     node_id_map = {osm_id: f"n{osm_id}" for osm_id in node_positions}
+
+    # A coarse spatial grid for nearest-node snapping below — a real
+    # extract can have millions of routable nodes and thousands of POIs
+    # that need snapping (any POI whose own OSM node isn't part of a kept
+    # way), and an O(n) linear scan per POI over millions of nodes is
+    # not something Python finishes in any reasonable time at that scale.
+    _GRID_CELL_DEG = 0.005  # roughly ~500m at mid latitudes
+    _grid: dict[tuple[int, int], list[int]] = {}
+    for osm_id, (lat, lon) in node_positions.items():
+        key = (int(lat / _GRID_CELL_DEG), int(lon / _GRID_CELL_DEG))
+        _grid.setdefault(key, []).append(osm_id)
+
+    def _nearest_node(lat: float, lon: float) -> int | None:
+        if not node_positions:
+            return None
+        cx, cy = int(lat / _GRID_CELL_DEG), int(lon / _GRID_CELL_DEG)
+        for radius in range(0, 200):
+            candidates: list[int] = []
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    candidates.extend(_grid.get((cx + dx, cy + dy), ()))
+            if candidates:
+                return min(
+                    candidates,
+                    key=lambda nid: (node_positions[nid][0] - lat) ** 2
+                    + (node_positions[nid][1] - lon) ** 2,
+                )
+        return None
+
     node_insert_rows = []
     for osm_id, (lat, lon) in node_positions.items():
         east, north = _project(lat, lon, center_lat, center_lon)
@@ -151,12 +180,8 @@ def build_city_extract(
                 "INSERT OR IGNORE INTO nodes (id, east, north, label) VALUES (?,?,?,?)",
                 (node_id, east, north, r["name"]),
             )
-            if node_positions:
-                nearest_osm_id = min(
-                    node_positions,
-                    key=lambda nid: (node_positions[nid][0] - r["lat"]) ** 2
-                    + (node_positions[nid][1] - r["lon"]) ** 2,
-                )
+            nearest_osm_id = _nearest_node(r["lat"], r["lon"])
+            if nearest_osm_id is not None:
                 nearest_id = node_id_map[nearest_osm_id]
                 cur.execute(
                     "INSERT INTO edges (a, b, street, road_class, speed_kph) VALUES (?,?,?,?,?)",

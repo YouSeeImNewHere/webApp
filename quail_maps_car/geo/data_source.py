@@ -63,7 +63,13 @@ def fetch_extract(
         )
     resp = requests.get(
         f"{base_url}/api/maps/extract",
-        params={"lat": lat, "lon": lon, "radius_km": radius_km},
+        # refresh=true: the endpoint caches its output by a hash of
+        # lat/lon/radius (app/routers/maps.py) — without this, re-running
+        # this script after a server-side extract-building fix just gets
+        # the same stale cached file back, silently. This tool exists
+        # specifically to (re-)pull fresh data, so there's no case where a
+        # stale cache is actually what's wanted here.
+        params={"lat": lat, "lon": lon, "radius_km": radius_km, "refresh": "true"},
         headers={"Authorization": f"Bearer {token}"},
         timeout=180,
     )
