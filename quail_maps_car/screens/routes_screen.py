@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -29,6 +29,30 @@ from ..theme import (
 from ..widgets.clickable import ClickableWidget
 
 
+class _RouteWorker(QThread):
+    """compute_routes() now does adaptive bbox-widening SQL queries against
+    the full real extract (can be a multi-million-row file) plus a Dijkstra
+    connectivity check per widening attempt — genuinely slow enough on the
+    mini PC's weak CPU to look exactly like a hang if it runs on the UI
+    thread, which is what "python3 not responding" actually was. Runs the
+    computation here instead so the UI stays responsive and can show a
+    loading state instead of appearing frozen."""
+
+    routes_ready = Signal(list)
+
+    def __init__(self, start_id: str, goal_id: str, parent=None):
+        super().__init__(parent)
+        self._start_id = start_id
+        self._goal_id = goal_id
+
+    def run(self):
+        try:
+            routes = compute_routes(self._start_id, self._goal_id)
+        except Exception:
+            routes = []
+        self.routes_ready.emit(routes)
+
+
 class RoutesScreen(QWidget):
     """A bottom-sheet overlay (same pattern as PlaceDetailScreen), not a
     full page — hosted directly in MainWindow layered above the screen
@@ -44,6 +68,8 @@ class RoutesScreen(QWidget):
         self._place: Place | None = None
         self._routes: list[RouteOption] = []
         self._selected_index = 0
+        self._worker: _RouteWorker | None = None
+        self._request_token = 0
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -127,12 +153,44 @@ class RoutesScreen(QWidget):
 
     def open_for(self, place: Place):
         self._place = place
-        self._routes = compute_routes("START", place.node_id)
+        self._routes = []
         self._selected_index = 0
         self.destination_label.setText(place.name)
-        self._render_routes()
+        self._show_loading()
         self.show()
         self.raise_()
+
+        self._request_token += 1
+        token = self._request_token
+        worker = _RouteWorker("START", place.node_id, self)
+        worker.routes_ready.connect(lambda routes: self._on_routes_ready(token, routes))
+        worker.finished.connect(worker.deleteLater)
+        self._worker = worker
+        worker.start()
+
+    def _show_loading(self):
+        while self.route_list_layout.count():
+            item = self.route_list_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.hide()
+                widget.deleteLater()
+        self.start_btn.setEnabled(False)
+        loading = QLabel("Finding route…")
+        loading.setStyleSheet(DIM_TEXT_STYLE)
+        loading.setAlignment(Qt.AlignCenter)
+        self.route_list_layout.addWidget(loading)
+        self.route_list_layout.addStretch(1)
+
+    def _on_routes_ready(self, token: int, routes: list[RouteOption]):
+        # A second tap (a different destination, or reopening this one)
+        # before the first request finished would otherwise let a slower,
+        # stale result clobber whatever the newer request found.
+        if token != self._request_token:
+            return
+        self._routes = routes
+        self._selected_index = 0
+        self._render_routes()
 
     def _render_routes(self):
         while self.route_list_layout.count():
