@@ -4,6 +4,8 @@ import android.location.Location
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.quail.android.data.carlink.BluetoothCarLinkManager
+import com.quail.android.data.carlink.CarLinkEvent
 import com.quail.android.data.maps.MapsRepository
 import com.quail.android.data.model.MapsCitiesResponse
 import com.quail.android.data.model.MapsPlaceResult
@@ -50,9 +52,35 @@ private const val THINGS_TO_DO_CATEGORIES =
  * turn-by-turn driving mode (live location + progressive step tracking).
  * Separate from MapsViewModel, which backs the earlier "Maps" landing
  * screen (status/offline-pack). */
-class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
+class TileMapViewModel(
+    private val repository: MapsRepository,
+    private val carLink: BluetoothCarLinkManager? = null,
+) : ViewModel() {
     private val _placesState = MutableStateFlow<PlacesUiState>(PlacesUiState.Idle)
     val placesState: StateFlow<PlacesUiState> = _placesState.asStateFlow()
+
+    // Surfaced so TileMapScreen can show "Connected to car" / live
+    // position-from-car UI while driving hands off to it — null when this
+    // ViewModel was built without a carLink (tests, or a build flavor that
+    // doesn't wire Bluetooth at all).
+    val carLinkConnected: StateFlow<Boolean>? = carLink?.connected
+
+    init {
+        carLink?.let { link ->
+            viewModelScope.launch {
+                link.events.collect { event ->
+                    when (event) {
+                        is CarLinkEvent.Position -> _carPosition.value = event
+                        CarLinkEvent.Arrived -> _carPosition.value = null
+                        is CarLinkEvent.RouteConfirmed, is CarLinkEvent.Error -> Unit
+                    }
+                }
+            }
+        }
+    }
+
+    private val _carPosition = MutableStateFlow<CarLinkEvent.Position?>(null)
+    val carPosition: StateFlow<CarLinkEvent.Position?> = _carPosition.asStateFlow()
 
     private val _selectedCategory = MutableStateFlow<String?>(null)
     val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
@@ -219,6 +247,17 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
     fun setDestination(place: MapsPlaceResult) {
         _destination.value = place
         _selectedPlace.value = null
+        // While connected to the car, it does the actual routing with its
+        // own local extract data — this phone only ever hands over
+        // coordinates + a name. _destination/_previewRoute below still
+        // populate normally either way, so this screen's own "walking
+        // around the city" local routing (disconnected mode) is completely
+        // unaffected by whether a car link exists at all.
+        if (carLink?.connected?.value == true) {
+            viewModelScope.launch {
+                carLink.sendDestination(place.lat, place.lon, place.name)
+            }
+        }
     }
 
     fun showPlaceDetail(place: MapsPlaceResult, fromLat: Double, fromLon: Double) {
@@ -339,10 +378,13 @@ class TileMapViewModel(private val repository: MapsRepository) : ViewModel() {
         _liveLocation.value = null
     }
 
-    class Factory(private val repository: MapsRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: MapsRepository,
+        private val carLink: BluetoothCarLinkManager? = null,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return TileMapViewModel(repository) as T
+            return TileMapViewModel(repository, carLink) as T
         }
     }
 }

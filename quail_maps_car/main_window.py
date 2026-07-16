@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QGridLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
+from .carlink import PAIRED_PHONE_MAC, BluetoothCarLink
+from .geo.latlon import local_to_latlon, nearest_routable_node
+from .geo.search_db import Place
 from .screens.idle_screen import IdleScreen
 from .screens.nav_screen import NavScreen
 from .screens.routes_screen import RoutesScreen
@@ -64,8 +67,42 @@ class MainWindow(QMainWindow):
         self.routes_screen.start_drive_requested.connect(self._start_navigation)
 
         self.nav_screen.end_requested.connect(self._show_idle)
+        self.nav_screen.position_updated.connect(self._on_position_updated)
+
+        # Phone-as-remote-control: while a phone is Bluetooth-connected
+        # (see carlink/), a destination picked there is routed and driven
+        # using the car's own local extract data, not the phone's — the
+        # phone only ever sends coordinates + a name, never a route.
+        self.car_link = BluetoothCarLink(PAIRED_PHONE_MAC)
+        self.car_link.destination_received.connect(self._on_remote_destination)
+        self.car_link.start()
 
         self._show_idle()
+
+    def _on_remote_destination(self, lat: float, lon: float, name: str):
+        node = nearest_routable_node(lat, lon)
+        if node is None:
+            self.car_link.send_error("No routable road data near that location")
+            return
+        place = Place(
+            id=f"phone_{node.id}",
+            node_id=node.id,
+            name=name or "Phone Destination",
+            address="",
+            icon="\U0001f4f1",
+            category="destination",
+        )
+        self._open_routes(place)
+
+    def _on_position_updated(self, east: float, north: float, heading: float, eta_min: int, remaining_mi: float):
+        # send_position() is itself a no-op with no connected phone
+        # (BluetoothCarLink._send short-circuits when _client_sock is
+        # None) — no need to gate this call on connection state here too.
+        latlon = local_to_latlon(east, north)
+        if latlon is None:
+            return
+        lat, lon = latlon
+        self.car_link.send_position(lat, lon, heading, eta_min, remaining_mi)
 
     def _show_idle(self):
         self.nav_screen.stop()
@@ -83,3 +120,4 @@ class MainWindow(QMainWindow):
         self.routes_screen.hide()
         self.nav_screen.start(place, route)
         self.stack.setCurrentWidget(self.nav_screen)
+        self.car_link.send_route_confirmed(route.minutes, route.distance_mi)

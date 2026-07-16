@@ -7,6 +7,16 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Car-link (BluetoothCarLinkManager): sends a picked destination to
+         quail_maps_car over RFCOMM when paired/connected to it. Legacy
+         BLUETOOTH/BLUETOOTH_ADMIN cover API < 31; BLUETOOTH_CONNECT is the
+         runtime-requestable permission on 31+ (maxSdkVersion on the legacy
+         pair keeps the manifest merger from flagging both as redundant). -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
     <application
         android:name=".QuailApplication"
         android:allowBackup="true"

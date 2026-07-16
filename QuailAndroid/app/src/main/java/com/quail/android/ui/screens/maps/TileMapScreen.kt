@@ -59,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -75,6 +76,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.quail.android.data.carlink.BluetoothCarLinkManager
+import com.quail.android.data.carlink.PAIRED_CAR_MAC
 import com.quail.android.data.maps.MapsRepository
 import com.quail.android.data.model.MapsCityResult
 import com.quail.android.data.model.MapsPlaceResult
@@ -175,7 +178,19 @@ private fun currentStepIndexFor(steps: List<MapsRouteStep>, nearestPointIndex: I
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TileMapScreen(repository: MapsRepository, lat: Double, lon: Double, onBack: () -> Unit) {
-    val viewModel: TileMapViewModel = viewModel(factory = TileMapViewModel.Factory(repository))
+    val carLinkContext = LocalContext.current
+    // remember{}, not viewModel-scoped — this manager owns a live socket
+    // connection, and the DisposableEffect below is what actually tears it
+    // down when this screen leaves composition, independent of the
+    // ViewModel's own lifecycle.
+    val carLink = remember { BluetoothCarLinkManager(carLinkContext) }
+    DisposableEffect(Unit) {
+        if (PAIRED_CAR_MAC.isNotBlank()) {
+            carLink.connectToCar(PAIRED_CAR_MAC)
+        }
+        onDispose { carLink.disconnect() }
+    }
+    val viewModel: TileMapViewModel = viewModel(factory = TileMapViewModel.Factory(repository, carLink))
 
     var currentLat by remember { mutableStateOf(lat) }
     var currentLon by remember { mutableStateOf(lon) }

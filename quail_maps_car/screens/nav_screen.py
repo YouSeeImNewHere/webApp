@@ -29,6 +29,13 @@ NAV_VIEW_RADIUS_M = 45.0
 
 class NavScreen(QWidget):
     end_requested = Signal()
+    # (east, north, heading_deg, eta_min, remaining_mi) — local-frame
+    # position each step tick, for MainWindow to forward to
+    # BluetoothCarLink.send_position() (converted to lat/lon there) when a
+    # phone is connected. Emitted unconditionally regardless of whether
+    # anything's listening — cheap, and keeps this screen's rendering
+    # logic and the car-link wiring in main_window.py fully decoupled.
+    position_updated = Signal(float, float, float, int, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -226,6 +233,7 @@ class NavScreen(QWidget):
 
         point, heading = point_and_heading_at_fraction(self._route_points, fraction_done)
         self.map_bg.follow(*point, heading)
+        self.position_updated.emit(point[0], point[1], heading, minutes_left, remaining_m / 1609.34)
 
         self.arrived_btn.setVisible(self._step_index >= len(self._steps) - 1)
 
