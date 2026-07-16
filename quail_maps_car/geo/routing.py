@@ -358,6 +358,37 @@ def point_at_fraction(points: list[tuple[float, float]], fraction: float) -> tup
     return points[-1]
 
 
+def point_and_heading_at_fraction(
+    points: list[tuple[float, float]], fraction: float
+) -> tuple[tuple[float, float], float]:
+    """Same interpolation as point_at_fraction, plus the bearing (0=north,
+    90=east, same convention as _bearing() above) of whichever segment the
+    point currently falls on — the direction of travel for that instant,
+    used to drive the nav-mode heading-up map rotation."""
+    if not points:
+        return (0.0, 0.0), 0.0
+    if len(points) == 1:
+        return points[0], 0.0
+    seg_lengths = [
+        math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1])
+        for i in range(len(points) - 1)
+    ]
+    total = sum(seg_lengths)
+    target = max(0.0, min(1.0, fraction)) * total
+    acc = 0.0
+    for i, seg_len in enumerate(seg_lengths):
+        if acc + seg_len >= target or i == len(seg_lengths) - 1:
+            t = 0.0 if seg_len == 0 else (target - acc) / seg_len
+            dx = points[i + 1][0] - points[i][0]
+            dy = points[i + 1][1] - points[i][1]
+            x = points[i][0] + dx * t
+            y = points[i][1] + dy * t
+            heading = math.degrees(math.atan2(dx, dy)) % 360.0
+            return (x, y), heading
+        acc += seg_len
+    return points[-1], 0.0
+
+
 def shortest_path(start: str, goal: str, strategy: Strategy) -> PathResult | None:
     loaded = _load_leg_graph(start, goal)
     if loaded is None:

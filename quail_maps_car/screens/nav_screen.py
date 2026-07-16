@@ -13,11 +13,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..geo.routing import RouteOption, path_points, point_at_fraction
+from ..geo.routing import RouteOption, path_points, point_and_heading_at_fraction
 from ..geo.search_db import Place
 from ..widgets.map_canvas import MapCanvas
 
 STEP_INTERVAL_MS = 4000
+
+# Close driving zoom for the initial nav-camera view — a couple blocks'
+# worth of visible road, not the whole-route overview frame_points() gave
+# before nav mode existed.
+NAV_VIEW_RADIUS_M = 250.0
 
 
 class NavScreen(QWidget):
@@ -151,7 +156,9 @@ class NavScreen(QWidget):
         self.arrived_btn.hide()
 
         self.map_bg.set_route(self._route_points)
-        self.map_bg.frame_points(self._route_points, margins=(140, 20, 140, 20))
+        self.map_bg.set_nav_mode(True)
+        if self._route_points:
+            self.map_bg.center_on_with_radius(*self._route_points[0], NAV_VIEW_RADIUS_M)
 
         self._render_step()
         self._timer.start(STEP_INTERVAL_MS)
@@ -159,6 +166,7 @@ class NavScreen(QWidget):
     def stop(self):
         self._timer.stop()
         self.map_bg.clear_route()
+        self.map_bg.set_nav_mode(False)
 
     def _render_step(self):
         step = self._steps[self._step_index]
@@ -180,7 +188,10 @@ class NavScreen(QWidget):
         self.eta_label.setText(eta.strftime("%-I:%M %p"))
         self.remaining_label.setText(f"{minutes_left} min · {remaining_m / 1609.34:.1f} mi")
 
-        self.map_bg.set_user_position(*point_at_fraction(self._route_points, fraction_done))
+        point, heading = point_and_heading_at_fraction(self._route_points, fraction_done)
+        self.map_bg.set_user_position(*point)
+        self.map_bg.set_heading(heading)
+        self.map_bg.center_on(*point)
 
         self.arrived_btn.setVisible(self._step_index >= len(self._steps) - 1)
 

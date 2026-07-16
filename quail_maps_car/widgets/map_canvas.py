@@ -12,6 +12,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QPolygonF,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QWidget
@@ -39,6 +40,11 @@ while _level < MAX_SCALE:
 ZOOM_LEVELS.append(MAX_SCALE)
 
 TILE_SIZE_PX = 256
+
+# How far down the screen the car sits in nav mode — 0.5 would be dead
+# center; higher pushes it toward the bottom so more of the road ahead is
+# visible than behind, the "camera behind the car" part of the effect.
+_NAV_ANCHOR_Y_FRACTION = 0.72
 
 # Spatial grid cell size (meters) for indexing GRAPH.edges. Without this,
 # rendering a tile meant scanning *every* edge in the whole graph to find
@@ -125,6 +131,12 @@ class MapCanvas(QWidget):
         self._dragging = False
         self._drag_last: QPointF | None = None
         self._tile_cache = TileCache()
+        # Nav mode: heading-up rotation + a behind-the-car viewpoint, the
+        # way real turn-by-turn apps look while actually driving. Off by
+        # default (idle/browsing screens stay north-up with a plain dot);
+        # NavScreen turns it on for the duration of an active drive.
+        self._nav_mode = False
+        self._heading = 0.0
 
     # ---- public API ----
 
@@ -142,6 +154,16 @@ class MapCanvas(QWidget):
 
     def set_user_position(self, east: float, north: float) -> None:
         self._user_pos = (east, north)
+        self.update()
+
+    def set_heading(self, degrees: float) -> None:
+        """0 = facing north, 90 = facing east, etc. — same bearing
+        convention already used by geo/routing.py's _bearing()."""
+        self._heading = degrees % 360.0
+        self.update()
+
+    def set_nav_mode(self, enabled: bool) -> None:
+        self._nav_mode = enabled
         self.update()
 
     def center_on(self, east: float, north: float) -> None:
@@ -252,6 +274,23 @@ class MapCanvas(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#0a0d13"))
 
+        painter.save()
+        if self._nav_mode:
+            # Heading-up rotation + a behind-the-car viewpoint: rotate the
+            # whole scene around the car's own screen position so the
+            # direction of travel always points up, then move that pivot
+            # down toward the lower part of the screen so there's more
+            # road visible ahead than behind — the same "just above and
+            # behind the car" framing real turn-by-turn apps use. Every
+            # draw call below still uses the same _to_screen()-computed
+            # logical coordinates as always; this transform is what maps
+            # them into the rotated/offset device space.
+            pivot = self._to_screen(*self._user_pos)
+            anchor = QPointF(self.width() / 2, self.height() * _NAV_ANCHOR_Y_FRACTION)
+            painter.translate(anchor)
+            painter.rotate(-self._heading)
+            painter.translate(-pivot)
+
         # Antialiasing + smooth pixmap scaling here would apply to every
         # single tile blit, on every repaint, including every mouse-move
         # event during a drag — on Qt's CPU software rasterizer (no GPU on
@@ -270,6 +309,7 @@ class MapCanvas(QWidget):
             self._draw_route(painter)
         self._draw_places(painter)
         self._draw_user(painter)
+        painter.restore()
 
     # ---- tiled road rendering ----
 
@@ -409,6 +449,24 @@ class MapCanvas(QWidget):
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(glow))
         painter.drawEllipse(pt, 22, 22)
-        painter.setPen(QPen(QColor("white"), 3))
-        painter.setBrush(QBrush(QColor(ACCENT)))
-        painter.drawEllipse(pt, 9, 9)
+
+        if self._nav_mode:
+            # A fixed "points up" arrow — paintEvent already rotated the
+            # whole scene so that heading is up, so this always ends up
+            # visually pointing the true direction of travel without
+            # needing its own rotation here.
+            arrow = QPolygonF(
+                [
+                    QPointF(pt.x(), pt.y() - 16),
+                    QPointF(pt.x() + 11, pt.y() + 11),
+                    QPointF(pt.x(), pt.y() + 4),
+                    QPointF(pt.x() - 11, pt.y() + 11),
+                ]
+            )
+            painter.setPen(QPen(QColor("white"), 2))
+            painter.setBrush(QBrush(QColor(ACCENT)))
+            painter.drawPolygon(arrow)
+        else:
+            painter.setPen(QPen(QColor("white"), 3))
+            painter.setBrush(QBrush(QColor(ACCENT)))
+            painter.drawEllipse(pt, 9, 9)
