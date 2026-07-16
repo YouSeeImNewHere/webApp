@@ -19,10 +19,10 @@ from ..widgets.map_canvas import MapCanvas
 
 STEP_INTERVAL_MS = 4000
 
-# Close driving zoom for the initial nav-camera view — a couple blocks'
-# worth of visible road, not the whole-route overview frame_points() gave
-# before nav mode existed.
-NAV_VIEW_RADIUS_M = 250.0
+# Tight driving zoom — just the current road and what's immediately next,
+# not several blocks of context that just reads as clutter/confusion at a
+# glance while actually driving.
+NAV_VIEW_RADIUS_M = 90.0
 
 
 class NavScreen(QWidget):

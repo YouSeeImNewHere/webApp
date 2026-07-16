@@ -46,6 +46,14 @@ TILE_SIZE_PX = 256
 # visible than behind, the "camera behind the car" part of the effect.
 _NAV_ANCHOR_Y_FRACTION = 0.72
 
+# Street name labels only render into tiles at or above this zoom (pixels
+# per meter) — matches the tight driving-zoom scale NavScreen actually
+# uses, so labels only ever show up when there's real room to read them.
+_LABEL_MIN_TILE_SCALE = 0.35
+_LABEL_FONT = QFont()
+_LABEL_FONT.setPixelSize(12)
+_LABEL_FONT.setWeight(QFont.DemiBold)
+
 # Spatial grid cell size (meters) for indexing GRAPH.edges. Without this,
 # rendering a tile meant scanning *every* edge in the whole graph to find
 # the handful that overlap it — fine against the 18-edge synthetic network,
@@ -384,6 +392,11 @@ class MapCanvas(QWidget):
         tile_min_e, tile_max_e = origin_e - margin_m, origin_e + tile_size_m + margin_m
         tile_min_n, tile_max_n = origin_n - margin_m, origin_n + tile_size_m + margin_m
 
+        # One label per street name per tile (not one per segment) — a
+        # street usually crosses a tile as several edges, and repeating its
+        # name at every one of them would be clutter, not clarity.
+        labeled_streets: set[str] = set()
+
         for edge in _edges_near(tile_min_e, tile_max_e, tile_min_n, tile_max_n):
             a = GRAPH.nodes[edge.a]
             b = GRAPH.nodes[edge.b]
@@ -402,6 +415,31 @@ class MapCanvas(QWidget):
                 pen = QPen(QColor("#242c3a"), 4, Qt.SolidLine, Qt.RoundCap)
             tile_painter.setPen(pen)
             tile_painter.drawLine(p1, p2)
+
+            # Only at close zoom — labeling every road at a zoomed-out
+            # overview scale would just be visual noise, and there isn't
+            # room for readable text on a short on-screen segment anyway.
+            # Baked into the cached tile bitmap itself (not drawn fresh
+            # every frame), so this costs nothing beyond the one-time
+            # per-tile render.
+            if (
+                tile_scale >= _LABEL_MIN_TILE_SCALE
+                and edge.street
+                and edge.street not in labeled_streets
+                and p1 != p2
+            ):
+                labeled_streets.add(edge.street)
+                mid = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
+                angle = math.degrees(math.atan2(p2.y() - p1.y(), p2.x() - p1.x()))
+                if angle > 90 or angle < -90:
+                    angle += 180  # keep text upright, never printed upside-down
+                tile_painter.save()
+                tile_painter.translate(mid)
+                tile_painter.rotate(angle)
+                tile_painter.setFont(_LABEL_FONT)
+                tile_painter.setPen(QPen(QColor("#c7cedb")))
+                tile_painter.drawText(QRectF(-70, -18, 140, 16), Qt.AlignCenter, edge.street)
+                tile_painter.restore()
 
         tile_painter.end()
         return pixmap
