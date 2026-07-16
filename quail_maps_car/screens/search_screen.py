@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -15,6 +16,7 @@ from ..geo.search_db import Place, fetch_places
 from ..theme import DIM_TEXT_STYLE, RESULT_ICON_STYLE, RESULT_NAME_STYLE, RESULT_ROW_STYLE
 from ..widgets.clickable import ClickableWidget
 from ..widgets.opaque_screen import OpaqueScreen
+from .place_detail_screen import PlaceDetailScreen
 
 # Building a real Qt widget (icon + two labels) per result is real
 # per-row cost — against a real extract's POI count (versus a handful in
@@ -26,13 +28,24 @@ _MAX_RESULTS = 40
 
 class SearchScreen(OpaqueScreen):
     back_requested = Signal()
-    place_selected = Signal(object)
+    place_selected = Signal(object)  # emitted once "Drive" is picked from the detail overlay
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._category_filter: str | None = None
 
-        root = QVBoxLayout(self)
+        # Grid instead of a single vbox so the place-detail overlay can
+        # occupy the same cell, layered on top — it used to be a separate
+        # full page in the app's screen stack, which meant it visually
+        # replaced everything instead of appearing as a bottom sheet over
+        # the results still behind it.
+        base = QGridLayout(self)
+        base.setContentsMargins(0, 0, 0, 0)
+
+        content = QWidget()
+        base.addWidget(content, 0, 0)
+
+        root = QVBoxLayout(content)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
@@ -76,13 +89,25 @@ class SearchScreen(OpaqueScreen):
         self.results_scroll.setWidget(self.results_inner)
         root.addWidget(self.results_scroll, 1)
 
+        self.detail_overlay = PlaceDetailScreen()
+        self.detail_overlay.hide()
+        self.detail_overlay.back_requested.connect(self.detail_overlay.hide)
+        self.detail_overlay.drive_requested.connect(self._on_drive_requested)
+        base.addWidget(self.detail_overlay, 0, 0)
+        self.detail_overlay.raise_()
+
     def open_for(self, category: str | None):
         self._category_filter = category
         self.input.blockSignals(True)
         self.input.clear()
         self.input.blockSignals(False)
+        self.detail_overlay.hide()
         self._refresh_results()
         self.input.setFocus()
+
+    def _on_drive_requested(self, place: Place):
+        self.detail_overlay.hide()
+        self.place_selected.emit(place)
 
     def _refresh_results(self):
         query = self.input.text()
@@ -141,5 +166,5 @@ class SearchScreen(OpaqueScreen):
         layout.addLayout(text_col, 1)
         layout.addWidget(distance)
 
-        row.clicked.connect(lambda p=place: self.place_selected.emit(p))
+        row.clicked.connect(lambda p=place: self.detail_overlay.open_for(p))
         return row

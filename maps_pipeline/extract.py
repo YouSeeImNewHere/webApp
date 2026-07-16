@@ -139,13 +139,29 @@ def build_city_extract(
         if node_id is None:
             # POI's own node fell outside the drivable-node set (e.g. a shop
             # set back from any routable way we kept) — anchor it to itself
-            # as a standalone node so it still shows up and is reachable.
+            # as a standalone node so it still shows up. The comment here
+            # used to claim this made it "reachable" too, but no edge ever
+            # got created connecting it to anything — a node with zero
+            # edges can never be reached by Dijkstra, which is exactly what
+            # "no route found" for a destination half a mile away turned
+            # out to be. Snap it to whichever routable node is nearest.
             node_id = f"poi{r['osm_id']}"
             east, north = _project(r["lat"], r["lon"], center_lat, center_lon)
             cur.execute(
                 "INSERT OR IGNORE INTO nodes (id, east, north, label) VALUES (?,?,?,?)",
                 (node_id, east, north, r["name"]),
             )
+            if node_positions:
+                nearest_osm_id = min(
+                    node_positions,
+                    key=lambda nid: (node_positions[nid][0] - r["lat"]) ** 2
+                    + (node_positions[nid][1] - r["lon"]) ** 2,
+                )
+                nearest_id = node_id_map[nearest_osm_id]
+                cur.execute(
+                    "INSERT INTO edges (a, b, street, road_class, speed_kph) VALUES (?,?,?,?,?)",
+                    (node_id, nearest_id, r["address"] or "Private Drive", "local", 15.0),
+                )
         place_insert_rows.append((
             r["osm_id"], node_id, r["name"], r["address"], r["icon"], r["category"],
             r["opening_hours"] or "", r["phone"] or "", r["website"] or "",

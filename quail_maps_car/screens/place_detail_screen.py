@@ -4,6 +4,7 @@ import subprocess
 import webbrowser
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -13,8 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..geo.search_db import Place
-from ..theme import ACCENT, BORDER, DIM_TEXT_STYLE, SURFACE_RAISED, TEXT, TEXT_DIM
-from ..widgets.opaque_screen import OpaqueScreen
+from ..theme import ACCENT, BORDER, DIM_TEXT_STYLE, SURFACE, SURFACE_RAISED, TEXT, TEXT_DIM
 
 # Mirrors QuailAndroid's PlaceDetailContent (TileMapScreen.kt): icon, name,
 # category, a Drive action, Call/Website (only shown when the data has
@@ -49,7 +49,14 @@ QPushButton {{
 """
 
 
-class PlaceDetailScreen(OpaqueScreen):
+class PlaceDetailScreen(QWidget):
+    """A bottom-sheet overlay, not a full page — this sits on top of
+    whatever's behind it (dimmed, not hidden) sized to its own content, the
+    same way Android's version slides up over the map instead of replacing
+    it with a blank screen. Meant to be layered into a parent's grid/stack
+    at the same cell as the content behind it and shown/hidden on demand,
+    not pushed as its own page in the app's main screen stack."""
+
     back_requested = Signal()
     drive_requested = Signal(object)  # Place
 
@@ -57,7 +64,30 @@ class PlaceDetailScreen(OpaqueScreen):
         super().__init__(parent)
         self._place: Place | None = None
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        # Empty space above the card is left transparent (just the dim
+        # scrim painted below) — tapping there doesn't do anything yet,
+        # but visually it reads as "still on the results screen, dimmed,"
+        # not "this is now the whole app."
+        outer.addStretch(1)
+
+        card = QWidget()
+        card.setObjectName("placeDetailCard")
+        card.setStyleSheet(
+            f"""
+            #placeDetailCard {{
+                background-color: {SURFACE};
+                border-top-left-radius: 24px;
+                border-top-right-radius: 24px;
+                border: 1px solid {BORDER};
+            }}
+            """
+        )
+        outer.addWidget(card)
+
+        root = QVBoxLayout(card)
         root.setContentsMargins(24, 20, 24, 24)
         root.setSpacing(18)
 
@@ -128,7 +158,13 @@ class PlaceDetailScreen(OpaqueScreen):
         self.address_label.setWordWrap(True)
         root.addWidget(self.address_label)
 
-        root.addStretch(1)
+    def paintEvent(self, event):
+        # Dims whatever's behind this overlay rather than covering it with
+        # an opaque background — the card itself (painted via its own
+        # stylesheet above) is the only fully-opaque part.
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 140))
+        super().paintEvent(event)
 
     def _build_stat(self, row: QHBoxLayout, label_text: str) -> QLabel:
         col = QVBoxLayout()
@@ -152,6 +188,8 @@ class PlaceDetailScreen(OpaqueScreen):
         self.address_label.setText(place.address)
         self.call_btn.setVisible(bool(place.phone))
         self.website_btn.setVisible(bool(place.website))
+        self.show()
+        self.raise_()
 
     def _on_drive(self):
         if self._place is not None:
