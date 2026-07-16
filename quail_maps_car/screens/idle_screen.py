@@ -46,9 +46,16 @@ class IdleScreen(QWidget):
         base.addWidget(self.map_bg, 0, 0)
         QTimer.singleShot(0, self._frame_initial_view)
 
+        # `content` must be a genuine CHILD of map_bg, not a sibling in
+        # this same grid cell — see nav_screen.py for the full explanation
+        # (verified empirically: WA_TransparentForMouseEvents only passes
+        # clicks through to a real parent, not a stacked sibling, which is
+        # exactly why taps on the map never reached it before).
         content = QWidget()
-        base.addWidget(content, 0, 0)
-        content.raise_()
+        content.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        map_bg_layout = QVBoxLayout(self.map_bg)
+        map_bg_layout.setContentsMargins(0, 0, 0, 0)
+        map_bg_layout.addWidget(content)
 
         outer = QVBoxLayout(content)
         outer.setContentsMargins(20, 16, 20, 20)

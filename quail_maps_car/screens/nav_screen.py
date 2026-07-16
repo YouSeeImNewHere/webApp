@@ -48,9 +48,24 @@ class NavScreen(QWidget):
         self.map_bg = MapCanvas()
         base.addWidget(self.map_bg, 0, 0)
 
+        # `content` used to be a SIBLING of map_bg in this same grid cell
+        # (base.addWidget(content, 0, 0) + raise_()) — that's the actual
+        # reason pan/pinch/tap never reached the map at all: a plain
+        # widget blocks mouse/touch input across its entire area, and
+        # WA_TransparentForMouseEvents does NOT pass clicks through to a
+        # sibling stacked underneath in a shared layout cell (verified —
+        # tried exactly that first, it does not work). It only passes
+        # clicks through to an actual PARENT, so `content` now has to be a
+        # genuine child of map_bg (added via a layout set directly on
+        # map_bg itself, not the outer grid) for the empty background to
+        # be click/touch-transparent while buttons inside it stay
+        # interactive — confirmed with an isolated test before wiring this
+        # into the real screens.
         content = QWidget()
-        base.addWidget(content, 0, 0)
-        content.raise_()
+        content.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        map_bg_layout = QVBoxLayout(self.map_bg)
+        map_bg_layout.setContentsMargins(0, 0, 0, 0)
+        map_bg_layout.addWidget(content)
 
         root = QVBoxLayout(content)
         root.setContentsMargins(16, 16, 16, 16)
