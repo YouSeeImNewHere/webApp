@@ -46,7 +46,7 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
             """
             SELECT wn.way_id, wn.seq, wn.node_id, n.lat, n.lon, w.street, w.road_class, w.speed_kph,
                    w.lanes, w.turn_lanes, w.oneway, w.roundabout, w.surface, w.bridge, w.tunnel,
-                   w.layer, w.toll
+                   w.layer, w.toll, w.maxheight, w.maxweight
             FROM way_nodes wn
             JOIN nodes n ON n.id = wn.node_id
             JOIN ways w ON w.id = wn.way_id
@@ -56,7 +56,7 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
         ).fetchall()
 
         place_rows = master.execute(
-            "SELECT osm_id, node_id, lat, lon, name, address, icon, category, "
+            "SELECT osm_id, node_id, lat, lon, name, address, city, postcode, icon, category, "
             "opening_hours, phone, website FROM places "
             "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
             (lat_min, lat_max, lon_min, lon_max),
@@ -80,6 +80,7 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
         r["way_id"]: (
             r["street"], r["road_class"], r["speed_kph"], r["lanes"], r["turn_lanes"],
             r["oneway"], r["roundabout"], r["surface"], r["bridge"], r["tunnel"], r["layer"], r["toll"],
+            r["maxheight"], r["maxweight"],
         )
         for r in way_rows
     }
@@ -89,6 +90,7 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
         (
             street, road_class, speed_kph, lanes, turn_lanes,
             oneway, roundabout, surface, bridge, tunnel, layer, toll,
+            maxheight, maxweight,
         ) = way_meta[way_id]
         for (_, na, lata, lona), (_, nb, latb, lonb) in zip(points, points[1:]):
             if na not in in_bbox_node_ids and nb not in in_bbox_node_ids:
@@ -98,6 +100,7 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
             edges.append((
                 na, nb, street, road_class, speed_kph, lanes, turn_lanes,
                 oneway, roundabout, surface, bridge, tunnel, layer, toll,
+                maxheight, maxweight,
             ))
 
     node_controls = {r["node_id"]: r["control"] for r in control_rows}
@@ -175,18 +178,18 @@ def build_city_extract(
     edge_insert_rows = [
         (
             node_id_map[a], node_id_map[b], street, road_class, speed_kph, lanes, turn_lanes,
-            oneway, roundabout, surface, bridge, tunnel, layer, toll,
+            oneway, roundabout, surface, bridge, tunnel, layer, toll, maxheight, maxweight,
         )
         for (
             a, b, street, road_class, speed_kph, lanes, turn_lanes,
-            oneway, roundabout, surface, bridge, tunnel, layer, toll,
+            oneway, roundabout, surface, bridge, tunnel, layer, toll, maxheight, maxweight,
         ) in edges
         if a in node_id_map and b in node_id_map
     ]
     cur.executemany(
         "INSERT INTO edges (a, b, street, road_class, speed_kph, lanes, turn_lanes, "
-        "oneway, roundabout, surface, bridge, tunnel, layer, toll) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "oneway, roundabout, surface, bridge, tunnel, layer, toll, maxheight, maxweight) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         edge_insert_rows,
     )
 
@@ -220,12 +223,13 @@ def build_city_extract(
                     (node_id, nearest_id, r["address"] or "Private Drive", "local", 15.0),
                 )
         place_insert_rows.append((
-            r["osm_id"], node_id, r["name"], r["address"], r["icon"], r["category"],
-            r["opening_hours"] or "", r["phone"] or "", r["website"] or "",
+            r["osm_id"], node_id, r["name"], r["address"], r["city"] or "", r["postcode"] or "",
+            r["icon"], r["category"], r["opening_hours"] or "", r["phone"] or "", r["website"] or "",
         ))
     cur.executemany(
-        "INSERT INTO places (id, node_id, name, address, icon, category, opening_hours, phone, website) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO places (id, node_id, name, address, city, postcode, icon, category, "
+        "opening_hours, phone, website) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         place_insert_rows,
     )
 

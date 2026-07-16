@@ -49,6 +49,22 @@ NODE_CONTROL: dict[str, str] = {
     "mini_roundabout": "roundabout",
 }
 
+# barrier=* node values that can block or restrict a route (a private gate,
+# a bollard closing a street to cars, a height/weight restrictor) — captured
+# now into the same node_controls table as traffic signals/stop signs even
+# though the router doesn't yet filter routes around them. Same pattern as
+# the `areas` table: capture the raw data now so a future "avoid gated
+# roads" / vehicle-height routing feature doesn't need another nationwide
+# reimport just to get the geometry.
+BARRIER_CONTROL: dict[str, str] = {
+    "gate": "barrier:gate",
+    "lift_gate": "barrier:gate",
+    "bollard": "barrier:bollard",
+    "cycle_barrier": "barrier:bollard",
+    "block": "barrier:block",
+    "toll_booth": "barrier:toll",
+}
+
 
 def is_motor_vehicle_routable(tags: dict[str, str]) -> bool:
     for key in _ACCESS_KEYS:
@@ -87,7 +103,10 @@ def parse_layer(tags: dict[str, str]) -> int:
 
 
 def classify_node_control(tags: dict[str, str]) -> str | None:
-    return NODE_CONTROL.get(tags.get("highway", ""))
+    control = NODE_CONTROL.get(tags.get("highway", ""))
+    if control is not None:
+        return control
+    return BARRIER_CONTROL.get(tags.get("barrier", ""))
 
 
 def classify_highway(highway_value: str, maxspeed_kph: float | None) -> tuple[str, float] | None:
@@ -126,6 +145,29 @@ def parse_maxspeed(raw: str | None) -> float | None:
         return float(raw)
     except ValueError:
         return None
+
+
+def parse_meters(raw: str | None) -> float | None:
+    """Best-effort parse of OSM's maxheight/maxweight tags. Values are
+    usually a bare number in meters/tonnes ('3.5'), sometimes with a unit
+    suffix ('3.5 m', '7.5 t') or imperial feet-inches ("13'6\""), the last
+    of which isn't worth the complexity to parse for a first pass — a
+    missing height/weight limit just means the router doesn't know of one,
+    same as not having the tag at all, not a routing error."""
+    if not raw:
+        return None
+    raw = raw.strip().lower()
+    if "'" in raw:
+        return None
+    for unit in ("m", "t", "meters", "tonnes"):
+        if raw.endswith(unit):
+            raw = raw[: -len(unit)].strip()
+            break
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 # (osm tag key, osm tag value) -> (category, icon) — mirrors and extends
@@ -229,14 +271,49 @@ POI_TAG_CATEGORY: dict[tuple[str, str], tuple[str, str]] = {
     # Entertainment
     ("amenity", "theatre"): ("entertainment", "\U0001f3ad"),
     ("amenity", "cinema"): ("entertainment", "\U0001f3ac"),
+    # Schools — otherwise fell into the generic "business" fallback bucket,
+    # findable by name but not a real category a person could browse/filter
+    # by the way they can with the others above.
+    ("amenity", "school"): ("school", "\U0001f3eb"),
+    ("amenity", "kindergarten"): ("school", "\U0001f3eb"),
+    ("amenity", "college"): ("school", "\U0001f393"),
+    ("amenity", "university"): ("school", "\U0001f393"),
+    # Places of worship — OSM tags every religion under the same
+    # amenity=place_of_worship, distinguished (if at all) by a separate
+    # `religion` tag this app doesn't need to branch on for a single
+    # "worship" category to be useful.
+    ("amenity", "place_of_worship"): ("worship", "⛪"),
+    # Public transit stops — just the stop/station *locations* as POIs,
+    # not full GTFS route/schedule data (a separate, bigger project noted
+    # elsewhere). Still useful today for "find the nearest bus stop."
+    ("highway", "bus_stop"): ("transit", "\U0001f68f"),
+    ("railway", "station"): ("transit", "\U0001f689"),
+    ("railway", "halt"): ("transit", "\U0001f689"),
+    ("railway", "subway_entrance"): ("transit", "\U0001f687"),
+    ("railway", "tram_stop"): ("transit", "\U0001f68b"),
+    # Road-trip essentials.
+    ("amenity", "drinking_water"): ("water", "\U0001f6b0"),
+    ("amenity", "toilets"): ("restroom", "\U0001f6bb"),
 }
 
 # OSM tag keys checked, in order, when classifying a node's POI category.
 # "highway" is here only for the rest_area/services values above — every
 # other highway=* value is road classification (HIGHWAY_CLASS_SPEED), not a
 # POI, and simply won't match anything in POI_TAG_CATEGORY. "office" is for
-# office=government/notary — government/civic services.
-_POI_TAG_KEYS = ("amenity", "shop", "tourism", "leisure", "historic", "natural", "highway", "office")
+# office=government/notary — government/civic services. "craft" catches
+# trades (bakery, electrician, tailor, etc.) that OSM tags separately from
+# shop=*.
+_POI_TAG_KEYS = (
+    "amenity", "shop", "tourism", "leisure", "historic", "natural", "highway", "office", "craft", "railway",
+)
+
+# Keys eligible for the generic "business" fallback below — deliberately
+# narrower than _POI_TAG_KEYS. Only real commercial/trade tags (shop,
+# amenity, office, craft) fall back to a generic bucket when the specific
+# value isn't in POI_TAG_CATEGORY; tourism/leisure/historic/natural are left
+# whitelist-only since an unrecognized value there is far more likely to be
+# obscure/low-value than an unrecognized shop or amenity is.
+_BUSINESS_FALLBACK_KEYS = ("shop", "amenity", "office", "craft")
 
 # place=* values captured into the separate `cities` table (city/discovery
 # UI's "nearby cities" section) — deliberately excludes hamlet/suburb/etc.,
@@ -249,6 +326,18 @@ def classify_poi(tags: dict[str, str]) -> tuple[str, str] | None:
         value = tags.get(key)
         if value and (key, value) in POI_TAG_CATEGORY:
             return POI_TAG_CATEGORY[(key, value)]
+    # Generic fallback: a real, named business/trade whose specific tag
+    # value isn't in POI_TAG_CATEGORY (hairdresser, bakery, bar, gym,
+    # dentist, veterinary, car dealership, hardware store, ...) was being
+    # silently dropped entirely before this — not just mis-categorized, but
+    # unfindable even by name search. "yes"/"vacant"/"no" are OSM's own
+    # placeholder values for "there's definitely a shop here but the mapper
+    # didn't specify what kind" / "used to be a shop" — not real categories,
+    # so they're excluded to avoid surfacing empty storefronts as results.
+    for key in _BUSINESS_FALLBACK_KEYS:
+        value = tags.get(key)
+        if value and value not in ("yes", "vacant", "no"):
+            return "business", "\U0001f3ea"
     return None
 
 

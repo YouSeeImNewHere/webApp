@@ -21,6 +21,7 @@ from .tags import (
     parse_layer,
     parse_lanes,
     parse_maxspeed,
+    parse_meters,
     parse_oneway,
 )
 
@@ -76,8 +77,8 @@ class _MasterImportHandler(osmium.SimpleHandler):
             self.cur.executemany(
                 "INSERT OR REPLACE INTO ways "
                 "(id, street, road_class, speed_kph, lanes, turn_lanes, oneway, roundabout, "
-                "surface, bridge, tunnel, layer, toll) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "surface, bridge, tunnel, layer, toll, maxheight, maxweight) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._way_rows,
             )
             self._way_rows.clear()
@@ -95,8 +96,9 @@ class _MasterImportHandler(osmium.SimpleHandler):
         if self._place_rows:
             self.cur.executemany(
                 """INSERT OR REPLACE INTO places
-                   (osm_id, node_id, lat, lon, name, address, icon, category, opening_hours, phone, website)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   (osm_id, node_id, lat, lon, name, address, city, postcode, icon, category,
+                    opening_hours, phone, website)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 self._place_rows,
             )
             self._place_rows.clear()
@@ -146,6 +148,8 @@ class _MasterImportHandler(osmium.SimpleHandler):
                 tunnel = 1 if tags.get("tunnel") not in (None, "no") else 0
                 layer = parse_layer(tags)
                 toll = 1 if tags.get("toll") == "yes" else 0
+                maxheight = parse_meters(tags.get("maxheight")) or 0
+                maxweight = parse_meters(tags.get("maxweight")) or 0
 
                 seq_nodes: list[int] = []
                 for seq, n in enumerate(w.nodes):
@@ -159,6 +163,7 @@ class _MasterImportHandler(osmium.SimpleHandler):
                     self._way_rows.append((
                         w.id, street, road_class, speed_kph, lanes, turn_lanes,
                         oneway, roundabout, surface, bridge, tunnel, layer, toll,
+                        maxheight, maxweight,
                     ))
                     self.way_count += 1
 
@@ -176,6 +181,8 @@ class _MasterImportHandler(osmium.SimpleHandler):
         housenumber = tags.get("addr:housenumber", "")
         street_addr = tags.get("addr:street", "")
         address = f"{housenumber} {street_addr}".strip()
+        city = tags.get("addr:city", "")
+        postcode = tags.get("addr:postcode", "")
 
         if (poi_classified is not None and name) or (housenumber and street_addr):
             lats: list[float] = []
@@ -202,7 +209,7 @@ class _MasterImportHandler(osmium.SimpleHandler):
                 website = tags.get("website", "") or tags.get("contact:website", "")
                 self._place_rows.append(
                     (f"w{w.id}", None, sum(lats) / len(lats), sum(lons) / len(lons), display_name, address,
-                     icon, category, opening_hours, phone, website)
+                     city, postcode, icon, category, opening_hours, phone, website)
                 )
                 self.place_count += 1
 
@@ -265,6 +272,8 @@ class _MasterImportHandler(osmium.SimpleHandler):
         housenumber = tags.get("addr:housenumber", "")
         street = tags.get("addr:street", "")
         address = f"{housenumber} {street}".strip()
+        city = tags.get("addr:city", "")
+        postcode = tags.get("addr:postcode", "")
 
         if classified is not None and name:
             category, icon = classified
@@ -284,8 +293,8 @@ class _MasterImportHandler(osmium.SimpleHandler):
         phone = tags.get("phone", "") or tags.get("contact:phone", "")
         website = tags.get("website", "") or tags.get("contact:website", "")
         self._place_rows.append(
-            (f"n{n.id}", n.id, n.location.lat, n.location.lon, display_name, address, icon, category,
-             opening_hours, phone, website)
+            (f"n{n.id}", n.id, n.location.lat, n.location.lon, display_name, address, city, postcode,
+             icon, category, opening_hours, phone, website)
         )
         self.place_count += 1
         if self.place_count % _FLUSH_EVERY == 0:

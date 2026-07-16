@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS ways (
     bridge INTEGER NOT NULL DEFAULT 0,
     tunnel INTEGER NOT NULL DEFAULT 0,
     layer INTEGER NOT NULL DEFAULT 0,
-    toll INTEGER NOT NULL DEFAULT 0
+    toll INTEGER NOT NULL DEFAULT 0,
+    maxheight REAL NOT NULL DEFAULT 0,
+    maxweight REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS way_nodes (
     way_id INTEGER NOT NULL,
@@ -48,6 +50,8 @@ CREATE TABLE IF NOT EXISTS places (
     lon REAL NOT NULL,
     name TEXT NOT NULL,
     address TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    postcode TEXT NOT NULL DEFAULT '',
     icon TEXT NOT NULL,
     category TEXT NOT NULL,
     opening_hours TEXT NOT NULL DEFAULT '',
@@ -111,13 +115,17 @@ CREATE TABLE edges (
     bridge INTEGER NOT NULL DEFAULT 0,
     tunnel INTEGER NOT NULL DEFAULT 0,
     layer INTEGER NOT NULL DEFAULT 0,
-    toll INTEGER NOT NULL DEFAULT 0
+    toll INTEGER NOT NULL DEFAULT 0,
+    maxheight REAL NOT NULL DEFAULT 0,
+    maxweight REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE places (
     id TEXT PRIMARY KEY,
     node_id TEXT NOT NULL,
     name TEXT NOT NULL,
     address TEXT NOT NULL,
+    city TEXT NOT NULL DEFAULT '',
+    postcode TEXT NOT NULL DEFAULT '',
     icon TEXT NOT NULL,
     category TEXT NOT NULL,
     opening_hours TEXT NOT NULL DEFAULT '',
