@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -42,6 +43,15 @@ import requests
 
 JELLYFIN_URL = "http://100.69.144.70:8096"
 API_KEY = os.environ.get("JELLYFIN_API_KEY", "")
+
+# These two rotating playlists get a real dedicated folder in ADDITION to
+# the shared artist-folder copy, not just an .m3u — the point of a "what's
+# new this week" recommendation feed is being able to glance at one folder
+# and see exactly what's currently in it, without digging through an .m3u
+# or cross-referencing artist folders. Rebuilt fresh every sync (old
+# contents wiped first) since these rotate to a brand new track list each
+# time anyway, unlike a stable/custom playlist.
+_DEDICATED_FOLDER_PLAYLISTS = {"Daily Jams", "Weekly Exploration"}
 
 _ROTATING_PREFIXES = ("Daily-Jams-", "Weekly-Exploration-")
 # Matches the trailing "2026-Day192" / "2026-Week29" style suffix — the
@@ -162,6 +172,13 @@ def sync_playlist(display_name: str, playlist: dict, user_id: str, mount_path: P
     # and (2) a track shared by two playlists (or re-added to a rebuilt
     # Daily Jams) is only ever downloaded once — the second playlist's
     # sync finds it already sitting in its artist folder and skips it.
+    dedicated_dir = None
+    if display_name in _DEDICATED_FOLDER_PLAYLISTS:
+        dedicated_dir = mount_path / display_name
+        if dedicated_dir.exists():
+            shutil.rmtree(dedicated_dir)
+        dedicated_dir.mkdir(parents=True, exist_ok=True)
+
     m3u_lines = ["#EXTM3U"]
     downloaded, skipped = 0, 0
     for i, track in enumerate(tracks, start=1):
@@ -180,6 +197,9 @@ def sync_playlist(display_name: str, playlist: dict, user_id: str, mount_path: P
             _download_track(track["Id"], dest_path)
             downloaded += 1
             print(f"  [{i}/{len(tracks)}] {artist} - {title}")
+
+        if dedicated_dir is not None:
+            shutil.copy2(dest_path, dedicated_dir / filename)
 
         m3u_lines.append(f"#EXTINF:-1,{artist} - {title}")
         m3u_lines.append(str(dest_path.relative_to(mount_path)))

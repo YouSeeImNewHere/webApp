@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from PySide6.QtCore import QSize, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QSize, QThread, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -35,6 +35,21 @@ _MINI_COVER_SIZE = 48
 # glanced at on a desk. A thumb shouldn't need to be precise.
 _ROW_HEIGHT = 92
 _ROW_COVER_SIZE = 68
+
+
+class _LibraryScanThread(QThread):
+    """Runs music_library.scan_library() off the UI thread. Walking a USB
+    drive and reading ID3 tags for every track (mutagen) is blocking disk
+    I/O — thousands of tracks worth of it froze/flashed the whole app,
+    including the search box, on the first scan after a fresh boot. Track
+    is a frozen dataclass with no Qt objects in it, so building the list off
+    the main thread is safe; only the result handoff back via `finished`
+    touches the GUI, and Qt marshals that onto the main thread automatically."""
+
+    finished_scan = Signal(list)
+
+    def run(self):
+        self.finished_scan.emit(music_library.scan_library())
 
 
 class RowWidget(QWidget):
@@ -157,6 +172,7 @@ class MusicScreen(QWidget):
         self.player.durationChanged.connect(self._on_position_changed)
 
         self._library: list[Track] = []
+        self._scan_thread: _LibraryScanThread | None = None
         self._path_index: dict[str, Track] = {}
         self._queue: list[Track] = []
         self._current_index = -1
@@ -234,6 +250,13 @@ class MusicScreen(QWidget):
             button.setFixedHeight(40)
             button.clicked.connect(lambda _checked, m=mode: self._set_view_mode(m))
             mode_row.addWidget(button)
+
+        self.eject_button = QPushButton("Eject Drive")
+        self.eject_button.setObjectName("musicControlButton")
+        self.eject_button.setFixedHeight(40)
+        self.eject_button.clicked.connect(self._on_eject_clicked)
+        mode_row.addWidget(self.eject_button)
+
         layout.addLayout(mode_row)
 
         self.search_box = TouchLineEdit()
@@ -360,8 +383,40 @@ class MusicScreen(QWidget):
 
     # ---- library scanning -------------------------------------------------
 
+    def _on_eject_clicked(self):
+        # Stop polling immediately — otherwise the 5s timer could fire mid-
+        # unmount and briefly try to rescan a volume that's half-detached.
+        self._scan_timer.stop()
+        # udisksctl refuses to unmount while any process still has a file
+        # open on the volume — confirmed via a real "device is busy" error
+        # while a track was actively playing. QMediaPlayer keeps the
+        # current track's file handle open the whole time it's loaded, even
+        # if paused, so it has to be released (not just paused) before an
+        # eject can succeed.
+        self.player.stop()
+        self.player.setSource(QUrl())
+        success, message = music_library.eject_active_volume()
+        if success:
+            self._library = []
+            self._path_index = {}
+            self.status_label.setText("No music drive detected — plug in your MP3 player")
+            self._refresh_list()
+            QMessageBox.information(self, "Drive Ejected", message)
+        else:
+            QMessageBox.warning(self, "Eject Failed", message)
+        self._scan_timer.start(5000)
+
     def _rescan(self):
-        library = music_library.scan_library()
+        # Guard against overlapping scans: the 5s poll timer keeps firing
+        # regardless of how long the previous scan is taking, and a scan of
+        # a large drive can easily outlast 5 seconds.
+        if self._scan_thread is not None and self._scan_thread.isRunning():
+            return
+        self._scan_thread = _LibraryScanThread(self)
+        self._scan_thread.finished_scan.connect(self._on_scan_finished)
+        self._scan_thread.start()
+
+    def _on_scan_finished(self, library: list[Track]):
         if library == self._library:
             return
         self._library = library

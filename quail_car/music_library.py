@@ -3,6 +3,7 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,7 +18,42 @@ _EXCLUDED_DIR_NAMES = {"dcim", "movies", "audiobooks", "ebook", "lost.dir"}
 
 # (mtime, size) -> (artist, title, album), so unchanged files skip the
 # mutagen tag read on every rescan instead of re-parsing from scratch.
+# Persisted to disk (see _load_tag_cache/_save_tag_cache below) since an
+# in-memory-only cache reset to empty on every app restart — meaning every
+# single car boot with the drive already plugged in paid the full
+# mutagen-parse cost for every track again, which is most of what made the
+# very first scan after a fresh boot so slow.
+_TAG_CACHE_PATH = Path.home() / ".local" / "share" / "quail_music" / "tag_cache.json"
 _tag_cache: dict[str, tuple[float, int, str, str, str]] = {}
+_tag_cache_loaded = False
+_tag_cache_dirty = False
+
+
+def _load_tag_cache() -> None:
+    global _tag_cache_loaded
+    if _tag_cache_loaded:
+        return
+    _tag_cache_loaded = True
+    try:
+        raw = json.loads(_TAG_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            if isinstance(value, list) and len(value) == 5:
+                _tag_cache[key] = tuple(value)
+
+
+def _save_tag_cache() -> None:
+    global _tag_cache_dirty
+    if not _tag_cache_dirty:
+        return
+    _tag_cache_dirty = False
+    try:
+        _TAG_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _TAG_CACHE_PATH.write_text(json.dumps(_tag_cache), encoding="utf-8")
+    except OSError:
+        pass
 
 # Playlists are stored on-device (not on the removable drive) so they
 # survive swapping which USB stick is plugged in — same list, whatever
@@ -94,6 +130,7 @@ def _read_tags(path: Path) -> tuple[str, str, str]:
 
 
 def scan_directory(root: Path, genre_map: dict[str, str] | None = None) -> list[Track]:
+    global _tag_cache_dirty
     tracks: list[Track] = []
     if not root.exists():
         return tracks
@@ -120,6 +157,7 @@ def scan_directory(root: Path, genre_map: dict[str, str] | None = None) -> list[
             else:
                 artist, title, album = _read_tags(path)
                 _tag_cache[cache_key] = (signature[0], signature[1], artist, title, album)
+                _tag_cache_dirty = True
             genre = genre_map.get(genre_key(artist, title), "Unknown Genre")
             tracks.append(Track(path=path, artist=artist, title=title, album=album, genre=genre))
     tracks.sort(key=lambda t: (t.artist.lower(), t.album.lower(), t.title.lower()))
@@ -127,6 +165,7 @@ def scan_directory(root: Path, genre_map: dict[str, str] | None = None) -> list[
 
 
 def scan_library() -> list[Track]:
+    _load_tag_cache()
     tracks: list[Track] = []
     for root in _media_roots():
         if not root.exists():
@@ -135,6 +174,7 @@ def scan_library() -> list[Track]:
             if volume.is_dir():
                 tracks.extend(scan_directory(volume, _load_genre_map(volume)))
     tracks.sort(key=lambda t: (t.artist.lower(), t.album.lower(), t.title.lower()))
+    _save_tag_cache()
     return tracks
 
 
@@ -150,6 +190,44 @@ def active_volume() -> Path | None:
             if volume.is_dir():
                 return volume
     return None
+
+
+def eject_active_volume() -> tuple[bool, str]:
+    """Cleanly unmounts + powers off the currently plugged-in drive so it's
+    safe to physically pull. Without this, unplugging while mounted risks
+    corrupting whatever the filesystem was mid-write on — including this
+    app's own tag_cache.json and, per-device, the OS's own filesystem
+    journal for that volume."""
+    volume = active_volume()
+    if volume is None:
+        return False, "No drive is currently plugged in."
+    try:
+        device = subprocess.run(
+            ["findmnt", "-n", "-o", "SOURCE", "--target", str(volume)],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return False, "Could not determine which device is mounted there."
+    if not device:
+        return False, "Could not determine which device is mounted there."
+    try:
+        subprocess.run(["udisksctl", "unmount", "-b", device], capture_output=True, text=True, timeout=10, check=True)
+    except subprocess.CalledProcessError as exc:
+        return False, (exc.stderr or exc.stdout or str(exc)).strip()
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, str(exc)
+    # power-off (spins down / cuts power to the device) is a nicety, not a
+    # safety requirement — once unmounted, the drive is already safe to
+    # physically pull. Confirmed via a real failure here: power-off can
+    # fail (e.g. a sibling partition on the same physical device still
+    # mounted) even though the unmount itself fully succeeded, which
+    # previously reported the whole eject as "failed" even though the
+    # drive had, in fact, already safely detached.
+    try:
+        subprocess.run(["udisksctl", "power-off", "-b", device], capture_output=True, text=True, timeout=10, check=True)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        pass
+    return True, "Safe to unplug now."
 
 
 # The Playlists browse view calls load_playlist() once per playlist just to
