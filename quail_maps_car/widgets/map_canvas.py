@@ -351,7 +351,19 @@ class MapCanvas(QWidget):
 
     def event(self, event) -> bool:
         et = event.type()
+        # TEMPORARY DIAGNOSTIC — remove once we know what's actually
+        # arriving at this widget when the screen is touched.
+        if et in (
+            QEvent.Type.TouchBegin,
+            QEvent.Type.TouchUpdate,
+            QEvent.Type.TouchEnd,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseMove,
+            QEvent.Type.MouseButtonRelease,
+        ):
+            print(f"[touch-debug] event type={et}", flush=True)
         if et in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
+            print(f"[touch-debug]   points={len(event.points())}", flush=True)
             self._handle_touch(event)
             # Consumed here, deliberately — letting this fall through would
             # let Qt *also* synthesize a mouse event from the same physical
