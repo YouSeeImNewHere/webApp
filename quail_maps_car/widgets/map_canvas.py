@@ -16,12 +16,24 @@ from PySide6.QtGui import (
     QPolygonF,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 from ..geo.roadnet import GRAPH
 from ..geo.search_db import Place
 from ..theme import ACCENT
 from .tile_cache import TileCache
+
+_control_nodes_cache: list | None = None
+
+
+def _control_nodes() -> list:
+    # Computed once, not scanned fresh every paint — GRAPH.nodes can be
+    # tens of thousands of entries even inside the loaded radius, and most
+    # of them have no control tag at all.
+    global _control_nodes_cache
+    if _control_nodes_cache is None:
+        _control_nodes_cache = [n for n in GRAPH.nodes.values() if n.control]
+    return _control_nodes_cache
 
 MIN_SCALE = 0.02
 # This used to be 0.6, which was quietly clamping every close-zoom request
@@ -32,7 +44,7 @@ MIN_SCALE = 0.02
 # actually checking the resulting displayed radius instead of assuming a
 # bigger number was automatically enough) so a genuine street-level view is
 # actually reachable instead of silently capped.
-MAX_SCALE = 150.0
+MAX_SCALE = 600.0
 
 # Discrete zoom "snap points" the tile cache renders at, geometrically
 # spaced by the same 1.3x step zoom_in()/zoom_out() already used — mirrors
@@ -59,6 +71,13 @@ _NAV_ANCHOR_Y_FRACTION = 0.72
 # per meter) — matches the tight driving-zoom scale NavScreen actually
 # uses, so labels only ever show up when there's real room to read them.
 _LABEL_MIN_TILE_SCALE = 0.35
+
+# Individual lane lines only render once a real lane (~3.5m) would be at
+# least this many screen pixels wide — below that they'd just be visual
+# noise indistinguishable from the existing single fixed-width centerline.
+_LANE_WIDTH_M = 3.5
+_MIN_LANE_PX = 8.0
+_MIN_LANE_TILE_SCALE = _MIN_LANE_PX / _LANE_WIDTH_M
 _LABEL_FONT = QFont()
 _LABEL_FONT.setPixelSize(12)
 _LABEL_FONT.setWeight(QFont.DemiBold)
@@ -381,26 +400,54 @@ class MapCanvas(QWidget):
     def event(self, event) -> bool:
         et = event.type()
         if et in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd):
-            # Only claimed by MapCanvas's own pan/pinch handling when the
-            # touch isn't actually over one of its child widgets (buttons,
-            # the search bar, etc. all live inside a content overlay that's
-            # a real child of this widget). Real bug this fixes: since
-            # MapCanvas is the only widget in that whole subtree with
-            # WA_AcceptTouchEvents set, Qt was routing every touch in its
-            # bounds straight to this event() override regardless of what
-            # visually sits on top — including buttons — and the old
-            # unconditional "return True" swallowed those touches before
-            # a button ever got a chance to see them at all.
             points = event.points()
-            over_child = any(self._visible_widget_at(p.position()) is not None for p in points)
-            if not over_child:
-                self._handle_touch(event)
-                # Consumed here, deliberately — letting this fall through
-                # would let Qt *also* synthesize a mouse event from the
-                # same physical touch, double-handling the same finger
-                # movement.
+            # Single-finger only — a button press never involves a second
+            # finger, and forwarding mid-pinch would be meaningless.
+            if len(points) == 1:
+                target = self._visible_widget_at(points[0].position())
+            else:
+                target = None
+
+            if target is not None:
+                # Once ANY widget in this ancestry accepts raw touch
+                # (WA_AcceptTouchEvents, set on MapCanvas itself), Qt stops
+                # synthesizing mouse events for the *entire* touch sequence,
+                # even for the points/events our own code chooses not to
+                # consume. Confirmed on-device: _visible_widget_at() was
+                # correctly finding the button under the finger, yet
+                # `return super().event(event)` still produced no click —
+                # there was simply no mouse event for Qt to deliver to it.
+                # So instead of hoping Qt does it, forward a real
+                # QMouseEvent to the target widget ourselves.
+                self._forward_touch_as_mouse(event.type(), target, points[0])
                 return True
+
+            # Not over any interactive child — MapCanvas's own pan/pinch
+            # handling owns it. Consumed here, deliberately — letting this
+            # fall through would let Qt *also* synthesize a mouse event
+            # from the same physical touch, double-handling the same
+            # finger movement.
+            self._handle_touch(event)
+            return True
         return super().event(event)
+
+    def _forward_touch_as_mouse(self, event_type: QEvent.Type, target: QWidget, point) -> None:
+        local_pos = target.mapFrom(self, point.position().toPoint())
+        if event_type == QEvent.Type.TouchBegin:
+            mouse_type, buttons = QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton
+        elif event_type == QEvent.Type.TouchEnd:
+            mouse_type, buttons = QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton
+        else:
+            return
+        mouse_event = QMouseEvent(
+            mouse_type,
+            QPointF(local_pos),
+            target.mapTo(target.window(), local_pos),
+            Qt.MouseButton.LeftButton,
+            buttons,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(target, mouse_event)
 
     def _handle_touch(self, event) -> None:
         # Persistent per-finger state, merged in incrementally by point id
@@ -487,6 +534,7 @@ class MapCanvas(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         if self._route_points:
             self._draw_route(painter)
+        self._draw_intersection_controls(painter)
         self._draw_places(painter)
         self._draw_user(painter)
         painter.restore()
@@ -541,6 +589,28 @@ class MapCanvas(QWidget):
         self._tile_cache.put(key, pixmap)
         return pixmap
 
+    def _draw_lanes(
+        self, painter: QPainter, p1: QPointF, p2: QPointF, lanes: int, tile_scale: float, color: QColor
+    ) -> None:
+        # A thin gap between lanes (dashed divider look) reads as distinct
+        # lanes rather than one wide solid slab — cheap to fake with a
+        # slightly narrower pen than the full per-lane spacing.
+        lane_px = _LANE_WIDTH_M * tile_scale
+        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
+        length = math.hypot(dx, dy)
+        # Perpendicular unit vector, to offset each lane sideways from the
+        # road centerline.
+        nx, ny = -dy / length, dx / length
+        pen_width = lane_px * 0.86
+        pen = QPen(color, pen_width, Qt.SolidLine, Qt.FlatCap)
+        total_width = lane_px * lanes
+        start_offset = -total_width / 2 + lane_px / 2
+        for i in range(lanes):
+            offset = start_offset + i * lane_px
+            ox, oy = nx * offset, ny * offset
+            painter.setPen(pen)
+            painter.drawLine(QPointF(p1.x() + ox, p1.y() + oy), QPointF(p2.x() + ox, p2.y() + oy))
+
     def _render_tile(self, tx: int, ty: int, tile_scale: float, tile_size_m: float) -> QPixmap:
         pixmap = QPixmap(TILE_SIZE_PX, TILE_SIZE_PX)
         pixmap.fill(Qt.transparent)
@@ -581,12 +651,14 @@ class MapCanvas(QWidget):
 
             p1 = to_tile_px(a.east, a.north)
             p2 = to_tile_px(b.east, b.north)
-            if edge.road_class == "highway":
-                pen = QPen(QColor("#3a4356"), 6, Qt.SolidLine, Qt.RoundCap)
+            color = QColor("#3a4356") if edge.road_class == "highway" else QColor("#242c3a")
+
+            if edge.lanes > 1 and tile_scale >= _MIN_LANE_TILE_SCALE and p1 != p2:
+                self._draw_lanes(tile_painter, p1, p2, edge.lanes, tile_scale, color)
             else:
-                pen = QPen(QColor("#242c3a"), 4, Qt.SolidLine, Qt.RoundCap)
-            tile_painter.setPen(pen)
-            tile_painter.drawLine(p1, p2)
+                width = 6 if edge.road_class == "highway" else 4
+                tile_painter.setPen(QPen(color, width, Qt.SolidLine, Qt.RoundCap))
+                tile_painter.drawLine(p1, p2)
 
             # Only at close zoom — labeling every road at a zoomed-out
             # overview scale would just be visual noise, and there isn't
@@ -636,6 +708,29 @@ class MapCanvas(QWidget):
             path.lineTo(pt)
         painter.setPen(QPen(QColor(ACCENT), 7, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.drawPath(path)
+
+    def _draw_intersection_controls(self, painter: QPainter) -> None:
+        # Only past the same zoom-in point lane lines kick in — at any
+        # wider view these would just be visual noise on top of every
+        # signalized intersection in the loaded area.
+        if self._scale < _MIN_LANE_TILE_SCALE:
+            return
+        for node in _control_nodes():
+            pt = self._to_screen(node.east, node.north)
+            if not self.rect().contains(pt.toPoint()):
+                continue
+            if node.control == "stop":
+                painter.setPen(QPen(QColor("#c0392b"), 2))
+                painter.setBrush(QBrush(QColor("#e74c3c")))
+                painter.drawEllipse(pt, 6, 6)
+            elif node.control == "signal":
+                painter.setPen(QPen(QColor("#1e8449"), 2))
+                painter.setBrush(QBrush(QColor("#2ecc71")))
+                painter.drawEllipse(pt, 6, 6)
+            elif node.control == "yield":
+                painter.setPen(QPen(QColor("#b9770e"), 2))
+                painter.setBrush(QBrush(QColor("#f39c12")))
+                painter.drawEllipse(pt, 5, 5)
 
     def _draw_places(self, painter: QPainter) -> None:
         # Plain dots, not emoji-in-a-circle: drawText() with a font lookup

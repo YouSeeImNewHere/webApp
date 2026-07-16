@@ -33,6 +33,62 @@ HIGHWAY_CLASS_SPEED: dict[str, tuple[str, float]] = {
 # proposed/construction, etc.) even if `highway` looks routable.
 EXCLUDE_IF_TRUTHY = {"area", "proposed", "construction"}
 
+# access/motor_vehicle/vehicle values that mean "a car can't legally or
+# physically drive here" — private driveways, gated communities, footpaths
+# tagged access=no, etc. Checked in that key order (most to least specific)
+# since a way commonly has motor_vehicle=no without a blanket access=no.
+_NON_ROUTABLE_ACCESS = {"no", "private", "agricultural", "forestry", "delivery", "customers"}
+_ACCESS_KEYS = ("motor_vehicle", "vehicle", "access")
+
+# highway=* node values that mark a real intersection control, not a POI —
+# rendered as its own marker layer, not routed through classify_poi().
+NODE_CONTROL: dict[str, str] = {
+    "traffic_signals": "signal",
+    "stop": "stop",
+    "give_way": "yield",
+    "mini_roundabout": "roundabout",
+}
+
+
+def is_motor_vehicle_routable(tags: dict[str, str]) -> bool:
+    for key in _ACCESS_KEYS:
+        value = tags.get(key)
+        if value in _NON_ROUTABLE_ACCESS:
+            return False
+    return True
+
+
+def parse_oneway(tags: dict[str, str]) -> int:
+    """1 = only forward along the way's node order, -1 = only reverse,
+    0 = bidirectional. Roundabouts are implicitly oneway forward in OSM
+    even without an explicit oneway tag."""
+    raw = (tags.get("oneway") or "").strip().lower()
+    if raw in ("yes", "true", "1"):
+        return 1
+    if raw in ("-1", "reverse"):
+        return -1
+    if tags.get("junction") == "roundabout":
+        return 1
+    return 0
+
+
+def is_roundabout(tags: dict[str, str]) -> bool:
+    return tags.get("junction") in ("roundabout", "circular")
+
+
+def parse_layer(tags: dict[str, str]) -> int:
+    raw = tags.get("layer")
+    if not raw:
+        return 0
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
+def classify_node_control(tags: dict[str, str]) -> str | None:
+    return NODE_CONTROL.get(tags.get("highway", ""))
+
 
 def classify_highway(highway_value: str, maxspeed_kph: float | None) -> tuple[str, float] | None:
     entry = HIGHWAY_CLASS_SPEED.get(highway_value)
@@ -41,6 +97,20 @@ def classify_highway(highway_value: str, maxspeed_kph: float | None) -> tuple[st
     road_class, default_speed = entry
     speed = maxspeed_kph if maxspeed_kph and maxspeed_kph > 0 else default_speed
     return road_class, speed
+
+
+def parse_lanes(raw: str | None) -> int | None:
+    """OSM's lanes tag is usually a bare integer, but real data has
+    outliers like "2;3" (varies along the way) — take the first number
+    rather than failing the whole way's import over a formatting quirk."""
+    if not raw:
+        return None
+    raw = raw.strip().split(";")[0].strip()
+    try:
+        value = int(float(raw))
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def parse_maxspeed(raw: str | None) -> float | None:

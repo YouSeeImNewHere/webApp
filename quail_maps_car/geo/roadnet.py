@@ -20,6 +20,7 @@ class Node:
     east: float
     north: float
     label: str = ""
+    control: str = ""  # "", "signal", "stop", "yield", "roundabout"
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,15 @@ class Edge:
     street: str
     road_class: str  # "local" or "highway"
     speed_kph: float
+    lanes: int = 0  # 0 means unknown/not tagged in OSM
+    turn_lanes: str = ""  # raw OSM turn:lanes string, e.g. "left|through|through;right"
+    oneway: int = 0  # 0 bidirectional, 1 only a->b, -1 only b->a
+    roundabout: bool = False
+    surface: str = ""
+    bridge: bool = False
+    tunnel: bool = False
+    layer: int = 0
+    toll: bool = False
 
 
 def distance_m(a: Node, b: Node) -> float:
@@ -117,10 +127,24 @@ def _load_real_nodes_edges(path) -> tuple[dict[str, Node], list[Edge]]:
         # The extract's local coordinate frame is centered on (0, 0) — the
         # lat/lon the download was requested for (see the START-snapping
         # logic below) — so a box around the origin is the bounded region.
-        node_rows = conn.execute(
-            "SELECT id, east, north, label FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?",
-            (-r, r, -r, r),
-        ).fetchall()
+        try:
+            node_rows = conn.execute(
+                "SELECT id, east, north, label, control FROM nodes "
+                "WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?",
+                (-r, r, -r, r),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Extract predates the `control` column — falls back until a
+            # fresh maps_pipeline extract is pulled down; no stop/signal
+            # markers render, everything else unaffected.
+            node_rows = [
+                (nid, east, north, label, "")
+                for nid, east, north, label in conn.execute(
+                    "SELECT id, east, north, label FROM nodes "
+                    "WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?",
+                    (-r, r, -r, r),
+                ).fetchall()
+            ]
         # UNION of two indexed IN (SELECT ...) lookups — an OR across two
         # JOINs (what this used to be) defeats SQLite's ability to use the
         # indices at all: it falls back to a full scan of every edge, and
@@ -131,27 +155,58 @@ def _load_real_nodes_edges(path) -> tuple[dict[str, Node], list[Edge]]:
         # exactly the kind of large real extract that prompted this fix.
         # An edge is kept if either endpoint falls inside the loaded
         # region; edges entirely outside get dropped, which is intended.
-        edge_rows = conn.execute(
-            """
-            SELECT e.a, e.b, e.street, e.road_class, e.speed_kph
-            FROM edges e
-            WHERE e.a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
-            UNION
-            SELECT e.a, e.b, e.street, e.road_class, e.speed_kph
-            FROM edges e
-            WHERE e.b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
-            """,
-            (-r, r, -r, r, -r, r, -r, r),
-        ).fetchall()
+        try:
+            edge_rows = conn.execute(
+                """
+                SELECT e.a, e.b, e.street, e.road_class, e.speed_kph, e.lanes, e.turn_lanes,
+                       e.oneway, e.roundabout, e.surface, e.bridge, e.tunnel, e.layer, e.toll
+                FROM edges e
+                WHERE e.a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                UNION
+                SELECT e.a, e.b, e.street, e.road_class, e.speed_kph, e.lanes, e.turn_lanes,
+                       e.oneway, e.roundabout, e.surface, e.bridge, e.tunnel, e.layer, e.toll
+                FROM edges e
+                WHERE e.b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                """,
+                (-r, r, -r, r, -r, r, -r, r),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Extract predates the lanes/turn_lanes/oneway/etc columns
+            # (schema.py) — falls back until a fresh maps_pipeline extract
+            # is pulled down; everything just renders/routes as before,
+            # bidirectional with no lane/surface/bridge data.
+            edge_rows = [
+                (a, b, street, road_class, speed_kph, 0, "", 0, 0, "", 0, 0, 0, 0)
+                for a, b, street, road_class, speed_kph in conn.execute(
+                    """
+                    SELECT e.a, e.b, e.street, e.road_class, e.speed_kph
+                    FROM edges e
+                    WHERE e.a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                    UNION
+                    SELECT e.a, e.b, e.street, e.road_class, e.speed_kph
+                    FROM edges e
+                    WHERE e.b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                    """,
+                    (-r, r, -r, r, -r, r, -r, r),
+                ).fetchall()
+            ]
     finally:
         conn.close()
 
     nodes: dict[str, Node] = {
-        str(nid): Node(str(nid), east, north, label or "") for nid, east, north, label in node_rows
+        str(nid): Node(str(nid), east, north, label or "", control or "")
+        for nid, east, north, label, control in node_rows
     }
     edges = [
-        Edge(str(a), str(b), street or "", road_class or "local", float(speed_kph or 40.0))
-        for a, b, street, road_class, speed_kph in edge_rows
+        Edge(
+            str(a), str(b), street or "", road_class or "local", float(speed_kph or 40.0),
+            int(lanes or 0), turn_lanes or "", int(oneway or 0), bool(roundabout), surface or "",
+            bool(bridge), bool(tunnel), int(layer or 0), bool(toll),
+        )
+        for (
+            a, b, street, road_class, speed_kph, lanes, turn_lanes,
+            oneway, roundabout, surface, bridge, tunnel, layer, toll,
+        ) in edge_rows
     ]
 
     # A real extract has no notion of "current location" — it's OSM data
@@ -194,6 +249,13 @@ class Graph:
         return distance_m(self.nodes[edge.a], self.nodes[edge.b])
 
 
+def _reversed(edge: Edge) -> Edge:
+    return Edge(
+        edge.b, edge.a, edge.street, edge.road_class, edge.speed_kph, edge.lanes, edge.turn_lanes,
+        edge.oneway, edge.roundabout, edge.surface, edge.bridge, edge.tunnel, edge.layer, edge.toll,
+    )
+
+
 def build_graph() -> Graph:
     adjacency: dict[str, list[Edge]] = {node_id: [] for node_id in NODES}
     for edge in EDGES:
@@ -203,8 +265,16 @@ def build_graph() -> Graph:
         # KeyError on a graph that's otherwise perfectly valid.
         if edge.a not in adjacency or edge.b not in adjacency:
             continue
-        adjacency[edge.a].append(edge)
-        adjacency[edge.b].append(Edge(edge.b, edge.a, edge.street, edge.road_class, edge.speed_kph))
+        # edge.a -> edge.b follows the OSM way's own digitized node order,
+        # which is exactly what oneway=yes/-1 is relative to — so this is
+        # real directionality, not a guess. oneway=1: forward (a->b) only,
+        # no reverse traversal ever added. oneway=-1: the reverse of that.
+        # Previously every edge got a reverse added unconditionally, which
+        # meant a one-way street routed exactly like a two-way one.
+        if edge.oneway >= 0:
+            adjacency[edge.a].append(edge)
+        if edge.oneway <= 0:
+            adjacency[edge.b].append(_reversed(edge))
     return Graph(nodes=NODES, edges=EDGES, adjacency=adjacency)
 
 

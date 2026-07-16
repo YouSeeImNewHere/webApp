@@ -190,27 +190,46 @@ def _load_leg_graph(start_id: str, goal_id: str) -> tuple[Graph, str, str] | Non
             # Same UNION-of-two-indexed-lookups shape as roadnet.py's
             # bounded load (see that file for why: an OR-across-JOINs
             # version defeats SQLite's ability to use its indices at all).
-            edge_rows = conn.execute(
-                """
-                SELECT a, b, street, road_class, speed_kph FROM edges
-                WHERE a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
-                UNION
-                SELECT a, b, street, road_class, speed_kph FROM edges
-                WHERE b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
-                """,
-                (min_e, max_e, min_n, max_n, min_e, max_e, min_n, max_n),
-            ).fetchall()
+            try:
+                edge_rows = conn.execute(
+                    """
+                    SELECT a, b, street, road_class, speed_kph, oneway FROM edges
+                    WHERE a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                    UNION
+                    SELECT a, b, street, road_class, speed_kph, oneway FROM edges
+                    WHERE b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                    """,
+                    (min_e, max_e, min_n, max_n, min_e, max_e, min_n, max_n),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Extract predates the oneway column — falls back until a
+                # fresh maps_pipeline extract is pulled down.
+                edge_rows = [
+                    (a, b, street, road_class, speed_kph, 0)
+                    for a, b, street, road_class, speed_kph in conn.execute(
+                        """
+                        SELECT a, b, street, road_class, speed_kph FROM edges
+                        WHERE a IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                        UNION
+                        SELECT a, b, street, road_class, speed_kph FROM edges
+                        WHERE b IN (SELECT id FROM nodes WHERE east BETWEEN ? AND ? AND north BETWEEN ? AND ?)
+                        """,
+                        (min_e, max_e, min_n, max_n, min_e, max_e, min_n, max_n),
+                    ).fetchall()
+                ]
 
             adjacency: dict[str, list[Edge]] = {node_id: [] for node_id in nodes}
             edges: list[Edge] = []
-            for a, b, street, road_class, speed_kph in edge_rows:
+            for a, b, street, road_class, speed_kph, oneway in edge_rows:
                 a, b = str(a), str(b)
                 if a not in nodes or b not in nodes:
                     continue
-                edge = Edge(a, b, street or "", road_class or "local", float(speed_kph or 40.0))
+                edge = Edge(a, b, street or "", road_class or "local", float(speed_kph or 40.0), oneway=int(oneway or 0))
                 edges.append(edge)
-                adjacency[a].append(edge)
-                adjacency[b].append(Edge(b, a, edge.street, edge.road_class, edge.speed_kph))
+                if edge.oneway >= 0:
+                    adjacency[a].append(edge)
+                if edge.oneway <= 0:
+                    adjacency[b].append(Edge(b, a, edge.street, edge.road_class, edge.speed_kph, oneway=edge.oneway))
 
             effective_start = _nearest_connected_node(nodes, adjacency, start_coords)
             effective_goal = _nearest_connected_node(nodes, adjacency, goal_coords)

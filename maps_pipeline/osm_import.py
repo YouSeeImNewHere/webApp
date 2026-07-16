@@ -9,7 +9,20 @@ from typing import Callable
 import osmium
 
 from .schema import open_master_db
-from .tags import CITY_PLACE_TYPES, EXCLUDE_IF_TRUTHY, classify_area, classify_highway, classify_poi, parse_maxspeed
+from .tags import (
+    CITY_PLACE_TYPES,
+    EXCLUDE_IF_TRUTHY,
+    classify_area,
+    classify_highway,
+    classify_node_control,
+    classify_poi,
+    is_motor_vehicle_routable,
+    is_roundabout,
+    parse_layer,
+    parse_lanes,
+    parse_maxspeed,
+    parse_oneway,
+)
 
 _FLUSH_EVERY = 20_000
 _PROGRESS_INTERVAL_SEC = 5.0
@@ -36,6 +49,7 @@ class _MasterImportHandler(osmium.SimpleHandler):
         self._place_rows: list[tuple] = []
         self._city_rows: list[tuple] = []
         self._area_rows: list[tuple] = []
+        self._control_rows: list[tuple] = []
         self.way_count = 0
         self.node_count = 0
         self.place_count = 0
@@ -60,10 +74,19 @@ class _MasterImportHandler(osmium.SimpleHandler):
             self._node_rows.clear()
         if self._way_rows:
             self.cur.executemany(
-                "INSERT OR REPLACE INTO ways (id, street, road_class, speed_kph) VALUES (?,?,?,?)",
+                "INSERT OR REPLACE INTO ways "
+                "(id, street, road_class, speed_kph, lanes, turn_lanes, oneway, roundabout, "
+                "surface, bridge, tunnel, layer, toll) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._way_rows,
             )
             self._way_rows.clear()
+        if self._control_rows:
+            self.cur.executemany(
+                "INSERT OR REPLACE INTO node_controls (node_id, control) VALUES (?,?)",
+                self._control_rows,
+            )
+            self._control_rows.clear()
         if self._way_node_rows:
             self.cur.executemany(
                 "INSERT INTO way_nodes (way_id, seq, node_id) VALUES (?,?,?)", self._way_node_rows
@@ -99,7 +122,10 @@ class _MasterImportHandler(osmium.SimpleHandler):
         tags = {t.k: t.v for t in w.tags}
 
         highway = tags.get("highway")
-        if highway:
+        # A private driveway or no-entry service road otherwise classifies
+        # and routes exactly like a public street — real bug this closes:
+        # nothing here ever checked access/motor_vehicle/vehicle before.
+        if highway and is_motor_vehicle_routable(tags):
             classified = classify_highway(highway, parse_maxspeed(tags.get("maxspeed")))
             if classified is not None:
                 road_class, speed_kph = classified
@@ -108,6 +134,18 @@ class _MasterImportHandler(osmium.SimpleHandler):
                 # carry no name tag at all, only ref, so without this
                 # fallback they'd render/route as a bare "Motorway".
                 street = tags.get("name") or tags.get("ref") or highway.replace("_", " ").title()
+                # Direction-specific lane tags (dual carriageways) beat the
+                # plain `lanes` total, which counts both directions —
+                # rendering wants "lanes going my way," not the sum.
+                lanes = parse_lanes(tags.get("lanes:forward") or tags.get("lanes")) or 0
+                turn_lanes = tags.get("turn:lanes:forward") or tags.get("turn:lanes") or ""
+                oneway = parse_oneway(tags)
+                roundabout = 1 if is_roundabout(tags) else 0
+                surface = tags.get("surface", "")
+                bridge = 1 if tags.get("bridge") not in (None, "no") else 0
+                tunnel = 1 if tags.get("tunnel") not in (None, "no") else 0
+                layer = parse_layer(tags)
+                toll = 1 if tags.get("toll") == "yes" else 0
 
                 seq_nodes: list[int] = []
                 for seq, n in enumerate(w.nodes):
@@ -118,7 +156,10 @@ class _MasterImportHandler(osmium.SimpleHandler):
                     seq_nodes.append(n.ref)
                     self.node_count += 1
                 if len(seq_nodes) >= 2:
-                    self._way_rows.append((w.id, street, road_class, speed_kph))
+                    self._way_rows.append((
+                        w.id, street, road_class, speed_kph, lanes, turn_lanes,
+                        oneway, roundabout, surface, bridge, tunnel, layer, toll,
+                    ))
                     self.way_count += 1
 
         # Buildings mapped as an outline (way) rather than a single point
@@ -202,6 +243,12 @@ class _MasterImportHandler(osmium.SimpleHandler):
             return
         tags = {t.k: t.v for t in n.tags}
         name = tags.get("name")
+
+        control = classify_node_control(tags)
+        if control is not None:
+            self._control_rows.append((n.id, control))
+            if len(self._control_rows) % _FLUSH_EVERY == 0:
+                self._flush()
 
         place = tags.get("place")
         if place in CITY_PLACE_TYPES and name:

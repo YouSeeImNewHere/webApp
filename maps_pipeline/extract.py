@@ -44,7 +44,9 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
 
         way_rows = master.execute(
             """
-            SELECT wn.way_id, wn.seq, wn.node_id, n.lat, n.lon, w.street, w.road_class, w.speed_kph
+            SELECT wn.way_id, wn.seq, wn.node_id, n.lat, n.lon, w.street, w.road_class, w.speed_kph,
+                   w.lanes, w.turn_lanes, w.oneway, w.roundabout, w.surface, w.bridge, w.tunnel,
+                   w.layer, w.toll
             FROM way_nodes wn
             JOIN nodes n ON n.id = wn.node_id
             JOIN ways w ON w.id = wn.way_id
@@ -60,29 +62,46 @@ def _collect_from_region(master_db_path: Path, bbox) -> tuple[dict, list, list]:
             (lat_min, lat_max, lon_min, lon_max),
         ).fetchall()
         in_bbox_node_ids = {r[0] for r in master.execute("SELECT id FROM temp.bbox_nodes")}
+
+        control_rows = master.execute(
+            "SELECT node_id, control FROM node_controls WHERE node_id IN (SELECT id FROM temp.bbox_nodes)"
+        ).fetchall()
     finally:
         master.close()
 
     node_positions: dict[int, tuple[float, float]] = {}
-    edges: list[tuple[int, int, str, str, float]] = []
+    edges: list[tuple] = []
     ways: dict[int, list[tuple[int, int, float, float]]] = {}
     for row in way_rows:
         ways.setdefault(row["way_id"], []).append(
             (row["seq"], row["node_id"], row["lat"], row["lon"])
         )
-    way_meta = {r["way_id"]: (r["street"], r["road_class"], r["speed_kph"]) for r in way_rows}
+    way_meta = {
+        r["way_id"]: (
+            r["street"], r["road_class"], r["speed_kph"], r["lanes"], r["turn_lanes"],
+            r["oneway"], r["roundabout"], r["surface"], r["bridge"], r["tunnel"], r["layer"], r["toll"],
+        )
+        for r in way_rows
+    }
 
     for way_id, points in ways.items():
         points.sort(key=lambda p: p[0])
-        street, road_class, speed_kph = way_meta[way_id]
+        (
+            street, road_class, speed_kph, lanes, turn_lanes,
+            oneway, roundabout, surface, bridge, tunnel, layer, toll,
+        ) = way_meta[way_id]
         for (_, na, lata, lona), (_, nb, latb, lonb) in zip(points, points[1:]):
             if na not in in_bbox_node_ids and nb not in in_bbox_node_ids:
                 continue
             node_positions[na] = (lata, lona)
             node_positions[nb] = (latb, lonb)
-            edges.append((na, nb, street, road_class, speed_kph))
+            edges.append((
+                na, nb, street, road_class, speed_kph, lanes, turn_lanes,
+                oneway, roundabout, surface, bridge, tunnel, layer, toll,
+            ))
 
-    return node_positions, edges, list(place_rows)
+    node_controls = {r["node_id"]: r["control"] for r in control_rows}
+    return node_positions, edges, list(place_rows), node_controls
 
 
 def build_city_extract(
@@ -100,13 +119,15 @@ def build_city_extract(
     bbox = _bbox(center_lat, center_lon, radius_km)
 
     node_positions: dict[int, tuple[float, float]] = {}
-    edges: list[tuple[int, int, str, str, float]] = []
+    edges: list[tuple] = []
     place_rows: list = []
+    node_controls: dict[int, str] = {}
     for master_db_path in master_db_paths:
-        np, ed, pr = _collect_from_region(master_db_path, bbox)
+        np, ed, pr, nc = _collect_from_region(master_db_path, bbox)
         node_positions.update(np)
         edges.extend(ed)
         place_rows.extend(pr)
+        node_controls.update(nc)
 
     if out_path.exists():
         out_path.unlink()
@@ -146,16 +167,27 @@ def build_city_extract(
     node_insert_rows = []
     for osm_id, (lat, lon) in node_positions.items():
         east, north = _project(lat, lon, center_lat, center_lon)
-        node_insert_rows.append((node_id_map[osm_id], east, north, ""))
-    cur.executemany("INSERT INTO nodes (id, east, north, label) VALUES (?,?,?,?)", node_insert_rows)
+        node_insert_rows.append((node_id_map[osm_id], east, north, "", node_controls.get(osm_id, "")))
+    cur.executemany(
+        "INSERT INTO nodes (id, east, north, label, control) VALUES (?,?,?,?,?)", node_insert_rows
+    )
 
     edge_insert_rows = [
-        (node_id_map[a], node_id_map[b], street, road_class, speed_kph)
-        for a, b, street, road_class, speed_kph in edges
+        (
+            node_id_map[a], node_id_map[b], street, road_class, speed_kph, lanes, turn_lanes,
+            oneway, roundabout, surface, bridge, tunnel, layer, toll,
+        )
+        for (
+            a, b, street, road_class, speed_kph, lanes, turn_lanes,
+            oneway, roundabout, surface, bridge, tunnel, layer, toll,
+        ) in edges
         if a in node_id_map and b in node_id_map
     ]
     cur.executemany(
-        "INSERT INTO edges (a, b, street, road_class, speed_kph) VALUES (?,?,?,?,?)", edge_insert_rows
+        "INSERT INTO edges (a, b, street, road_class, speed_kph, lanes, turn_lanes, "
+        "oneway, roundabout, surface, bridge, tunnel, layer, toll) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        edge_insert_rows,
     )
 
     place_insert_rows = []

@@ -15,7 +15,16 @@ CREATE TABLE IF NOT EXISTS ways (
     id INTEGER PRIMARY KEY,
     street TEXT NOT NULL,
     road_class TEXT NOT NULL,
-    speed_kph REAL NOT NULL
+    speed_kph REAL NOT NULL,
+    lanes INTEGER NOT NULL DEFAULT 0,
+    turn_lanes TEXT NOT NULL DEFAULT '',
+    oneway INTEGER NOT NULL DEFAULT 0,
+    roundabout INTEGER NOT NULL DEFAULT 0,
+    surface TEXT NOT NULL DEFAULT '',
+    bridge INTEGER NOT NULL DEFAULT 0,
+    tunnel INTEGER NOT NULL DEFAULT 0,
+    layer INTEGER NOT NULL DEFAULT 0,
+    toll INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS way_nodes (
     way_id INTEGER NOT NULL,
@@ -24,6 +33,14 @@ CREATE TABLE IF NOT EXISTS way_nodes (
 );
 CREATE INDEX IF NOT EXISTS idx_way_nodes_way ON way_nodes(way_id, seq);
 CREATE INDEX IF NOT EXISTS idx_way_nodes_node ON way_nodes(node_id);
+-- Intersection controls (traffic signals, stop signs, roundabout hubs) —
+-- separate from `nodes` since node() and way() callbacks fire in file
+-- order (nodes section before ways) and we don't yet know at node() time
+-- whether a given node id will end up referenced by a kept routable way.
+CREATE TABLE IF NOT EXISTS node_controls (
+    node_id INTEGER PRIMARY KEY,
+    control TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS places (
     osm_id TEXT PRIMARY KEY,
     node_id INTEGER,
@@ -77,14 +94,24 @@ CREATE TABLE nodes (
     id TEXT PRIMARY KEY,
     east REAL NOT NULL,
     north REAL NOT NULL,
-    label TEXT NOT NULL DEFAULT ''
+    label TEXT NOT NULL DEFAULT '',
+    control TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE edges (
     a TEXT NOT NULL,
     b TEXT NOT NULL,
     street TEXT NOT NULL,
     road_class TEXT NOT NULL,
-    speed_kph REAL NOT NULL
+    speed_kph REAL NOT NULL,
+    lanes INTEGER NOT NULL DEFAULT 0,
+    turn_lanes TEXT NOT NULL DEFAULT '',
+    oneway INTEGER NOT NULL DEFAULT 0,
+    roundabout INTEGER NOT NULL DEFAULT 0,
+    surface TEXT NOT NULL DEFAULT '',
+    bridge INTEGER NOT NULL DEFAULT 0,
+    tunnel INTEGER NOT NULL DEFAULT 0,
+    layer INTEGER NOT NULL DEFAULT 0,
+    toll INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE places (
     id TEXT PRIMARY KEY,
