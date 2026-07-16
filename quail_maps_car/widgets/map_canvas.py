@@ -6,6 +6,7 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
+    QEventPoint,
     QFont,
     QMouseEvent,
     QPainter,
@@ -31,7 +32,7 @@ MIN_SCALE = 0.02
 # actually checking the resulting displayed radius instead of assuming a
 # bigger number was automatically enough) so a genuine street-level view is
 # actually reachable instead of silently capped.
-MAX_SCALE = 50.0
+MAX_SCALE = 150.0
 
 # Discrete zoom "snap points" the tile cache renders at, geometrically
 # spaced by the same 1.3x step zoom_in()/zoom_out() already used — mirrors
@@ -359,33 +360,45 @@ class MapCanvas(QWidget):
         return super().event(event)
 
     def _handle_touch(self, event) -> None:
+        # Persistent per-finger state, merged in incrementally by point id
+        # and explicit Released state — NOT "replace with whatever this
+        # event's points() contains." The first version assumed every
+        # event carries the complete current set of active touch points;
+        # on this touch driver that assumption was false — pinch never
+        # triggered because each finger's movement apparently arrives as
+        # its own separate single-point event, so len(current) was never
+        # actually 2 at once even with two fingers down. Tracking state
+        # ourselves works regardless of which way a given driver reports it.
         self._break_follow()
-        current = {p.id(): p.position() for p in event.points()}
+        previous = dict(self._touch_points)
 
-        if len(current) == 1:
-            (point_id, pos), = current.items()
-            if self._touch_points.keys() == current.keys() and point_id in self._touch_points:
-                last = self._touch_points[point_id]
-                delta = pos - last
+        for p in event.points():
+            if p.state() == QEventPoint.State.Released:
+                self._touch_points.pop(p.id(), None)
+            else:
+                self._touch_points[p.id()] = p.position()
+
+        active_ids = sorted(self._touch_points.keys())
+
+        if len(active_ids) == 1:
+            point_id = active_ids[0]
+            if point_id in previous:
+                delta = self._touch_points[point_id] - previous[point_id]
                 cx, cy = self._center
                 self._center = (cx - delta.x() / self._scale, cy + delta.y() / self._scale)
                 self.update()
-        elif len(current) >= 2:
-            ids = sorted(current.keys())[:2]
-            p1, p2 = current[ids[0]], current[ids[1]]
+            self._pinch_last_dist = None
+        elif len(active_ids) >= 2:
+            id1, id2 = active_ids[0], active_ids[1]
+            p1, p2 = self._touch_points[id1], self._touch_points[id2]
             dist = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
-            same_pair = self._touch_points.keys() >= set(ids)
-            if same_pair and self._pinch_last_dist and self._pinch_last_dist > 1.0:
+            if id1 in previous and id2 in previous and self._pinch_last_dist and self._pinch_last_dist > 1.0:
                 factor = dist / self._pinch_last_dist
                 self._scale = max(MIN_SCALE, min(MAX_SCALE, self._scale * factor))
                 self.update()
             self._pinch_last_dist = dist
-
-        if event.type() == QEvent.Type.TouchEnd or not current:
-            self._touch_points = {}
-            self._pinch_last_dist = None
         else:
-            self._touch_points = current
+            self._pinch_last_dist = None
 
     # ---- painting ----
 
