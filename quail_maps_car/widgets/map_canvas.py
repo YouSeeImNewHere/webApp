@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -31,7 +31,7 @@ MIN_SCALE = 0.02
 # actually checking the resulting displayed radius instead of assuming a
 # bigger number was automatically enough) so a genuine street-level view is
 # actually reachable instead of silently capped.
-MAX_SCALE = 10.0
+MAX_SCALE = 25.0
 
 # Discrete zoom "snap points" the tile cache renders at, geometrically
 # spaced by the same 1.3x step zoom_in()/zoom_out() already used — mirrors
@@ -136,6 +136,12 @@ class MapCanvas(QWidget):
     the cached tiles, since those change often and are cheap to redraw.
     Pan with drag, zoom with the scroll wheel or the +/- buttons."""
 
+    # Emitted when nav-mode auto-follow turns on/off — a manual pan or zoom
+    # while driving pauses it (see mousePressEvent/wheelEvent below), so the
+    # camera doesn't get yanked back to the car mid-look-around; the host
+    # screen listens for this to show/hide a "recenter" button.
+    follow_mode_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -153,6 +159,10 @@ class MapCanvas(QWidget):
         # NavScreen turns it on for the duration of an active drive.
         self._nav_mode = False
         self._heading = 0.0
+        # Only meaningful in nav mode — True means the camera tracks the
+        # car automatically every position update; a manual pan/zoom flips
+        # this off until recenter() is called (typically via a button tap).
+        self._follow_mode = True
 
     # ---- public API ----
 
@@ -180,7 +190,31 @@ class MapCanvas(QWidget):
 
     def set_nav_mode(self, enabled: bool) -> None:
         self._nav_mode = enabled
+        if enabled:
+            self._follow_mode = True
         self.update()
+
+    def follow(self, east: float, north: float, heading: float) -> None:
+        """The per-tick camera update while actively driving — unlike
+        set_user_position()/set_heading(), this only actually moves the
+        camera if the user hasn't manually panned/zoomed away; the car's
+        real position and the arrow marker's heading still update either
+        way, so panning around never shows a stale arrow."""
+        self._user_pos = (east, north)
+        self._heading = heading % 360.0
+        if self._follow_mode:
+            self._center = (east, north)
+        self.update()
+
+    def recenter(self) -> None:
+        """Resume auto-follow after a manual pan/zoom — typically wired to
+        a "recenter" button that appears while follow is paused."""
+        was_following = self._follow_mode
+        self._follow_mode = True
+        self._center = self._user_pos
+        self.update()
+        if not was_following:
+            self.follow_mode_changed.emit(True)
 
     def center_on(self, east: float, north: float) -> None:
         self._center = (east, north)
@@ -242,12 +276,24 @@ class MapCanvas(QWidget):
         self.update()
 
     def zoom_in(self) -> None:
+        self._break_follow()
         self._scale = min(MAX_SCALE, self._scale * 1.3)
         self.update()
 
     def zoom_out(self) -> None:
+        self._break_follow()
         self._scale = max(MIN_SCALE, self._scale / 1.3)
         self.update()
+
+    def _break_follow(self) -> None:
+        # Only meaningful in nav mode — idle/browsing screens don't have a
+        # "follow" concept to break. A manual pan or zoom while driving
+        # pauses auto-follow until recenter() is called (typically via a
+        # button that appears while paused), so looking around doesn't get
+        # immediately yanked back to the car on the next position update.
+        if self._nav_mode and self._follow_mode:
+            self._follow_mode = False
+            self.follow_mode_changed.emit(False)
 
     # ---- coordinate transform ----
 
@@ -267,6 +313,7 @@ class MapCanvas(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
+            self._break_follow()
             self._dragging = True
             self._drag_last = event.position()
 
@@ -295,14 +342,19 @@ class MapCanvas(QWidget):
         painter.fillRect(self.rect(), QColor("#0a0d13"))
 
         painter.save()
-        if self._nav_mode:
-            # Heading-up rotation + a behind-the-car viewpoint: rotate the
-            # whole scene around the car's own screen position so the
-            # direction of travel always points up, then move that pivot
-            # down toward the lower part of the screen so there's more
-            # road visible ahead than behind — the same "just above and
-            # behind the car" framing real turn-by-turn apps use. Every
-            # draw call below still uses the same _to_screen()-computed
+        if self._nav_mode and self._follow_mode:
+            # Heading-up rotation + a behind-the-car viewpoint only while
+            # actually following — once the user pans/zooms away, this
+            # drops back to a plain, unrotated free-look view instead of
+            # fighting every drag against a spinning frame. recenter()
+            # brings both the camera and this rotation back.
+            #
+            # Rotate the whole scene around the car's own screen position
+            # so the direction of travel always points up, then move that
+            # pivot down toward the lower part of the screen so there's
+            # more road visible ahead than behind — the same "just above
+            # and behind the car" framing real turn-by-turn apps use.
+            # Every draw call below still uses the same _to_screen()-computed
             # logical coordinates as always; this transform is what maps
             # them into the rotated/offset device space.
             pivot = self._to_screen(*self._user_pos)
@@ -501,21 +553,28 @@ class MapCanvas(QWidget):
         painter.drawEllipse(pt, 22, 22)
 
         if self._nav_mode:
-            # A fixed "points up" arrow — paintEvent already rotated the
-            # whole scene so that heading is up, so this always ends up
-            # visually pointing the true direction of travel without
-            # needing its own rotation here.
             arrow = QPolygonF(
                 [
-                    QPointF(pt.x(), pt.y() - 16),
-                    QPointF(pt.x() + 11, pt.y() + 11),
-                    QPointF(pt.x(), pt.y() + 4),
-                    QPointF(pt.x() - 11, pt.y() + 11),
+                    QPointF(0, -16),
+                    QPointF(11, 11),
+                    QPointF(0, 4),
+                    QPointF(-11, 11),
                 ]
             )
+            painter.save()
+            painter.translate(pt)
+            if not self._follow_mode:
+                # While following, paintEvent has already rotated the
+                # whole scene so heading points up — a fixed "points up"
+                # shape is correct as-is. Once panned/zoomed away, that
+                # global rotation stops (see paintEvent), so the arrow has
+                # to rotate itself to still point the right way in a
+                # normal north-up view.
+                painter.rotate(self._heading)
             painter.setPen(QPen(QColor("white"), 2))
             painter.setBrush(QBrush(QColor(ACCENT)))
             painter.drawPolygon(arrow)
+            painter.restore()
         else:
             painter.setPen(QPen(QColor("white"), 3))
             painter.setBrush(QBrush(QColor(ACCENT)))

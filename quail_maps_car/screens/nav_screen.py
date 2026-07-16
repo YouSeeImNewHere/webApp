@@ -88,6 +88,18 @@ class NavScreen(QWidget):
 
         zoom_row = QHBoxLayout()
         zoom_row.addStretch(1)
+
+        # Shown only while the user has panned/zoomed away from the car
+        # (see MapCanvas.follow_mode_changed) — tapping it resumes the
+        # heading-up follow camera.
+        self.recenter_btn = QPushButton("⟲ Recenter")
+        self.recenter_btn.setProperty("role", "iconButton")
+        self.recenter_btn.setFixedHeight(48)
+        self.recenter_btn.setCursor(Qt.PointingHandCursor)
+        self.recenter_btn.clicked.connect(self.map_bg.recenter)
+        self.recenter_btn.hide()
+        zoom_row.addWidget(self.recenter_btn)
+
         zoom_in_btn = QPushButton("+")
         zoom_in_btn.setProperty("role", "iconButton")
         zoom_in_btn.setFixedSize(48, 48)
@@ -101,6 +113,8 @@ class NavScreen(QWidget):
         zoom_row.addWidget(zoom_in_btn)
         zoom_row.addWidget(zoom_out_btn)
         root.addLayout(zoom_row)
+
+        self.map_bg.follow_mode_changed.connect(lambda following: self.recenter_btn.setVisible(not following))
 
         root.addStretch(1)
 
@@ -157,7 +171,11 @@ class NavScreen(QWidget):
         self._step_index = 0
         self.arrived_btn.hide()
 
+        self.recenter_btn.hide()
         self.map_bg.set_route(self._route_points)
+        # set_nav_mode(True) also resets follow mode on — needed in case a
+        # previous drive on this same MapCanvas instance ended with follow
+        # paused (user had panned away right before tapping "I've Arrived").
         self.map_bg.set_nav_mode(True)
         if self._route_points:
             self.map_bg.center_on_with_radius(*self._route_points[0], NAV_VIEW_RADIUS_M)
@@ -169,6 +187,7 @@ class NavScreen(QWidget):
         self._timer.stop()
         self.map_bg.clear_route()
         self.map_bg.set_nav_mode(False)
+        self.recenter_btn.hide()
 
     def _render_step(self):
         step = self._steps[self._step_index]
@@ -191,9 +210,7 @@ class NavScreen(QWidget):
         self.remaining_label.setText(f"{minutes_left} min · {remaining_m / 1609.34:.1f} mi")
 
         point, heading = point_and_heading_at_fraction(self._route_points, fraction_done)
-        self.map_bg.set_user_position(*point)
-        self.map_bg.set_heading(heading)
-        self.map_bg.center_on(*point)
+        self.map_bg.follow(*point, heading)
 
         self.arrived_btn.setVisible(self._step_index >= len(self._steps) - 1)
 
