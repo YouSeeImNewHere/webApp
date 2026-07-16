@@ -116,15 +116,49 @@ def _resolve_node_coords(node_id: str) -> tuple[float, float] | None:
     return (row[0], row[1]) if row else None
 
 
-def _load_leg_graph(start_id: str, goal_id: str) -> Graph | None:
+def _nearest_connected_node(
+    nodes: dict[str, Node], adjacency: dict[str, list[Edge]], coords: tuple[float, float]
+) -> str | None:
+    """Finds the nearest node that's actually part of the real routable
+    road network — mirroring the server's own _nearest_node, which
+    searches directly by raw coordinate among only way-derived nodes
+    (maps_pipeline/routing.py's _load_graph never puts standalone POI
+    points into its "nodes" dict at all).
+
+    First version of this function just checked "has at least one edge,"
+    which doesn't actually work: a POI's own node (id prefixed "poi...",
+    see maps_pipeline/extract.py) always trivially has exactly one edge —
+    the single connector to whatever node extract-building snapped it to
+    at build time — and is at distance zero from itself, so it always won
+    the search. That's not a fallback at all; it's the exact same fragile
+    single-edge dependency this was supposed to replace. A real Wendy's on
+    Ridgetop Blvd reproduced this exactly: its own node always "won" as
+    nearest before this fix was added.
+    """
+    best_id, best_dist = None, float("inf")
+    for node_id, node in nodes.items():
+        if node_id.startswith("poi"):
+            continue
+        if not adjacency.get(node_id):
+            continue
+        d = (node.east - coords[0]) ** 2 + (node.north - coords[1]) ** 2
+        if d < best_dist:
+            best_dist, best_id = d, node_id
+    return best_id
+
+
+def _load_leg_graph(start_id: str, goal_id: str) -> tuple[Graph, str, str] | None:
     """Loads a graph big enough to connect start and goal, widening the
     search area if the first (tight) attempt can't. Runs once per routing
     request — every strategy's Dijkstra below reuses this same graph, since
-    strategy only changes edge weights, not which edges exist."""
+    strategy only changes edge weights, not which edges exist. Returns
+    (graph, effective_start_id, effective_goal_id) — the effective ids are
+    live nearest-connected-node snaps, not necessarily start_id/goal_id
+    themselves; see _nearest_connected_node."""
     if not EXTRACT_PATH.exists():
         # Synthetic/offline fallback — GRAPH already holds the whole
         # (small) network, no widening needed or possible.
-        return GRAPH
+        return GRAPH, start_id, goal_id
 
     start_coords = _resolve_node_coords(start_id)
     goal_coords = _resolve_node_coords(goal_id)
@@ -178,13 +212,18 @@ def _load_leg_graph(start_id: str, goal_id: str) -> Graph | None:
                 adjacency[a].append(edge)
                 adjacency[b].append(Edge(b, a, edge.street, edge.road_class, edge.speed_kph))
 
+            effective_start = _nearest_connected_node(nodes, adjacency, start_coords)
+            effective_goal = _nearest_connected_node(nodes, adjacency, goal_coords)
+            if effective_start is None or effective_goal is None:
+                continue
+
             leg_graph = Graph(nodes=nodes, edges=edges, adjacency=adjacency)
             # "fastest" doubles as the connectivity check — if even the
             # cheapest-to-traverse weighting can't connect start and goal
             # in this subgraph, no other strategy will either, so it's not
             # worth trying them before widening further.
-            if _dijkstra(leg_graph, start_id, goal_id, "fastest") is not None:
-                return leg_graph
+            if _dijkstra(leg_graph, effective_start, effective_goal, "fastest") is not None:
+                return leg_graph, effective_start, effective_goal
     finally:
         conn.close()
 
@@ -320,21 +359,23 @@ def point_at_fraction(points: list[tuple[float, float]], fraction: float) -> tup
 
 
 def shortest_path(start: str, goal: str, strategy: Strategy) -> PathResult | None:
-    graph = _load_leg_graph(start, goal)
-    if graph is None:
+    loaded = _load_leg_graph(start, goal)
+    if loaded is None:
         return None
-    return _dijkstra(graph, start, goal, strategy)
+    graph, effective_start, effective_goal = loaded
+    return _dijkstra(graph, effective_start, effective_goal, strategy)
 
 
 def compute_routes(start: str, goal: str) -> list[RouteOption]:
-    graph = _load_leg_graph(start, goal)
-    if graph is None:
+    loaded = _load_leg_graph(start, goal)
+    if loaded is None:
         return []
+    graph, effective_start, effective_goal = loaded
 
     results: list[RouteOption] = []
     seen_signatures: set[tuple[str, ...]] = set()
     for label, strategy in STRATEGIES:
-        path = _dijkstra(graph, start, goal, strategy)
+        path = _dijkstra(graph, effective_start, effective_goal, strategy)
         if path is None:
             continue
         signature = tuple(e.street for e in path.edge_path)
