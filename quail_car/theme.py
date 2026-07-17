@@ -194,11 +194,6 @@ QSlider#dashboardSlider::handle:vertical:pressed {{
     background: {ACCENT};
 }}
 
-#dashboardSliderRail {{
-    background-color: {SURFACE};
-    border-right: 1px solid {BORDER};
-}}
-
 QLabel#placeholderTitle {{
     font-size: 26px;
     font-weight: 800;

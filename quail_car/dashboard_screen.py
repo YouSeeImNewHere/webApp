@@ -17,7 +17,6 @@ from quail_maps_car.geo.roadnet import GRAPH
 from quail_maps_car.widgets.map_canvas import MapCanvas
 
 from . import album_art
-from .ddc_control import DdcController
 from .music_library import Track
 
 _COVER_SIZE = 88
@@ -360,10 +359,11 @@ class _RoadCard(QWidget):
 
 
 class DashboardScreen(QWidget):
-    """Quail's CarPlay-style home screen: a brightness/volume slider dock
-    on the left, and a right column with the clock plus a road-position
-    card and now-playing block side by side — each opens its full app
-    (Maps / Music) when tapped."""
+    """Quail's CarPlay-style home screen: a clock plus a road-position card
+    and now-playing block side by side — each opens its full app
+    (Maps / Music) when tapped. Brightness/volume live in the shell's
+    global settings drawer (see settings_drawer.py), reachable from any
+    screen — no longer duplicated here."""
 
     maps_requested = Signal()
     music_requested = Signal()
@@ -371,18 +371,9 @@ class DashboardScreen(QWidget):
     def __init__(self):
         super().__init__()
 
-        self._ddc = DdcController()
-        self._ddc.levels_read.connect(self._on_levels_read)
-
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-        root.addWidget(self._build_slider_rail())
-
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 24, 32, 24)
         layout.setSpacing(18)
-        root.addLayout(layout, 1)
 
         layout.addStretch(1)
 
@@ -417,39 +408,7 @@ class DashboardScreen(QWidget):
         self._timer.start(1000)
         self._tick()
 
-        self._ddc.refresh_async()
-
-    def _build_slider_rail(self) -> QWidget:
-        # CarPlay-style dock: a fixed vertical strip along the left edge,
-        # not full-width bars mixed in with the rest of the dashboard.
-        rail = QWidget()
-        rail.setObjectName("dashboardSliderRail")
-        rail.setFixedWidth(120)
-
-        layout = QHBoxLayout(rail)
-        layout.setContentsMargins(16, 28, 16, 28)
-        layout.setSpacing(16)
-
-        self.brightness_row = _SliderRow("☀")  # ☀
-        self.brightness_row.value_committed.connect(self._ddc.set_brightness_async)
-        layout.addWidget(self.brightness_row)
-
-        self.volume_row = _SliderRow("\U0001f50a")  # 🔊
-        self.volume_row.value_committed.connect(self._ddc.set_volume_async)
-        layout.addWidget(self.volume_row)
-
-        return rail
-
     def _tick(self):
         now = datetime.now()
         self.clock_label.setText(now.strftime("%-I:%M"))
         self.date_label.setText(now.strftime("%A, %B %-d"))
-
-    def _on_levels_read(self, brightness: int, volume: int):
-        # -1 means ddcutil isn't available or the display doesn't report
-        # that feature (e.g. running --windowed on a dev laptop) — leave
-        # the slider at its default rather than snapping it to 0.
-        if brightness >= 0:
-            self.brightness_row.set_value_silently(brightness)
-        if volume >= 0:
-            self.volume_row.set_value_silently(volume)
