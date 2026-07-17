@@ -49,7 +49,16 @@ class _LibraryScanThread(QThread):
     finished_scan = Signal(list)
 
     def run(self):
-        self.finished_scan.emit(music_library.scan_library())
+        library = music_library.scan_library()
+        # Pre-decode every track's cover art here, off the UI thread, so
+        # RowWidget construction later (potentially thousands of rows,
+        # built eagerly with no list virtualization) hits a warm cache
+        # instead of paying for a fresh disk read + JPEG/PNG decode per
+        # row — that per-row decode cost was the main reason clicking
+        # around felt like it hung the whole app.
+        for track in library:
+            album_art.warm_cache(track.path)
+        self.finished_scan.emit(library)
 
 
 class RowWidget(QWidget):
@@ -261,7 +270,15 @@ class MusicScreen(QWidget):
 
         self.search_box = TouchLineEdit()
         self.search_box.setPlaceholderText("Search artist or song…")
-        self.search_box.textChanged.connect(self._refresh_list)
+        # Debounced: _refresh_list() rebuilds every visible row from
+        # scratch (no list virtualization), so wiring it directly to every
+        # keystroke rebuilt the whole list on every single character typed.
+        # Restarting a short single-shot timer on each change means only
+        # the last keystroke in a burst actually triggers a rebuild.
+        self._search_debounce = QTimer(self)
+        self._search_debounce.setSingleShot(True)
+        self._search_debounce.timeout.connect(self._refresh_list)
+        self.search_box.textChanged.connect(lambda: self._search_debounce.start(250))
         self.search_box.focused_in.connect(lambda: self._show_keyboard(self.search_box))
         self.search_box.focused_out.connect(self._hide_keyboard)
         layout.addWidget(self.search_box)
@@ -462,15 +479,20 @@ class MusicScreen(QWidget):
                 self._add_track_item(track)
 
         elif self._view_mode == "artists":
-            artists = sorted({t.artist for t in self._library}, key=str.lower)
-            for artist in artists:
+            # Grouped once instead of a fresh full-library scan per artist
+            # (was O(distinct artists x library size) — visibly slow once
+            # the library grew past a couple thousand tracks).
+            by_artist: dict[str, list[Track]] = {}
+            for t in self._library:
+                by_artist.setdefault(t.artist, []).append(t)
+            for artist in sorted(by_artist, key=str.lower):
                 if query and query not in artist.lower():
                     continue
-                count = sum(1 for t in self._library if t.artist == artist)
-                pixmap = album_art.get_artist_pixmap(artist, self._library)
+                tracks = by_artist[artist]
+                pixmap = next((p for p in (album_art.get_cover_pixmap(t.path) for t in tracks) if p is not None), None)
                 self._add_row(
                     ("artist", artist),
-                    RowWidget(pixmap, "👤", artist, f"{count} song{'s' if count != 1 else ''}"),
+                    RowWidget(pixmap, "👤", artist, f"{len(tracks)} song{'s' if len(tracks) != 1 else ''}"),
                 )
 
         elif self._view_mode == "artist_tracks":
@@ -486,11 +508,13 @@ class MusicScreen(QWidget):
                 self._add_track_item(track)
 
         elif self._view_mode == "genres":
-            genres = sorted({t.genre for t in self._library}, key=str.lower)
-            for genre in genres:
+            by_genre: dict[str, int] = {}
+            for t in self._library:
+                by_genre[t.genre] = by_genre.get(t.genre, 0) + 1
+            for genre in sorted(by_genre, key=str.lower):
                 if query and query not in genre.lower():
                     continue
-                count = sum(1 for t in self._library if t.genre == genre)
+                count = by_genre[genre]
                 self._add_row(
                     ("genre", genre),
                     RowWidget(None, "\U0001f3b5", genre, f"{count} song{'s' if count != 1 else ''}"),

@@ -8,9 +8,7 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
-
-from .music_library import Track
+from PySide6.QtGui import QImage, QPixmap
 
 # Cap how big a decoded cover we'll ever keep cached — list rows only ever
 # need small thumbnails, and Now Playing tops out well under this. Keeps a
@@ -47,43 +45,55 @@ def _extract_cover_bytes(path: Path) -> bytes | None:
     return None
 
 
-# Large enough to hold thumbnails for a full browse list at once (rows build
+# Large enough to hold thumbnails for the whole library at once (rows build
 # their widgets eagerly, not virtualized) without re-decoding on every
-# rescan, but still bounded — see _MAX_CACHED_DIMENSION for the other half
-# of that memory tradeoff.
-@lru_cache(maxsize=128)
-def _cached_pixmap(path_str: str, mtime: float, size: int) -> QPixmap | None:
+# rescan — most tracks on an album share one embedded cover, so the number
+# of *distinct* images is normally well under the track count, but this is
+# sized generously against total tracks anyway. Bounded — see
+# _MAX_CACHED_DIMENSION for the other half of that memory tradeoff.
+@lru_cache(maxsize=4000)
+def _cached_image(path_str: str, mtime: float, size: int) -> QImage | None:
+    # QImage, not QPixmap: this is called from the background scan thread
+    # (see MusicScreen._LibraryScanThread) to pre-warm the cache before the
+    # UI ever builds a row, so the actual disk read + JPEG/PNG decode never
+    # blocks the main thread. QPixmap wraps a platform-native handle and
+    # isn't safe to construct off the GUI thread; QImage is plain pixel
+    # data and explicitly documented as thread-safe to build anywhere.
     data = _extract_cover_bytes(Path(path_str))
     if not data:
         return None
-    pixmap = QPixmap()
-    if not pixmap.loadFromData(data):
+    image = QImage()
+    if not image.loadFromData(data):
         return None
-    if pixmap.width() > _MAX_CACHED_DIMENSION or pixmap.height() > _MAX_CACHED_DIMENSION:
-        pixmap = pixmap.scaled(
+    if image.width() > _MAX_CACHED_DIMENSION or image.height() > _MAX_CACHED_DIMENSION:
+        image = image.scaled(
             _MAX_CACHED_DIMENSION,
             _MAX_CACHED_DIMENSION,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-    return pixmap
+    return image
 
 
-def get_cover_pixmap(path: Path) -> QPixmap | None:
+def warm_cache(path: Path) -> None:
+    """Decodes + caches a track's cover art without touching QPixmap — safe
+    to call from a background thread. Call this for the whole library right
+    after a scan, so get_cover_pixmap() below is a cheap cache hit (just a
+    fast QPixmap::fromImage conversion) by the time the UI actually needs
+    it, instead of paying for file I/O + image decode on the UI thread."""
+    get_cover_image(path)
+
+
+def get_cover_image(path: Path) -> QImage | None:
     try:
         stat = path.stat()
     except OSError:
         return None
-    return _cached_pixmap(str(path), stat.st_mtime, stat.st_size)
+    return _cached_image(str(path), stat.st_mtime, stat.st_size)
 
 
-def get_artist_pixmap(artist: str, library: list[Track]) -> QPixmap | None:
-    # Local files don't carry a separate "artist photo" tag — the closest
-    # honest stand-in is one of that artist's own embedded track covers.
-    for track in library:
-        if track.artist != artist:
-            continue
-        pixmap = get_cover_pixmap(track.path)
-        if pixmap is not None:
-            return pixmap
-    return None
+def get_cover_pixmap(path: Path) -> QPixmap | None:
+    image = get_cover_image(path)
+    if image is None:
+        return None
+    return QPixmap.fromImage(image)
