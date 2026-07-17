@@ -475,6 +475,14 @@ class DashboardScreen(QWidget):
 
         layout.addLayout(cards_row)
 
+        # Tells you the library actually finished scanning and is ready to
+        # play, rather than wondering whether tapping "Play Last Playlist"
+        # right after a fresh boot will do anything yet.
+        self.music_status_label = QLabel("")
+        self.music_status_label.setObjectName("dashboardMusicStatus")
+        self.music_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.music_status_label)
+
         quick_actions_row = QHBoxLayout()
         quick_actions_row.setSpacing(18)
 
@@ -503,3 +511,6 @@ class DashboardScreen(QWidget):
         now = datetime.now()
         self.clock_label.setText(now.strftime("%-I:%M"))
         self.date_label.setText(now.strftime("%A, %B %-d"))
+
+    def set_music_ready(self, is_ready: bool):
+        self.music_status_label.setText("\U0001f3b5 Music Ready" if is_ready else "")

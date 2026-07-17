@@ -207,6 +207,12 @@ QPushButton#dashboardQuickAction:pressed {{
     color: white;
 }}
 
+QLabel#dashboardMusicStatus {{
+    font-size: 13px;
+    font-weight: 700;
+    color: {GOOD_GREEN};
+}}
+
 #locationRow {{
     background-color: {SURFACE_RAISED};
     border: 1px solid {BORDER};

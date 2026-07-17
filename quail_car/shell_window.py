@@ -83,6 +83,7 @@ class ShellWindow(QMainWindow):
         # Dashboard's now-playing card mirrors Music's playback state —
         # wired here in the shell since both screens are otherwise unaware
         # of each other.
+        self._music_screen.library_ready.connect(self._dashboard.set_music_ready)
         self._music_screen.track_changed.connect(self._dashboard.now_playing_card.set_track)
         self._music_screen.playing_changed.connect(self._dashboard.now_playing_card.set_playing)
         self._music_screen.position_changed.connect(self._dashboard.now_playing_card.set_position)

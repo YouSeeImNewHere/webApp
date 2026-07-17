@@ -169,6 +169,7 @@ class MusicScreen(QWidget):
     track_changed = Signal(object)  # Track | None
     playing_changed = Signal(bool)
     position_changed = Signal(int, int)  # position_ms, duration_ms
+    library_ready = Signal(bool)  # True once a scan finds a non-empty library
 
     def __init__(self):
         super().__init__()
@@ -439,6 +440,11 @@ class MusicScreen(QWidget):
         self._scan_thread.start()
 
     def _on_scan_finished(self, library: list[Track]):
+        # Emitted unconditionally, even when the scan found the same
+        # library as before — cheap, idempotent on the dashboard side, and
+        # means a screen that missed the first "ready" signal (e.g. wasn't
+        # constructed yet) still gets an accurate state on the next poll.
+        self.library_ready.emit(bool(library))
         if library == self._library:
             return
         self._library = library
