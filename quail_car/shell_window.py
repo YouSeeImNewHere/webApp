@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -14,10 +15,11 @@ from PySide6.QtWidgets import (
 
 from quail_maps_car.main_window import MainWindow as MapsMainWindow
 
+from . import saved_locations
 from .dashboard_screen import DashboardScreen
 from .music_screen import MusicScreen
-from .placeholder_screen import PlaceholderScreen
 from .settings_drawer import SettingsDrawer
+from .settings_screen import SettingsScreen
 
 # (label, emoji) — placeholder glyphs standing in for real icon art until
 # there's a proper Quail icon set to drop in.
@@ -25,7 +27,7 @@ _APPS = [
     ("home", "🏠", "Home"),
     ("maps", "🗺️", "Maps"),
     ("music", "🎵", "Music"),
-    ("car", "🚗", "Car"),
+    ("settings", "⚙️", "Settings"),
 ]
 
 _SIDE_PANEL_WIDTH = 112
@@ -73,7 +75,10 @@ class ShellWindow(QMainWindow):
 
         self._music_screen = MusicScreen()
         self._add_screen("music", self._music_screen)
-        self._add_screen("car", PlaceholderScreen("Quail Car"))
+
+        self._settings_screen = SettingsScreen(self._maps_window.current_latlon)
+        self._add_screen("settings", self._settings_screen)
+        self._settings_screen.navigate_requested.connect(self._on_saved_location_navigate)
 
         # Dashboard's now-playing card mirrors Music's playback state —
         # wired here in the shell since both screens are otherwise unaware
@@ -93,6 +98,16 @@ class ShellWindow(QMainWindow):
         self._dashboard.maps_requested.connect(lambda: self.navigate_to("maps"))
         self._dashboard.music_requested.connect(lambda: self.navigate_to("music"))
 
+        # Next-turn card mirrors quail_maps_car's own nav banner regardless
+        # of which screen is currently showing — nav_screen stays a valid,
+        # live object after centralWidget() was lifted out of MapsMainWindow
+        # above, since only the widget moved, not the MapsMainWindow itself.
+        self._maps_window.nav_screen.instruction_updated.connect(self._dashboard.next_turn_card.set_instruction)
+        self._maps_window.nav_screen.navigation_stopped.connect(self._dashboard.next_turn_card.clear)
+
+        self._dashboard.navigate_home_requested.connect(self._on_navigate_home)
+        self._dashboard.play_last_requested.connect(self._music_screen.play_last_playlist)
+
         self.navigate_to("home")
         self._position_settings_drawer()
 
@@ -108,6 +123,25 @@ class ShellWindow(QMainWindow):
         button = self._nav_buttons.get(key)
         if button is not None:
             button.setChecked(True)
+
+    def _on_navigate_home(self):
+        # Case-insensitive — a location saved as "home" or "HOME" should
+        # still count, not just an exact "Home".
+        match = next(
+            (name for name in saved_locations.load_locations() if name.lower() == "home"), None
+        )
+        location = saved_locations.get_location(match) if match else None
+        if location is None:
+            QMessageBox.information(
+                self, "No Home Set",
+                "Set a “Home” location in Settings first.",
+            )
+            return
+        self._on_saved_location_navigate(*location, match)
+
+    def _on_saved_location_navigate(self, lat: float, lon: float, name: str):
+        self._maps_window.navigate_to_latlon(lat, lon, name)
+        self.navigate_to("maps")
 
     def _build_side_panel(self) -> QWidget:
         panel = QWidget()

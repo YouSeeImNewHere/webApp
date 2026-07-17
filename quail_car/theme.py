@@ -165,6 +165,73 @@ QSlider#dashboardProgressSlider::handle:horizontal:pressed {{
     border-radius: 16px;
 }}
 
+#dashboardNextTurn {{
+    background-color: {ACCENT};
+    border-radius: 16px;
+}}
+QLabel#dashboardNextTurnManeuver {{
+    font-size: 30px;
+    color: white;
+}}
+QLabel#dashboardNextTurnInstruction {{
+    font-size: 18px;
+    font-weight: 800;
+    color: white;
+}}
+QLabel#dashboardNextTurnDistance {{
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+}}
+QLabel#dashboardNextTurnEta {{
+    font-size: 20px;
+    font-weight: 800;
+    color: white;
+}}
+QLabel#dashboardNextTurnEtaCaption {{
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.7);
+}}
+
+QPushButton#dashboardQuickAction {{
+    background-color: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 700;
+    color: {TEXT};
+}}
+QPushButton#dashboardQuickAction:pressed {{
+    background-color: {ACCENT};
+    color: white;
+}}
+
+#locationRow {{
+    background-color: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+}}
+QLabel#locationRowName {{
+    font-size: 16px;
+    font-weight: 700;
+    color: {TEXT};
+}}
+QLabel#locationRowCoords {{
+    font-size: 13px;
+    font-weight: 600;
+    color: {TEXT_DIM};
+}}
+#locationForm {{
+    background-color: {SURFACE_RAISED};
+    border: 1px solid {BORDER};
+    border-radius: 14px;
+}}
+QScrollArea#locationScrollArea {{
+    background-color: transparent;
+    border: none;
+}}
+
 QLabel#dashboardSliderIcon {{
     font-size: 18px;
     color: {TEXT_DIM};

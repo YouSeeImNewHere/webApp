@@ -318,6 +318,72 @@ class _SliderRow(QWidget):
         self.slider.blockSignals(False)
 
 
+class _NextTurnCard(QWidget):
+    """Mirrors quail_maps_car's nav banner (maneuver glyph, next
+    instruction, distance-to-turn, ETA) on the dashboard, so you don't have
+    to leave whatever app you're in just to see "what's my next turn."
+    Hidden whenever there's no active route — most of the time, this card
+    simply isn't there."""
+
+    open_requested = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("dashboardNextTurn")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(16)
+
+        self.maneuver_label = QLabel("↑")
+        self.maneuver_label.setObjectName("dashboardNextTurnManeuver")
+        self.maneuver_label.setFixedSize(52, 52)
+        self.maneuver_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.maneuver_label)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        self.instruction_label = QLabel("")
+        self.instruction_label.setObjectName("dashboardNextTurnInstruction")
+        self.instruction_label.setWordWrap(True)
+        self.distance_label = QLabel("")
+        self.distance_label.setObjectName("dashboardNextTurnDistance")
+        text_col.addWidget(self.instruction_label)
+        text_col.addWidget(self.distance_label)
+        layout.addLayout(text_col, 1)
+
+        eta_col = QVBoxLayout()
+        eta_col.setSpacing(2)
+        self.eta_label = QLabel("")
+        self.eta_label.setObjectName("dashboardNextTurnEta")
+        self.eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        eta_caption = QLabel("ETA")
+        eta_caption.setObjectName("dashboardNextTurnEtaCaption")
+        eta_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        eta_col.addWidget(self.eta_label)
+        eta_col.addWidget(eta_caption)
+        layout.addLayout(eta_col)
+
+        self.hide()
+
+    def set_instruction(self, maneuver: str, instruction: str, distance_text: str, eta_text: str):
+        self.maneuver_label.setText(maneuver)
+        self.instruction_label.setText(instruction)
+        self.distance_label.setText(distance_text)
+        self.eta_label.setText(eta_text)
+        self.show()
+
+    def clear(self):
+        self.hide()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.open_requested.emit()
+        super().mousePressEvent(event)
+
+
 class _RoadCard(QWidget):
     """Tightly-zoomed, read-only slice of the loaded road graph centered on
     the car's current position — "what road am I on" at a glance, not a
@@ -367,6 +433,8 @@ class DashboardScreen(QWidget):
 
     maps_requested = Signal()
     music_requested = Signal()
+    navigate_home_requested = Signal()
+    play_last_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -374,6 +442,10 @@ class DashboardScreen(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 24, 32, 24)
         layout.setSpacing(18)
+
+        self.next_turn_card = _NextTurnCard()
+        self.next_turn_card.open_requested.connect(self.maps_requested)
+        layout.addWidget(self.next_turn_card)
 
         layout.addStretch(1)
 
@@ -402,6 +474,25 @@ class DashboardScreen(QWidget):
         cards_row.addWidget(self.now_playing_card, 1)
 
         layout.addLayout(cards_row)
+
+        quick_actions_row = QHBoxLayout()
+        quick_actions_row.setSpacing(18)
+
+        navigate_home_button = QPushButton("\U0001f3e0 Navigate Home")
+        navigate_home_button.setObjectName("dashboardQuickAction")
+        navigate_home_button.setFixedHeight(56)
+        navigate_home_button.setCursor(Qt.PointingHandCursor)
+        navigate_home_button.clicked.connect(self.navigate_home_requested)
+        quick_actions_row.addWidget(navigate_home_button, 1)
+
+        play_last_button = QPushButton("▶ Play Last Playlist")
+        play_last_button.setObjectName("dashboardQuickAction")
+        play_last_button.setFixedHeight(56)
+        play_last_button.setCursor(Qt.PointingHandCursor)
+        play_last_button.clicked.connect(self.play_last_requested)
+        quick_actions_row.addWidget(play_last_button, 1)
+
+        layout.addLayout(quick_actions_row)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)

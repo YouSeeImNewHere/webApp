@@ -77,6 +77,15 @@ class MainWindow(QMainWindow):
         # start_drive_requested(place, route) signal directly.
         self._pending_remote_overrides: tuple[int, float] | None = None
 
+        # Last real GPS fix relayed from the phone — the car has no GPS of
+        # its own. Used by SettingsScreen's "Use Current Position" button
+        # when saving a new location (Home/Work/etc.); None until the
+        # first position_received after a phone connects. Must exist
+        # before car_link.start() below — the Bluetooth listener runs on
+        # its own thread and _on_remote_position could fire before this
+        # line if it were set any later.
+        self._last_known_latlon: tuple[float, float] | None = None
+
         # Phone-as-remote-control: while a phone is Bluetooth-connected
         # (see carlink/), a destination picked there is routed and driven
         # using the car's own local extract data, not the phone's — the
@@ -88,6 +97,37 @@ class MainWindow(QMainWindow):
         self.car_link.start()
 
         self._show_idle()
+
+    def current_latlon(self) -> tuple[float, float] | None:
+        return self._last_known_latlon
+
+    def navigate_to_latlon(self, lat: float, lon: float, name: str, _retries_left: int = 10) -> bool:
+        """Programmatic entry point for starting a drive without going
+        through the search/idle screens — used by the dashboard's
+        "Navigate Home" quick action. Mirrors _on_remote_destination's
+        snap-to-road logic, then immediately starts the first route
+        instead of leaving the routes picker open, since a quick-action
+        tap should start driving, not open another screen to tap through.
+        Returns False only if no routable road was found near the point;
+        the retry loop (route computation is async, see
+        _on_remote_start_drive's docstring) doesn't affect this return
+        value, matching the same fire-and-retry shape already used there."""
+        node = nearest_routable_node(lat, lon)
+        if node is None:
+            return False
+        place = Place(
+            id=f"saved_{name.lower()}",
+            node_id=node.id,
+            name=name,
+            address="",
+            icon="\U0001f3e0",
+            category="destination",
+        )
+        self._open_routes(place)
+        started = self.routes_screen.start_selected_route()
+        if not started and _retries_left > 0:
+            QTimer.singleShot(300, lambda: self.navigate_to_latlon(lat, lon, name, _retries_left - 1))
+        return True
 
     def _on_remote_destination(self, lat: float, lon: float, name: str):
         print(f"[carlink] destination_received: lat={lat} lon={lon} name={name!r}", flush=True)
@@ -131,6 +171,7 @@ class MainWindow(QMainWindow):
             self.car_link.send_error("No route ready to start")
 
     def _on_remote_position(self, lat: float, lon: float) -> None:
+        self._last_known_latlon = (lat, lon)
         local = latlon_to_local(lat, lon)
         if local is None:
             return

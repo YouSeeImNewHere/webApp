@@ -34,6 +34,13 @@ class NavScreen(QWidget):
     # anything's listening — cheap, and keeps this screen's rendering
     # logic and the car-link wiring in main_window.py fully decoupled.
     position_updated = Signal(float, float, float, int, float)
+    # (maneuver glyph, instruction text, distance-to-turn text, eta text) —
+    # everything DashboardScreen's next-turn card needs to mirror the nav
+    # banner, without it having to know about RouteOption/TurnStep at all.
+    instruction_updated = Signal(str, str, str, str)
+    # Fired from stop() so anything mirroring live nav state elsewhere
+    # (the dashboard's next-turn card) knows to clear/hide itself.
+    navigation_stopped = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -208,6 +215,7 @@ class NavScreen(QWidget):
         self.map_bg.clear_route()
         self.map_bg.set_nav_mode(False)
         self.recenter_btn.hide()
+        self.navigation_stopped.emit()
 
     def set_display_overrides(self, minutes: int, distance_mi: float) -> None:
         """Substitutes the phone's own already-computed route numbers for
@@ -272,5 +280,8 @@ class NavScreen(QWidget):
         point, heading = point_and_heading_at_fraction(self._route_points, fraction_done)
         self.map_bg.follow(*point, heading)
         self.position_updated.emit(point[0], point[1], heading, minutes_left, remaining_mi)
+        self.instruction_updated.emit(
+            step.maneuver, step.instruction, self.distance_label.text(), self.eta_label.text(),
+        )
 
         self.arrived_btn.setVisible(self._step_index >= len(self._steps) - 1)

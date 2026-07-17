@@ -664,6 +664,23 @@ class MusicScreen(QWidget):
         browse view Music itself currently has open."""
         self._shuffle_and_play(self._library)
 
+    def play_last_playlist(self):
+        """Public — the dashboard's "Play Last Playlist" quick action.
+        Prefers resuming whatever's already loaded (the common case: it's
+        just paused), falls back to replaying the last playlist actually
+        browsed into this session, and only shuffles the whole library if
+        neither of those exist yet."""
+        if self._queue and self._current_index != -1:
+            if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self._toggle_play_pause()
+            return
+        if self._current_playlist:
+            playlist = music_library.load_playlist(self._current_playlist, self._library, self._path_index)
+            if playlist.tracks:
+                self._shuffle_and_play(playlist.tracks)
+                return
+        self.shuffle_all()
+
     def _selected_tracks(self) -> list[Track]:
         tracks = []
         for item in self.track_list.selectedItems():
