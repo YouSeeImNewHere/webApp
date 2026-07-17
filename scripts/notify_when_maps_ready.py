@@ -20,6 +20,7 @@ import time
 
 import requests
 
+import db
 from app.core.pushover import send_pushover
 from app.core.tenancy import get_user_pushover_key_by_email
 
@@ -72,6 +73,13 @@ def main() -> None:
     _wait_for_import(import_pid)
     _wait_for_valhalla()
 
+    # get_user_pushover_key_by_email() goes through db.py's connection
+    # pool, which db.py's own comment notes "assumes pool.open() was
+    # called at startup" — true inside the running FastAPI app (its
+    # lifespan handler does that), but not for a bare script importing
+    # these modules directly. Real bug hit running this the first time:
+    # psycopg_pool.PoolClosed: the pool 'pool-1' is not open yet.
+    db.open_pool()
     key = get_user_pushover_key_by_email(NOTIFY_EMAIL)
     if not key:
         print("No Pushover key on file for this account — skipping notification.", file=sys.stderr)
