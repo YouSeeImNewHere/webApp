@@ -17,6 +17,7 @@ from quail_maps_car.main_window import MainWindow as MapsMainWindow
 from .dashboard_screen import DashboardScreen
 from .music_screen import MusicScreen
 from .placeholder_screen import PlaceholderScreen
+from .settings_drawer import SettingsDrawer
 
 # (label, emoji) — placeholder glyphs standing in for real icon art until
 # there's a proper Quail icon set to drop in.
@@ -26,6 +27,8 @@ _APPS = [
     ("music", "🎵", "Music"),
     ("car", "🚗", "Car"),
 ]
+
+_SIDE_PANEL_WIDTH = 112
 
 
 class ShellWindow(QMainWindow):
@@ -38,9 +41,9 @@ class ShellWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Quail")
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        root_layout = QHBoxLayout(central)
+        self._central = QWidget()
+        self.setCentralWidget(self._central)
+        root_layout = QHBoxLayout(self._central)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
@@ -48,6 +51,13 @@ class ShellWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         root_layout.addWidget(self.stack, 1)
+
+        # Floating overlay, not part of root_layout — reachable from
+        # whichever screen happens to be showing (Maps, Music, Car), not
+        # just the dashboard. Positioned/sized manually in resizeEvent
+        # since it docks against the side panel's edge rather than
+        # occupying a layout cell of its own.
+        self._settings_drawer = SettingsDrawer(self._central)
 
         self._screens: dict[str, QWidget] = {}
         self._dashboard = DashboardScreen()
@@ -84,6 +94,7 @@ class ShellWindow(QMainWindow):
         self._dashboard.music_requested.connect(lambda: self.navigate_to("music"))
 
         self.navigate_to("home")
+        self._position_settings_drawer()
 
     def _add_screen(self, key: str, widget: QWidget):
         self._screens[key] = widget
@@ -101,7 +112,7 @@ class ShellWindow(QMainWindow):
     def _build_side_panel(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("sidePanel")
-        panel.setFixedWidth(96)
+        panel.setFixedWidth(_SIDE_PANEL_WIDTH)
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(6, 14, 6, 14)
@@ -116,7 +127,7 @@ class ShellWindow(QMainWindow):
             button = QPushButton(f"{glyph}\n{label}")
             button.setObjectName("appIconButton")
             button.setCheckable(True)
-            button.setFixedHeight(76)
+            button.setFixedHeight(96)
             button.clicked.connect(lambda _checked, k=key: self._show_screen(k))
             self._button_group.addButton(button)
             self._nav_buttons[key] = button
@@ -136,4 +147,32 @@ class ShellWindow(QMainWindow):
         quit_button.clicked.connect(QApplication.instance().quit)
         layout.addWidget(quit_button)
 
+        # Reveals the brightness/volume drawer from whichever screen is
+        # currently showing (Maps, Music, Car) — those sliders otherwise
+        # only lived on the dashboard, a tap away regardless of what app
+        # you actually had open.
+        self._settings_toggle = QPushButton("›")
+        self._settings_toggle.setObjectName("settingsToggleButton")
+        self._settings_toggle.setFixedHeight(48)
+        self._settings_toggle.clicked.connect(self._toggle_settings_drawer)
+        layout.addWidget(self._settings_toggle)
+
         return panel
+
+    def _toggle_settings_drawer(self):
+        self._settings_drawer.toggle()
+        self._settings_toggle.setText("‹" if self._settings_drawer.isVisible() else "›")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_settings_drawer()
+
+    def _position_settings_drawer(self):
+        drawer = self._settings_drawer
+        height = min(self._central.height() - 40, 420)
+        drawer.setGeometry(
+            _SIDE_PANEL_WIDTH,
+            (self._central.height() - height) // 2,
+            drawer.width(),
+            height,
+        )

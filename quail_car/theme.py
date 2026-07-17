@@ -34,7 +34,7 @@ QWidget {{
 QPushButton#appIconButton {{
     background-color: transparent;
     border-radius: 18px;
-    font-size: 13px;
+    font-size: 16px;
     font-weight: 700;
     color: {TEXT_DIM};
     padding: 10px 4px;
@@ -55,6 +55,25 @@ QPushButton#quitButton {{
 QPushButton#quitButton:pressed {{
     background-color: {BAD_RED};
     color: white;
+}}
+
+QPushButton#settingsToggleButton {{
+    background-color: transparent;
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+    font-size: 22px;
+    font-weight: 700;
+    color: {TEXT_DIM};
+}}
+QPushButton#settingsToggleButton:pressed {{
+    background-color: {SURFACE_RAISED};
+    color: {TEXT};
+}}
+
+#settingsDrawer {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
 }}
 
 QLabel#dashboardClock {{

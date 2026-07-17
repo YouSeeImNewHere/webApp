@@ -285,13 +285,15 @@ class _SliderRow(QWidget):
         self.slider.setObjectName("dashboardSlider")
         self.slider.setRange(0, 100)
         self.slider.setValue(initial)
-        # Qt's vertical QSlider defaults to minimum-at-top/maximum-at-bottom
-        # (invertedAppearance=False is, confusingly, the *inverted-from-
-        # physical-fader* direction for a vertical slider) — explicit here
-        # rather than relying on that default, so "higher on the rail" is
-        # unambiguously "higher value" both visually and for _value_at()'s
-        # own top=max assumption above.
-        self.slider.setInvertedAppearance(True)
+        # Qt's vertical QSlider default (invertedAppearance=False) already
+        # puts maximum at the top / minimum at the bottom — matching a
+        # physical fader ("up = more") and matching _value_at()'s own
+        # top=max assumption above. A previous pass set this to True
+        # believing the default needed flipping, which actually did the
+        # opposite: it made the rendered handle position invert relative to
+        # what tapping the rail set the value to (tap top -> value jumps to
+        # max, but the handle then visually snapped to the bottom). Left
+        # unset here to use Qt's correct default.
         self.slider.valueChanged.connect(self._on_value_changed)
         layout.addWidget(self.slider, 1, Qt.AlignmentFlag.AlignHCenter)
 
