@@ -779,30 +779,52 @@ class MapCanvas(QWidget):
         painter.setBrush(QBrush(glow))
         painter.drawEllipse(pt, 22, 22)
 
-        if self._nav_mode:
-            arrow = QPolygonF(
-                [
-                    QPointF(0, -16),
-                    QPointF(11, 11),
-                    QPointF(0, 4),
-                    QPointF(-11, 11),
-                ]
-            )
-            painter.save()
-            painter.translate(pt)
-            if not self._follow_mode:
-                # While following, paintEvent has already rotated the
-                # whole scene so heading points up — a fixed "points up"
-                # shape is correct as-is. Once panned/zoomed away, that
-                # global rotation stops (see paintEvent), so the arrow has
-                # to rotate itself to still point the right way in a
-                # normal north-up view.
-                painter.rotate(self._heading)
-            painter.setPen(QPen(QColor("white"), 2))
-            painter.setBrush(QBrush(QColor(ACCENT)))
-            painter.drawPolygon(arrow)
-            painter.restore()
-        else:
-            painter.setPen(QPen(QColor("white"), 3))
-            painter.setBrush(QBrush(QColor(ACCENT)))
-            painter.drawEllipse(pt, 9, 9)
+        painter.save()
+        painter.translate(pt)
+        if not (self._nav_mode and self._follow_mode):
+            # While following in nav mode, paintEvent has already rotated
+            # the whole scene so heading points up — a fixed "points up"
+            # shape is correct as-is there. Everywhere else (idle browsing,
+            # or panned/zoomed away from follow), the car icon has to
+            # rotate itself to still point the right way in a normal
+            # north-up view.
+            painter.rotate(self._heading)
+        self._draw_car_icon(painter)
+        painter.restore()
+
+    def _draw_car_icon(self, painter: QPainter) -> None:
+        """A stylized top-down 2-door coupe silhouette, nose pointing up
+        (-y), standing in for a real position marker — this is a drawn
+        shape, not model-accurate artwork; no licensed car imagery is
+        available to this app, and at this on-screen size a real photo
+        wouldn't read as a specific make/model anyway."""
+        body = QPainterPath()
+        body.addRoundedRect(QRectF(-9, -17, 18, 32), 7, 7)
+
+        painter.setPen(QPen(QColor("#5c0a0a"), 1.5))
+        painter.setBrush(QBrush(QColor("#c1121f")))
+        painter.drawPath(body)
+
+        # Windshield — reads as "front of car" at a glance, reinforcing the
+        # heading even before the overall silhouette registers.
+        windshield = QPolygonF(
+            [QPointF(-6, -10), QPointF(6, -10), QPointF(4, -2), QPointF(-4, -2)]
+        )
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#1b2530")))
+        painter.drawPolygon(windshield)
+
+        # Rear window, smaller — a 2-door coupe's cabin tapers toward the
+        # back more than a sedan's.
+        rear_window = QPolygonF(
+            [QPointF(-4, 6), QPointF(4, 6), QPointF(6, 12), QPointF(-6, 12)]
+        )
+        painter.drawPolygon(rear_window)
+
+        # Wheel hints on each side — small dark rectangles, enough to read
+        # as "car" rather than just a rounded blob.
+        painter.setBrush(QBrush(QColor("#111111")))
+        painter.drawRect(QRectF(-11, -9, 3, 8))
+        painter.drawRect(QRectF(8, -9, 3, 8))
+        painter.drawRect(QRectF(-11, 4, 3, 8))
+        painter.drawRect(QRectF(8, 4, 3, 8))
