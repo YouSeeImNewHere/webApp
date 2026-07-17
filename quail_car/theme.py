@@ -176,6 +176,10 @@ QSlider#dashboardSlider::groove:vertical {{
     border-radius: 3px;
 }}
 QSlider#dashboardSlider::sub-page:vertical {{
+    background: {SURFACE_RAISED};
+    border-radius: 3px;
+}}
+QSlider#dashboardSlider::add-page:vertical {{
     background: {ACCENT};
     border-radius: 3px;
 }}
