@@ -8,12 +8,14 @@ from PySide6.QtGui import (
     QColor,
     QEventPoint,
     QFont,
+    QLinearGradient,
     QMouseEvent,
     QPainter,
     QPainterPath,
     QPen,
     QPixmap,
     QPolygonF,
+    QRadialGradient,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QApplication, QWidget
@@ -797,21 +799,67 @@ class MapCanvas(QWidget):
         (-y), standing in for a real position marker — this is a drawn
         shape, not model-accurate artwork; no licensed car imagery is
         available to this app, and at this on-screen size a real photo
-        wouldn't read as a specific make/model anyway."""
-        body = QPainterPath()
-        body.addRoundedRect(QRectF(-9, -17, 18, 32), 7, 7)
+        wouldn't read as a specific make/model anyway. Shaded (drop
+        shadow, lit-from-upper-left body gradient, glossy windshield
+        highlight, wheel-well shadows) for a pseudo-3D "lifted off the
+        map" look, rather than a genuine 3D render — everything else on
+        this map (roads, POIs) is a flat top-down projection with no
+        camera tilt, so an actual isometric/3-quarter car would clash
+        with it; shading the same flat silhouette keeps it consistent
+        while still reading as more than a paper cutout.
 
-        painter.setPen(QPen(QColor("#5c0a0a"), 1.5))
-        painter.setBrush(QBrush(QColor("#c1121f")))
+        NOTE: rendered offscreen and eyeballed once during development
+        (no way to see this live on the car's actual screen from here) —
+        worth a real look on-device, colors/proportions may want a pass
+        once seen on real hardware."""
+        body_rect = QRectF(-9, -17, 18, 32)
+
+        # Drop shadow — offset down-right of the body, softened via alpha,
+        # not a real blur (QPainter has no cheap gaussian blur, and this
+        # gets repainted every frame) — the offset alone reads as "lifted."
+        shadow = QPainterPath()
+        shadow.addRoundedRect(body_rect.translated(1.5, 2.5), 7, 7)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(0, 0, 0, 90)))
+        painter.drawPath(shadow)
+
+        # Body — lit from the upper-left, so the gradient runs light (a
+        # highlight catching the "sun") to a darker true red toward the
+        # lower-right, instead of one flat fill.
+        body = QPainterPath()
+        body.addRoundedRect(body_rect, 7, 7)
+        body_gradient = QLinearGradient(-9, -17, 9, 15)
+        body_gradient.setColorAt(0.0, QColor("#e94560"))
+        body_gradient.setColorAt(0.45, QColor("#c1121f"))
+        body_gradient.setColorAt(1.0, QColor("#7a0c14"))
+        painter.setPen(QPen(QColor("#4a0808"), 1.5))
+        painter.setBrush(QBrush(body_gradient))
         painter.drawPath(body)
 
+        # A slim lighter strip down the centerline suggests a curved roof
+        # catching light along its ridge, without needing real 3D geometry.
+        roof_highlight = QPainterPath()
+        roof_highlight.addRoundedRect(QRectF(-3, -14, 6, 27), 3, 3)
+        highlight_gradient = QLinearGradient(0, -14, 0, 13)
+        highlight_gradient.setColorAt(0.0, QColor(255, 255, 255, 55))
+        highlight_gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(highlight_gradient))
+        painter.drawPath(roof_highlight)
+
         # Windshield — reads as "front of car" at a glance, reinforcing the
-        # heading even before the overall silhouette registers.
+        # heading even before the overall silhouette registers. A diagonal
+        # gloss streak makes it read as glass instead of a flat dark panel.
         windshield = QPolygonF(
             [QPointF(-6, -10), QPointF(6, -10), QPointF(4, -2), QPointF(-4, -2)]
         )
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor("#1b2530")))
+        glass_gradient = QLinearGradient(-6, -10, 4, -2)
+        glass_gradient.setColorAt(0.0, QColor("#2c3a4a"))
+        glass_gradient.setColorAt(0.5, QColor("#1b2530"))
+        glass_gradient.setColorAt(0.55, QColor(255, 255, 255, 70))
+        glass_gradient.setColorAt(0.65, QColor("#1b2530"))
+        glass_gradient.setColorAt(1.0, QColor("#111a22"))
+        painter.setBrush(QBrush(glass_gradient))
         painter.drawPolygon(windshield)
 
         # Rear window, smaller — a 2-door coupe's cabin tapers toward the
@@ -819,12 +867,16 @@ class MapCanvas(QWidget):
         rear_window = QPolygonF(
             [QPointF(-4, 6), QPointF(4, 6), QPointF(6, 12), QPointF(-6, 12)]
         )
+        painter.setBrush(QBrush(QColor("#1b2530")))
         painter.drawPolygon(rear_window)
 
-        # Wheel hints on each side — small dark rectangles, enough to read
-        # as "car" rather than just a rounded blob.
-        painter.setBrush(QBrush(QColor("#111111")))
-        painter.drawRect(QRectF(-11, -9, 3, 8))
-        painter.drawRect(QRectF(8, -9, 3, 8))
-        painter.drawRect(QRectF(-11, 4, 3, 8))
-        painter.drawRect(QRectF(8, 4, 3, 8))
+        # Wheel hints on each side, each with a soft radial shadow beneath
+        # to ground them rather than reading as flat black tabs.
+        for wx, wy in ((-11, -9), (8, -9), (-11, 4), (8, 4)):
+            shadow_grad = QRadialGradient(wx + 1.5, wy + 4, 5)
+            shadow_grad.setColorAt(0.0, QColor(0, 0, 0, 110))
+            shadow_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            painter.setBrush(QBrush(shadow_grad))
+            painter.drawEllipse(QPointF(wx + 1.5, wy + 4), 5, 5)
+            painter.setBrush(QBrush(QColor("#111111")))
+            painter.drawRect(QRectF(wx, wy, 3, 8))
