@@ -327,7 +327,25 @@ def import_region(
     conn = open_master_db(master_db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     handler = _MasterImportHandler(conn, on_progress=on_progress)
-    handler.apply_file(str(pbf_path), locations=True, idx="sparse_mem_array")
+    # sparse_mem_array (the default-shaped choice) holds the entire node
+    # id->lat/lon index in RAM for the whole file — fine for a state-sized
+    # extract, but a real problem at nationwide scale: confirmed on real
+    # hardware, this grew to ~10GB RSS + fully exhausted 4GB of swap on a
+    # 14GB machine, and the resulting swap-thrashing dropped effective
+    # import throughput from tens of GB/hour to about 1GB/hour. Disk space
+    # is cheap here (the master DB itself already lives on a multi-TB
+    # drive); RAM on this box is not. sparse_file_array backs the same
+    # index with a file instead of anonymous memory, verified end-to-end
+    # against real data to produce identical output before switching.
+    node_index_path = master_db_path.with_name(master_db_path.stem + "_node_index.tmp")
+    if node_index_path.exists():
+        node_index_path.unlink()
+    try:
+        handler.apply_file(
+            str(pbf_path), locations=True, idx=f"sparse_file_array,{node_index_path}"
+        )
+    finally:
+        node_index_path.unlink(missing_ok=True)
     handler.finish()
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_latlon ON nodes(lat, lon)")
