@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from .dashboard_screen import _SliderRow
 from .ddc_control import DdcController
@@ -28,7 +28,11 @@ class SettingsDrawer(QWidget):
         self._ddc = DdcController()
         self._ddc.levels_read.connect(self._on_levels_read)
 
-        layout = QVBoxLayout(self)
+        # Side-by-side, same as the dashboard's own rail (_build_slider_rail
+        # in dashboard_screen.py) — this was a QVBoxLayout before, which
+        # stacked the two sliders on top of each other instead of matching
+        # that layout.
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 28, 16, 28)
         layout.setSpacing(16)
 

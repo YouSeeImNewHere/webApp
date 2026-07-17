@@ -168,11 +168,8 @@ class ShellWindow(QMainWindow):
         self._position_settings_drawer()
 
     def _position_settings_drawer(self):
+        # Full-height, matching the dashboard's own slider rail — was
+        # capped at 420px before, which made the sliders noticeably
+        # shorter here than on the dashboard for no real reason.
         drawer = self._settings_drawer
-        height = min(self._central.height() - 40, 420)
-        drawer.setGeometry(
-            _SIDE_PANEL_WIDTH,
-            (self._central.height() - height) // 2,
-            drawer.width(),
-            height,
-        )
+        drawer.setGeometry(_SIDE_PANEL_WIDTH, 0, drawer.width(), self._central.height())
