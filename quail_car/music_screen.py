@@ -182,6 +182,11 @@ class MusicScreen(QWidget):
 
         self._library: list[Track] = []
         self._scan_thread: _LibraryScanThread | None = None
+        self._pending_specs: list[tuple] = []
+        self._fill_index = 0
+        self._fill_timer = QTimer(self)
+        self._fill_timer.setSingleShot(True)
+        self._fill_timer.timeout.connect(self._fill_next_batch)
         self._path_index: dict[str, Track] = {}
         self._queue: list[Track] = []
         self._current_index = -1
@@ -472,11 +477,22 @@ class MusicScreen(QWidget):
         self.track_list.clear()
         query = self.search_box.text().strip().lower()
 
+        # Collecting (user_data, art_path, glyph, title, subtitle) tuples
+        # here is cheap pure-Python work — no Qt objects get built yet.
+        # Actually constructing a RowWidget per entry is deferred to
+        # _fill_next_batch() below, spread across several event-loop turns
+        # instead of one long synchronous burst. "All Songs" alone can be
+        # 2000+ real QWidgets (this list isn't virtualized); building all of
+        # them in one go was blocking the whole UI — including buttons
+        # unrelated to the list — until the entire browse view finished
+        # rendering.
+        specs: list[tuple] = []
+
         if self._view_mode == "songs":
             for track in self._library:
                 if query and query not in track.artist.lower() and query not in track.title.lower():
                     continue
-                self._add_track_item(track)
+                specs.append(self._track_spec(track))
 
         elif self._view_mode == "artists":
             # Grouped once instead of a fresh full-library scan per artist
@@ -489,23 +505,20 @@ class MusicScreen(QWidget):
                 if query and query not in artist.lower():
                     continue
                 tracks = by_artist[artist]
-                pixmap = next((p for p in (album_art.get_cover_pixmap(t.path) for t in tracks) if p is not None), None)
-                self._add_row(
-                    ("artist", artist),
-                    RowWidget(pixmap, "👤", artist, f"{len(tracks)} song{'s' if len(tracks) != 1 else ''}"),
-                )
+                count = len(tracks)
+                specs.append((
+                    ("artist", artist), tracks[0].path, "👤", artist,
+                    f"{count} song{'s' if count != 1 else ''}",
+                ))
 
         elif self._view_mode == "artist_tracks":
-            self._add_row(
-                ("back_to_artists", None),
-                RowWidget(None, "‹", _BACK_TO_ARTISTS),
-            )
+            specs.append((("back_to_artists", None), None, "‹", _BACK_TO_ARTISTS, ""))
             for track in self._library:
                 if track.artist != self._current_artist:
                     continue
                 if query and query not in track.title.lower():
                     continue
-                self._add_track_item(track)
+                specs.append(self._track_spec(track))
 
         elif self._view_mode == "genres":
             by_genre: dict[str, int] = {}
@@ -515,40 +528,64 @@ class MusicScreen(QWidget):
                 if query and query not in genre.lower():
                     continue
                 count = by_genre[genre]
-                self._add_row(
-                    ("genre", genre),
-                    RowWidget(None, "\U0001f3b5", genre, f"{count} song{'s' if count != 1 else ''}"),
-                )
+                specs.append((
+                    ("genre", genre), None, "\U0001f3b5", genre,
+                    f"{count} song{'s' if count != 1 else ''}",
+                ))
 
         elif self._view_mode == "genre_tracks":
-            self._add_row(
-                ("back_to_genres", None),
-                RowWidget(None, "‹", _BACK_TO_GENRES),
-            )
+            specs.append((("back_to_genres", None), None, "‹", _BACK_TO_GENRES, ""))
             for track in self._library:
                 if track.genre != self._current_genre:
                     continue
                 if query and query not in track.title.lower() and query not in track.artist.lower():
                     continue
-                self._add_track_item(track)
+                specs.append(self._track_spec(track))
 
         elif self._view_mode == "playlists":
             names = music_library.list_playlist_names()
             for name in names:
                 playlist = music_library.load_playlist(name, self._library, self._path_index)
-                pixmap = album_art.get_cover_pixmap(playlist.tracks[0].path) if playlist.tracks else None
+                art_path = playlist.tracks[0].path if playlist.tracks else None
                 count = len(playlist.tracks)
-                self._add_row(
-                    ("playlist", name),
-                    RowWidget(pixmap, "📁", name, f"{count} track{'s' if count != 1 else ''}"),
-                )
+                specs.append((
+                    ("playlist", name), art_path, "📁", name, f"{count} track{'s' if count != 1 else ''}",
+                ))
             if not names:
                 self.status_label.setText("No playlists yet — tap “＋ New Playlist”")
 
         elif self._view_mode == "playlist_tracks":
             playlist = music_library.load_playlist(self._current_playlist, self._library, self._path_index)
             for track in playlist.tracks:
-                self._add_track_item(track)
+                specs.append(self._track_spec(track))
+
+        self._start_incremental_fill(specs)
+
+    def _track_spec(self, track: Track) -> tuple:
+        subtitle = track.artist if track.artist != "Unknown Artist" else ""
+        return ("track", track), track.path, "♪", track.title, subtitle
+
+    def _start_incremental_fill(self, specs: list[tuple]):
+        self._fill_timer.stop()
+        self._pending_specs = specs
+        self._fill_index = 0
+        self._fill_next_batch()
+
+    _FILL_BATCH_SIZE = 40
+
+    def _fill_next_batch(self):
+        end = min(self._fill_index + self._FILL_BATCH_SIZE, len(self._pending_specs))
+        for i in range(self._fill_index, end):
+            user_data, art_path, glyph, title, subtitle = self._pending_specs[i]
+            pixmap = album_art.get_cover_pixmap(art_path) if art_path is not None else None
+            self._add_row(user_data, RowWidget(pixmap, glyph, title, subtitle))
+        self._fill_index = end
+        if self._fill_index < len(self._pending_specs):
+            # 0ms singleShot, not a plain function call — yields back to the
+            # event loop between batches so queued input (a tap, a search
+            # keystroke) gets processed instead of queuing up behind the
+            # rest of the list build.
+            self._fill_timer.start(0)
 
     def _add_row(self, user_data: tuple, widget: RowWidget) -> QListWidgetItem:
         item = QListWidgetItem()
@@ -558,18 +595,16 @@ class MusicScreen(QWidget):
         self.track_list.setItemWidget(item, widget)
         return item
 
-    def _add_track_item(self, track: Track):
-        pixmap = album_art.get_cover_pixmap(track.path)
-        subtitle = track.artist if track.artist != "Unknown Artist" else ""
-        self._add_row(("track", track), RowWidget(pixmap, "♪", track.title, subtitle))
-
     def _on_item_activated(self, item: QListWidgetItem):
         kind, payload = item.data(Qt.ItemDataRole.UserRole)
         if kind == "track":
             self._play_queue_from_current_view()
-            index = [self.track_list.item(i).data(Qt.ItemDataRole.UserRole)[1]
-                     for i in range(self.track_list.count())
-                     if self.track_list.item(i).data(Qt.ItemDataRole.UserRole)[0] == "track"].index(payload)
+            # Indexed against the queue built above (== _current_view_tracks(),
+            # sourced from _pending_specs) rather than the QListWidget's
+            # realized items — rows fill in incrementally now (see
+            # _fill_next_batch), so the widget list can be a partial subset
+            # of the full filtered view at the moment a tap lands.
+            index = self._queue.index(payload)
             self._play_index(index)
         elif kind == "artist":
             self._current_artist = payload
@@ -602,12 +637,11 @@ class MusicScreen(QWidget):
             self._refresh_list()
 
     def _current_view_tracks(self) -> list[Track]:
-        tracks = []
-        for i in range(self.track_list.count()):
-            data = self.track_list.item(i).data(Qt.ItemDataRole.UserRole)
-            if data[0] == "track":
-                tracks.append(data[1])
-        return tracks
+        # Sourced from _pending_specs (the full filtered view, computed
+        # synchronously in _refresh_list) rather than the QListWidget's
+        # realized items, which may still be a partial subset while a batch
+        # fill is in progress (see _fill_next_batch).
+        return [spec[0][1] for spec in self._pending_specs if spec[0][0] == "track"]
 
     def _play_queue_from_current_view(self):
         self._queue = self._current_view_tracks()
