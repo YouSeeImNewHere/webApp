@@ -17,8 +17,17 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import requests
+
+# Python only puts the invoked script's own directory (scripts/) on
+# sys.path, not the repo root — confirmed via a real ModuleNotFoundError
+# for `db` (a top-level module at ~/webapp/db.py) when run directly as
+# `python scripts/notify_when_maps_ready.py`. `app.*` imports happened to
+# still work since that's a real package discoverable another way, but
+# db.py isn't.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
 from app.core.pushover import send_pushover
