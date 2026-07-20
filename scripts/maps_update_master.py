@@ -22,8 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.maps_config import MAPS_REGION_SOURCES, city_cache_dir, master_dir, maps_enabled, raw_dir, tile_cache_dir
 from app.core.maps_state import record_region_build
-from app.core.tenancy import get_owner_tenant_id, initialize_tenancy
+from app.core.pushover import send_pushover
+from app.core.tenancy import get_owner_tenant_id, get_user_pushover_key_by_email, initialize_tenancy
 from db import open_pool, close_pool
+
+# Only one Quail account exists today — hardcoded rather than threading a
+# --email flag through a cron-scheduled script.
+NOTIFY_EMAIL = "jaredtrevino03@gmail.com"
 
 
 def log(msg: str) -> None:
@@ -64,6 +69,9 @@ def main() -> None:
         # under the logged-in session's real tenant_id under multi-tenant
         # mode) actually finds what got built here.
         tenant_id = get_owner_tenant_id() or 0
+        # Looked up once, not per region — same DB round-trip either way,
+        # no reason to repeat it 50+ times in one run.
+        pushover_key = get_user_pushover_key_by_email(NOTIFY_EMAIL)
         any_changed = False
         for region in MAPS_REGION_SOURCES:
             log(f"checking {region}")
@@ -95,6 +103,13 @@ def main() -> None:
             source_md5 = md5_path.read_text().strip() if md5_path.exists() else ""
             record_region_build(tenant_id, region, stats, source_md5)
             log(f"  done: {region}: {stats}")
+            if pushover_key:
+                send_pushover(
+                    "Quail Maps",
+                    f"{region} done — {stats['way_count']:,} roads, "
+                    f"{stats['place_count']:,} places ({stats['elapsed_sec']:.0f}s).",
+                    user_key=pushover_key,
+                )
 
         if any_changed:
             for cache_dir, label in ((city_cache_dir(), "city extract"), (tile_cache_dir(), "tile")):
