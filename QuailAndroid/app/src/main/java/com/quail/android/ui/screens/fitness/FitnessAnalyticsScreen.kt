@@ -144,7 +144,7 @@ fun FitnessAnalyticsScreen(
                                         Text(run.date, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
                                         Text(
                                             listOfNotNull(
-                                                run.distanceKm?.let { "%.2f km".format(it) },
+                                                run.distanceKm?.let { "%.2f mi".format(kmToMiles(it)) },
                                                 formatRunPace(run.avgPaceSecPerKm),
                                                 run.avgHeartRate?.let { "$it bpm" },
                                             ).joinToString(" · "),
@@ -170,7 +170,8 @@ fun FitnessAnalyticsScreen(
 
 private fun formatRunPace(secPerKm: Int?): String? {
     if (secPerKm == null || secPerKm <= 0) return null
-    return "%d:%02d /km".format(secPerKm / 60, secPerKm % 60)
+    val secPerMile = (secPerKm * 1.609344).toInt()
+    return "%d:%02d /mi".format(secPerMile / 60, secPerMile % 60)
 }
 
 @Composable

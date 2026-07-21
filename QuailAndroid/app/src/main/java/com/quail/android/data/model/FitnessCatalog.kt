@@ -243,6 +243,13 @@ val DEFAULT_EXERCISES: List<Exercise> = listOf(
         "Exit forward into a forward roll or step down if you overbalance.",
         "Consistent 5-second holds typically require 300–500 hours of practice.",
     ), isTimedExercise = true, defaultSets = 5, defaultDurationSeconds = 10),
+    Exercise("lsit_support_hold", "L-sit Support Hold", SKILL, listOf(ABS, TRICEPS, SHOULDERS, FOREARMS), BEGINNER, listOf(
+        "Support yourself on parallettes, dip bars, or two sturdy chairs.",
+        "Press down through straight arms to lift your hips, feet still resting lightly on the ground.",
+        "Depress your shoulders — pull them down away from your ears, don't just lock your elbows.",
+        "This builds the straight-arm and shoulder strength every later L-sit step needs.",
+        "The real first step before tucking your knees up at all.",
+    ), isTimedExercise = true, defaultSets = 3, defaultDurationSeconds = 15),
     Exercise("tuck_lsit", "Tuck L-sit", SKILL, listOf(ABS, TRICEPS, SHOULDERS, FOREARMS), INTERMEDIATE, listOf(
         "Sit on the floor, place hands beside your hips, fingers pointing forward.",
         "Press down through your hands to lift your hips off the floor.",
@@ -250,6 +257,13 @@ val DEFAULT_EXERCISES: List<Exercise> = listOf(
         "Keep your arms straight — bent elbows make this much harder to hold.",
         "Build endurance before extending legs.",
     ), isTimedExercise = true, defaultSets = 3, defaultDurationSeconds = 20),
+    Exercise("single_leg_lsit", "Single-Leg L-sit", SKILL, listOf(ABS, TRICEPS, SHOULDERS, FOREARMS, QUADS), INTERMEDIATE, listOf(
+        "Start in a tuck L-sit, hips lifted and knees to chest.",
+        "Extend one leg straight out while keeping the other tucked.",
+        "Keep both arms locked and shoulders depressed the whole time.",
+        "Switch legs between sets so both sides build evenly.",
+        "The real bridge between tuck L-sit and holding both legs out.",
+    ), isTimedExercise = true, defaultSets = 3, defaultDurationSeconds = 18),
     Exercise("lsit", "L-sit", SKILL, listOf(ABS, TRICEPS, SHOULDERS, FOREARMS, QUADS), ADVANCED, listOf(
         "Support yourself on parallel bars, dip bars, or push-up handles.",
         "Lift your straight legs to hip height — forming an 'L' with your body.",
@@ -342,7 +356,7 @@ val DEFAULT_PROGRESSION_PATHS: List<ProgressionPath> = listOf(
     ProgressionPath("path_core", "Core Control", "Building a bulletproof midsection.", CORE,
         listOf("plank", "hollow_body_hold", "hanging_knee_raise", "hanging_leg_raise", "toes_to_bar")),
     ProgressionPath("path_lsit", "L-sit", "Straight-arm compression strength.", SKILL,
-        listOf("tuck_lsit", "lsit")),
+        listOf("lsit_support_hold", "tuck_lsit", "single_leg_lsit", "lsit")),
     ProgressionPath("path_front_lever", "Front Lever", "Horizontal pulling strength from tuck to full.", SKILL,
         listOf("dead_hang", "tuck_front_lever", "front_lever")),
     ProgressionPath("path_back_lever", "Back Lever", "Shoulder extension and body tension.", SKILL,

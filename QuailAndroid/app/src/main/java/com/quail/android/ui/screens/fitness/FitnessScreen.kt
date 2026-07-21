@@ -494,9 +494,10 @@ private fun WeeklyVolumeSection(data: FitnessData) {
 
 private fun formatPace(secPerKm: Int?): String? {
     if (secPerKm == null || secPerKm <= 0) return null
-    val min = secPerKm / 60
-    val sec = secPerKm % 60
-    return "%d:%02d /km".format(min, sec)
+    val secPerMile = (secPerKm * 1.609344).toInt()
+    val min = secPerMile / 60
+    val sec = secPerMile % 60
+    return "%d:%02d /mi".format(min, sec)
 }
 
 @Composable
@@ -530,7 +531,7 @@ private fun RecentSessionsSection(sessions: List<WorkoutSessionRecord>, onDelete
                             val subtitle = if (session.isFromGarmin) {
                                 listOfNotNull(
                                     session.date,
-                                    session.distanceKm?.let { "%.2f km".format(it) },
+                                    session.distanceKm?.let { "%.2f mi".format(kmToMiles(it)) },
                                     formatPace(session.avgPaceSecPerKm),
                                     session.avgHeartRate?.let { "$it bpm avg" },
                                     session.calories?.let { "$it cal" },

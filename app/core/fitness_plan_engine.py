@@ -39,7 +39,14 @@ WORKOUT_TEST = "TEST"
 WORKOUT_REST = "REST"
 
 PUSHUP_PROGRESSION = ["wall_pushup", "incline_pushup", "pushup", "archer_pushup", "one_arm_pushup"]
-LSIT_PROGRESSION = ["tuck_lsit", "lsit"]
+# Was just ["tuck_lsit", "lsit"] - two steps is too big a jump for someone who
+# can't do either yet (a real user report: prescribed a plain "lsit" while
+# unable to do one at all). lsit_support_hold is a straight-arm support hold
+# with feet still resting near the ground (building shoulder depression +
+# straight-arm strength before any leg-lifting); single_leg_lsit extends one
+# leg at a time as a real intermediate step between tuck and full. Both new
+# ids need matching entries in QuailAndroid's FitnessCatalog.kt.
+LSIT_PROGRESSION = ["lsit_support_hold", "tuck_lsit", "single_leg_lsit", "lsit"]
 
 # Bounded adaptive-adjustment tuning — see adjust_for_performance().
 _BEAT_MARGIN = 0.15  # >15% over prescription bumps next week up a tier
@@ -241,6 +248,16 @@ def _pushup_variant_for(estimated_max: float, baseline_exercise_id: Optional[str
     return variant
 
 
+# Three sessions a week, each with a different rep scheme and rest profile,
+# instead of the exact same 5 sets repeated three times — same "too mundane"
+# feedback that motivated _LSIT_SESSION_FOCUS above.
+_PUSHUP_SESSION_FOCUS = [
+    ("Strength — heavier sets, full rest", [0.7, 0.6, 0.6, 0.5], 120),
+    ("Volume — more sets, shorter rest", [0.5, 0.45, 0.45, 0.4, 0.4, 0.4], 60),
+    ("Pyramid — build up then back down", [0.3, 0.5, 0.6, 0.5, 0.3], 90),
+]
+
+
 def _pushup_week_plan(goal: Goal, week_index: int) -> list[dict]:
     baseline_max = goal.baseline_value or 10.0
     estimated_max = baseline_max * (1.12 ** week_index)
@@ -250,28 +267,108 @@ def _pushup_week_plan(goal: Goal, week_index: int) -> list[dict]:
             "workout_type": WORKOUT_TEST,
             "prescription": {"type": "pushup_test", "instructions": "AMRAP retest to recalibrate your working max."},
         }]
-    pct_tiers = [0.6, 0.5, 0.4, 0.4, 0.3]
-    sets = [{"reps": max(1, round(estimated_max * pct))} for pct in pct_tiers]
     variant = _pushup_variant_for(estimated_max, goal.baseline_exercise_id, week_index)
-    return [{
-        "workout_type": WORKOUT_PUSHUP_SESSION,
-        "prescription": {"type": "pushups", "exercise_id": variant, "sets": sets, "rest_seconds": 90},
-    }] * 3
+    sessions = []
+    for notes, pct_tiers, rest_seconds in _PUSHUP_SESSION_FOCUS:
+        sets = [{"reps": max(1, round(estimated_max * pct))} for pct in pct_tiers]
+        sessions.append({
+            "workout_type": WORKOUT_PUSHUP_SESSION,
+            "prescription": {
+                "type": "pushups", "exercise_id": variant, "sets": sets,
+                "rest_seconds": rest_seconds, "notes": notes,
+            },
+        })
+    return sessions
+
+
+# Hold-time thresholds (seconds, at the *current* variant) for unlocking the
+# next step of LSIT_PROGRESSION — same shape as _PUSHUP_VARIANT_THRESHOLDS.
+# A true beginner (can't hold anything yet) starts on lsit_support_hold, not
+# straight into tuck_lsit or lsit.
+_LSIT_VARIANT_THRESHOLDS = [
+    (0, "lsit_support_hold"),
+    (10, "tuck_lsit"),
+    (20, "single_leg_lsit"),
+    (30, "lsit"),
+]
+
+
+def _lsit_variant_for(estimated_hold: float, baseline_exercise_id: Optional[str], week_index: int) -> str:
+    """Mirrors _pushup_variant_for()'s logic — prefers the user's actual
+    captured Progression Paths standing over a threshold guess, advancing
+    one step every 4 weeks from wherever they actually tested."""
+    if baseline_exercise_id in LSIT_PROGRESSION:
+        start_index = LSIT_PROGRESSION.index(baseline_exercise_id)
+        steps_advanced = week_index // 4
+        return LSIT_PROGRESSION[min(start_index + steps_advanced, len(LSIT_PROGRESSION) - 1)]
+    variant = _LSIT_VARIANT_THRESHOLDS[0][1]
+    for threshold, step in _LSIT_VARIANT_THRESHOLDS:
+        if estimated_hold >= threshold:
+            variant = step
+    return variant
+
+
+# Three sessions a week, each with a different focus, instead of the exact
+# same sets repeated three times — real user feedback ("too mundane," "no
+# diversity") pointed at this repetition as much as the missing progression.
+_LSIT_SESSION_FOCUS = [
+    ("Max effort — single long hold, full rest between", [1.0, 0.9, 0.8], 90),
+    ("Volume — more, shorter holds", [0.6, 0.6, 0.6, 0.6, 0.6, 0.6], 45),
+    ("Technique work — controlled holds, focus on hollow body + shoulder depression", [0.7, 0.7, 0.7, 0.7], 60),
+]
 
 
 def _lsit_week_plan(goal: Goal, week_index: int) -> list[dict]:
     baseline_hold = goal.baseline_value or 5.0
     target_hold = goal.target_duration_seconds or 60
     hold = min(baseline_hold * (1.10 ** week_index), target_hold)
-    # Never regress below the variant the user actually tested at (see
-    # Goal.baseline_exercise_id) — only the hold-time threshold can advance
-    # it from there.
-    variant = "lsit" if (goal.baseline_exercise_id == "lsit" or hold >= 15) else "tuck_lsit"
-    sets = [{"hold_seconds": round(hold * 0.75)} for _ in range(5)]
-    return [{
-        "workout_type": WORKOUT_LSIT_SESSION,
-        "prescription": {"type": "lsit_hold", "exercise_id": variant, "sets": sets, "rest_seconds": 60},
-    }] * 3
+    variant = _lsit_variant_for(hold, goal.baseline_exercise_id, week_index)
+    sessions = []
+    for notes, pct_tiers, rest_seconds in _LSIT_SESSION_FOCUS:
+        sets = [{"hold_seconds": max(1, round(hold * 0.75 * pct))} for pct in pct_tiers]
+        sessions.append({
+            "workout_type": WORKOUT_LSIT_SESSION,
+            "prescription": {
+                "type": "lsit_hold", "exercise_id": variant, "sets": sets,
+                "rest_seconds": rest_seconds, "notes": notes,
+            },
+        })
+    return sessions
+
+
+# Real user report: got a 4x400m interval session AND a 1km+ long run
+# scheduled the same day — the old round-robin slot assignment had no
+# concept of two hard running sessions being a bad combo. These are the
+# workout types that shouldn't double up with each other on one day unless
+# there's truly no other choice.
+_HARD_RUN_TYPES = {WORKOUT_RUN_INTERVAL, WORKOUT_RUN_LONG, WORKOUT_RUN_TEMPO}
+
+
+def _assign_slots(sessions: list[dict], available_days: list[date]) -> list[date]:
+    """One date per session, same length/order as `sessions`. Hard running
+    sessions (intervals/long run/tempo) each get their own day whenever
+    there are enough available days to do that — only forced to double up
+    with each other if the week is more constrained than that. Everything
+    else (pushups, L-sit, easy runs) round-robins normally and can freely
+    share a day with one hard-run session; that combo is normal training,
+    two hard runs in one day is not."""
+    hard_indices = [i for i, s in enumerate(sessions) if s["workout_type"] in _HARD_RUN_TYPES]
+    other_indices = [i for i, s in enumerate(sessions) if s["workout_type"] not in _HARD_RUN_TYPES]
+
+    slots: list[Optional[date]] = [None] * len(sessions)
+    used_by_hard: set[date] = set()
+    for n, i in enumerate(hard_indices):
+        # Prefer a day no other hard session has claimed yet; only reuse one
+        # once every available day already has a hard session on it.
+        free = [d for d in available_days if d not in used_by_hard]
+        day = free[0] if free else available_days[n % len(available_days)]
+        slots[i] = day
+        used_by_hard.add(day)
+
+    for n, i in enumerate(other_indices):
+        slots[i] = available_days[n % len(available_days)]
+
+    return slots  # type: ignore[return-value]
 
 
 def generate_plan(goals: list[Goal], availability: Availability, start_date: date) -> list[dict]:
@@ -319,7 +416,7 @@ def generate_plan(goals: list[Goal], availability: Availability, start_date: dat
         available_in_week = [d for d in _week_dates(availability, week_start) if availability.is_available(d)]
         if not available_in_week:
             continue
-        slots = [available_in_week[i % len(available_in_week)] for i in range(len(sessions))]
+        slots = _assign_slots(sessions, available_in_week)
         for i, session in enumerate(sessions):
             goal_ids = []
             if session["workout_type"] in (WORKOUT_RUN_INTERVAL, WORKOUT_RUN_TEMPO, WORKOUT_RUN_EASY):

@@ -101,14 +101,20 @@ class GoalSetupWizardViewModel(
             _submitState.value = GoalSetupSubmitState.Saving
             try {
                 if (f.includeRunDistance) {
-                    val distance = f.targetDistanceKm.toDoubleOrNull()
+                    // Field (and form property name) predate the miles
+                    // switch - form.targetDistanceKm now actually holds
+                    // what the user typed in miles; convert to km here
+                    // since the backend/GoalRecord data model stays km
+                    // internally, only display + input are miles.
+                    val distanceMiles = f.targetDistanceKm.toDoubleOrNull()
                         ?: throw IllegalArgumentException("Enter a valid target distance")
+                    val distanceKm = distanceMiles * 1.609344
                     repository.saveGoal(
                         GoalRecord(
                             clientId = FitnessRepository.newClientId(),
-                            title = "Run ${f.targetDistanceKm} km",
+                            title = "Run ${f.targetDistanceKm} mi",
                             goalType = FitnessGoalType.RUN_DISTANCE,
-                            targetDistanceKm = distance,
+                            targetDistanceKm = distanceKm,
                             targetDate = f.targetDateText,
                         ),
                     )

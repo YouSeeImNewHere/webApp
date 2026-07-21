@@ -19,6 +19,12 @@ fun Map<String, JsonElement>.str(key: String): String? = this[key]?.jsonPrimitiv
 fun Map<String, JsonElement>.int(key: String): Int? = this[key]?.jsonPrimitive?.intOrNull
 fun Map<String, JsonElement>.double(key: String): Double? = this[key]?.jsonPrimitive?.doubleOrNull
 
+/** All distances are stored/computed in km end to end (backend + local
+ * models) - converting only at display time, here and everywhere else a km
+ * value gets rendered, keeps that data model intact while showing miles
+ * throughout the UI per user preference. */
+fun kmToMiles(km: Double): Double = km * 0.621371
+
 data class PrescriptionSet(val reps: Int?, val holdSeconds: Int?)
 
 fun Map<String, JsonElement>.setsList(): List<PrescriptionSet> {
@@ -37,7 +43,7 @@ fun prescriptionSummary(workoutType: String, prescription: Map<String, JsonEleme
             val distance = prescription.double("distance_km")
             val pace = prescription.int("target_pace_sec_per_mile")
             buildString {
-                if (distance != null) append("${"%.1f".format(distance)} km")
+                if (distance != null) append("${"%.1f".format(kmToMiles(distance))} mi")
                 if (pace != null) append(if (isNotEmpty()) " @ ${formatPace(pace)}/mi" else "Target ${formatPace(pace)}/mi")
                 if (isEmpty()) append(prescription.str("notes") ?: workoutType)
             }
@@ -45,7 +51,8 @@ fun prescriptionSummary(workoutType: String, prescription: Map<String, JsonEleme
         "intervals" -> {
             val reps = prescription.int("reps")
             val pace = prescription.int("target_pace_sec_per_mile")
-            "${reps ?: "?"}x400m" + (pace?.let { " @ ${formatPace(it)}/mi" } ?: "")
+            val distanceMi = prescription.double("distance_km")?.let { kmToMiles(it) } ?: 0.25
+            "${reps ?: "?"}x${"%.2f".format(distanceMi)}mi" + (pace?.let { " @ ${formatPace(it)}/mi" } ?: "")
         }
         "pushups" -> {
             val sets = prescription.setsList()

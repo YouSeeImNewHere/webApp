@@ -279,7 +279,9 @@ private fun SetRow(index: Int, set: WorkoutSet, isTimed: Boolean, onChange: (Wor
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("$index", color = QuailTextDim, modifier = Modifier.padding(end = 2.dp))
+            // Was a bare "$index" with no label - a real user mistook the
+            // set-row number itself for a prescribed value ("it says 4").
+            Text("Set $index", color = QuailTextDim, modifier = Modifier.padding(end = 2.dp))
             OutlinedTextField(
                 value = valueText,
                 onValueChange = { new ->

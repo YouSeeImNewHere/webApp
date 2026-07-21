@@ -75,7 +75,7 @@ fun GoalSetupWizardScreen(viewModel: GoalSetupWizardViewModel, onDone: () -> Uni
                 SectionCard("Run longer distances") {
                     ToggleCell("Include this goal", form.includeRunDistance) { viewModel.updateForm { f -> f.copy(includeRunDistance = it) } }
                     if (form.includeRunDistance) {
-                        TextCell("Target distance (km)", form.targetDistanceKm, numeric = true) {
+                        TextCell("Target distance (mi)", form.targetDistanceKm, numeric = true) {
                             viewModel.updateForm { f -> f.copy(targetDistanceKm = it) }
                         }
                     }

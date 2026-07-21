@@ -224,7 +224,14 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
         val type = scheduled.prescription.str("type")
         val exercises = when (type) {
             "pushups", "lsit_hold" -> {
-                val exerciseId = scheduled.prescription.str("exercise_id") ?: "pushup"
+                // Fallback must match the prescription's own type - falling
+                // back to "pushup" (a non-timed exercise) for a missing
+                // exercise_id on an lsit_hold prescription was a real bug:
+                // it made isTimedExercise resolve false for an L-sit hold,
+                // so the logger showed it as a bare rep count with no
+                // seconds unit instead of a timed hold.
+                val fallbackId = if (type == "lsit_hold") "tuck_lsit" else "pushup"
+                val exerciseId = scheduled.prescription.str("exercise_id") ?: fallbackId
                 val sets = scheduled.prescription.setsList().map {
                     WorkoutSet(id = UUID.randomUUID().toString(), reps = it.reps, durationSeconds = it.holdSeconds)
                 }
