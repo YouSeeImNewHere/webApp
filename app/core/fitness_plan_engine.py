@@ -300,21 +300,34 @@ _LSIT_SESSION_FOCUS = [
 
 # Real user feedback: a session that's always "pushups + L-sit + core" is
 # still mundane even once the sets/reps vary, because it's the same two
-# muscle groups every single day. Rotates through legs (squats), pull
-# (inverted rows - real complementary work since pushups/L-sit are almost
-# entirely push/hold, no pulling at all) and core, so a 30-60min session
-# actually trains the whole body across the week instead of drilling the
-# same two skills from three angles. label is shown directly in the UI so
-# the client doesn't need its own copy of this rotation to render it.
-_ACCESSORY_ROTATION = [
+# muscle groups every single day, and it doesn't come close to filling a
+# real 30-60min session — a couple hundred pushups/L-sit reps is maybe 10
+# minutes of actual work. Pulls from a much wider slice of the bodyweight
+# catalog (legs, pull, core, cardio finisher) so each session is a genuine
+# multi-station circuit, not two skills plus one afterthought. label is
+# shown directly in the UI so the client doesn't need its own copy of this
+# rotation to render it.
+_ACCESSORY_POOL = [
     # exercise_id, label, kind ("hold"|"reps"), base_value, sets, rest_seconds
-    ("hollow_body_hold", "Core", "hold", 30, 4, 45),
-    ("bodyweight_squat", "Squats", "reps", 15, 3, 45),
-    ("inverted_row", "Inverted Rows", "reps", 8, 3, 60),
-    ("plank", "Core", "hold", 45, 3, 30),
-    ("bulgarian_split_squat", "Split Squats", "reps", 10, 3, 60),
-    ("hanging_knee_raise", "Knee Raises", "reps", 12, 3, 45),
+    ("bodyweight_squat", "Squats", "reps", 15, 4, 45),
+    ("inverted_row", "Inverted Rows", "reps", 8, 4, 60),
+    ("hollow_body_hold", "Hollow Body Hold", "hold", 30, 4, 45),
+    ("bulgarian_split_squat", "Split Squats", "reps", 10, 4, 60),
+    ("plank", "Plank", "hold", 45, 4, 30),
+    ("hanging_knee_raise", "Hanging Knee Raises", "reps", 12, 4, 45),
+    ("calf_raise", "Calf Raises", "reps", 20, 4, 30),
+    ("dead_hang", "Dead Hang", "hold", 20, 4, 60),
+    ("scapular_pullup", "Scapular Pull-ups", "reps", 8, 4, 60),
+    ("jump_rope", "Jump Rope", "hold", 60, 4, 30),
+    ("burpees", "Burpees", "reps", 10, 4, 45),
 ]
+
+# Each skills session bundles this many distinct accessory stations (plus
+# pushups/L-sit) - enough to genuinely fill 30-60 minutes instead of just
+# padding with one extra move. Picking consecutive pool entries (wrapping)
+# per session keeps every session's own stations distinct while still
+# rotating the whole pool across the week.
+_ACCESSORIES_PER_SESSION = 4
 
 
 def _skills_week_plan(pushup_goal: Optional[Goal], lsit_goal: Optional[Goal], week_index: int) -> list[dict]:
@@ -382,18 +395,20 @@ def _skills_week_plan(pushup_goal: Optional[Goal], lsit_goal: Optional[Goal], we
                 "rest_seconds": rest_seconds, "notes": notes,
             })
             goal_ids.append(lsit_goal.id)
-        acc_id, acc_label, acc_kind, acc_value, acc_sets, acc_rest = _ACCESSORY_ROTATION[
-            (week_index * 3 + i) % len(_ACCESSORY_ROTATION)
-        ]
-        acc_sets_list = (
-            [{"hold_seconds": acc_value} for _ in range(acc_sets)]
-            if acc_kind == "hold"
-            else [{"reps": acc_value} for _ in range(acc_sets)]
-        )
-        blocks.append({
-            "type": "accessory", "exercise_id": acc_id, "label": acc_label,
-            "sets": acc_sets_list, "rest_seconds": acc_rest,
-        })
+        session_index = week_index * 3 + i
+        for j in range(_ACCESSORIES_PER_SESSION):
+            acc_id, acc_label, acc_kind, acc_value, acc_sets, acc_rest = _ACCESSORY_POOL[
+                (session_index * _ACCESSORIES_PER_SESSION + j) % len(_ACCESSORY_POOL)
+            ]
+            acc_sets_list = (
+                [{"hold_seconds": acc_value} for _ in range(acc_sets)]
+                if acc_kind == "hold"
+                else [{"reps": acc_value} for _ in range(acc_sets)]
+            )
+            blocks.append({
+                "type": "accessory", "exercise_id": acc_id, "label": acc_label,
+                "sets": acc_sets_list, "rest_seconds": acc_rest,
+            })
         sessions.append({
             "workout_type": WORKOUT_SKILLS_SESSION,
             "prescription": {"type": "session", "blocks": blocks},
