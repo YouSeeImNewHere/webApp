@@ -44,7 +44,7 @@ EXTRACT_PATH = Path(__file__).resolve().parent / "extract.sqlite3"
 # computer and the homelab are typically on the same home LAN when this
 # runs, which is simpler/faster than going out over Tailscale for a
 # same-room download.
-DEFAULT_BASE_URL = "http://192.168.0.31:8000"
+DEFAULT_BASE_URL = "http://192.168.0.14:8000"
 DEFAULT_RADIUS_KM = 40.0  # server's MAPS_MAX_EXTRACT_RADIUS_KM default cap
 
 

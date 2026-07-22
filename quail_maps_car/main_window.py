@@ -1,16 +1,36 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QGridLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtWidgets import QGridLayout, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from .carlink import PAIRED_PHONE_MAC, BluetoothCarLink
-from .geo.latlon import latlon_to_local, local_to_latlon, nearest_routable_node
+from .geo.latlon import haversine_mi, latlon_to_local, local_to_latlon, nearest_routable_node
 from .geo.search_db import Place
+from .geo.valhalla_client import LONG_ROUTE_THRESHOLD_MI, LongRoute, fetch_long_route
 from .screens.idle_screen import IdleScreen
 from .screens.nav_screen import NavScreen
 from .screens.routes_screen import RoutesScreen
 from .screens.search_screen import SearchScreen
 from .widgets.status_bar import StatusBar
+
+
+class _LongRouteWorker(QThread):
+    """Valhalla's /route is a real network call to homelab (see
+    valhalla_client.py) - runs off the UI thread for the same reason
+    RoutesScreen's _RouteWorker does its local Dijkstra off-thread."""
+
+    route_ready = Signal(object)  # LongRoute | None
+
+    def __init__(self, start_lat: float, start_lon: float, goal_lat: float, goal_lon: float, parent=None):
+        super().__init__(parent)
+        self._args = (start_lat, start_lon, goal_lat, goal_lon)
+
+    def run(self):
+        try:
+            route = fetch_long_route(*self._args)
+        except Exception:
+            route = None
+        self.route_ready.emit(route)
 
 
 class MainWindow(QMainWindow):
@@ -112,6 +132,8 @@ class MainWindow(QMainWindow):
         the retry loop (route computation is async, see
         _on_remote_start_drive's docstring) doesn't affect this return
         value, matching the same fire-and-retry shape already used there."""
+        if self._maybe_route_long_distance(lat, lon, name):
+            return True
         node = nearest_routable_node(lat, lon)
         if node is None:
             return False
@@ -129,8 +151,44 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(300, lambda: self.navigate_to_latlon(lat, lon, name, _retries_left - 1))
         return True
 
+    def _maybe_route_long_distance(self, lat: float, lon: float, name: str) -> bool:
+        """True (and kicks off an async Valhalla lookup) if this
+        destination is far enough that the local extract/Dijkstra
+        (routing.py) has no realistic chance of covering it - e.g. a
+        cross-country trip. False means "handle normally", the caller
+        should fall through to the local snap-and-route path. See
+        valhalla_client.py's module docstring for why local routing can't
+        do this at all, not just poorly."""
+        if self._last_known_latlon is None:
+            return False
+        origin_lat, origin_lon = self._last_known_latlon
+        if haversine_mi(origin_lat, origin_lon, lat, lon) < LONG_ROUTE_THRESHOLD_MI:
+            return False
+        worker = _LongRouteWorker(origin_lat, origin_lon, lat, lon)
+        worker.route_ready.connect(lambda route: self._on_long_route_ready(route, name))
+        self._long_route_worker = worker  # keep alive until it finishes
+        worker.start()
+        return True
+
+    def _on_long_route_ready(self, route: LongRoute | None, name: str) -> None:
+        if route is None:
+            QMessageBox.warning(self, "Route unavailable", f"Couldn't reach the routing server for a route to {name}.")
+            return
+        hours, minutes = divmod(route.minutes, 60)
+        turn_lines = "\n".join(f"  {s.maneuver} {s.instruction}" for s in route.steps[:12])
+        more = f"\n  ... and {len(route.steps) - 12} more turns" if len(route.steps) > 12 else ""
+        QMessageBox.information(
+            self,
+            f"Route to {name}",
+            f"{route.distance_mi:.0f} miles, about {hours}h {minutes}m\n\n{turn_lines}{more}\n\n"
+            "This is a long-distance route preview via Valhalla - live turn-by-turn "
+            "navigation on the map only works for locally-downloaded extracts.",
+        )
+
     def _on_remote_destination(self, lat: float, lon: float, name: str):
         print(f"[carlink] destination_received: lat={lat} lon={lon} name={name!r}", flush=True)
+        if self._maybe_route_long_distance(lat, lon, name or "destination"):
+            return
         node = nearest_routable_node(lat, lon)
         if node is None:
             print("[carlink] nearest_routable_node returned None (no extract loaded / bad origin)", flush=True)

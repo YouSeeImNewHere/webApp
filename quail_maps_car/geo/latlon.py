@@ -63,6 +63,18 @@ def local_to_latlon(east: float, north: float) -> tuple[float, float] | None:
     return lat, lon
 
 
+def haversine_mi(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in miles - used to decide whether a
+    destination is even plausibly within the locally-loaded extract before
+    bothering to snap/route against it (see valhalla_client.py)."""
+    r_mi = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * r_mi * math.asin(math.sqrt(a))
+
+
 def nearest_routable_node(lat: float, lon: float) -> Node | None:
     """Snaps a real-world GPS coordinate (from the phone) to the closest
     node in the car's own loaded road graph — a linear scan, but this only
