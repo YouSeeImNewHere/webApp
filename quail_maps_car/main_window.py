@@ -8,6 +8,7 @@ from .geo.latlon import haversine_mi, latlon_to_local, local_to_latlon, nearest_
 from .geo.search_db import Place
 from .geo.valhalla_client import LONG_ROUTE_THRESHOLD_MI, LongRoute, fetch_long_route
 from .screens.idle_screen import IdleScreen
+from .screens.long_route_screen import LongRouteScreen
 from .screens.nav_screen import NavScreen
 from .screens.routes_screen import RoutesScreen
 from .screens.search_screen import SearchScreen
@@ -65,8 +66,10 @@ class MainWindow(QMainWindow):
         self.idle_screen = IdleScreen()
         self.search_screen = SearchScreen()
         self.nav_screen = NavScreen()
+        self.long_route_screen = LongRouteScreen()
+        self.long_route_screen.set_on_back(self._show_idle)
 
-        for screen in (self.idle_screen, self.search_screen, self.nav_screen):
+        for screen in (self.idle_screen, self.search_screen, self.nav_screen, self.long_route_screen):
             self.stack.addWidget(screen)
 
         self.routes_screen = RoutesScreen()
@@ -184,16 +187,8 @@ class MainWindow(QMainWindow):
         if route is None:
             QMessageBox.warning(self, "Route unavailable", f"Couldn't reach the routing server for a route to {name}.")
             return
-        hours, minutes = divmod(route.minutes, 60)
-        turn_lines = "\n".join(f"  {s.maneuver} {s.instruction}" for s in route.steps[:12])
-        more = f"\n  ... and {len(route.steps) - 12} more turns" if len(route.steps) > 12 else ""
-        QMessageBox.information(
-            self,
-            f"Route to {name}",
-            f"{route.distance_mi:.0f} miles, about {hours}h {minutes}m\n\n{turn_lines}{more}\n\n"
-            "This is a long-distance route preview via Valhalla - live turn-by-turn "
-            "navigation on the map only works for locally-downloaded extracts.",
-        )
+        self.long_route_screen.show_route(name, route)
+        self.stack.setCurrentWidget(self.long_route_screen)
 
     def _on_remote_destination(self, lat: float, lon: float, name: str):
         print(f"[carlink] destination_received: lat={lat} lon={lon} name={name!r}", flush=True)
