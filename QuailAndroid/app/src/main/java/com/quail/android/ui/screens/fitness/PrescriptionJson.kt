@@ -35,10 +35,30 @@ fun Map<String, JsonElement>.setsList(): List<PrescriptionSet> {
     }
 }
 
+/** A "session" prescription's blocks array (see fitness_plan_engine.py's
+ * _skills_week_plan) - each block is itself a small prescription with its
+ * own "type"/"sets"/etc, same shape as the old single-exercise
+ * prescriptions below, just nested one level down. */
+fun Map<String, JsonElement>.blocks(): List<Map<String, JsonElement>> {
+    val arr = (this["blocks"] as? JsonArray) ?: return emptyList()
+    return arr.mapNotNull { (it as? JsonObject)?.toMap() }
+}
+
+/** Short label for one exercise block, e.g. "Pushups", "L-sit", "Core" —
+ * used both standalone and joined together for a bundled session. */
+fun blockLabel(block: Map<String, JsonElement>): String = when (block.str("type")) {
+    "pushups" -> "Pushups"
+    "lsit_hold" -> "L-sit"
+    "core_hold" -> "Core"
+    "run" -> "Run"
+    else -> block.str("type")?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Exercise"
+}
+
 /** Short one-line summary for list rows, e.g. "5 mi @ 9:30/mi" or "5x12 reps". */
 fun prescriptionSummary(workoutType: String, prescription: Map<String, JsonElement>): String {
     val type = prescription.str("type")
     return when (type) {
+        "session" -> prescription.blocks().joinToString(" + ") { blockLabel(it) }
         "run" -> {
             val distance = prescription.double("distance_km")
             val pace = prescription.int("target_pace_sec_per_mile")
@@ -54,6 +74,9 @@ fun prescriptionSummary(workoutType: String, prescription: Map<String, JsonEleme
             val distanceMi = prescription.double("distance_km")?.let { kmToMiles(it) } ?: 0.25
             "${reps ?: "?"}x${"%.2f".format(distanceMi)}mi" + (pace?.let { " @ ${formatPace(it)}/mi" } ?: "")
         }
+        // pushups/lsit_hold cases below stay for old, already-scheduled
+        // rows generated before session-bundling existed - new plans use
+        // "session" (above) instead.
         "pushups" -> {
             val sets = prescription.setsList()
             "${sets.size}x${sets.firstOrNull()?.reps ?: "?"} pushups"

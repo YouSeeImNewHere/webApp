@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.LocalDate
 import java.util.UUID
@@ -220,23 +221,36 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
         return currentProgressionStep(path, data.sessions, data.allExercises)?.first?.id
     }
 
+    // Fallback exercise_id per block type, matched to whether that type is
+    // actually timed (see isTimedExercise) - falling back to a non-timed
+    // exercise (e.g. "pushup") for a missing exercise_id on a timed block
+    // was a real bug: it made isTimedExercise resolve false for an L-sit or
+    // core hold, so the logger showed a bare rep count with no seconds
+    // unit instead of a timed hold.
+    private fun fallbackExerciseId(blockType: String?): String = when (blockType) {
+        "lsit_hold" -> "tuck_lsit"
+        "core_hold" -> "hollow_body_hold"
+        else -> "pushup"
+    }
+
+    private fun exerciseEntryFromBlock(block: Map<String, JsonElement>): WorkoutExerciseEntry {
+        val exerciseId = block.str("exercise_id") ?: fallbackExerciseId(block.str("type"))
+        val sets = block.setsList().map {
+            WorkoutSet(id = UUID.randomUUID().toString(), reps = it.reps, durationSeconds = it.holdSeconds)
+        }
+        return WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, sets)
+    }
+
     fun startWorkoutFromScheduled(scheduled: ScheduledWorkoutRecord) {
         val type = scheduled.prescription.str("type")
         val exercises = when (type) {
-            "pushups", "lsit_hold" -> {
-                // Fallback must match the prescription's own type - falling
-                // back to "pushup" (a non-timed exercise) for a missing
-                // exercise_id on an lsit_hold prescription was a real bug:
-                // it made isTimedExercise resolve false for an L-sit hold,
-                // so the logger showed it as a bare rep count with no
-                // seconds unit instead of a timed hold.
-                val fallbackId = if (type == "lsit_hold") "tuck_lsit" else "pushup"
-                val exerciseId = scheduled.prescription.str("exercise_id") ?: fallbackId
-                val sets = scheduled.prescription.setsList().map {
-                    WorkoutSet(id = UUID.randomUUID().toString(), reps = it.reps, durationSeconds = it.holdSeconds)
-                }
-                listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, sets))
-            }
+            // A bundled multi-exercise day (see fitness_plan_engine.py's
+            // _skills_week_plan) - one WorkoutExerciseEntry per block, so
+            // the logger shows the whole day's routine, not just one move.
+            "session" -> scheduled.prescription.blocks().map { exerciseEntryFromBlock(it) }
+            // Old single-exercise prescriptions, from before session
+            // bundling existed - kept for any already-scheduled rows.
+            "pushups", "lsit_hold" -> listOf(exerciseEntryFromBlock(scheduled.prescription))
             "pushup_test" -> {
                 val exerciseId = currentPathExerciseId("path_pushup") ?: "pushup"
                 listOf(WorkoutExerciseEntry(UUID.randomUUID().toString(), exerciseId, listOf(WorkoutSet(id = UUID.randomUUID().toString()))))

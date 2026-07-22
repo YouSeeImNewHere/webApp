@@ -33,8 +33,9 @@ WORKOUT_RUN_EASY = "RUN_EASY"
 WORKOUT_RUN_TEMPO = "RUN_TEMPO"
 WORKOUT_RUN_LONG = "RUN_LONG"
 WORKOUT_RUN_INTERVAL = "RUN_INTERVAL"
-WORKOUT_PUSHUP_SESSION = "PUSHUP_SESSION"
-WORKOUT_LSIT_SESSION = "LSIT_SESSION"
+WORKOUT_PUSHUP_SESSION = "PUSHUP_SESSION"  # kept for old scheduled/history rows; new plans use SKILLS_SESSION
+WORKOUT_LSIT_SESSION = "LSIT_SESSION"  # same
+WORKOUT_SKILLS_SESSION = "SKILLS_SESSION"
 WORKOUT_TEST = "TEST"
 WORKOUT_REST = "REST"
 
@@ -258,27 +259,6 @@ _PUSHUP_SESSION_FOCUS = [
 ]
 
 
-def _pushup_week_plan(goal: Goal, week_index: int) -> list[dict]:
-    baseline_max = goal.baseline_value or 10.0
-    estimated_max = baseline_max * (1.12 ** week_index)
-    is_retest_week = week_index > 0 and week_index % 2 == 0
-    if is_retest_week:
-        return [{
-            "workout_type": WORKOUT_TEST,
-            "prescription": {"type": "pushup_test", "instructions": "AMRAP retest to recalibrate your working max."},
-        }]
-    variant = _pushup_variant_for(estimated_max, goal.baseline_exercise_id, week_index)
-    sessions = []
-    for notes, pct_tiers, rest_seconds in _PUSHUP_SESSION_FOCUS:
-        sets = [{"reps": max(1, round(estimated_max * pct))} for pct in pct_tiers]
-        sessions.append({
-            "workout_type": WORKOUT_PUSHUP_SESSION,
-            "prescription": {
-                "type": "pushups", "exercise_id": variant, "sets": sets,
-                "rest_seconds": rest_seconds, "notes": notes,
-            },
-        })
-    return sessions
 
 
 # Hold-time thresholds (seconds, at the *current* variant) for unlocking the
@@ -318,21 +298,94 @@ _LSIT_SESSION_FOCUS = [
 ]
 
 
-def _lsit_week_plan(goal: Goal, week_index: int) -> list[dict]:
-    baseline_hold = goal.baseline_value or 5.0
-    target_hold = goal.target_duration_seconds or 60
-    hold = min(baseline_hold * (1.10 ** week_index), target_hold)
-    variant = _lsit_variant_for(hold, goal.baseline_exercise_id, week_index)
-    sessions = []
-    for notes, pct_tiers, rest_seconds in _LSIT_SESSION_FOCUS:
-        sets = [{"hold_seconds": max(1, round(hold * 0.75 * pct))} for pct in pct_tiers]
-        sessions.append({
-            "workout_type": WORKOUT_LSIT_SESSION,
-            "prescription": {
-                "type": "lsit_hold", "exercise_id": variant, "sets": sets,
+# Rotates for variety across the week/plan — both are real accessory work
+# for these two skills specifically (not generic filler): hollow body hold
+# and plank both build the midline compression/rigidity an L-sit needs to
+# hold at all, and the shoulder/trunk stability that keeps a pushup's
+# lockout clean under fatigue.
+_CORE_ACCESSORY_ROTATION = [
+    ("hollow_body_hold", 30, 4, 45),  # exercise_id, base_hold_seconds, sets, rest_seconds
+    ("plank", 45, 3, 30),
+]
+
+
+def _skills_week_plan(pushup_goal: Optional[Goal], lsit_goal: Optional[Goal], week_index: int) -> list[dict]:
+    """Replaces the old separate _pushup_week_plan()/_lsit_week_plan() -
+    real user feedback: a scheduled day with a single exercise on it isn't
+    a workout, it's one set. Bundles whichever of pushups/L-sit are active
+    goals plus a rotating core accessory into ONE real multi-exercise
+    session per training day, instead of parceling them out across
+    separate single-exercise days. Each returned dict also carries its own
+    goal_ids, since a bundled session can now serve more than one goal at
+    once and generate_plan() needs to know exactly which."""
+    if pushup_goal is None and lsit_goal is None:
+        return []
+
+    sessions: list[dict] = []
+    pushup_is_retest = False
+    pushup_variant = None
+    estimated_max = 0.0
+    if pushup_goal is not None:
+        baseline_max = pushup_goal.baseline_value or 10.0
+        estimated_max = baseline_max * (1.12 ** week_index)
+        pushup_is_retest = week_index > 0 and week_index % 2 == 0
+        if pushup_is_retest:
+            # A fresh AMRAP test needs to happen un-fatigued - not bundled
+            # into the same session as other work. L-sit training (if also
+            # active) still happens as normal this week, just without a
+            # pushup block riding along.
+            sessions.append({
+                "workout_type": WORKOUT_TEST,
+                "prescription": {"type": "pushup_test", "instructions": "AMRAP retest to recalibrate your working max."},
+                "goal_ids": [pushup_goal.id],
+            })
+        else:
+            pushup_variant = _pushup_variant_for(estimated_max, pushup_goal.baseline_exercise_id, week_index)
+
+    lsit_variant = None
+    hold = 0.0
+    if lsit_goal is not None:
+        baseline_hold = lsit_goal.baseline_value or 5.0
+        target_hold = lsit_goal.target_duration_seconds or 60
+        hold = min(baseline_hold * (1.10 ** week_index), target_hold)
+        lsit_variant = _lsit_variant_for(hold, lsit_goal.baseline_exercise_id, week_index)
+
+    include_pushup = pushup_goal is not None and not pushup_is_retest
+    include_lsit = lsit_goal is not None
+    if not (include_pushup or include_lsit):
+        return sessions
+
+    for i in range(3):
+        blocks: list[dict] = []
+        goal_ids: list[int] = []
+        if include_pushup:
+            notes, pct_tiers, rest_seconds = _PUSHUP_SESSION_FOCUS[i % len(_PUSHUP_SESSION_FOCUS)]
+            sets = [{"reps": max(1, round(estimated_max * pct))} for pct in pct_tiers]
+            blocks.append({
+                "type": "pushups", "exercise_id": pushup_variant, "sets": sets,
                 "rest_seconds": rest_seconds, "notes": notes,
-            },
+            })
+            goal_ids.append(pushup_goal.id)
+        if include_lsit:
+            notes, pct_tiers, rest_seconds = _LSIT_SESSION_FOCUS[i % len(_LSIT_SESSION_FOCUS)]
+            sets = [{"hold_seconds": max(1, round(hold * 0.75 * pct))} for pct in pct_tiers]
+            blocks.append({
+                "type": "lsit_hold", "exercise_id": lsit_variant, "sets": sets,
+                "rest_seconds": rest_seconds, "notes": notes,
+            })
+            goal_ids.append(lsit_goal.id)
+        core_id, core_hold, core_sets, core_rest = _CORE_ACCESSORY_ROTATION[(week_index * 3 + i) % len(_CORE_ACCESSORY_ROTATION)]
+        blocks.append({
+            "type": "core_hold", "exercise_id": core_id,
+            "sets": [{"hold_seconds": core_hold} for _ in range(core_sets)],
+            "rest_seconds": core_rest,
         })
+        sessions.append({
+            "workout_type": WORKOUT_SKILLS_SESSION,
+            "prescription": {"type": "session", "blocks": blocks},
+            "goal_ids": goal_ids,
+        })
+
     return sessions
 
 
@@ -386,10 +439,12 @@ def generate_plan(goals: list[Goal], availability: Availability, start_date: dat
     for week_index in range(total_weeks):
         week_start = start_date + timedelta(weeks=week_index)
 
-        # Kept as separate per-goal groups, then interleaved round-robin
-        # below — merging them in one flat list (all running, then all
-        # pushups, then all L-sit) would stack every accessory session onto
-        # whatever day is left over once running claims the early slots.
+        # Kept as separate groups, then interleaved round-robin below —
+        # merging them in one flat list (all running, then all skills work)
+        # would stack every accessory session onto whatever day is left
+        # over once running claims the early slots. Pushups and L-sit are
+        # generated together (_skills_week_plan) as bundled multi-exercise
+        # sessions, not two separate single-exercise groups.
         groups: list[list[dict]] = []
         if run_pace_goal is not None:
             groups.append(_run_pace_week_plans(run_pace_goal, week_index, total_weeks))
@@ -397,10 +452,9 @@ def generate_plan(goals: list[Goal], availability: Availability, start_date: dat
             long_run = _run_distance_week_plan(run_distance_goal, week_index)
             if long_run:
                 groups.append([long_run])
-        if pushup_goal is not None:
-            groups.append(_pushup_week_plan(pushup_goal, week_index))
-        if lsit_goal is not None:
-            groups.append(_lsit_week_plan(lsit_goal, week_index))
+        skills_sessions = _skills_week_plan(pushup_goal, lsit_goal, week_index)
+        if skills_sessions:
+            groups.append(skills_sessions)
 
         sessions: list[dict] = [s for row in zip_longest(*groups) for s in row if s is not None]
         if not sessions:
@@ -418,18 +472,18 @@ def generate_plan(goals: list[Goal], availability: Availability, start_date: dat
             continue
         slots = _assign_slots(sessions, available_in_week)
         for i, session in enumerate(sessions):
-            goal_ids = []
-            if session["workout_type"] in (WORKOUT_RUN_INTERVAL, WORKOUT_RUN_TEMPO, WORKOUT_RUN_EASY):
+            # _skills_week_plan() sessions (SKILLS_SESSION and its retest-week
+            # TEST day) already carry their own goal_ids, since a bundled
+            # session can serve more than one goal - only running sessions
+            # still need deriving from workout_type here.
+            if "goal_ids" in session:
+                goal_ids = session["goal_ids"]
+            elif session["workout_type"] in (WORKOUT_RUN_INTERVAL, WORKOUT_RUN_TEMPO, WORKOUT_RUN_EASY):
                 goal_ids = [run_pace_goal.id] if run_pace_goal else []
             elif session["workout_type"] == WORKOUT_RUN_LONG:
                 goal_ids = [run_distance_goal.id] if run_distance_goal else []
-            elif session["workout_type"] == WORKOUT_PUSHUP_SESSION:
-                goal_ids = [pushup_goal.id] if pushup_goal else []
-            elif session["workout_type"] == WORKOUT_LSIT_SESSION:
-                goal_ids = [lsit_goal.id] if lsit_goal else []
-            elif session["workout_type"] == WORKOUT_TEST:
-                # A retest week's pushup test carries the pushup goal id.
-                goal_ids = [pushup_goal.id] if pushup_goal else []
+            else:
+                goal_ids = []
 
             scheduled.append({
                 "client_id": _client_id(),
@@ -494,26 +548,45 @@ def reflow_plan(
 # Adaptive adjustment
 # ---------------------------------------------------------------------------
 
-def performance_delta(prescription: dict, logged: dict) -> Optional[float]:
-    """Fractional over/undershoot of a logged session vs. its prescription.
-    Positive = beat it, negative = missed it. Returns None if the two aren't
-    comparable (e.g. a rest day, or missing fields)."""
-    ptype = prescription.get("type")
+def _single_block_delta(ptype: Optional[str], block: dict, logged: dict) -> Optional[float]:
     if ptype == "pushups" and logged.get("best_set_reps") is not None:
-        prescribed_best = max((s.get("reps", 0) for s in prescription.get("sets", [])), default=0)
+        prescribed_best = max((s.get("reps", 0) for s in block.get("sets", [])), default=0)
         if prescribed_best <= 0:
             return None
         return (logged["best_set_reps"] - prescribed_best) / prescribed_best
     if ptype == "lsit_hold" and logged.get("best_hold_seconds") is not None:
-        prescribed_best = max((s.get("hold_seconds", 0) for s in prescription.get("sets", [])), default=0)
+        prescribed_best = max((s.get("hold_seconds", 0) for s in block.get("sets", [])), default=0)
         if prescribed_best <= 0:
             return None
         return (logged["best_hold_seconds"] - prescribed_best) / prescribed_best
-    if ptype == "run" and logged.get("avg_pace_sec_per_mile") is not None and prescription.get("target_pace_sec_per_mile"):
-        target = prescription["target_pace_sec_per_mile"]
+    if ptype == "run" and logged.get("avg_pace_sec_per_mile") is not None and block.get("target_pace_sec_per_mile"):
+        target = block["target_pace_sec_per_mile"]
         # Faster (lower seconds) than prescribed = beat it.
         return (target - logged["avg_pace_sec_per_mile"]) / target
     return None
+
+
+def performance_delta(prescription: dict, logged: dict) -> dict[str, float]:
+    """Fractional over/undershoot of a logged session vs. its prescription,
+    keyed by each block's own `type` (e.g. "pushups", "lsit_hold") since a
+    single scheduled day can now bundle multiple exercises (see
+    _skills_week_plan) each working toward a different goal — one shared
+    delta applied to every goal_id on the row, like before this bundling
+    existed, would silently misattribute one exercise's performance to an
+    unrelated goal. Positive = beat it, negative = missed it. A type with no
+    comparable logged data (missing fields, a rest day, ...) is simply
+    absent from the returned dict rather than raising."""
+    ptype = prescription.get("type")
+    if ptype == "session":
+        results: dict[str, float] = {}
+        for block in prescription.get("blocks", []):
+            btype = block.get("type")
+            delta = _single_block_delta(btype, block, logged)
+            if delta is not None and btype is not None:
+                results[btype] = delta
+        return results
+    delta = _single_block_delta(ptype, prescription, logged)
+    return {ptype: delta} if delta is not None and ptype is not None else {}
 
 
 def adjust_for_performance(goal: Goal, delta: float) -> Optional[float]:

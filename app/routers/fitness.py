@@ -1133,25 +1133,39 @@ def complete_scheduled_workout(record_id: int, body: CompleteScheduledWorkoutIn)
     # baseline tests (those feed generate_plan() directly instead).
     baseline_changed = False
     if row["workout_type"] != "TEST" and body.logged:
-        delta = fpe.performance_delta(row["prescription"], body.logged)
-        if delta is not None:
-            for gid in row["goal_ids"] or []:
-                goal_rows = query_db("SELECT * FROM fitness_goals WHERE id = %s AND tenant_id = %s", (gid, tid))
-                if not goal_rows:
-                    continue
-                goal_row = _serialize(goal_rows[0])
-                if goal_row.get("baseline_value") is None:
-                    continue
-                goal = fpe.Goal(id=gid, goal_type=goal_row["goal_type"], baseline_value=float(goal_row["baseline_value"]))
-                new_baseline = fpe.adjust_for_performance(goal, delta)
-                if new_baseline is not None:
-                    with with_db_cursor() as (conn, cur):
-                        cur.execute(
-                            "UPDATE fitness_goals SET baseline_value = %s WHERE id = %s AND tenant_id = %s",
-                            (new_baseline, gid, tid),
-                        )
-                        conn.commit()
-                    baseline_changed = True
+        # Keyed by prescription-block type (e.g. "pushups", "lsit_hold") -
+        # a scheduled day can now bundle several exercises for several
+        # different goals (see fpe._skills_week_plan), so each goal needs
+        # its own matching delta rather than one shared value applied to
+        # every goal_id on the row.
+        deltas = fpe.performance_delta(row["prescription"], body.logged)
+        _GOAL_TYPE_TO_BLOCK_TYPE = {
+            fpe.GOAL_MAX_REPS: "pushups",
+            fpe.GOAL_MAX_HOLD: "lsit_hold",
+            fpe.GOAL_RUN_PACE: "run",
+            fpe.GOAL_RUN_DISTANCE: "run",
+        }
+        for gid in row["goal_ids"] or []:
+            goal_rows = query_db("SELECT * FROM fitness_goals WHERE id = %s AND tenant_id = %s", (gid, tid))
+            if not goal_rows:
+                continue
+            goal_row = _serialize(goal_rows[0])
+            if goal_row.get("baseline_value") is None:
+                continue
+            block_type = _GOAL_TYPE_TO_BLOCK_TYPE.get(goal_row["goal_type"])
+            delta = deltas.get(block_type) if block_type else None
+            if delta is None:
+                continue
+            goal = fpe.Goal(id=gid, goal_type=goal_row["goal_type"], baseline_value=float(goal_row["baseline_value"]))
+            new_baseline = fpe.adjust_for_performance(goal, delta)
+            if new_baseline is not None:
+                with with_db_cursor() as (conn, cur):
+                    cur.execute(
+                        "UPDATE fitness_goals SET baseline_value = %s WHERE id = %s AND tenant_id = %s",
+                        (new_baseline, gid, tid),
+                    )
+                    conn.commit()
+                baseline_changed = True
 
     if baseline_changed:
         plan_status = query_db(

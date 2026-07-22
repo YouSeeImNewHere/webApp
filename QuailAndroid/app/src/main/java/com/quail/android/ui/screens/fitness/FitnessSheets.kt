@@ -389,10 +389,30 @@ private fun ScheduledWorkoutDetailSheet(
     onStartWorkout: () -> Unit,
 ) {
     val prescriptionType = record.prescription.str("type")
-    val canLogInApp = prescriptionType in setOf("pushups", "lsit_hold", "pushup_test", "lsit_test")
+    // "session" (a bundled multi-exercise day - see fitness_plan_engine.py's
+    // _skills_week_plan) was missing here entirely, which meant the "Start"
+    // button never showed for the new bundled workouts at all - a real bug
+    // that made the whole feature untappable in the UI despite the
+    // ViewModel/backend side being correct.
+    val canLogInApp = prescriptionType in setOf("session", "pushups", "lsit_hold", "pushup_test", "lsit_test")
 
     SheetScaffold(record.workoutType.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }, onDismiss) {
         Text(prescriptionSummary(record.workoutType, record.prescription), fontWeight = FontWeight.SemiBold)
+        if (prescriptionType == "session") {
+            // Per-block breakdown so the preview actually shows what the
+            // full routine involves, not just the one-line "Pushups + L-sit
+            // + Core" summary.
+            record.prescription.blocks().forEach { block ->
+                val setsList = block.setsList()
+                val setsDesc = if (setsList.isNotEmpty()) {
+                    setsList.joinToString(", ") { s -> s.holdSeconds?.let { "${it}s" } ?: s.reps?.let { "${it} reps" } ?: "?" }
+                } else null
+                Column(modifier = Modifier.padding(top = 4.dp)) {
+                    Text("• ${blockLabel(block)}" + (setsDesc?.let { " — $it" } ?: ""), fontWeight = FontWeight.SemiBold)
+                    block.str("notes")?.let { Text(it, color = QuailTextDim, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        }
         record.prescription.str("notes")?.let { Text(it, color = QuailTextDim) }
         record.prescription.str("instructions")?.let { Text(it, color = QuailTextDim) }
 
