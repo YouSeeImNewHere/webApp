@@ -193,6 +193,54 @@ def search_places(
     return {"places": results[:limit]}
 
 
+@router.get("/geocode")
+def geocode(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, gt=0, le=50),
+):
+    """Free-text place/city search with NO lat/lon bound - unlike /places
+    and /cities (both require a center point + capped radius, meant for
+    "near me" browsing), this is for "I want to go to Dallas" from
+    anywhere in the country. Searches the master cities table (place=
+    city/town/village) across every imported region by name, ranked by
+    population so "Dallas" surfaces the real city before some
+    unincorporated place of the same name. Real user need: the car app's
+    own destination search only ever looked at whatever's in the locally
+    downloaded extract (a small radius around wherever it was last
+    downloaded), so searching for a city or address hundreds of miles away
+    silently returned nothing at all."""
+    _require_maps_enabled()
+    master_db_paths = _master_db_paths()
+    if not master_db_paths:
+        raise HTTPException(status_code=404, detail="No map regions have been built yet")
+
+    like = f"%{q.strip()}%"
+    results = []
+    for db_path in master_db_paths:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            for r in conn.execute(
+                "SELECT osm_id, lat, lon, name, place_type, population FROM cities WHERE name LIKE ? COLLATE NOCASE",
+                (like,),
+            ).fetchall():
+                results.append(
+                    {
+                        "id": r["osm_id"],
+                        "name": r["name"],
+                        "place_type": r["place_type"],
+                        "population": r["population"] or 0,
+                        "lat": r["lat"],
+                        "lon": r["lon"],
+                    }
+                )
+        finally:
+            conn.close()
+
+    results.sort(key=lambda c: c["population"], reverse=True)
+    return {"results": results[:limit]}
+
+
 @router.get("/cities")
 def nearby_cities(
     lat: float = Query(..., ge=-90, le=90),

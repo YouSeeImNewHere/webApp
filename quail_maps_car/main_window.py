@@ -164,10 +164,7 @@ class MainWindow(QMainWindow):
         origin_lat, origin_lon = self._last_known_latlon
         if haversine_mi(origin_lat, origin_lon, lat, lon) < LONG_ROUTE_THRESHOLD_MI:
             return False
-        worker = _LongRouteWorker(origin_lat, origin_lon, lat, lon)
-        worker.route_ready.connect(lambda route: self._on_long_route_ready(route, name))
-        self._long_route_worker = worker  # keep alive until it finishes
-        worker.start()
+        self._route_via_valhalla(lat, lon, name)
         return True
 
     def _on_long_route_ready(self, route: LongRoute | None, name: str) -> None:
@@ -230,6 +227,7 @@ class MainWindow(QMainWindow):
 
     def _on_remote_position(self, lat: float, lon: float) -> None:
         self._last_known_latlon = (lat, lon)
+        self.search_screen.set_current_position(lat, lon)
         local = latlon_to_local(lat, lon)
         if local is None:
             return
@@ -256,7 +254,28 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.search_screen)
 
     def _open_routes(self, place):
+        # Search results can now include remote hits (see
+        # search_screen.py's remote geocode/POI search) that aren't in the
+        # car's own local road graph at all - tagged with a synthetic
+        # "REMOTE:lat:lon" node_id since Place normally carries a real
+        # local graph node id. RoutesScreen's local Dijkstra can't route to
+        # these (no node to route to), so they always go through Valhalla
+        # instead, regardless of distance.
+        if isinstance(place.node_id, str) and place.node_id.startswith("REMOTE:"):
+            _, lat_s, lon_s = place.node_id.split(":", 2)
+            self._route_via_valhalla(float(lat_s), float(lon_s), place.name)
+            return
         self.routes_screen.open_for(place)
+
+    def _route_via_valhalla(self, lat: float, lon: float, name: str) -> None:
+        if self._last_known_latlon is None:
+            QMessageBox.warning(self, "No current position", "Need a GPS fix (from the phone) before routing to a remote destination.")
+            return
+        origin_lat, origin_lon = self._last_known_latlon
+        worker = _LongRouteWorker(origin_lat, origin_lon, lat, lon)
+        worker.route_ready.connect(lambda route: self._on_long_route_ready(route, name))
+        self._long_route_worker = worker
+        worker.start()
 
     def _start_navigation(self, place, route):
         self.routes_screen.hide()
