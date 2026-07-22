@@ -69,7 +69,15 @@ class SearchScreen(OpaqueScreen):
         self._remote_debounce = QTimer(self)
         self._remote_debounce.setSingleShot(True)
         self._remote_debounce.timeout.connect(self._run_remote_search)
-        self._remote_worker: _RemoteSearchWorker | None = None
+        # Every in-flight worker stays referenced here until it actually
+        # finishes (removed by _on_remote_worker_finished, connected to
+        # QThread's own finished signal) - overwriting a single
+        # self._remote_worker attribute with a new worker while an old one
+        # was still running (typing a second query before the first
+        # request came back) dropped the only Python reference to a QThread
+        # whose run() hadn't returned yet, which PySide aborts the whole
+        # process for ("QThread: Destroyed while thread is still running").
+        self._remote_workers: set[_RemoteSearchWorker] = set()
         self._remote_token = 0
         self._remote_rows: list[Place] = []
 
@@ -169,9 +177,10 @@ class SearchScreen(OpaqueScreen):
         query = self.input.text().strip()
         if not query:
             return
-        worker = _RemoteSearchWorker(query, self._current_latlon, self._remote_token)
+        worker = _RemoteSearchWorker(query, self._current_latlon, self._remote_token, self)
         worker.results_ready.connect(self._on_remote_results)
-        self._remote_worker = worker
+        worker.finished.connect(lambda w=worker: self._remote_workers.discard(w))
+        self._remote_workers.add(worker)
         worker.start()
 
     def _on_remote_results(self, remote_places: list[RemotePlace], token: int):

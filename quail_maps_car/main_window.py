@@ -100,6 +100,14 @@ class MainWindow(QMainWindow):
         # start_drive_requested(place, route) signal directly.
         self._pending_remote_overrides: tuple[int, float] | None = None
 
+        # Kept alive here until each worker's own `finished` fires (see
+        # _route_via_valhalla) - a real crash hit in practice: overwriting
+        # a single self._long_route_worker attribute with a new worker
+        # while the old one's network call was still in flight dropped the
+        # only Python reference to a still-running QThread, which PySide
+        # aborts the whole process for.
+        self._long_route_workers: set[_LongRouteWorker] = set()
+
         # Last real GPS fix relayed from the phone — the car has no GPS of
         # its own. Used by SettingsScreen's "Use Current Position" button
         # when saving a new location (Home/Work/etc.); None until the
@@ -284,9 +292,10 @@ class MainWindow(QMainWindow):
             )
             return
         origin_lat, origin_lon = origin
-        worker = _LongRouteWorker(origin_lat, origin_lon, lat, lon)
+        worker = _LongRouteWorker(origin_lat, origin_lon, lat, lon, self)
         worker.route_ready.connect(lambda route: self._on_long_route_ready(route, name))
-        self._long_route_worker = worker
+        worker.finished.connect(lambda w=worker: self._long_route_workers.discard(w))
+        self._long_route_workers.add(worker)
         worker.start()
 
     def _start_navigation(self, place, route):

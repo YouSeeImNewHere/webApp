@@ -95,7 +95,12 @@ def fetch_remote_cities(query: str, base_url: str = DEFAULT_BASE_URL) -> list[Re
         return []
     return [
         RemotePlace(
-            name=c["name"],
+            # State appended right into the name (not a separate field) so
+            # every place this flows through - search row, detail sheet,
+            # long-route screen title - shows it without each of them
+            # needing their own plumbing. Real need: 3+ same-named cities
+            # ("Dallas" in TX/OR/GA) are ambiguous without it.
+            name=f"{c['name']}, {c['state']}" if c.get("state") else c["name"],
             lat=c["lat"],
             lon=c["lon"],
             address=(c.get("place_type") or "").replace("_", " ").title(),

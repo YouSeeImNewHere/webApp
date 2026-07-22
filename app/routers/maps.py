@@ -36,6 +36,19 @@ def _master_db_paths() -> list[Path]:
     return sorted(master_dir().glob("*.sqlite3"))
 
 
+# Master DBs are one file per state/territory, named like
+# "north-america_us_texas.sqlite3" or "north-america_us_north-carolina.sqlite3"
+# (see scripts/maps_update_master.py) - the state isn't stored as a column
+# anywhere in the cities/places tables themselves, so it's recovered from
+# which file a row came from. Real user need: two same-named cities in
+# different states (there are three "Dallas"es) are ambiguous without this.
+def _state_name_from_path(db_path: Path) -> str:
+    stem = db_path.stem
+    prefix = "north-america_us_"
+    slug = stem[len(prefix):] if stem.startswith(prefix) else stem
+    return slug.replace("-", " ").title()
+
+
 @router.get("/status")
 def maps_status():
     tid = current_tenant_id() or 0
@@ -217,6 +230,7 @@ def geocode(
     like = f"%{q.strip()}%"
     results = []
     for db_path in master_db_paths:
+        state = _state_name_from_path(db_path)
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         try:
@@ -228,6 +242,7 @@ def geocode(
                     {
                         "id": r["osm_id"],
                         "name": r["name"],
+                        "state": state,
                         "place_type": r["place_type"],
                         "population": r["population"] or 0,
                         "lat": r["lat"],
