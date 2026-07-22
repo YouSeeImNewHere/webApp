@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,6 +89,7 @@ fun FitnessPlanScreen(
                 padding, state.scheduled,
                 onOpenDetail = { activeSheet = FitnessSheet.ScheduledWorkoutDetail(it) },
                 onEditAvailability = { activeSheet = FitnessSheet.EditAvailability },
+                onRegenerate = { viewModel.generateTrainingPlan() },
             )
         }
     }
@@ -162,6 +164,7 @@ private fun ActivePlanContent(
     scheduled: List<ScheduledWorkoutRecord>,
     onOpenDetail: (ScheduledWorkoutRecord) -> Unit,
     onEditAvailability: () -> Unit,
+    onRegenerate: () -> Unit,
 ) {
     val today = LocalDate.now()
     val upcoming = scheduled
@@ -178,7 +181,18 @@ private fun ActivePlanContent(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("This Week's Plan", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = onEditAvailability) { Icon(Icons.Filled.CalendarMonth, contentDescription = "Edit availability") }
+                Row {
+                    // Only future PLANNED workouts get rebuilt (see backend
+                    // _regenerate_future_plan) - COMPLETED/SKIPPED history is
+                    // untouched, so this is safe to offer any time, not just
+                    // right after the testing week. Was previously only
+                    // reachable during the initial testing-week flow, so
+                    // there was no way to pick up progression/session-variety
+                    // changes on an already-active plan without deleting and
+                    // recreating the goal.
+                    IconButton(onClick = onRegenerate) { Icon(Icons.Filled.Autorenew, contentDescription = "Regenerate plan") }
+                    IconButton(onClick = onEditAvailability) { Icon(Icons.Filled.CalendarMonth, contentDescription = "Edit availability") }
+                }
             }
         }
         if (upcoming.isEmpty()) {
