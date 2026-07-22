@@ -36,10 +36,21 @@ DEFAULT_VALHALLA_URL = "http://192.168.0.14:8002"
 # instead of snapping to the nearest (wrong) locally-loaded node.
 LONG_ROUTE_THRESHOLD_MI = 50.0
 
-_MANEUVER_GLYPHS = {
-    0: "▪", 1: "↑", 2: "↗", 3: "⇗", 4: "↱", 5: "↰", 6: "⇖", 7: "↖",
-    8: "↰", 9: "⤴", 10: "⤵", 15: "▪", 16: "▪",
-}
+def _glyph_for_instruction(instruction: str) -> str:
+    """Valhalla's numeric maneuver `type` doesn't line up with any glyph
+    scheme worth hardcoding (verified against real output - e.g. type 10 is
+    a right turn, type 15 is a left turn, not the sequential/directional
+    enum you'd guess). The instruction text itself is far more reliable."""
+    text = instruction.lower()
+    if "arrive" in text:
+        return "▪"
+    if "left" in text:
+        return "↰"
+    if "right" in text:
+        return "↱"
+    if "keep" in text or "continue" in text or "stay" in text:
+        return "↑"
+    return "↑"
 
 
 @dataclass
@@ -104,8 +115,7 @@ def fetch_long_route(
         for maneuver in leg.get("maneuvers", []):
             instruction = maneuver.get("instruction") or " ".join(maneuver.get("street_names", [])) or "Continue"
             length_m = float(maneuver.get("length", 0.0)) * 1609.34
-            glyph = _MANEUVER_GLYPHS.get(maneuver.get("type", 1), "↑")
-            steps.append(TurnStep(instruction, length_m, glyph))
+            steps.append(TurnStep(instruction, length_m, _glyph_for_instruction(instruction)))
 
     summary = trip.get("summary", {})
     return LongRoute(
