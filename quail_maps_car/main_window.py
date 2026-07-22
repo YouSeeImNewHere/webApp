@@ -116,7 +116,20 @@ class MainWindow(QMainWindow):
         self.car_link.position_received.connect(self._on_remote_position)
         self.car_link.start()
 
+        # No live GPS fix yet (no phone connected) shouldn't mean remote
+        # search/long-distance routing are just broken until one connects -
+        # the downloaded extract's own origin (roughly wherever it was last
+        # pulled, i.e. near home) is a reasonable stand-in starting point.
+        origin = local_to_latlon(0.0, 0.0)
+        if origin is not None:
+            self.search_screen.set_current_position(*origin)
+
         self._show_idle()
+
+    def _current_or_origin_latlon(self) -> tuple[float, float] | None:
+        if self._last_known_latlon is not None:
+            return self._last_known_latlon
+        return local_to_latlon(0.0, 0.0)
 
     def current_latlon(self) -> tuple[float, float] | None:
         return self._last_known_latlon
@@ -159,10 +172,10 @@ class MainWindow(QMainWindow):
         should fall through to the local snap-and-route path. See
         valhalla_client.py's module docstring for why local routing can't
         do this at all, not just poorly."""
-        if self._last_known_latlon is None:
+        origin = self._current_or_origin_latlon()
+        if origin is None:
             return False
-        origin_lat, origin_lon = self._last_known_latlon
-        if haversine_mi(origin_lat, origin_lon, lat, lon) < LONG_ROUTE_THRESHOLD_MI:
+        if haversine_mi(*origin, lat, lon) < LONG_ROUTE_THRESHOLD_MI:
             return False
         self._route_via_valhalla(lat, lon, name)
         return True
@@ -268,10 +281,14 @@ class MainWindow(QMainWindow):
         self.routes_screen.open_for(place)
 
     def _route_via_valhalla(self, lat: float, lon: float, name: str) -> None:
-        if self._last_known_latlon is None:
-            QMessageBox.warning(self, "No current position", "Need a GPS fix (from the phone) before routing to a remote destination.")
+        origin = self._current_or_origin_latlon()
+        if origin is None:
+            QMessageBox.warning(
+                self, "No current position",
+                "No GPS fix yet and no extract downloaded to fall back on - connect a phone or download an extract first.",
+            )
             return
-        origin_lat, origin_lon = self._last_known_latlon
+        origin_lat, origin_lon = origin
         worker = _LongRouteWorker(origin_lat, origin_lon, lat, lon)
         worker.route_ready.connect(lambda route: self._on_long_route_ready(route, name))
         self._long_route_worker = worker
