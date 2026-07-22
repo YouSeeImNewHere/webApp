@@ -228,6 +228,14 @@ _PUSHUP_VARIANT_THRESHOLDS = [
 ]
 
 
+def _threshold_variant(value: float, thresholds: list[tuple[float, str]]) -> str:
+    variant = thresholds[0][1]
+    for threshold, step in thresholds:
+        if value >= threshold:
+            variant = step
+    return variant
+
+
 def _pushup_variant_for(estimated_max: float, baseline_exercise_id: Optional[str], week_index: int) -> str:
     """Starts from the user's real current Progression Paths standing
     (baseline_exercise_id, captured from their actual session history at
@@ -237,16 +245,25 @@ def _pushup_variant_for(estimated_max: float, baseline_exercise_id: Optional[str
     goal predating this). Re-deriving a variant from a raw rep count alone
     would misread a low rep count on a hard variant (e.g. 8 archer push-ups)
     as beginner-level and regress the user to an easier one they'd already
-    mastered."""
+    mastered.
+
+    But a captured baseline_exercise_id is never re-verified after that one
+    test (no periodic retest for it, unlike the AMRAP baseline_value) - a
+    goal set up before PUSHUP_PROGRESSION grew its easier early steps can
+    carry a stale id pointing at a variant harder than the user can
+    actually do. Real user report: kept getting prescribed a full L-sit
+    while unable to do one at all. So the baseline-id-derived variant is
+    clamped to never be *harder* than what the threshold table would give
+    for the current estimated_max - only ever used to pick a more advanced
+    starting point, never an unreachable one."""
+    threshold_variant = _threshold_variant(estimated_max, _PUSHUP_VARIANT_THRESHOLDS)
     if baseline_exercise_id in PUSHUP_PROGRESSION:
         start_index = PUSHUP_PROGRESSION.index(baseline_exercise_id)
         steps_advanced = week_index // 4
-        return PUSHUP_PROGRESSION[min(start_index + steps_advanced, len(PUSHUP_PROGRESSION) - 1)]
-    variant = _PUSHUP_VARIANT_THRESHOLDS[0][1]
-    for threshold, step in _PUSHUP_VARIANT_THRESHOLDS:
-        if estimated_max >= threshold:
-            variant = step
-    return variant
+        baseline_variant = PUSHUP_PROGRESSION[min(start_index + steps_advanced, len(PUSHUP_PROGRESSION) - 1)]
+        threshold_index = PUSHUP_PROGRESSION.index(threshold_variant)
+        return baseline_variant if PUSHUP_PROGRESSION.index(baseline_variant) <= threshold_index else threshold_variant
+    return threshold_variant
 
 
 # Three sessions a week, each with a different rep scheme and rest profile,
@@ -274,18 +291,23 @@ _LSIT_VARIANT_THRESHOLDS = [
 
 
 def _lsit_variant_for(estimated_hold: float, baseline_exercise_id: Optional[str], week_index: int) -> str:
-    """Mirrors _pushup_variant_for()'s logic — prefers the user's actual
-    captured Progression Paths standing over a threshold guess, advancing
-    one step every 4 weeks from wherever they actually tested."""
+    """Mirrors _pushup_variant_for()'s logic and its same stale-baseline
+    clamp - prefers the user's actual captured Progression Paths standing
+    over a threshold guess, advancing one step every 4 weeks from wherever
+    they actually tested, but never past what estimated_hold would justify
+    on its own. Real user report: stuck being prescribed a plain "lsit"
+    hold despite being unable to do one - the fully-advanced variant had
+    been captured as their baseline before lsit_support_hold/single_leg_lsit
+    existed as intermediate steps, and nothing ever re-tested it since L-sit
+    (unlike pushups) has no periodic AMRAP-style retest."""
+    threshold_variant = _threshold_variant(estimated_hold, _LSIT_VARIANT_THRESHOLDS)
     if baseline_exercise_id in LSIT_PROGRESSION:
         start_index = LSIT_PROGRESSION.index(baseline_exercise_id)
         steps_advanced = week_index // 4
-        return LSIT_PROGRESSION[min(start_index + steps_advanced, len(LSIT_PROGRESSION) - 1)]
-    variant = _LSIT_VARIANT_THRESHOLDS[0][1]
-    for threshold, step in _LSIT_VARIANT_THRESHOLDS:
-        if estimated_hold >= threshold:
-            variant = step
-    return variant
+        baseline_variant = LSIT_PROGRESSION[min(start_index + steps_advanced, len(LSIT_PROGRESSION) - 1)]
+        threshold_index = LSIT_PROGRESSION.index(threshold_variant)
+        return baseline_variant if LSIT_PROGRESSION.index(baseline_variant) <= threshold_index else threshold_variant
+    return threshold_variant
 
 
 # Three sessions a week, each with a different focus, instead of the exact
@@ -318,7 +340,10 @@ _ACCESSORY_POOL = [
     ("calf_raise", "Calf Raises", "reps", 20, 4, 30),
     ("dead_hang", "Dead Hang", "hold", 20, 4, 60),
     ("scapular_pullup", "Scapular Pull-ups", "reps", 8, 4, 60),
-    ("jump_rope", "Jump Rope", "hold", 60, 4, 30),
+    # No equipment-dependent moves here (was jump_rope - real user feedback:
+    # they train at home with no jump rope). burpees/crow_pose need nothing
+    # but floor space.
+    ("crow_pose", "Crow Pose", "hold", 15, 4, 45),
     ("burpees", "Burpees", "reps", 10, 4, 45),
 ]
 
