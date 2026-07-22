@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +93,7 @@ fun FitnessPlanScreen(
                 onOpenDetail = { activeSheet = FitnessSheet.ScheduledWorkoutDetail(it) },
                 onEditAvailability = { activeSheet = FitnessSheet.EditAvailability },
                 onRegenerate = { viewModel.generateTrainingPlan() },
+                onOpenExerciseInfo = { activeSheet = FitnessSheet.ExerciseInfo(it) },
             )
         }
     }
@@ -159,59 +163,6 @@ private fun TestingWeekContent(
 }
 
 @Composable
-private fun ActivePlanContent(
-    padding: PaddingValues,
-    scheduled: List<ScheduledWorkoutRecord>,
-    onOpenDetail: (ScheduledWorkoutRecord) -> Unit,
-    onEditAvailability: () -> Unit,
-    onRegenerate: () -> Unit,
-) {
-    val today = LocalDate.now()
-    val upcoming = scheduled
-        .filter { runCatching { LocalDate.parse(it.scheduledDate) }.getOrNull()?.let { d -> !d.isBefore(today) } == true }
-        .sortedBy { it.scheduledDate }
-        .take(14)
-    val grouped = upcoming.groupBy { it.scheduledDate }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("This Week's Plan", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                Row {
-                    // Only future PLANNED workouts get rebuilt (see backend
-                    // _regenerate_future_plan) - COMPLETED/SKIPPED history is
-                    // untouched, so this is safe to offer any time, not just
-                    // right after the testing week. Was previously only
-                    // reachable during the initial testing-week flow, so
-                    // there was no way to pick up progression/session-variety
-                    // changes on an already-active plan without deleting and
-                    // recreating the goal.
-                    IconButton(onClick = onRegenerate) { Icon(Icons.Filled.Autorenew, contentDescription = "Regenerate plan") }
-                    IconButton(onClick = onEditAvailability) { Icon(Icons.Filled.CalendarMonth, contentDescription = "Edit availability") }
-                }
-            }
-        }
-        if (upcoming.isEmpty()) {
-            item { Text("Nothing scheduled — check your availability.", color = QuailTextDim) }
-        }
-        grouped.forEach { (date, workouts) ->
-            item {
-                val parsed = runCatching { LocalDate.parse(date) }.getOrNull()
-                val label = if (parsed == today) "Today" else parsed?.dayOfWeek?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: date
-                Text(label, fontWeight = FontWeight.SemiBold, color = QuailTextDim, modifier = Modifier.padding(top = 4.dp))
-            }
-            items(workouts, key = { it.id }) { record ->
-                ScheduledWorkoutRow(record, onClick = { onOpenDetail(record) })
-            }
-        }
-    }
-}
-
-@Composable
 private fun ScheduledWorkoutRow(record: ScheduledWorkoutRecord, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
@@ -229,6 +180,192 @@ private fun ScheduledWorkoutRow(record: ScheduledWorkoutRecord, onClick: () -> U
                 Text(prescriptionSummary(record.workoutType, record.prescription), color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
             }
             StatusBadge(record.status)
+        }
+    }
+}
+
+/** One flattened, individually-tappable exercise within a scheduled day -
+ * either one block of a bundled "session" prescription, or the whole
+ * prescription itself for legacy single-exercise / run / test rows. Tapping
+ * opens the exercise's how-to instructions when we know its catalog id. */
+private data class DayExerciseItem(
+    val label: String,
+    val detail: String,
+    val estimatedSeconds: Int,
+    val exerciseId: String?,
+)
+
+private fun exerciseItemsFor(record: ScheduledWorkoutRecord): List<DayExerciseItem> {
+    val prescription = record.prescription
+    return if (prescription.str("type") == "session") {
+        prescription.blocks().map { block ->
+            val setsList = block.setsList()
+            val setsDesc = if (setsList.isNotEmpty()) {
+                setsList.joinToString(", ") { s -> s.holdSeconds?.let { "${it}s" } ?: s.reps?.let { "$it reps" } ?: "?" }
+            } else ""
+            DayExerciseItem(
+                label = blockLabel(block),
+                detail = setsDesc,
+                estimatedSeconds = estimatedSecondsForBlock(block),
+                exerciseId = block.str("exercise_id"),
+            )
+        }
+    } else {
+        listOf(
+            DayExerciseItem(
+                label = record.workoutType.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() },
+                detail = prescriptionSummary(record.workoutType, prescription),
+                estimatedSeconds = estimatedSecondsForPrescription(prescription),
+                exerciseId = prescription.str("exercise_id"),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ActivePlanContent(
+    padding: PaddingValues,
+    scheduled: List<ScheduledWorkoutRecord>,
+    onOpenDetail: (ScheduledWorkoutRecord) -> Unit,
+    onEditAvailability: () -> Unit,
+    onRegenerate: () -> Unit,
+    onOpenExerciseInfo: (String) -> Unit,
+) {
+    val today = LocalDate.now()
+    val upcoming = scheduled
+        .filter { runCatching { LocalDate.parse(it.scheduledDate) }.getOrNull()?.let { d -> !d.isBefore(today) } == true }
+        .sortedBy { it.scheduledDate }
+        .take(14)
+    val days = upcoming.map { it.scheduledDate }.distinct()
+    var selectedDate by remember(days) { mutableStateOf(days.firstOrNull()) }
+    LaunchedEffect(days) { if (selectedDate !in days) selectedDate = days.firstOrNull() }
+
+    Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Your Plan", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Row {
+                // Only future PLANNED workouts get rebuilt (see backend
+                // _regenerate_future_plan) - COMPLETED/SKIPPED history is
+                // untouched, so this is safe to offer any time, not just
+                // right after the testing week.
+                IconButton(onClick = onRegenerate) { Icon(Icons.Filled.Autorenew, contentDescription = "Regenerate plan") }
+                IconButton(onClick = onEditAvailability) { Icon(Icons.Filled.CalendarMonth, contentDescription = "Edit availability") }
+            }
+        }
+
+        if (upcoming.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Nothing scheduled — check your availability.", color = QuailTextDim)
+            }
+            return@Column
+        }
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(days) { date ->
+                val parsed = runCatching { LocalDate.parse(date) }.getOrNull()
+                val label = when {
+                    parsed == today -> "Today"
+                    parsed == today.plusDays(1) -> "Tomorrow"
+                    parsed != null -> parsed.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }.take(3)
+                    else -> date
+                }
+                DayChip(label = label, selected = date == selectedDate, onClick = { selectedDate = date })
+            }
+        }
+
+        val dayWorkouts = upcoming.filter { it.scheduledDate == selectedDate }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            dayWorkouts.forEach { record ->
+                val items = exerciseItemsFor(record)
+                val totalSeconds = items.sumOf { it.estimatedSeconds }
+                item {
+                    Surface(
+                        onClick = { onOpenDetail(record) },
+                        color = QuailSurfaceRaised,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text(record.workoutType.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold)
+                                val timeLabel = formatEstimatedMinutes(totalSeconds)
+                                Text(
+                                    if (timeLabel.isNotEmpty()) "${items.size} exercises • $timeLabel" else "${items.size} exercises",
+                                    color = QuailTextDim,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                            StatusBadge(record.status)
+                        }
+                    }
+                }
+                items(items) { exerciseItem ->
+                    ExerciseItemRow(exerciseItem, onClick = { exerciseItem.exerciseId?.let(onOpenExerciseInfo) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DayChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) MaterialTheme.colorScheme.primary else QuailSurfaceRaised,
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun ExerciseItemRow(item: DayExerciseItem, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = QuailSurfaceRaised,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(item.label, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                if (item.detail.isNotEmpty()) {
+                    Text(item.detail, color = QuailTextDim, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val timeLabel = formatEstimatedMinutes(item.estimatedSeconds)
+                if (timeLabel.isNotEmpty()) {
+                    Text(timeLabel, color = QuailTextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = 4.dp))
+                }
+                if (item.exerciseId != null) {
+                    Icon(Icons.Filled.Info, contentDescription = "How to", tint = QuailTextDim, modifier = Modifier.padding(start = 2.dp))
+                }
+            }
         }
     }
 }

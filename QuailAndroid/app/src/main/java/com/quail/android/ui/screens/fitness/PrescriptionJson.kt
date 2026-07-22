@@ -49,7 +49,10 @@ fun Map<String, JsonElement>.blocks(): List<Map<String, JsonElement>> {
 fun blockLabel(block: Map<String, JsonElement>): String = when (block.str("type")) {
     "pushups" -> "Pushups"
     "lsit_hold" -> "L-sit"
-    "core_hold" -> "Core"
+    // Rotating complementary work (squats, rows, core) - see
+    // fitness_plan_engine.py's _ACCESSORY_ROTATION - backend sends the
+    // display label directly since it's the one place the rotation lives.
+    "accessory", "core_hold" -> block.str("label") ?: "Core"
     "run" -> "Run"
     else -> block.str("type")?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Exercise"
 }
@@ -90,6 +93,56 @@ fun prescriptionSummary(workoutType: String, prescription: Map<String, JsonEleme
         "run_test" -> "Timed mile + easy run"
         else -> workoutType.replace('_', ' ').lowercase()
     }
+}
+
+/** Rough per-set work time when a set is reps-based rather than a timed
+ * hold - there's no real per-rep duration anywhere in the data model, so
+ * this is a coarse-but-reasonable estimate (3s/rep covers most bodyweight
+ * strength moves) used only to build the "~N min" estimate shown in the UI. */
+private const val SECONDS_PER_REP = 3
+
+/** Estimated seconds to complete one exercise block: each set's own work
+ * time (hold_seconds, or reps * SECONDS_PER_REP) plus rest_seconds between
+ * sets (not after the last set). */
+fun estimatedSecondsForBlock(block: Map<String, JsonElement>): Int {
+    val sets = block.setsList()
+    if (sets.isEmpty()) return 0
+    val restSeconds = block.int("rest_seconds") ?: 45
+    val work = sets.sumOf { it.holdSeconds ?: ((it.reps ?: 0) * SECONDS_PER_REP) }
+    val rest = restSeconds * (sets.size - 1).coerceAtLeast(0)
+    return work + rest
+}
+
+/** Estimated seconds for a run/intervals prescription, from target pace
+ * when present, else a generic easy-pace assumption (9:30/mi). Intervals
+ * repeat a short distance `reps` times, with rest between reps. */
+fun estimatedSecondsForRun(prescription: Map<String, JsonElement>): Int {
+    val paceSecPerMile = prescription.int("target_pace_sec_per_mile") ?: 570
+    return if (prescription.str("type") == "intervals") {
+        val reps = prescription.int("reps") ?: 1
+        val distanceMi = prescription.double("distance_km")?.let { kmToMiles(it) } ?: 0.25
+        val restSeconds = prescription.int("rest_seconds") ?: 90
+        (reps * distanceMi * paceSecPerMile).toInt() + restSeconds * (reps - 1).coerceAtLeast(0)
+    } else {
+        val distanceMi = prescription.double("distance_km")?.let { kmToMiles(it) } ?: return 0
+        (distanceMi * paceSecPerMile).toInt()
+    }
+}
+
+/** Estimated total seconds to complete an entire scheduled workout's
+ * prescription, whichever shape it is (bundled session, single exercise
+ * block, or a run) - used to show "~N min" against each day/exercise. */
+fun estimatedSecondsForPrescription(prescription: Map<String, JsonElement>): Int = when (prescription.str("type")) {
+    "session" -> prescription.blocks().sumOf { estimatedSecondsForBlock(it) }
+    "run", "intervals" -> estimatedSecondsForRun(prescription)
+    "pushups", "lsit_hold" -> estimatedSecondsForBlock(prescription)
+    else -> 0
+}
+
+fun formatEstimatedMinutes(seconds: Int): String {
+    if (seconds <= 0) return ""
+    val minutes = (seconds / 60.0).let { if (it < 1) 1 else Math.round(it) }
+    return "~$minutes min"
 }
 
 fun formatPace(secPerMile: Int): String {

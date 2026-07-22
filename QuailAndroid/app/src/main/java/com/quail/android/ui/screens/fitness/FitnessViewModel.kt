@@ -124,6 +124,17 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
         loadAvailability()
     }
 
+    // Rows scheduled before the session-bundling backend change still carry
+    // the old single-exercise top-level prescription "type" ("pushups"/
+    // "lsit_hold") instead of the new bundled "session" type - a real user
+    // report showed these surviving indefinitely because nothing ever
+    // prompted a regenerate. Detected here so loadPlan() can self-heal by
+    // regenerating once, instead of requiring the user to notice and tap
+    // the refresh icon themselves.
+    private var autoRegeneratedStalePlan = false
+    private fun hasStaleLegacyPrescription(scheduled: List<com.quail.android.data.model.ScheduledWorkoutRecord>): Boolean =
+        scheduled.any { it.status == "PLANNED" && it.prescription.str("type") in setOf("pushups", "lsit_hold") }
+
     fun loadPlan() {
         viewModelScope.launch {
             _planState.value = TrainingPlanUiState.Loading
@@ -131,7 +142,16 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
                 val status = repository.getTrainingPlanStatus().status
                 when (status) {
                     "TESTING" -> _planState.value = TrainingPlanUiState.Testing(repository.getScheduledWorkouts())
-                    "ACTIVE" -> _planState.value = TrainingPlanUiState.Active(repository.getScheduledWorkouts())
+                    "ACTIVE" -> {
+                        val scheduled = repository.getScheduledWorkouts()
+                        if (!autoRegeneratedStalePlan && hasStaleLegacyPrescription(scheduled)) {
+                            autoRegeneratedStalePlan = true
+                            repository.generateTrainingPlan()
+                            _planState.value = TrainingPlanUiState.Active(repository.getScheduledWorkouts())
+                        } else {
+                            _planState.value = TrainingPlanUiState.Active(scheduled)
+                        }
+                    }
                     else -> {
                         val hasGoals = uiState.value?.goals?.isNotEmpty() == true
                         _planState.value = TrainingPlanUiState.None(hasGoals)
@@ -229,7 +249,7 @@ class FitnessViewModel(private val repository: FitnessRepository) : ViewModel() 
     // unit instead of a timed hold.
     private fun fallbackExerciseId(blockType: String?): String = when (blockType) {
         "lsit_hold" -> "tuck_lsit"
-        "core_hold" -> "hollow_body_hold"
+        "accessory", "core_hold" -> "hollow_body_hold"
         else -> "pushup"
     }
 

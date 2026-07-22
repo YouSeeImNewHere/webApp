@@ -298,14 +298,22 @@ _LSIT_SESSION_FOCUS = [
 ]
 
 
-# Rotates for variety across the week/plan — both are real accessory work
-# for these two skills specifically (not generic filler): hollow body hold
-# and plank both build the midline compression/rigidity an L-sit needs to
-# hold at all, and the shoulder/trunk stability that keeps a pushup's
-# lockout clean under fatigue.
-_CORE_ACCESSORY_ROTATION = [
-    ("hollow_body_hold", 30, 4, 45),  # exercise_id, base_hold_seconds, sets, rest_seconds
-    ("plank", 45, 3, 30),
+# Real user feedback: a session that's always "pushups + L-sit + core" is
+# still mundane even once the sets/reps vary, because it's the same two
+# muscle groups every single day. Rotates through legs (squats), pull
+# (inverted rows - real complementary work since pushups/L-sit are almost
+# entirely push/hold, no pulling at all) and core, so a 30-60min session
+# actually trains the whole body across the week instead of drilling the
+# same two skills from three angles. label is shown directly in the UI so
+# the client doesn't need its own copy of this rotation to render it.
+_ACCESSORY_ROTATION = [
+    # exercise_id, label, kind ("hold"|"reps"), base_value, sets, rest_seconds
+    ("hollow_body_hold", "Core", "hold", 30, 4, 45),
+    ("bodyweight_squat", "Squats", "reps", 15, 3, 45),
+    ("inverted_row", "Inverted Rows", "reps", 8, 3, 60),
+    ("plank", "Core", "hold", 45, 3, 30),
+    ("bulgarian_split_squat", "Split Squats", "reps", 10, 3, 60),
+    ("hanging_knee_raise", "Knee Raises", "reps", 12, 3, 45),
 ]
 
 
@@ -374,11 +382,17 @@ def _skills_week_plan(pushup_goal: Optional[Goal], lsit_goal: Optional[Goal], we
                 "rest_seconds": rest_seconds, "notes": notes,
             })
             goal_ids.append(lsit_goal.id)
-        core_id, core_hold, core_sets, core_rest = _CORE_ACCESSORY_ROTATION[(week_index * 3 + i) % len(_CORE_ACCESSORY_ROTATION)]
+        acc_id, acc_label, acc_kind, acc_value, acc_sets, acc_rest = _ACCESSORY_ROTATION[
+            (week_index * 3 + i) % len(_ACCESSORY_ROTATION)
+        ]
+        acc_sets_list = (
+            [{"hold_seconds": acc_value} for _ in range(acc_sets)]
+            if acc_kind == "hold"
+            else [{"reps": acc_value} for _ in range(acc_sets)]
+        )
         blocks.append({
-            "type": "core_hold", "exercise_id": core_id,
-            "sets": [{"hold_seconds": core_hold} for _ in range(core_sets)],
-            "rest_seconds": core_rest,
+            "type": "accessory", "exercise_id": acc_id, "label": acc_label,
+            "sets": acc_sets_list, "rest_seconds": acc_rest,
         })
         sessions.append({
             "workout_type": WORKOUT_SKILLS_SESSION,

@@ -71,6 +71,7 @@ sealed interface FitnessSheet {
     data object CreateRoutine : FitnessSheet
     data class ScheduledWorkoutDetail(val record: com.quail.android.data.model.ScheduledWorkoutRecord) : FitnessSheet
     data object EditAvailability : FitnessSheet
+    data class ExerciseInfo(val exerciseId: String) : FitnessSheet
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

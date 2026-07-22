@@ -61,6 +61,7 @@ fun FitnessSheetHost(sheet: FitnessSheet, viewModel: FitnessViewModel, onDismiss
             is FitnessSheet.CreateRoutine -> CreateRoutineContent(viewModel, onDismiss)
             is FitnessSheet.ScheduledWorkoutDetail -> ScheduledWorkoutDetailSheet(sheet.record, viewModel, onDismiss, onStartWorkout)
             is FitnessSheet.EditAvailability -> EditAvailabilitySheet(viewModel, onDismiss)
+            is FitnessSheet.ExerciseInfo -> ExerciseInfoSheet(sheet.exerciseId, onDismiss)
         }
     }
     SideEffect { AppOverlayHost.showBottomSheet(onDismissed = onDismiss, content = content) }
@@ -434,6 +435,29 @@ private fun ScheduledWorkoutDetailSheet(
             }
         } else {
             Text("Status: ${record.status.lowercase().replaceFirstChar { it.uppercase() }}", color = QuailTextDim)
+        }
+    }
+}
+
+@Composable
+private fun ExerciseInfoSheet(exerciseId: String, onDismiss: () -> Unit) {
+    val exercise = exerciseById(exerciseId, DEFAULT_EXERCISES)
+    SheetScaffold(exercise?.name ?: exerciseId.replace('_', ' ').replaceFirstChar { it.uppercase() }, onDismiss) {
+        if (exercise == null) {
+            Text("No instructions available for this exercise.", color = QuailTextDim)
+            return@SheetScaffold
+        }
+        Text(
+            exercise.difficulty.name.lowercase().replaceFirstChar { it.uppercase() } + " • " +
+                exercise.category.name.lowercase().replaceFirstChar { it.uppercase() },
+            color = QuailTextDim,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        exercise.instructions.forEachIndexed { i, step ->
+            Row(modifier = Modifier.padding(top = 8.dp)) {
+                Text("${i + 1}.", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 6.dp))
+                Text(step)
+            }
         }
     }
 }
