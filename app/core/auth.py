@@ -738,11 +738,25 @@ def _mint_mobile_api_token(*, tenant_id: int, google_email: str) -> str:
     return f"{_MOBILE_API_TOKEN_PREFIX}.{payload_b64}.{_b64url_encode(sig)}"
 
 
-def _mint_mobile_oauth_state() -> str:
+def _is_app_callback_scheme(value: str) -> bool:
+    """True for a native-app deep-link callback (e.g. "quail://auth",
+    "quailflutter://auth") as opposed to a plain http(s) web URL. Any
+    registered client app's custom scheme should pass this, not just one
+    hardcoded app's."""
+    v = str(value or "").strip().lower()
+    return "://" in v and not v.startswith("http://") and not v.startswith("https://")
+
+
+def _mint_mobile_oauth_state(*, callback: str = "") -> str:
     payload = {
         "mode": "mobile",
         "ts": int(time.time()),
         "nonce": secrets.token_urlsafe(18),
+        # Round-tripped so gmail_oauth_callback can redirect to the same
+        # app that started the flow — Google's own callback request never
+        # echoes back our original `callback` query param, so without this
+        # the final redirect has no way to know which app scheme to use.
+        "callback": callback if _is_app_callback_scheme(callback) else "",
     }
     payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     payload_b64 = _b64url_encode(payload_json)
@@ -812,7 +826,7 @@ def _verify_mobile_oauth_state(state: str) -> dict[str, object] | None:
 
 def _mobile_auth_callback_url(request: Request) -> str:
     callback = str(request.query_params.get("callback") or "").strip()
-    if callback and "://" not in callback:
+    if not _is_app_callback_scheme(callback):
         callback = ""
     return callback or "quail://auth"
 
@@ -1112,9 +1126,9 @@ def gmail_oauth_start(request: Request, next: str = "/settings"):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
     mobile_callback = str(request.query_params.get("callback") or "").strip()
-    is_mobile = mobile_callback.startswith("quail://")
+    is_mobile = _is_app_callback_scheme(mobile_callback)
     if is_mobile:
-        state = _mint_mobile_oauth_state()
+        state = _mint_mobile_oauth_state(callback=mobile_callback)
     else:
         state = secrets.token_urlsafe(24)
         request.session["google_oauth_state"] = state
@@ -1152,6 +1166,7 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
         return JSONResponse({"ok": False, "error": "missing_code"}, status_code=400)
 
     mobile_oauth = False
+    mobile_callback_url = ""
     expected_state = request.session.get("google_oauth_state")
     if expected_state and expected_state == state:
         mobile_oauth = False
@@ -1159,6 +1174,13 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
         mobile_payload = _verify_mobile_oauth_state(state or "")
         if mobile_payload:
             mobile_oauth = True
+            # Round-tripped from gmail_oauth_start via the signed state, since
+            # Google's callback request never echoes back our `callback`
+            # query param — this is what lets each installed app (old native
+            # "quail://", the Flutter build's "quailflutter://", any future
+            # client) get redirected back to itself instead of always to a
+            # single hardcoded scheme.
+            mobile_callback_url = str(mobile_payload.get("callback") or "").strip() or "quail://auth"
         else:
             return JSONResponse({"ok": False, "error": "invalid_oauth_state"}, status_code=400)
 
@@ -1248,7 +1270,7 @@ def gmail_oauth_callback(request: Request, code: str | None = None, state: str |
         if not tid:
             return JSONResponse({"ok": False, "error": "tenant_not_found"}, status_code=403)
         token = _mint_mobile_api_token(tenant_id=int(tid), google_email=google_email)
-        redirect_url = f"{_mobile_auth_callback_url(request)}?{urlencode({'token': token, 'email': google_email, 'tenant_id': int(tid)})}"
+        redirect_url = f"{mobile_callback_url}?{urlencode({'token': token, 'email': google_email, 'tenant_id': int(tid)})}"
         return RedirectResponse(url=redirect_url, status_code=302)
 
     next_url = _sanitize_next_url(request.session.get("google_oauth_next"), default="/settings")
